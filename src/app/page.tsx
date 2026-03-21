@@ -1,65 +1,69 @@
-import Image from "next/image";
-
-export default function Home() {
+export default function Dashboard() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
+        <div className="text-sm text-slate-500 bg-white px-3 py-1.5 rounded-md border shadow-sm">
+          Welcome back, Test User
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+      
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: "Open Issues", value: "12", color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "In Progress", value: "5", color: "text-amber-600", bg: "bg-amber-50" },
+          { label: "Done this week", value: "24", color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Overdue", value: "2", color: "text-red-600", bg: "bg-red-50" },
+        ].map((stat, i) => (
+          <div key={i} className="bg-white p-5 rounded-xl border shadow-sm hover:shadow-md transition-shadow">
+            <h3 className="text-slate-500 text-sm font-medium">{stat.label}</h3>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className={`text-3xl font-bold ${stat.color}`}>{stat.value}</span>
+            </div>
+            <div className={`mt-3 h-1 w-full rounded-full ${stat.bg}`}>
+              <div className={`h-full rounded-full bg-current ${stat.color} w-2/3 opacity-50`}></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Content Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Activity */}
+        <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="font-semibold text-slate-800">Recent Activity</h3>
+            <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">View all</button>
+          </div>
+          <div className="p-0 flex-1 flex items-center justify-center text-slate-400 bg-slate-50/50 min-h-[300px]">
+            <div className="text-center">
+              <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p>Activity feed will appear here</p>
+            </div>
+          </div>
         </div>
-      </main>
+
+        {/* My Tasks */}
+        <div className="bg-white rounded-xl border shadow-sm flex flex-col">
+          <div className="p-5 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">Assigned to me</h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-colors group">
+                <div className="flex items-start justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">NJ-{1024 + i}</span>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>
+                </div>
+                <h4 className="text-sm font-medium text-slate-800 mt-1">Implement user authentication flow</h4>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

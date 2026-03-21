@@ -1,0 +1,104 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String   @unique
+  role      Role     @default(USER)
+  projects  Project[]
+  issues    Issue[]  @relation("Assignee")
+  reported  Issue[]  @relation("Reporter")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  USER
+  ADMIN
+  MANAGER
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  description String?
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id])
+  iterations  Iteration[]
+  issues      Issue[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Iteration {
+  id        String   @id @default(cuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  issues    Issue[]
+  status    IterationStatus @default(PLANNED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum IterationStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
+model Issue {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  title       String
+  description String?
+  status      IssueStatus @default(TODO)
+  priority    IssuePriority @default(MEDIUM)
+  type        IssueType @default(TASK)
+  
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  
+  iterationId String?
+  iteration   Iteration? @relation(fields: [iterationId], references: [id])
+  
+  assigneeId  String?
+  assignee    User?    @relation("Assignee", fields: [assigneeId], references: [id])
+  
+  reporterId  String
+  reporter    User     @relation("Reporter", fields: [reporterId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum IssueStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum IssueType {
+  STORY
+  TASK
+  BUG
+  EPIC
+}
