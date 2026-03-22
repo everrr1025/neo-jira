@@ -1,20 +1,48 @@
-export default function Dashboard() {
+import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
+import Link from "next/link";
+
+export const dynamic = 'force-dynamic';
+
+export default async function Dashboard() {
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id;
+  const userRole = (session?.user as any)?.role;
+  const userName = session?.user?.name || "User";
+
+  // Data isolation
+  const projectFilter = userRole === 'ADMIN'
+    ? {}
+    : { project: { members: { some: { id: userId } } } };
+
+  const totalIssues = await prisma.issue.count({ where: projectFilter });
+  const todoCount = await prisma.issue.count({ where: { ...projectFilter, status: 'TODO' } });
+  const inProgressCount = await prisma.issue.count({ where: { ...projectFilter, status: 'IN_PROGRESS' } });
+  const doneCount = await prisma.issue.count({ where: { ...projectFilter, status: 'DONE' } });
+
+  const myIssues = userId ? await prisma.issue.findMany({
+    where: { ...projectFilter, assigneeId: userId, status: { not: 'DONE' } },
+    orderBy: { updatedAt: 'desc' },
+    take: 5
+  }) : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
         <div className="text-sm text-slate-500 bg-white px-3 py-1.5 rounded-md border shadow-sm">
-          Welcome back, Test User
+          Welcome back, {userName}
         </div>
       </div>
       
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: "Open Issues", value: "12", color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "In Progress", value: "5", color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Done this week", value: "24", color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Overdue", value: "2", color: "text-red-600", bg: "bg-red-50" },
+          { label: "Total Issues", value: String(totalIssues), color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "To Do", value: String(todoCount), color: "text-amber-600", bg: "bg-amber-50" },
+          { label: "In Progress", value: String(inProgressCount), color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "Done", value: String(doneCount), color: "text-emerald-600", bg: "bg-emerald-50" },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-xl border shadow-sm hover:shadow-md transition-shadow">
             <h3 className="text-slate-500 text-sm font-medium">{stat.label}</h3>
@@ -22,7 +50,7 @@ export default function Dashboard() {
               <span className={`text-3xl font-bold ${stat.color}`}>{stat.value}</span>
             </div>
             <div className={`mt-3 h-1 w-full rounded-full ${stat.bg}`}>
-              <div className={`h-full rounded-full bg-current ${stat.color} w-2/3 opacity-50`}></div>
+              <div className={`h-full rounded-full bg-current ${stat.color} opacity-50`} style={{ width: totalIssues > 0 ? `${Math.round((parseInt(stat.value) / totalIssues) * 100)}%` : '0%' }}></div>
             </div>
           </div>
         ))}
@@ -30,11 +58,11 @@ export default function Dashboard() {
 
       {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
+        {/* Recent Activity placeholder */}
         <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center">
             <h3 className="font-semibold text-slate-800">Recent Activity</h3>
-            <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">View all</button>
+            <Link href="/issues" className="text-sm text-blue-600 hover:text-blue-700 font-medium">View all</Link>
           </div>
           <div className="p-0 flex-1 flex items-center justify-center text-slate-400 bg-slate-50/50 min-h-[300px]">
             <div className="text-center">
@@ -52,15 +80,21 @@ export default function Dashboard() {
             <h3 className="font-semibold text-slate-800">Assigned to me</h3>
           </div>
           <div className="p-4 space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-colors group">
+            {myIssues.length > 0 ? myIssues.map((issue) => (
+              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-colors group">
                 <div className="flex items-start justify-between">
-                  <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">NJ-{1024 + i}</span>
-                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">In Progress</span>
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">{issue.key}</span>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                    issue.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                  }`}>{issue.status.replace('_', ' ')}</span>
                 </div>
-                <h4 className="text-sm font-medium text-slate-800 mt-1">Implement user authentication flow</h4>
+                <h4 className="text-sm font-medium text-slate-800 mt-1">{issue.title}</h4>
+              </Link>
+            )) : (
+              <div className="text-center text-sm text-slate-400 py-8">
+                No active tasks assigned to you.
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>

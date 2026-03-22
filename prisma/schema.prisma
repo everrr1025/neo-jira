@@ -8,12 +8,14 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String?
-  email     String   @unique
-  role      String   @default("USER")
-  projects  Project[]
-  issues    Issue[]  @relation("Assignee")
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String?
+  role          String    @default("USER")
+  ownedProjects Project[] @relation("ProjectOwner")
+  projects      Project[] @relation("ProjectMembers")
+  issues        Issue[]   @relation("Assignee")
   reported  Issue[]  @relation("Reporter")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -27,7 +29,8 @@ model Project {
   key         String   @unique
   description String?
   ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id])
+  owner       User        @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     User[]      @relation("ProjectMembers")
   iterations  Iteration[]
   issues      Issue[]
   createdAt   DateTime @default(now())

@@ -1,19 +1,30 @@
 import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
 async function main() {
   console.log('Seeding database...')
 
+  // Clean data
+  await prisma.issue.deleteMany()
+  await prisma.iteration.deleteMany()
+  await prisma.project.deleteMany()
+  await prisma.user.deleteMany()
+
+  // Hash common passwords
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  const defaultPassword = await bcrypt.hash('password123', 10);
+
   // Create Users
   const user1 = await prisma.user.create({
-    data: { name: 'Admin User', email: 'admin@neo-jira.local', role: 'ADMIN' },
+    data: { name: 'Admin User', email: 'admin@neo-jira.local', role: 'ADMIN', password: adminPassword },
   })
   const user2 = await prisma.user.create({
-    data: { name: 'Alice', email: 'alice@neo-jira.local', role: 'USER' },
+    data: { name: 'Alice', email: 'alice@neo-jira.local', role: 'USER', password: defaultPassword },
   })
   const user3 = await prisma.user.create({
-    data: { name: 'Bob', email: 'bob@neo-jira.local', role: 'USER' },
+    data: { name: 'Bob', email: 'bob@neo-jira.local', role: 'USER', password: defaultPassword },
   })
   
   // Create Project
@@ -23,6 +34,9 @@ async function main() {
       key: 'NJ',
       description: 'The core project management platform.',
       ownerId: user1.id,
+      members: {
+        connect: [{ id: user1.id }, { id: user2.id }, { id: user3.id }]
+      }
     },
   })
 

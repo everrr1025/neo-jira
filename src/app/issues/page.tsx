@@ -1,11 +1,23 @@
 import prisma from "@/lib/prisma";
 import IssueList from "@/components/IssueList";
 import CreateIssueButton from "@/components/CreateIssueButton";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
 
 export const dynamic = 'force-dynamic';
 
 export default async function IssuesPage() {
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id;
+  const userRole = (session?.user as any)?.role;
+
+  // Data isolation: admins see all, users see only their projects' issues
+  const whereClause = userRole === 'ADMIN'
+    ? {}
+    : { project: { members: { some: { id: userId } } } };
+
   const issues = await prisma.issue.findMany({
+    where: whereClause,
     include: { assignee: true, reporter: true, iteration: true },
     orderBy: { createdAt: 'desc' }
   });
@@ -13,8 +25,10 @@ export default async function IssuesPage() {
   const users = await prisma.user.findMany({ orderBy: { name: 'asc' }});
   const iterations = await prisma.iteration.findMany({ orderBy: { startDate: 'desc' }});
   
-  // Mock current user
-  const currentUser = users.find(u => u.role === 'ADMIN') || users[0];
+  // Use the real session user
+  const currentUser = userId
+    ? await prisma.user.findUnique({ where: { id: userId } })
+    : users[0];
 
   return (
     <div className="flex flex-col h-full space-y-6">
