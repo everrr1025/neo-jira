@@ -11,7 +11,7 @@ model User {
   id        String   @id @default(cuid())
   name      String?
   email     String   @unique
-  role      Role     @default(USER)
+  role      String   @default("USER")
   projects  Project[]
   issues    Issue[]  @relation("Assignee")
   reported  Issue[]  @relation("Reporter")
@@ -19,11 +19,7 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
-enum Role {
-  USER
-  ADMIN
-  MANAGER
-}
+
 
 model Project {
   id          String   @id @default(cuid())
@@ -46,25 +42,21 @@ model Iteration {
   projectId String
   project   Project  @relation(fields: [projectId], references: [id])
   issues    Issue[]
-  status    IterationStatus @default(PLANNED)
+  status    String   @default("PLANNED")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-enum IterationStatus {
-  PLANNED
-  ACTIVE
-  COMPLETED
-}
+
 
 model Issue {
   id          String   @id @default(cuid())
   key         String   @unique
   title       String
   description String?
-  status      IssueStatus @default(TODO)
-  priority    IssuePriority @default(MEDIUM)
-  type        IssueType @default(TASK)
+  status      String   @default("TODO")
+  priority    String   @default("MEDIUM")
+  type        String   @default("TASK")
   
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id])
@@ -82,23 +74,4 @@ model Issue {
   updatedAt   DateTime @updatedAt
 }
 
-enum IssueStatus {
-  TODO
-  IN_PROGRESS
-  IN_REVIEW
-  DONE
-}
 
-enum IssuePriority {
-  LOW
-  MEDIUM
-  HIGH
-  URGENT
-}
-
-enum IssueType {
-  STORY
-  TASK
-  BUG
-  EPIC
-}
