@@ -14,14 +14,23 @@ model User {
   password      String?
   role          String    @default("USER")
   ownedProjects Project[] @relation("ProjectOwner")
-  projects      Project[] @relation("ProjectMembers")
+  projectMemberships ProjectMember[]
   issues        Issue[]   @relation("Assignee")
   reported  Issue[]  @relation("Reporter")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+model ProjectMember {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+  role      String  @default("MEMBER")
 
+  @@unique([userId, projectId])
+}
 
 model Project {
   id          String   @id @default(cuid())
@@ -30,7 +39,7 @@ model Project {
   description String?
   ownerId     String
   owner       User        @relation("ProjectOwner", fields: [ownerId], references: [id])
-  members     User[]      @relation("ProjectMembers")
+  members     ProjectMember[]
   iterations  Iteration[]
   issues      Issue[]
   createdAt   DateTime @default(now())
@@ -76,5 +85,3 @@ model Issue {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
-
-

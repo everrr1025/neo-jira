@@ -20,7 +20,9 @@ export default async function AdminPage() {
   const projects = await prisma.project.findMany({
     include: {
       owner: true,
-      members: true,
+      members: {
+        include: { user: true }
+      },
       _count: { select: { issues: true } }
     },
     orderBy: { createdAt: 'desc' }
@@ -41,7 +43,10 @@ export default async function AdminPage() {
     key: p.key,
     description: p.description,
     owner: { name: p.owner.name },
-    members: p.members.map(m => m.id),
+    members: p.members.map(m => ({
+      userId: m.userId,
+      role: m.role,
+    })),
     issuesCount: p._count.issues,
     createdAt: p.createdAt.toISOString()
   }));

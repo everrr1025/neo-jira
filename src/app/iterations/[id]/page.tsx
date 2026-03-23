@@ -4,6 +4,10 @@ import CreateIssueButton from "@/components/CreateIssueButton";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
+import { getProjectRole } from "@/lib/permissions";
+import { SprintActionButton } from "@/components/SprintActionButton";
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +16,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   const iteration = await prisma.iteration.findUnique({
     where: { id: resolvedParams.id },
     include: {
+      project: { select: { id: true, name: true } },
       issues: {
         include: { assignee: true, reporter: true },
         orderBy: { createdAt: 'desc' }
@@ -21,6 +26,15 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
 
   if (!iteration) {
     notFound();
+  }
+
+  // Check if current user can manage this sprint
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id;
+  let canManage = false;
+  if (userId) {
+    const role = await getProjectRole(userId, iteration.project.id);
+    canManage = role === "ADMIN";
   }
 
   const issues = iteration.issues;
@@ -45,10 +59,12 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
           <div className="flex -space-x-2">
             <CreateIssueButton />
           </div>
-          <div className="h-6 w-px bg-slate-200 mx-2"></div>
-          <button className="bg-white border hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm">
-            {iteration.status === 'ACTIVE' ? 'Complete Sprint' : 'Start Sprint'}
-          </button>
+          {canManage && iteration.status !== "COMPLETED" && (
+            <>
+              <div className="h-6 w-px bg-slate-200 mx-2"></div>
+              <SprintActionButton sprintId={iteration.id} status={iteration.status} />
+            </>
+          )}
         </div>
       </div>
 

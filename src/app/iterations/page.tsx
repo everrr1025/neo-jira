@@ -1,11 +1,36 @@
 import prisma from "@/lib/prisma";
 import Link from "next/link";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
+import { getProjectRole } from "@/lib/permissions";
+import { CreateSprintButton } from "@/components/CreateSprintButton";
 
 export const dynamic = 'force-dynamic';
 
 export default async function IterationsPage() {
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id;
+  const isGlobalAdmin = (session?.user as any)?.role === "ADMIN";
+
+  // Get projects where user is an admin (for sprint creation)
+  let adminProjects: { id: string; name: string; key: string }[] = [];
+  if (isGlobalAdmin) {
+    adminProjects = await prisma.project.findMany({
+      select: { id: true, name: true, key: true },
+    });
+  } else if (userId) {
+    const memberships = await prisma.projectMember.findMany({
+      where: { userId, role: "ADMIN" },
+      include: { project: { select: { id: true, name: true, key: true } } },
+    });
+    adminProjects = memberships.map(m => m.project);
+  }
+
+  const canManageSprints = adminProjects.length > 0;
+
   const iterations = await prisma.iteration.findMany({
     include: {
+      project: { select: { name: true, key: true } },
       _count: {
         select: { issues: true }
       },
@@ -23,9 +48,9 @@ export default async function IterationsPage() {
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Iterations / Sprints</h2>
           <p className="text-sm text-slate-500 mt-1">Plan and manage team iterations.</p>
         </div>
-        <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm">
-          Create Sprint
-        </button>
+        {canManageSprints && (
+          <CreateSprintButton projects={adminProjects} />
+        )}
       </div>
 
       <div className="grid gap-4">
@@ -47,6 +72,7 @@ export default async function IterationsPage() {
                     }`}>
                       {iteration.status}
                     </span>
+                    <span className="text-xs text-slate-400 font-medium">{iteration.project.key}</span>
                   </div>
                   <div className="text-sm text-slate-500 font-medium">
                     {iteration.startDate.toLocaleDateString()} - {iteration.endDate.toLocaleDateString()}

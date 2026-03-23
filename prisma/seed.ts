@@ -9,6 +9,7 @@ async function main() {
   // Clean data
   await prisma.issue.deleteMany()
   await prisma.iteration.deleteMany()
+  await prisma.projectMember.deleteMany()
   await prisma.project.deleteMany()
   await prisma.user.deleteMany()
 
@@ -34,10 +35,18 @@ async function main() {
       key: 'NJ',
       description: 'The core project management platform.',
       ownerId: user1.id,
-      members: {
-        connect: [{ id: user1.id }, { id: user2.id }, { id: user3.id }]
-      }
     },
+  })
+
+  // Create ProjectMember records (owner is project ADMIN, others are MEMBERs)
+  await prisma.projectMember.create({
+    data: { userId: user1.id, projectId: project.id, role: 'ADMIN' },
+  })
+  await prisma.projectMember.create({
+    data: { userId: user2.id, projectId: project.id, role: 'MEMBER' },
+  })
+  await prisma.projectMember.create({
+    data: { userId: user3.id, projectId: project.id, role: 'MEMBER' },
   })
 
   // Create Iterations

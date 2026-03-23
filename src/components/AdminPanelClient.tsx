@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createUser, createProject, updateProjectMembers } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Check, Loader2 } from "lucide-react";
+import { createUser, createProject, updateProjectMembers, updateMemberRole } from "@/app/actions/admin";
+import { Users, FolderGit2, Plus, Shield, Check, Loader2, Crown } from "lucide-react";
 
 export default function AdminPanelClient({ initialUsers, initialProjects }: { initialUsers: any[], initialProjects: any[] }) {
   const [activeTab, setActiveTab] = useState<"USERS" | "PROJECTS">("USERS");
@@ -141,7 +141,7 @@ function ProjectsView({ projects, users, isPending, startTransition, setErrorMsg
     e.preventDefault();
     setErrorMsg("");
     startTransition(async () => {
-      const res = await createProject({ ...newProject, memberIds: [] }); // Default to no members
+      const res = await createProject({ ...newProject, memberIds: [] });
       if (res.success) {
         setNewProject({ name: "", key: "", description: "" });
       } else {
@@ -150,19 +150,27 @@ function ProjectsView({ projects, users, isPending, startTransition, setErrorMsg
     });
   };
 
-  const toggleMember = (projectId: string, userId: string, currentMembers: string[]) => {
-    let newMembers = [...currentMembers];
-    if (newMembers.includes(userId)) {
-      newMembers = newMembers.filter(id => id !== userId);
+  const toggleMember = (projectId: string, userId: string, currentMembers: any[]) => {
+    const memberUserIds = currentMembers.map((m: any) => m.userId);
+    let newMemberIds: string[];
+    if (memberUserIds.includes(userId)) {
+      newMemberIds = memberUserIds.filter((id: string) => id !== userId);
     } else {
-      newMembers.push(userId);
+      newMemberIds = [...memberUserIds, userId];
     }
     
     startTransition(async () => {
-      const res = await updateProjectMembers(projectId, newMembers);
+      const res = await updateProjectMembers(projectId, newMemberIds);
       if (!res.success) setErrorMsg(res.error || "Failed to update access");
     });
   }
+
+  const handleRoleChange = (projectId: string, userId: string, newRole: string) => {
+    startTransition(async () => {
+      const res = await updateMemberRole(projectId, userId, newRole);
+      if (!res.success) setErrorMsg(res.error || "Failed to update role");
+    });
+  };
 
   return (
     <>
@@ -208,34 +216,59 @@ function ProjectsView({ projects, users, isPending, startTransition, setErrorMsg
 
             <div className="border-t pt-4 mt-2">
                <h5 className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Users size={14} /> Team Access
+                  <Users size={14} /> Team Access & Roles
                </h5>
                <div className="flex flex-wrap gap-2">
                  {users.map((u: any) => {
-                   const hasAccess = p.members.includes(u.id);
-                   const isAdmin = u.role === 'ADMIN';
+                   const membership = p.members.find((m: any) => m.userId === u.id);
+                   const hasAccess = !!membership;
+                   const isGlobalAdmin = u.role === 'ADMIN';
+                   const isProjectAdmin = membership?.role === 'ADMIN';
                    
                    return (
-                     <button
-                       key={u.id}
-                       disabled={isPending || isAdmin}
-                       onClick={() => toggleMember(p.id, u.id, p.members)}
-                       className={`flex items-center justify-between gap-3 px-3 py-2 border rounded-md text-sm transition-all focus:outline-none
-                         ${isAdmin ? 'bg-slate-100 border-slate-200 opacity-70 cursor-not-allowed' : ''}
-                         ${!isAdmin && hasAccess ? 'bg-blue-50 border-blue-200 hover:border-blue-400' : ''}
-                         ${!isAdmin && !hasAccess ? 'bg-white border-slate-200 hover:border-slate-300' : ''}
-                       `}
-                       title={isAdmin ? "Admins have global access" : "Click to toggle access"}
-                     >
-                       <span className={`font-medium ${hasAccess || isAdmin ? 'text-slate-900' : 'text-slate-500'}`}>
-                         {u.name}
-                       </span>
-                       {(hasAccess || isAdmin) ? (
-                         <Check size={16} className={isAdmin ? 'text-slate-400' : 'text-blue-600'} />
-                       ) : (
-                         <div className="w-4 h-4 rounded-full border border-slate-300"></div>
+                     <div key={u.id} className="flex items-center gap-1">
+                       <button
+                         disabled={isPending || isGlobalAdmin}
+                         onClick={() => toggleMember(p.id, u.id, p.members)}
+                         className={`flex items-center justify-between gap-3 px-3 py-2 border rounded-l-md text-sm transition-all focus:outline-none
+                           ${isGlobalAdmin ? 'bg-slate-100 border-slate-200 opacity-70 cursor-not-allowed' : ''}
+                           ${!isGlobalAdmin && hasAccess ? 'bg-blue-50 border-blue-200 hover:border-blue-400' : ''}
+                           ${!isGlobalAdmin && !hasAccess ? 'bg-white border-slate-200 hover:border-slate-300' : ''}
+                         `}
+                         title={isGlobalAdmin ? "Admins have global access" : "Click to toggle access"}
+                       >
+                         <span className={`font-medium ${hasAccess || isGlobalAdmin ? 'text-slate-900' : 'text-slate-500'}`}>
+                           {u.name}
+                         </span>
+                         {(hasAccess || isGlobalAdmin) ? (
+                           <Check size={16} className={isGlobalAdmin ? 'text-slate-400' : 'text-blue-600'} />
+                         ) : (
+                           <div className="w-4 h-4 rounded-full border border-slate-300"></div>
+                         )}
+                       </button>
+                       {/* Role toggle button - only show for existing non-global-admin members */}
+                       {hasAccess && !isGlobalAdmin && (
+                         <button
+                           disabled={isPending}
+                           onClick={() => handleRoleChange(p.id, u.id, isProjectAdmin ? "MEMBER" : "ADMIN")}
+                           className={`px-2 py-2 border rounded-r-md text-xs font-bold transition-all focus:outline-none flex items-center gap-1
+                             ${isProjectAdmin
+                               ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                               : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                             }
+                           `}
+                           title={isProjectAdmin ? "Click to demote to Member" : "Click to promote to Project Admin"}
+                         >
+                           <Crown size={14} />
+                           {isProjectAdmin ? 'Admin' : 'Member'}
+                         </button>
                        )}
-                     </button>
+                       {isGlobalAdmin && (
+                         <span className="px-2 py-2 border rounded-r-md text-xs font-bold bg-indigo-50 border-indigo-200 text-indigo-600 flex items-center gap-1">
+                           <Shield size={14} /> Global
+                         </span>
+                       )}
+                     </div>
                    );
                  })}
                </div>

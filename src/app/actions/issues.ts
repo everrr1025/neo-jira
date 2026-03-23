@@ -38,9 +38,13 @@ export async function createIssue(data: {
     if (!session?.user) throw new Error("Unauthorized");
 
     const userId = (session.user as any).id;
-    const project = await prisma.project.findFirst({
-      where: { members: { some: { id: userId } } }
-    });
+    // Find a project where the user is a member (via ProjectMember) or is a global admin
+    const isGlobalAdmin = (session.user as any).role === "ADMIN";
+    const project = isGlobalAdmin
+      ? await prisma.project.findFirst()
+      : await prisma.project.findFirst({
+          where: { members: { some: { userId } } }
+        });
     const iteration = await prisma.iteration.findFirst({ where: { status: 'ACTIVE' } });
     
     if (!project) throw new Error("Project not found or no access");
