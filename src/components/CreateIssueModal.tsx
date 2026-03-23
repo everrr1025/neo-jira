@@ -43,7 +43,7 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations }:
         setFormData({ title: "", description: "", type: "TASK", priority: "MEDIUM", iterationId: "", assigneeId: "" });
         onClose();
       } else {
-        alert("Failed to create issue");
+        alert("Failed to create issue: " + result.error);
       }
     });
   };

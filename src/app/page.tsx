@@ -2,41 +2,68 @@ import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getActiveProjectIdForUser } from "@/lib/activeProject";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id;
-  const userRole = (session?.user as any)?.role;
-  const userName = session?.user?.name || "User";
+  if (!session?.user) redirect("/login");
 
-  // Data isolation
-  const projectFilter = userRole === 'ADMIN'
-    ? {}
-    : { project: { members: { some: { id: userId } } } };
+  const userId = (session.user as any).id as string;
+  const userRole = (session.user as any).role as string;
+  const userName = session.user.name || "User";
+  const isGlobalAdmin = userRole === "ADMIN";
+
+  let activeProjectId: string | null = null;
+  let activeProject: { name: string; key: string } | null = null;
+
+  if (!isGlobalAdmin) {
+    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
+    if (!activeProjectId) {
+      redirect("/projects");
+    }
+
+    activeProject = await prisma.project.findUnique({
+      where: { id: activeProjectId },
+      select: { name: true, key: true },
+    });
+
+    if (!activeProject) {
+      redirect("/projects");
+    }
+  }
+
+  const projectFilter = isGlobalAdmin ? {} : { projectId: activeProjectId! };
 
   const totalIssues = await prisma.issue.count({ where: projectFilter });
-  const todoCount = await prisma.issue.count({ where: { ...projectFilter, status: 'TODO' } });
-  const inProgressCount = await prisma.issue.count({ where: { ...projectFilter, status: 'IN_PROGRESS' } });
-  const doneCount = await prisma.issue.count({ where: { ...projectFilter, status: 'DONE' } });
+  const todoCount = await prisma.issue.count({ where: { ...projectFilter, status: "TODO" } });
+  const inProgressCount = await prisma.issue.count({ where: { ...projectFilter, status: "IN_PROGRESS" } });
+  const doneCount = await prisma.issue.count({ where: { ...projectFilter, status: "DONE" } });
 
-  const myIssues = userId ? await prisma.issue.findMany({
-    where: { ...projectFilter, assigneeId: userId, status: { not: 'DONE' } },
-    orderBy: { updatedAt: 'desc' },
-    take: 5
-  }) : [];
+  const myIssues = await prisma.issue.findMany({
+    where: { ...projectFilter, assigneeId: userId, status: { not: "DONE" } },
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
+          {!isGlobalAdmin && activeProject && (
+            <p className="text-sm text-slate-500 mt-1">
+              Project: <span className="font-semibold">{activeProject.name}</span> ({activeProject.key})
+            </p>
+          )}
+        </div>
         <div className="text-sm text-slate-500 bg-white px-3 py-1.5 rounded-md border shadow-sm">
           Welcome back, {userName}
         </div>
       </div>
-      
-      {/* Summary Cards */}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: "Total Issues", value: String(totalIssues), color: "text-blue-600", bg: "bg-blue-50" },
@@ -50,15 +77,16 @@ export default async function Dashboard() {
               <span className={`text-3xl font-bold ${stat.color}`}>{stat.value}</span>
             </div>
             <div className={`mt-3 h-1 w-full rounded-full ${stat.bg}`}>
-              <div className={`h-full rounded-full bg-current ${stat.color} opacity-50`} style={{ width: totalIssues > 0 ? `${Math.round((parseInt(stat.value) / totalIssues) * 100)}%` : '0%' }}></div>
+              <div
+                className={`h-full rounded-full bg-current ${stat.color} opacity-50`}
+                style={{ width: totalIssues > 0 ? `${Math.round((parseInt(stat.value, 10) / totalIssues) * 100)}%` : "0%" }}
+              />
             </div>
           </div>
         ))}
       </div>
 
-      {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity placeholder */}
         <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center">
             <h3 className="font-semibold text-slate-800">Recent Activity</h3>
@@ -74,7 +102,6 @@ export default async function Dashboard() {
           </div>
         </div>
 
-        {/* My Tasks */}
         <div className="bg-white rounded-xl border shadow-sm flex flex-col">
           <div className="p-5 border-b border-slate-100">
             <h3 className="font-semibold text-slate-800">Assigned to me</h3>
@@ -85,8 +112,8 @@ export default async function Dashboard() {
                 <div className="flex items-start justify-between">
                   <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">{issue.key}</span>
                   <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                    issue.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                  }`}>{issue.status.replace('_', ' ')}</span>
+                    issue.status === "IN_PROGRESS" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"
+                  }`}>{issue.status.replace("_", " ")}</span>
                 </div>
                 <h4 className="text-sm font-medium text-slate-800 mt-1">{issue.title}</h4>
               </Link>

@@ -1,26 +1,53 @@
 import prisma from "@/lib/prisma";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import IssueDetailClient from "@/components/IssueDetailClient";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
+import { getActiveProjectIdForUser } from "@/lib/activeProject";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/login");
+
+  const userId = (session.user as any).id as string;
+  const userRole = (session.user as any).role as string;
+  const isGlobalAdmin = userRole === "ADMIN";
+
+  let activeProjectId: string | null = null;
+  if (!isGlobalAdmin) {
+    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
+    if (!activeProjectId) redirect("/projects");
+  }
+
   const resolvedParams = await params;
-  const issue = await prisma.issue.findUnique({
-    where: { id: resolvedParams.id },
-    include: { assignee: true, reporter: true }
+  const issue = await prisma.issue.findFirst({
+    where: isGlobalAdmin
+      ? { id: resolvedParams.id }
+      : { id: resolvedParams.id, projectId: activeProjectId! },
+    include: { assignee: true, reporter: true },
   });
 
   if (!issue) return notFound();
 
   const users = await prisma.user.findMany({
-    orderBy: { name: 'asc' }
+    where: isGlobalAdmin
+      ? {}
+      : {
+          OR: [
+            { role: "ADMIN" },
+            { projectMemberships: { some: { projectId: issue.projectId } } },
+          ],
+        },
+    orderBy: { name: "asc" },
   });
-  
+
   const iterations = await prisma.iteration.findMany({
-    orderBy: { startDate: 'desc' }
+    where: isGlobalAdmin ? {} : { projectId: issue.projectId },
+    orderBy: { startDate: "desc" },
   });
 
   return (
@@ -30,7 +57,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           <ArrowLeft size={16} /> Back to Issues
         </Link>
       </div>
-      
+
       <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} />
     </div>
   );

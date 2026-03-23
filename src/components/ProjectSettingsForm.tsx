@@ -1,0 +1,123 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { updateProject } from "@/app/actions/projects";
+import { useRouter } from "next/navigation";
+
+type ProjectSettingsFormProps = {
+  project: any;
+  users: any[];
+};
+
+export default function ProjectSettingsForm({ project, users }: ProjectSettingsFormProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [formData, setFormData] = useState({
+    name: project.name || "",
+    key: project.key || "",
+    description: project.description || "",
+    ownerId: project.ownerId || "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    startTransition(async () => {
+      const result = await updateProject(project.id, formData);
+      if (result.success) {
+        setSuccess(true);
+        router.refresh();
+      } else {
+        setError(result.error || "Failed to update project");
+      }
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+      
+      {success && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-lg text-sm font-medium">
+          Project updated successfully!
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="name" className="text-sm font-medium text-slate-700">Project Name</label>
+          <input 
+            id="name"
+            required
+            value={formData.name}
+            onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="key" className="text-sm font-medium text-slate-700">Project Key</label>
+          <input 
+            id="key"
+            required
+            value={formData.key}
+            onChange={(e) => setFormData(prev => ({...prev, key: e.target.value}))}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow uppercase"
+            maxLength={10}
+          />
+          <p className="text-xs text-slate-500">Short identifier for issues (e.g., NJ, WEB).</p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="owner" className="text-sm font-medium text-slate-700">Project Owner</label>
+          <select 
+            id="owner"
+            value={formData.ownerId}
+            onChange={(e) => setFormData(prev => ({...prev, ownerId: e.target.value}))}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
+          >
+            {users.map(u => (
+              <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="description" className="text-sm font-medium text-slate-700">Description</label>
+          <textarea 
+            id="description"
+            rows={4}
+            value={formData.description}
+            onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow resize-none"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+        <button 
+          type="button"
+          onClick={() => router.back()}
+          className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button 
+          type="submit" 
+          disabled={isPending}
+          className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+        >
+          {isPending ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+    </form>
+  );
+}
