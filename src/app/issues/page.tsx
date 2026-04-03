@@ -61,9 +61,7 @@ export default async function IssuesPage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">All Issues</h2>
           <p className="text-sm text-slate-500 mt-1">
-            {isGlobalAdmin || !activeProject
-              ? "View, filter, and search all issues across the workspace."
-              : `Project: ${activeProject.name} (${activeProject.key})`}
+            View, filter, and search all issues across the workspace.
           </p>
         </div>
         <div className="flex items-center gap-3">

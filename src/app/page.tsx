@@ -7,7 +7,8 @@ import { getActiveProjectIdForUser } from "@/lib/activeProject";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard() {
+export default async function Dashboard(props: { searchParams: { search?: string } | Promise<{ search?: string }> }) {
+  const params = await props.searchParams;
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -48,23 +49,75 @@ export default async function Dashboard() {
     take: 5,
   });
 
+  const watchedIssues = await prisma.issue.findMany({
+    where: { ...projectFilter, watchers: { some: { id: userId } }, status: { not: "DONE" } },
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+  });
+
+  const nextWeek = new Date();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const dueSoonIssues = await prisma.issue.findMany({
+    where: { 
+      ...projectFilter, 
+      status: { not: "DONE" },
+      dueDate: { lte: nextWeek, not: null }
+    },
+    orderBy: { dueDate: "asc" },
+    take: 5,
+  });
+
+  const query = typeof params?.search === "string" ? params.search : "";
+  let searchResults: any[] = [];
+  if (query) {
+    searchResults = await prisma.issue.findMany({
+      where: {
+        ...projectFilter,
+        OR: [
+          { key: { contains: query } },
+          { title: { contains: query } },
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-2">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard</h2>
-          {!isGlobalAdmin && activeProject && (
-            <p className="text-sm text-slate-500 mt-1">
-              Project: <span className="font-semibold">{activeProject.name}</span> ({activeProject.key})
-            </p>
-          )}
-        </div>
-        <div className="text-sm text-slate-500 bg-white px-3 py-1.5 rounded-md border shadow-sm">
-          Welcome back, {userName}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {query ? (
+        <div className="bg-white rounded-xl border shadow-sm flex flex-col h-fit">
+          <div className="p-5 border-b border-slate-100 flex justify-between">
+            <h3 className="font-semibold text-slate-800">Search Results for "{query}"</h3>
+            <Link href="/" className="text-sm text-blue-600 hover:underline">Clear Search</Link>
+          </div>
+          <div className="p-4 space-y-3">
+            {searchResults.length > 0 ? searchResults.map((issue) => (
+              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-blue-300 hover:bg-slate-50 transition-colors group">
+                <div className="flex items-start justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">{issue.key}</span>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                    issue.status === "IN_PROGRESS" ? "bg-amber-100 text-amber-700" :
+                    issue.status === "DONE" ? "bg-emerald-100 text-emerald-700" :
+                    "bg-slate-100 text-slate-600"
+                  }`}>{issue.status.replace("_", " ")}</span>
+                </div>
+                <h4 className="text-sm font-medium text-slate-800 mt-1">{issue.title}</h4>
+              </Link>
+            )) : (
+              <div className="text-center text-sm text-slate-400 py-6">No issues found matching "{query}"</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: "Total Issues", value: String(totalIssues), color: "text-blue-600", bg: "bg-blue-50" },
           { label: "To Do", value: String(todoCount), color: "text-amber-600", bg: "bg-amber-50" },
@@ -86,45 +139,71 @@ export default async function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="font-semibold text-slate-800">Recent Activity</h3>
-            <Link href="/issues" className="text-sm text-blue-600 hover:text-blue-700 font-medium">View all</Link>
-          </div>
-          <div className="p-0 flex-1 flex items-center justify-center text-slate-400 bg-slate-50/50 min-h-[300px]">
-            <div className="text-center">
-              <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p>Activity feed will appear here</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border shadow-sm flex flex-col">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Assigned */}
+        <div className="bg-white rounded-xl border shadow-sm flex flex-col h-fit">
           <div className="p-5 border-b border-slate-100">
             <h3 className="font-semibold text-slate-800">Assigned to me</h3>
           </div>
           <div className="p-4 space-y-3">
             {myIssues.length > 0 ? myIssues.map((issue) => (
-              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-colors group">
+              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-blue-300 hover:bg-blue-50/50 transition-colors group">
                 <div className="flex items-start justify-between">
                   <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">{issue.key}</span>
                   <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
                     issue.status === "IN_PROGRESS" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"
                   }`}>{issue.status.replace("_", " ")}</span>
                 </div>
-                <h4 className="text-sm font-medium text-slate-800 mt-1">{issue.title}</h4>
+                <h4 className="text-sm font-medium text-slate-800 mt-1 line-clamp-2">{issue.title}</h4>
               </Link>
             )) : (
-              <div className="text-center text-sm text-slate-400 py-8">
-                No active tasks assigned to you.
-              </div>
+              <div className="text-center text-sm text-slate-400 py-6">No tasks assigned</div>
+            )}
+          </div>
+        </div>
+
+        {/* Watched */}
+        <div className="bg-white rounded-xl border shadow-sm flex flex-col h-fit">
+          <div className="p-5 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">Watched Issues</h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {watchedIssues.length > 0 ? watchedIssues.map((issue) => (
+              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-blue-300 hover:bg-slate-50 transition-colors group">
+                <div className="flex items-start justify-between">
+                  <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">{issue.key}</span>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{issue.status.replace("_", " ")}</span>
+                </div>
+                <h4 className="text-sm font-medium text-slate-800 mt-1 line-clamp-2">{issue.title}</h4>
+              </Link>
+            )) : (
+              <div className="text-center text-sm text-slate-400 py-6">Not watching any active issues</div>
+            )}
+          </div>
+        </div>
+
+        {/* Due Soon */}
+        <div className="bg-white rounded-xl border shadow-sm flex flex-col h-fit">
+          <div className="p-5 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">Due Soon (7 Days)</h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {dueSoonIssues.length > 0 ? dueSoonIssues.map((issue) => (
+              <Link key={issue.id} href={`/issues/${issue.id}`} className="block p-3 border rounded-lg hover:border-red-300 hover:bg-red-50/50 transition-colors group">
+                <div className="flex items-start justify-between">
+                  <span className="text-xs font-semibold text-red-500 group-hover:text-red-700">{issue.key}</span>
+                  <span className="text-[10px] font-bold text-red-600">{new Date(issue.dueDate!).toLocaleDateString()}</span>
+                </div>
+                <h4 className="text-sm font-medium text-slate-800 mt-1 line-clamp-2">{issue.title}</h4>
+              </Link>
+            )) : (
+              <div className="text-center text-sm text-slate-400 py-6">No tasks due this week</div>
             )}
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

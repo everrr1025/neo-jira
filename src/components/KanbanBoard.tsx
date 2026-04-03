@@ -3,6 +3,7 @@
 import { useState, useTransition, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { updateIssueStatus } from "@/app/actions/issues";
+import { useRouter } from "next/navigation";
 
 type Issue = {
   id: string;
@@ -18,13 +19,14 @@ type Issue = {
 const COLUMNS = [
   { id: "TODO", title: "To Do", bg: "bg-slate-100", border: "border-slate-200" },
   { id: "IN_PROGRESS", title: "In Progress", bg: "bg-blue-50", border: "border-blue-100" },
-  { id: "IN_REVIEW", title: "In Review", bg: "bg-purple-50", border: "border-purple-100" },
+  { id: "IN_TESTING", title: "In Testing", bg: "bg-purple-50", border: "border-purple-100" },
   { id: "DONE", title: "Done", bg: "bg-emerald-50", border: "border-emerald-100" },
 ];
 
 export default function KanbanBoard({ initialIssues }: { initialIssues: Issue[] }) {
   const [issues, setIssues] = useState(initialIssues);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   // Sync state if initialIssues change from the server
   useEffect(() => {
@@ -58,12 +60,12 @@ export default function KanbanBoard({ initialIssues }: { initialIssues: Issue[] 
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-start">
+      <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-stretch h-full w-full">
         {COLUMNS.map((col) => {
           const colIssues = issues.filter(i => i.status === col.id);
           
           return (
-            <div key={col.id} className={`flex-shrink-0 w-80 rounded-xl border flex flex-col max-h-full ${col.bg} ${col.border}`}>
+            <div key={col.id} className={`flex-1 min-w-[200px] rounded-xl border flex flex-col max-h-full ${col.bg} ${col.border}`}>
               <div className="p-3 font-semibold text-slate-700 flex items-center justify-between text-sm uppercase tracking-wide">
                 {col.title}
                 <span className="bg-white px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm">
@@ -85,7 +87,8 @@ export default function KanbanBoard({ initialIssues }: { initialIssues: Issue[] 
                             ref={provided.innerRef}
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
-                            className={`bg-white p-3.5 rounded-lg border shadow-sm hover:shadow-md transition-shadow group ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500/50 opacity-90 rotate-2' : ''}`}
+                            onClick={() => router.push(`/issues/${ticket.id}`)}
+                            className={`bg-white p-3.5 rounded-lg border shadow-sm cursor-pointer hover:shadow-md transition-shadow group ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500/50 opacity-90 rotate-2' : ''}`}
                             style={{...provided.draggableProps.style}}
                           >
                             <div className="flex items-start justify-between mb-2">

@@ -1,13 +1,45 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { updateIssue } from "@/app/actions/issues";
 import { Check, Loader2 } from "lucide-react";
+import RichTextEditor from "./RichTextEditor";
+import CommentSection from "./CommentSection";
+import AttachmentUpload from "./AttachmentUpload";
 
-export default function IssueDetailClient({ initialIssue, users, iterations = [] }: { initialIssue: any, users: any[], iterations?: any[] }) {
+export default function IssueDetailClient({ initialIssue, users, iterations = [], currentUserId }: { initialIssue: any, users: any[], iterations?: any[], currentUserId: string }) {
   const [issue, setIssue] = useState(initialIssue);
   const [isPending, startTransition] = useTransition();
   const [successMsg, setSuccessMsg] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+
+  useEffect(() => {
+    const desc = issue.description || "";
+    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
+    if (match) {
+      setMentionQuery(match[1].toLowerCase());
+    } else {
+      setMentionQuery(null);
+    }
+  }, [issue.description]);
+
+  const filteredUsers = mentionQuery !== null && users
+    ? users.filter(u => u.name?.toLowerCase().includes(mentionQuery) && u.id !== currentUserId)
+    : [];
+
+  const handleMentionInsert = (name: string) => {
+    const desc = issue.description || "";
+    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
+    if (match) {
+      const index = desc.lastIndexOf(`@${match[1]}`);
+      if (index !== -1) {
+        const textBefore = desc.substring(0, index);
+        const textAfter = desc.substring(index + match[1].length + 1);
+        handleChange("description", textBefore + `@${name} ` + textAfter);
+      }
+    }
+    setMentionQuery(null);
+  };
 
   const handleChange = (field: string, value: any) => {
     setIssue((prev: any) => ({ ...prev, [field]: value }));
@@ -23,6 +55,7 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
         priority: issue.priority,
         assigneeId: issue.assigneeId,
         iterationId: issue.iterationId || null,
+        dueDate: issue.dueDate || null,
       };
       
       const result = await updateIssue(issue.id, dataToSave);
@@ -57,13 +90,32 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
         {/* Description */}
         <div>
           <label className="block text-sm font-bold text-slate-700 mb-2">Description</label>
-          <textarea
-            value={issue.description || ""}
-            onChange={(e) => handleChange("description", e.target.value)}
-            rows={10}
-            className="w-full text-sm text-slate-800 border-2 border-slate-200 focus:border-blue-500 rounded-md p-3 transition-all outline-none resize-y min-h-[200px]"
-            placeholder="Add a detailed description..."
-          />
+          <div className="border-2 border-slate-200 rounded-md overflow-hidden focus-within:border-transparent transition-all">
+            <RichTextEditor
+              value={issue.description || ""}
+              onChange={(val) => handleChange("description", val || "")}
+              height={300}
+            />
+          </div>
+          {mentionQuery !== null && filteredUsers.length > 0 && (
+            <div className="mt-1 bg-white border border-slate-200 shadow-md rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100 z-10 relative">
+              <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
+                Mention someone
+              </div>
+              {filteredUsers.map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => handleMentionInsert(u.name)}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
+                    {u.name?.charAt(0) || "U"}
+                  </div>
+                  {u.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         
         {/* Save Button */}
@@ -83,6 +135,12 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
             </span>
           )}
         </div>
+
+        {/* Attachment Section */}
+        <AttachmentUpload issueId={issue.id} />
+
+        {/* Comment Section */}
+        <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} />
       </div>
 
       {/* Sidebar Area */}
@@ -100,7 +158,7 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
             >
               <option value="TODO">To Do</option>
               <option value="IN_PROGRESS">In Progress</option>
-              <option value="IN_REVIEW">In Review</option>
+              <option value="IN_TESTING">In Testing</option>
               <option value="DONE">Done</option>
             </select>
           </div>
@@ -163,6 +221,17 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
                 <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
               ))}
             </select>
+          </div>
+
+          {/* Due Date */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-500">Due Date</label>
+            <input
+              type="date"
+              value={issue.dueDate ? new Date(issue.dueDate).toISOString().split('T')[0] : ''}
+              onChange={(e) => handleChange("dueDate", e.target.value ? new Date(e.target.value).toISOString() : null)}
+              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+            />
           </div>
           
           {/* Reporter (Read Only) */}

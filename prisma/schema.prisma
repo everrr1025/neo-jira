@@ -16,9 +16,14 @@ model User {
   ownedProjects Project[] @relation("ProjectOwner")
   projectMemberships ProjectMember[]
   issues        Issue[]   @relation("Assignee")
-  reported  Issue[]  @relation("Reporter")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  reported      Issue[]   @relation("Reporter")
+  comments      Comment[]
+  notifications Notification[] @relation("UserNotifications")
+  actionsTriggered Notification[] @relation("NotificationActor")
+  attachments   Attachment[]
+  watchedIssues Issue[]   @relation("IssueWatchers")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model ProjectMember {
@@ -82,6 +87,46 @@ model Issue {
   reporterId  String
   reporter    User     @relation("Reporter", fields: [reporterId], references: [id])
   
+  comments      Comment[]
+  attachments   Attachment[]
+  watchers      User[]   @relation("IssueWatchers")
+  dueDate       DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   
+  message   String
+  link      String?  
+  read      Boolean  @default(false)
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?  
+  actor     User?    @relation("NotificationActor", fields: [actorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  fileName   String
+  fileUrl    String
+  issueId    String
+  issue      Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User     @relation(fields: [uploaderId], references: [id])
+  createdAt  DateTime @default(now())
 }

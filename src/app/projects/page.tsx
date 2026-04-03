@@ -25,8 +25,7 @@ export default async function ProjectsPage() {
     include: {
       owner: true,
       members: {
-        where: { userId },
-        select: { role: true },
+        include: { user: { select: { id: true, name: true, email: true } } },
       },
       _count: {
         select: {
@@ -67,6 +66,7 @@ export default async function ProjectsPage() {
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Key</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Lead</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Members</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Open Issues</th>
               <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
             </tr>
@@ -75,7 +75,7 @@ export default async function ProjectsPage() {
             {projects.map((project) => {
               const isSelected = activeProjectId === project.id;
               const canManageSettings =
-                isGlobalAdmin || project.members.some((m) => m.role === "ADMIN");
+                isGlobalAdmin || project.members.some((m) => m.userId === userId && m.role === "ADMIN");
 
               return (
                 <tr key={project.id} className={`transition-colors ${isSelected ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
@@ -101,6 +101,23 @@ export default async function ProjectsPage() {
                         {project.owner?.name?.charAt(0) || "?"}
                       </div>
                       {project.owner?.name}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-900">{project.members.length} members</span>
+                      <div className="flex flex-wrap gap-1 mt-1 max-w-[200px]">
+                        {project.members.slice(0, 3).map(m => (
+                          <span key={m.userId} title={`${m.user.name || m.user.email} - ${m.role}`} className="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 cursor-help">
+                            {m.user.name?.charAt(0) || m.user.email?.charAt(0) || "?"}
+                          </span>
+                        ))}
+                        {project.members.length > 3 && (
+                          <span title={`${project.members.length - 3} more members`} className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center text-[10px] font-bold text-slate-500 cursor-help">
+                            +{project.members.length - 3}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">

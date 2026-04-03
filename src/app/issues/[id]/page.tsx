@@ -1,8 +1,7 @@
 import prisma from "@/lib/prisma";
 import { notFound, redirect } from "next/navigation";
 import IssueDetailClient from "@/components/IssueDetailClient";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import BackButton from "@/components/BackButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
@@ -53,12 +52,10 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   return (
     <div className="flex flex-col h-full max-w-5xl mx-auto w-full pb-10">
       <div className="mb-6">
-        <Link href="/issues" className="text-sm font-medium text-slate-500 hover:text-blue-600 flex items-center gap-1 w-fit transition-colors">
-          <ArrowLeft size={16} /> Back to Issues
-        </Link>
+        <BackButton />
       </div>
 
-      <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} />
+      <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} currentUserId={userId} />
     </div>
   );
 }

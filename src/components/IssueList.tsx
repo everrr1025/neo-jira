@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Search, ListFilter, Users, ArrowLeft, ArrowRight } from "lucide-react";
 import { updateIssue } from "@/app/actions/issues";
@@ -37,6 +37,94 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
   const [isPending, startTransition] = useTransition();
 
   // Sync state if initialIssues change from server
+  const [columns, setColumns] = useState([
+    { id: 'key', label: 'Key', width: 80 },
+    { id: 'title', label: 'Summary', width: 0 },   // 0 = flexible, takes remaining space
+    { id: 'iteration', label: 'Sprint', width: 160 },
+    { id: 'status', label: 'Status', width: 140 },
+    { id: 'type', label: 'Type', width: 120 },
+    { id: 'priority', label: 'Priority', width: 140 },
+    { id: 'assignee', label: 'Assignee', width: 190 },
+  ]);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('colIndex', index.toString());
+    e.dataTransfer.effectAllowed = 'move';
+    setDragSourceIndex(index);
+  };
+
+  const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<'left' | 'right' | null>(null);
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    const sourceIndexStr = e.dataTransfer.getData('colIndex');
+    if (sourceIndexStr) {
+      const sourceIndex = parseInt(sourceIndexStr, 10);
+      if (sourceIndex !== targetIndex) {
+        const newCols = [...columns];
+        const [removed] = newCols.splice(sourceIndex, 1);
+        // Adjust target if source was before target
+        const adjustedTarget = dragOverSide === 'right' 
+          ? (sourceIndex < targetIndex ? targetIndex : targetIndex + 1)
+          : (sourceIndex < targetIndex ? targetIndex - 1 : targetIndex);
+        newCols.splice(Math.max(0, adjustedTarget), 0, removed);
+        setColumns(newCols);
+      }
+    }
+    setDragSourceIndex(null);
+    setDragOverIndex(null);
+    setDragOverSide(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    const side = e.clientX < midX ? 'left' : 'right';
+    setDragOverIndex(index);
+    setDragOverSide(side);
+  };
+
+  const handleDragEnd = () => {
+    setDragSourceIndex(null);
+    setDragOverIndex(null);
+    setDragOverSide(null);
+  };
+
+  // --- Column Resize ---
+  const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent, colIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const col = columns[colIndex];
+    const startWidth = col.width || 150;
+    resizingRef.current = { colIndex, startX: e.clientX, startWidth };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = ev.clientX - resizingRef.current.startX;
+      const newWidth = Math.max(60, resizingRef.current.startWidth + delta);
+      setColumns(prev => prev.map((c, i) => i === resizingRef.current!.colIndex ? { ...c, width: newWidth } : c));
+    };
+
+    const onMouseUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [columns]);
+
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
@@ -116,7 +204,7 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
               <option value="ALL">All Status</option>
               <option value="TODO">To Do</option>
               <option value="IN_PROGRESS">In Progress</option>
-              <option value="IN_REVIEW">In Review</option>
+              <option value="IN_TESTING">In Testing</option>
               <option value="DONE">Done</option>
             </select>
           </div>
@@ -170,114 +258,148 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
       {/* Table */}
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex-1 flex flex-col">
         <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+          <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
               <tr>
-                <th className="px-5 py-4 w-20">Key</th>
-                <th className="px-5 py-4 w-full min-w-[250px]">Summary</th>
-                <th className="px-5 py-4 min-w-[120px]">Sprint</th>
-                <th className="px-5 py-4 min-w-[120px]">Status</th>
-                <th className="px-5 py-4 min-w-[100px]">Type</th>
-                <th className="px-5 py-4 min-w-[120px]">Priority</th>
-                <th className="px-5 py-4 min-w-[120px]">Assignee</th>
+                {columns.map((col, index) => {
+                  const showLeftLine = dragOverIndex === index && dragOverSide === 'left' && dragSourceIndex !== index;
+                  const showRightLine = dragOverIndex === index && dragOverSide === 'right' && dragSourceIndex !== index;
+                  const isDragging = dragSourceIndex === index;
+                  return (
+                    <th
+                      key={col.id}
+                      className={`px-5 py-4 cursor-grab active:cursor-grabbing hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                        isDragging ? 'opacity-40' : ''
+                      }`}
+                      style={col.width ? { width: `${col.width}px` } : undefined}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={(e) => handleDrop(e, index)}
+                      onDragEnd={handleDragEnd}
+                      onDragLeave={() => { if (dragOverIndex === index) { setDragOverIndex(null); setDragOverSide(null); } }}
+                    >
+                      {showLeftLine && (
+                        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />
+                      )}
+                      {col.label}
+                      {showRightLine && (
+                        <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />
+                      )}
+                      {/* Resize handle */}
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/50 z-20"
+                        onMouseDown={(e) => handleResizeStart(e, index)}
+                        draggable={false}
+                      />
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedIssues.map((issue) => (
                 <tr key={issue.id} className="hover:bg-slate-50/70 transition-colors group">
-                  <td className="px-5 py-3.5 text-slate-500 font-medium">
-                    <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 hover:underline">
-                      {issue.key}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden text-ellipsis">
-                    <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 block w-full truncate border-b border-transparent">
-                      {issue.title}
-                    </Link>
-                  </td>
-                  
-                  {/* Inline Sprint */}
-                  <td className="px-5 py-3.5">
-                    <select
-                      value={issue.iterationId || ""}
-                      onChange={(e) => handleInlineUpdate(issue.id, 'iterationId', e.target.value || null)}
-                      className="text-xs font-bold text-slate-600 border border-transparent hover:border-slate-200 hover:bg-slate-100 py-1 rounded outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer px-1 w-full max-w-[140px] truncate"
-                    >
-                      <option value="">Backlog</option>
-                      {iterations.map((it) => (
-                        <option key={it.id} value={it.id}>{it.name}</option>
-                      ))}
-                    </select>
-                  </td>
-                  
-                  {/* Inline Status */}
-                  <td className="px-5 py-3.5">
-                    <select 
-                      value={issue.status}
-                      onChange={(e) => handleInlineUpdate(issue.id, 'status', e.target.value)}
-                      className={`px-2 py-1.5 flex flex-col justify-center rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer border hover:shadow-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors w-full min-w-[110px] ${
-                        issue.status === 'DONE' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300' :
-                        issue.status === 'IN_PROGRESS' || issue.status === 'IN_REVIEW' ? 'bg-blue-100 text-blue-700 border-blue-200 hover:border-blue-300' :
-                        'bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <option value="TODO">TO DO</option>
-                      <option value="IN_PROGRESS">IN PROGRESS</option>
-                      <option value="IN_REVIEW">IN REVIEW</option>
-                      <option value="DONE">DONE</option>
-                    </select>
-                  </td>
-
-                  {/* Inline Type */}
-                  <td className="px-5 py-3.5">
-                    <select
-                      value={issue.type}
-                      onChange={(e) => handleInlineUpdate(issue.id, 'type', e.target.value)}
-                      className="bg-slate-100 px-2 py-1 rounded cursor-pointer border border-slate-200 hover:border-slate-300 outline-none focus:ring-2 focus:ring-blue-500 uppercase text-xs font-bold text-slate-600 w-full min-w-[80px]"
-                    >
-                      <option value="TASK">TASK</option>
-                      <option value="STORY">STORY</option>
-                      <option value="BUG">BUG</option>
-                      <option value="EPIC">EPIC</option>
-                    </select>
-                  </td>
-
-                  {/* Inline Priority */}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2">
-                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${issue.priority === 'URGENT' ? 'bg-red-600' : issue.priority === 'HIGH' ? 'bg-orange-500' : issue.priority === 'MEDIUM' ? 'bg-amber-400' : 'bg-green-400'}`}></span>
-                       <select
-                         value={issue.priority}
-                         onChange={(e) => handleInlineUpdate(issue.id, 'priority', e.target.value)}
-                         className="capitalize text-xs font-bold text-slate-600 hover:bg-slate-100 py-1 rounded cursor-pointer border border-transparent hover:border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 px-1 w-full min-w-[80px]"
-                       >
-                         <option value="LOW">Low</option>
-                         <option value="MEDIUM">Medium</option>
-                         <option value="HIGH">High</option>
-                         <option value="URGENT">Urgent</option>
-                       </select>
-                    </div>
-                  </td>
-
-                  {/* Inline Assignee */}
-                  <td className="px-5 py-3.5">
-                    <select
-                      value={issue.assigneeId || ""}
-                      onChange={(e) => handleInlineUpdate(issue.id, 'assigneeId', e.target.value || null)}
-                      className="text-sm font-semibold text-slate-600 border border-transparent hover:border-slate-200 hover:bg-slate-100 py-1 rounded outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer px-1 w-full truncate max-w-[130px]"
-                    >
-                      <option value="">Unassigned</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
-                      ))}
-                    </select>
-                  </td>
+                  {columns.map((col) => {
+                    if (col.id === 'key') return (
+                      <td key={col.id} className="px-5 py-3.5 text-slate-500 font-medium">
+                        <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 hover:underline">
+                          {issue.key}
+                        </Link>
+                      </td>
+                    );
+                    if (col.id === 'title') return (
+                      <td key={col.id} className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden text-ellipsis">
+                        <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 block w-full truncate border-b border-transparent">
+                          {issue.title}
+                        </Link>
+                      </td>
+                    );
+                    if (col.id === 'iteration') return (
+                      <td key={col.id} className="px-5 py-3.5">
+                        <select
+                          value={issue.iterationId || ""}
+                          onChange={(e) => handleInlineUpdate(issue.id, 'iterationId', e.target.value || null)}
+                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                        >
+                          <option value="">Backlog</option>
+                          {iterations.map((it) => (
+                            <option key={it.id} value={it.id}>{it.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    );
+                    if (col.id === 'status') return (
+                      <td key={col.id} className="px-5 py-3.5">
+                        <select 
+                          value={issue.status}
+                          onChange={(e) => handleInlineUpdate(issue.id, 'status', e.target.value)}
+                          className={`text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
+                            issue.status === 'DONE' ? 'bg-emerald-100 text-emerald-700' :
+                            issue.status === 'IN_PROGRESS' || issue.status === 'IN_TESTING' ? 'bg-blue-100 text-blue-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`} style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                        >
+                          <option value="TODO">To Do</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="IN_TESTING">In Testing</option>
+                          <option value="DONE">Done</option>
+                        </select>
+                      </td>
+                    );
+                    if (col.id === 'type') return (
+                      <td key={col.id} className="px-5 py-3.5">
+                        <select
+                          value={issue.type}
+                          onChange={(e) => handleInlineUpdate(issue.id, 'type', e.target.value)}
+                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                        >
+                          <option value="TASK">Task</option>
+                          <option value="STORY">Story</option>
+                          <option value="BUG">Bug</option>
+                          <option value="EPIC">Epic</option>
+                        </select>
+                      </td>
+                    );
+                    if (col.id === 'priority') return (
+                      <td key={col.id} className="px-5 py-3.5">
+                        <div className="flex items-center gap-2">
+                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${issue.priority === 'URGENT' ? 'bg-red-600' : issue.priority === 'HIGH' ? 'bg-orange-500' : issue.priority === 'MEDIUM' ? 'bg-amber-400' : 'bg-green-400'}`}></span>
+                           <select
+                             value={issue.priority}
+                             onChange={(e) => handleInlineUpdate(issue.id, 'priority', e.target.value)}
+                             className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                           >
+                             <option value="LOW">Low</option>
+                             <option value="MEDIUM">Medium</option>
+                             <option value="HIGH">High</option>
+                             <option value="URGENT">Urgent</option>
+                           </select>
+                        </div>
+                      </td>
+                    );
+                    if (col.id === 'assignee') return (
+                      <td key={col.id} className="px-5 py-3.5">
+                        <select
+                          value={issue.assigneeId || ""}
+                          onChange={(e) => handleInlineUpdate(issue.id, 'assigneeId', e.target.value || null)}
+                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                        >
+                          <option value="">Unassigned</option>
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>{u.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    );
+                    return <td key={col.id}></td>;
+                  })}
                 </tr>
               ))}
 
               {filteredIssues.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-16 text-center text-slate-500">
+                  <td colSpan={columns.length} className="px-5 py-16 text-center text-slate-500">
                     <p className="font-medium text-base mb-1">No issues match the criteria</p>
                     <p className="text-sm">Try adjusting your filters or creating a new issue.</p>
                   </td>

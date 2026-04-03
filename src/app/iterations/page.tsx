@@ -48,7 +48,7 @@ export default async function IterationsPage() {
 
   const canManageSprints = adminProjects.length > 0;
 
-  const iterations = await prisma.iteration.findMany({
+  let iterations = await prisma.iteration.findMany({
     where: isGlobalAdmin ? {} : { projectId: activeProjectId! },
     include: {
       project: { select: { name: true, key: true } },
@@ -59,7 +59,13 @@ export default async function IterationsPage() {
         select: { status: true },
       },
     },
-    orderBy: { startDate: "asc" },
+    orderBy: { startDate: "desc" },
+  });
+
+  iterations = [...iterations].sort((a, b) => {
+    if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
+    if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
+    return 0; // maintain descending start date order for the rest
   });
 
   return (
@@ -68,9 +74,7 @@ export default async function IterationsPage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Iterations / Sprints</h2>
           <p className="text-sm text-slate-500 mt-1">
-            {isGlobalAdmin || !activeProject
-              ? "Plan and manage team iterations."
-              : `Project: ${activeProject.name} (${activeProject.key})`}
+            Plan and manage team iterations.
           </p>
         </div>
         {canManageSprints && (

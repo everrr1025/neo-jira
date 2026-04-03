@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { createIssue } from "@/app/actions/issues";
 import { X } from "lucide-react";
+import RichTextEditor from "./RichTextEditor";
 
 type CreateIssueModalProps = {
   isOpen: boolean;
@@ -20,7 +21,38 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations }:
     priority: "MEDIUM",
     iterationId: "",
     assigneeId: "",
+    dueDate: "",
   });
+
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+
+  useEffect(() => {
+    const desc = formData.description;
+    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
+    if (match) {
+      setMentionQuery(match[1].toLowerCase());
+    } else {
+      setMentionQuery(null);
+    }
+  }, [formData.description]);
+
+  const filteredUsers = mentionQuery !== null
+    ? users.filter(u => u.name?.toLowerCase().includes(mentionQuery))
+    : [];
+
+  const handleMentionInsert = (name: string) => {
+    const desc = formData.description;
+    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
+    if (match) {
+      const index = desc.lastIndexOf(`@${match[1]}`);
+      if (index !== -1) {
+        const textBefore = desc.substring(0, index);
+        const textAfter = desc.substring(index + match[1].length + 1);
+        setFormData(prev => ({ ...prev, description: textBefore + `@${name} ` + textAfter }));
+      }
+    }
+    setMentionQuery(null);
+  };
 
   if (!isOpen) return null;
 
@@ -36,11 +68,12 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations }:
         priority: formData.priority,
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
       };
       
       const result = await createIssue(payload);
       if (result.success) {
-        setFormData({ title: "", description: "", type: "TASK", priority: "MEDIUM", iterationId: "", assigneeId: "" });
+        setFormData({ title: "", description: "", type: "TASK", priority: "MEDIUM", iterationId: "", assigneeId: "", dueDate: "" });
         onClose();
       } else {
         alert("Failed to create issue: " + result.error);
@@ -137,18 +170,47 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations }:
                   ))}
                 </select>
               </div>
+              <div className="flex flex-col gap-1.5 flex-1">
+                <label htmlFor="dueDate" className="text-sm font-medium text-slate-700">Due Date</label>
+                <input 
+                  type="date"
+                  id="dueDate"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData(prev => ({...prev, dueDate: e.target.value}))}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
+                />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 h-64 mb-10 border-b pb-4 relative z-0">
               <label htmlFor="description" className="text-sm font-medium text-slate-700">Description</label>
-              <textarea 
-                id="description"
-                rows={4}
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({...prev, description: e.target.value}))}
-                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow resize-none"
-                placeholder="Add more details about this issue..."
-              />
+              <div className="border border-slate-300 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 focus-within:border-blue-500 transition-shadow">
+                <RichTextEditor 
+                  value={formData.description}
+                  onChange={(val) => setFormData(prev => ({...prev, description: val || ""}))}
+                  height={220}
+                />
+              </div>
+              {mentionQuery !== null && filteredUsers.length > 0 && (
+                <div className="absolute top-full mt-1 bg-white border border-slate-200 shadow-xl rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100 z-[99]">
+                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
+                    Mention someone
+                  </div>
+                  {filteredUsers.map(u => (
+                    <button
+                      type="button"
+                      key={u.id}
+                      onClick={() => handleMentionInsert(u.name)}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
+                    >
+                      <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
+                        {u.name?.charAt(0) || "U"}
+                      </div>
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>

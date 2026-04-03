@@ -81,7 +81,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </div>
       </div>
 
-      <KanbanBoard initialIssues={issues} />
+      <KanbanBoard initialIssues={issues} currentUserId={userId} />
     </div>
   );
 }
