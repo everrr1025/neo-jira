@@ -5,10 +5,14 @@ import { authOptions } from "@/lib/authOptions";
 import { CreateSprintButton } from "@/components/CreateSprintButton";
 import { redirect } from "next/navigation";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
 export default async function IterationsPage() {
+  const locale = await getCurrentLocale();
+  const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -72,13 +76,13 @@ export default async function IterationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Iterations / Sprints</h2>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.iterationsPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Plan and manage team iterations.
+            {translations.iterationsPage.subtitle}
           </p>
         </div>
         {canManageSprints && (
-          <CreateSprintButton projects={adminProjects} />
+          <CreateSprintButton projects={adminProjects} locale={locale} />
         )}
       </div>
 
@@ -99,30 +103,30 @@ export default async function IterationsPage() {
                       iteration.status === "PLANNED" ? "bg-slate-50 text-slate-600 border-slate-200" :
                       "bg-emerald-50 text-emerald-700 border-emerald-200"
                     }`}>
-                      {iteration.status}
+                      {getIterationStatusLabel(iteration.status, locale)}
                     </span>
                     <span className="text-xs text-slate-400 font-medium">{iteration.project.key}</span>
                   </div>
                   <div className="text-sm text-slate-500 font-medium">
-                    {iteration.startDate.toLocaleDateString()} - {iteration.endDate.toLocaleDateString()}
+                    {iteration.startDate.toLocaleDateString(localeDateMap[locale])} - {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
                   </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm gap-4">
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
-                      <span className="text-slate-500">Issues</span>
+                      <span className="text-slate-500">{translations.iterationsPage.issues}</span>
                       <span className="font-semibold text-slate-800">{totalIssues}</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-slate-500">Completed</span>
+                      <span className="text-slate-500">{translations.iterationsPage.completed}</span>
                       <span className="font-semibold text-slate-800">{completedIssues}</span>
                     </div>
                   </div>
 
                   <div className="w-full sm:w-1/3 min-w-[200px]">
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-500 font-medium">Progress</span>
+                      <span className="text-slate-500 font-medium">{translations.iterationsPage.progress}</span>
                       <span className="font-bold text-slate-700">{progress}%</span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-2">
@@ -139,7 +143,7 @@ export default async function IterationsPage() {
         })}
         {iterations.length === 0 && (
           <div className="text-center py-12 bg-white border border-dashed rounded-xl">
-            <p className="text-slate-500 font-medium">No iterations found.</p>
+            <p className="text-slate-500 font-medium">{translations.iterationsPage.noIterations}</p>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Paperclip, Loader2, FileText } from "lucide-react";
+import { getTranslations, Locale } from "@/lib/i18n";
 
 interface Attachment {
   id: string;
@@ -11,9 +12,10 @@ interface Attachment {
   uploader: { name: string };
 }
 
-export default function AttachmentUpload({ issueId }: { issueId: string }) {
+export default function AttachmentUpload({ issueId, locale }: { issueId: string; locale: Locale }) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const translations = getTranslations(locale);
 
   useEffect(() => {
     fetchAttachments();
@@ -60,10 +62,10 @@ export default function AttachmentUpload({ issueId }: { issueId: string }) {
   return (
     <div className="mt-8 border-t pt-8">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-lg text-slate-800">Attachments ({attachments.length})</h3>
+        <h3 className="font-bold text-lg text-slate-800">{translations.attachmentSection.title} ({attachments.length})</h3>
         <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 shadow-sm border border-slate-200">
           {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
-          {uploading ? "Uploading..." : "Add File"}
+          {uploading ? translations.attachmentSection.uploading : translations.attachmentSection.addFile}
           <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />
         </label>
       </div>

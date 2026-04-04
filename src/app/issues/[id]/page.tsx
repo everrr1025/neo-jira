@@ -5,10 +5,14 @@ import BackButton from "@/components/BackButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import { getTranslations } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
 export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
+  const locale = await getCurrentLocale();
+  const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -52,10 +56,10 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   return (
     <div className="flex flex-col h-full max-w-5xl mx-auto w-full pb-10">
       <div className="mb-6">
-        <BackButton />
+        <BackButton label={translations.issueDetail.back} />
       </div>
 
-      <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} currentUserId={userId} />
+      <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} currentUserId={userId} locale={locale} />
     </div>
   );
 }

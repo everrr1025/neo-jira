@@ -3,11 +3,13 @@
 import { useState, useTransition } from "react";
 import { createSprint } from "@/app/actions/sprints";
 import { Loader2, Plus, X } from "lucide-react";
+import { getTranslations, Locale } from "@/lib/i18n";
 
-export function CreateSprintButton({ projects }: { projects: { id: string; name: string; key: string }[] }) {
+export function CreateSprintButton({ projects, locale }: { projects: { id: string; name: string; key: string }[]; locale: Locale }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
+  const translations = getTranslations(locale);
   const [formData, setFormData] = useState({
     name: "",
     startDate: "",
@@ -24,7 +26,7 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
         setIsOpen(false);
         setFormData({ name: "", startDate: "", endDate: "", projectId: projects[0]?.id || "" });
       } else {
-        setError(res.error || "Failed to create sprint");
+        setError(res.error || translations.createSprint.failedCreateSprint);
       }
     });
   };
@@ -35,14 +37,14 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
         onClick={() => setIsOpen(true)}
         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm flex items-center gap-2"
       >
-        <Plus size={16} /> Create Sprint
+        <Plus size={16} /> {translations.createSprint.createSprint}
       </button>
 
       {isOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b">
-              <h3 className="text-lg font-bold text-slate-800">Create Sprint</h3>
+              <h3 className="text-lg font-bold text-slate-800">{translations.createSprint.modalTitle}</h3>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X size={20} />
               </button>
@@ -56,7 +58,7 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Project</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.project}</label>
                 <select
                   required
                   value={formData.projectId}
@@ -70,20 +72,20 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Sprint Name</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.sprintName}</label>
                 <input
                   required
                   type="text"
                   value={formData.name}
                   onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
                   className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                  placeholder="Sprint 6"
+                  placeholder={translations.createSprint.sprintNamePlaceholder}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Start Date</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.startDate}</label>
                   <input
                     required
                     type="date"
@@ -93,7 +95,7 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">End Date</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.endDate}</label>
                   <input
                     required
                     type="date"
@@ -109,7 +111,7 @@ export function CreateSprintButton({ projects }: { projects: { id: string; name:
                 type="submit"
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-md transition-colors shadow-sm disabled:opacity-50 flex justify-center items-center gap-2"
               >
-                {isPending && <Loader2 size={16} className="animate-spin" />} Create Sprint
+                {isPending && <Loader2 size={16} className="animate-spin" />} {translations.createSprint.createSprint}
               </button>
             </form>
           </div>

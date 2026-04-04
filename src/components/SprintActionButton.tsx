@@ -3,10 +3,12 @@
 import { useTransition, useState } from "react";
 import { startSprint, completeSprint } from "@/app/actions/sprints";
 import { Loader2 } from "lucide-react";
+import { getTranslations, Locale } from "@/lib/i18n";
 
-export function SprintActionButton({ sprintId, status }: { sprintId: string; status: string }) {
+export function SprintActionButton({ sprintId, status, locale }: { sprintId: string; status: string; locale: Locale }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
+  const translations = getTranslations(locale);
 
   const handleAction = () => {
     setError("");
@@ -14,7 +16,7 @@ export function SprintActionButton({ sprintId, status }: { sprintId: string; sta
       const action = status === "ACTIVE" ? completeSprint : startSprint;
       const res = await action(sprintId);
       if (!res.success) {
-        setError(res.error || "Action failed");
+        setError(res.error || translations.sprintAction.actionFailed);
       }
     });
   };
@@ -34,7 +36,7 @@ export function SprintActionButton({ sprintId, status }: { sprintId: string; sta
         `}
       >
         {isPending && <Loader2 size={16} className="animate-spin" />}
-        {status === "ACTIVE" ? "Complete Sprint" : "Start Sprint"}
+        {status === "ACTIVE" ? translations.sprintAction.completeSprint : translations.sprintAction.startSprint}
       </button>
       {error && (
         <span className="text-xs text-red-500 font-medium max-w-[200px] text-right">{error}</span>

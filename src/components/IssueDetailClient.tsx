@@ -6,12 +6,33 @@ import { Check, Loader2 } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
 import CommentSection from "./CommentSection";
 import AttachmentUpload from "./AttachmentUpload";
+import {
+  getIssueStatusLabel,
+  getIssueTypeLabel,
+  getPriorityLabel,
+  getTranslations,
+  Locale,
+  localeDateMap,
+} from "@/lib/i18n";
 
-export default function IssueDetailClient({ initialIssue, users, iterations = [], currentUserId }: { initialIssue: any, users: any[], iterations?: any[], currentUserId: string }) {
+export default function IssueDetailClient({
+  initialIssue,
+  users,
+  iterations = [],
+  currentUserId,
+  locale,
+}: {
+  initialIssue: any;
+  users: any[];
+  iterations?: any[];
+  currentUserId: string;
+  locale: Locale;
+}) {
   const [issue, setIssue] = useState(initialIssue);
   const [isPending, startTransition] = useTransition();
   const [successMsg, setSuccessMsg] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const translations = getTranslations(locale);
 
   useEffect(() => {
     const desc = issue.description || "";
@@ -63,7 +84,7 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
         setSuccessMsg(true);
         setTimeout(() => setSuccessMsg(false), 3000);
       } else {
-        alert("Failed to save changes");
+        alert(translations.issueDetail.failedToSave);
       }
     });
   };
@@ -83,13 +104,13 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
             value={issue.title}
             onChange={(e) => handleChange("title", e.target.value)}
             className="w-full text-2xl font-bold text-slate-900 border-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-md px-2 py-1 -ml-2 transition-all outline-none"
-            placeholder="Issue Summary"
+            placeholder={translations.issueDetail.issueSummaryPlaceholder}
           />
         </div>
 
         {/* Description */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-2">Description</label>
+          <label className="block text-sm font-bold text-slate-700 mb-2">{translations.issueDetail.description}</label>
           <div className="border-2 border-slate-200 rounded-md overflow-hidden focus-within:border-transparent transition-all">
             <RichTextEditor
               value={issue.description || ""}
@@ -100,7 +121,7 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
           {mentionQuery !== null && filteredUsers.length > 0 && (
             <div className="mt-1 bg-white border border-slate-200 shadow-md rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100 z-10 relative">
               <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
-                Mention someone
+                {translations.issueDetail.mentionSomeone}
               </div>
               {filteredUsers.map(u => (
                 <button
@@ -126,52 +147,52 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-md font-medium text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
           >
             {isPending && <Loader2 size={16} className="animate-spin" />}
-            Save Changes
+            {translations.issueDetail.saveChanges}
           </button>
           
           {successMsg && (
             <span className="text-emerald-600 text-sm font-medium flex items-center gap-1 animate-in fade-in duration-300">
-              <Check size={16} /> Saved
+              <Check size={16} /> {translations.issueDetail.saved}
             </span>
           )}
         </div>
 
         {/* Attachment Section */}
-        <AttachmentUpload issueId={issue.id} />
+        <AttachmentUpload issueId={issue.id} locale={locale} />
 
         {/* Comment Section */}
-        <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} />
+        <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} locale={locale} />
       </div>
 
       {/* Sidebar Area */}
       <div className="w-full lg:w-80 flex flex-col gap-6">
         <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 flex flex-col gap-4">
-          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide border-b pb-2">Properties</h3>
+          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide border-b pb-2">{translations.issueDetail.properties}</h3>
           
           {/* Status */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Status</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.status}</label>
             <select
               value={issue.status}
               onChange={(e) => handleChange("status", e.target.value)}
               className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-              <option value="TODO">To Do</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="IN_TESTING">In Testing</option>
-              <option value="DONE">Done</option>
+              <option value="TODO">{getIssueStatusLabel("TODO", locale)}</option>
+              <option value="IN_PROGRESS">{getIssueStatusLabel("IN_PROGRESS", locale)}</option>
+              <option value="IN_TESTING">{getIssueStatusLabel("IN_TESTING", locale)}</option>
+              <option value="DONE">{getIssueStatusLabel("DONE", locale)}</option>
             </select>
           </div>
 
           {/* Sprint */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Sprint</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.sprint}</label>
             <select
               value={issue.iterationId || ""}
               onChange={(e) => handleChange("iterationId", e.target.value || null)}
               className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-              <option value="">Backlog</option>
+              <option value="">{translations.issueList.backlog}</option>
               {iterations.map((it) => (
                 <option key={it.id} value={it.id}>{it.name}</option>
               ))}
@@ -180,43 +201,43 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
 
           {/* Type */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Type</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.type}</label>
             <select
               value={issue.type}
               onChange={(e) => handleChange("type", e.target.value)}
               className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-              <option value="TASK">Task</option>
-              <option value="STORY">Story</option>
-              <option value="BUG">Bug</option>
-              <option value="EPIC">Epic</option>
+              <option value="TASK">{getIssueTypeLabel("TASK", locale)}</option>
+              <option value="STORY">{getIssueTypeLabel("STORY", locale)}</option>
+              <option value="BUG">{getIssueTypeLabel("BUG", locale)}</option>
+              <option value="EPIC">{getIssueTypeLabel("EPIC", locale)}</option>
             </select>
           </div>
 
           {/* Priority */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Priority</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.priority}</label>
             <select
               value={issue.priority}
               onChange={(e) => handleChange("priority", e.target.value)}
               className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-              <option value="URGENT">Urgent</option>
+              <option value="LOW">{getPriorityLabel("LOW", locale)}</option>
+              <option value="MEDIUM">{getPriorityLabel("MEDIUM", locale)}</option>
+              <option value="HIGH">{getPriorityLabel("HIGH", locale)}</option>
+              <option value="URGENT">{getPriorityLabel("URGENT", locale)}</option>
             </select>
           </div>
 
           {/* Assignee */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Assignee</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.assignee}</label>
             <select
               value={issue.assigneeId || ""}
               onChange={(e) => handleChange("assigneeId", e.target.value || null)}
               className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-              <option value="">Unassigned</option>
+              <option value="">{translations.issueList.unassigned}</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
               ))}
@@ -225,7 +246,7 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
 
           {/* Due Date */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">Due Date</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.dueDate}</label>
             <input
               type="date"
               value={issue.dueDate ? new Date(issue.dueDate).toISOString().split('T')[0] : ''}
@@ -236,19 +257,19 @@ export default function IssueDetailClient({ initialIssue, users, iterations = []
           
           {/* Reporter (Read Only) */}
           <div className="flex flex-col gap-1.5 pt-2 border-t mt-2">
-            <label className="text-xs font-semibold text-slate-500">Reporter</label>
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.reporter}</label>
             <div className="flex items-center gap-2 p-1.5">
               <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
                 {issue.reporter?.name?.charAt(0) || 'U'}
               </div>
-              <span className="text-sm font-medium text-slate-700">{issue.reporter?.name || 'Unknown'}</span>
+              <span className="text-sm font-medium text-slate-700">{issue.reporter?.name || translations.issueDetail.unknown}</span>
             </div>
           </div>
         </div>
         
         <div className="text-xs text-slate-400 font-medium px-1">
-          Created: {new Date(issue.createdAt).toLocaleString()}<br/>
-          Updated: {new Date(issue.updatedAt).toLocaleString()}
+          {translations.issueDetail.created}: {new Date(issue.createdAt).toLocaleString(localeDateMap[locale])}<br/>
+          {translations.issueDetail.updated}: {new Date(issue.updatedAt).toLocaleString(localeDateMap[locale])}
         </div>
       </div>
     </div>

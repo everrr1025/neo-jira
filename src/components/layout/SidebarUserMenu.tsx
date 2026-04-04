@@ -3,19 +3,36 @@
 import { signOut } from "next-auth/react";
 import { LogOut, MessageSquare, Check } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { getTranslations, Locale } from "@/lib/i18n";
+import { AvatarPicker } from "./AvatarPicker";
 
-const MOCK_NOTIFICATIONS = [
-  { id: 1, message: "Alex mentioned you in PROJ-123", read: false, time: "5m ago" },
-  { id: 2, message: "Sarah updated the status of PROJ-99", read: false, time: "1h ago" },
-  { id: 3, message: "System maintenance tonight", read: true, time: "2d ago" }
-];
+function getMockNotifications(locale: Locale) {
+  if (locale === "zh") {
+    return [
+      { id: 1, message: "Alex 在 PROJ-123 中提及了你", read: false, time: "5分钟前" },
+      { id: 2, message: "Sarah 更新了 PROJ-99 的状态", read: false, time: "1小时前" },
+      { id: 3, message: "系统将在今晚进行维护", read: true, time: "2天前" },
+    ];
+  }
 
-export function SidebarUserMenu({ userName, userEmail }: { userName: string, userEmail: string }) {
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  return [
+    { id: 1, message: "Alex mentioned you in PROJ-123", read: false, time: "5m ago" },
+    { id: 2, message: "Sarah updated the status of PROJ-99", read: false, time: "1h ago" },
+    { id: 3, message: "System maintenance tonight", read: true, time: "2d ago" },
+  ];
+}
+
+export function SidebarUserMenu({ userId, userName, userEmail, locale }: { userId: string, userName: string, userEmail: string, locale: Locale }) {
+  const [notifications, setNotifications] = useState(() => getMockNotifications(locale));
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const translations = getTranslations(locale);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  useEffect(() => {
+    setNotifications(getMockNotifications(locale));
+  }, [locale]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -38,9 +55,7 @@ export function SidebarUserMenu({ userName, userEmail }: { userName: string, use
   return (
     <div className="flex items-center justify-between w-full">
       <div className="flex items-center gap-3 px-3 py-2 rounded-md">
-        <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white font-bold text-sm">
-          {userName?.charAt(0)?.toUpperCase() || "U"}
-        </div>
+        <AvatarPicker userKey={userId} userName={userName} locale={locale} size="sm" />
         <div className="flex flex-col">
           <span className="text-white font-medium text-sm">{userName}</span>
           <span className="text-slate-500 text-xs">{userEmail}</span>
@@ -50,7 +65,7 @@ export function SidebarUserMenu({ userName, userEmail }: { userName: string, use
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="p-2 relative rounded-md hover:bg-slate-800 text-slate-500 hover:text-blue-400 transition-colors"
-          title="Messages"
+          title={translations.sidebar.messages}
         >
           <MessageSquare size={16} />
           {unreadCount > 0 && (
@@ -61,14 +76,14 @@ export function SidebarUserMenu({ userName, userEmail }: { userName: string, use
         {isOpen && (
           <div className="absolute bottom-full left-0 mb-2 w-72 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden z-50">
             <div className="p-3 border-b flex justify-between items-center bg-slate-50">
-              <span className="font-semibold text-sm text-slate-800">Notifications</span>
+              <span className="font-semibold text-sm text-slate-800">{translations.sidebar.notifications}</span>
               {unreadCount > 0 && (
-                <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline">Mark all read</button>
+                <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline">{translations.sidebar.markAllRead}</button>
               )}
             </div>
             <div className="max-h-64 overflow-y-auto">
               {notifications.length === 0 ? (
-                <div className="p-4 text-center text-sm text-slate-500">No notifications</div>
+                <div className="p-4 text-center text-sm text-slate-500">{translations.sidebar.noNotifications}</div>
               ) : (
                 notifications.map(n => (
                   <div 
@@ -97,7 +112,7 @@ export function SidebarUserMenu({ userName, userEmail }: { userName: string, use
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="p-2 rounded-md hover:bg-slate-800 text-slate-500 hover:text-red-400 transition-colors"
-          title="Sign out"
+          title={translations.sidebar.signOut}
         >
           <LogOut size={16} />
         </button>

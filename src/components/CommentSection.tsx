@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import RichTextEditor from "./RichTextEditor";
-import { formatDistanceToNow } from "date-fns";
 import { Loader2 } from "lucide-react";
+import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 
 interface Comment {
   id: string;
@@ -16,12 +16,23 @@ interface Comment {
   };
 }
 
-export default function CommentSection({ issueId, currentUserId, users = [] }: { issueId: string, currentUserId: string, users?: any[] }) {
+export default function CommentSection({
+  issueId,
+  currentUserId,
+  users = [],
+  locale,
+}: {
+  issueId: string;
+  currentUserId: string;
+  users?: any[];
+  locale: Locale;
+}) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const translations = getTranslations(locale);
 
   useEffect(() => {
     const match = newComment.match(/(?:\s|^)@([^\s]*)$/);
@@ -89,12 +100,12 @@ export default function CommentSection({ issueId, currentUserId, users = [] }: {
   };
 
   if (loading) {
-    return <div className="py-4 text-center text-slate-500"><Loader2 className="animate-spin inline mr-2" size={16}/>Loading comments...</div>;
+    return <div className="py-4 text-center text-slate-500"><Loader2 className="animate-spin inline mr-2" size={16}/>{translations.commentSection.loading}</div>;
   }
 
   return (
     <div className="mt-8 border-t pt-8">
-      <h3 className="font-bold text-lg text-slate-800 mb-6">Comments ({comments.length})</h3>
+      <h3 className="font-bold text-lg text-slate-800 mb-6">{translations.commentSection.title} ({comments.length})</h3>
       
       <div className="space-y-6 mb-8">
         {comments.map((comment) => (
@@ -105,7 +116,7 @@ export default function CommentSection({ issueId, currentUserId, users = [] }: {
             <div className="flex-1 bg-white border rounded-lg overflow-hidden shadow-sm">
               <div className="bg-slate-50 px-4 py-2 border-b flex items-center justify-between text-sm">
                 <span className="font-semibold text-slate-800">{comment.author.name}</span>
-                <span className="text-slate-500 text-xs font-medium">{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
+                <span className="text-slate-500 text-xs font-medium">{new Date(comment.createdAt).toLocaleString(localeDateMap[locale])}</span>
               </div>
               <div className="p-4">
                 <RichTextEditor value={comment.content} onChange={() => {}} readOnly />
@@ -117,7 +128,7 @@ export default function CommentSection({ issueId, currentUserId, users = [] }: {
 
       <div className="flex gap-4">
         <div className="w-10 h-10 rounded-full bg-blue-100 flex-shrink-0 flex items-center justify-center font-bold text-blue-700 shadow-sm border border-blue-200">
-          Me
+          {translations.commentSection.me}
         </div>
         <div className="flex-1 space-y-3">
           <div className="border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all shadow-sm">
@@ -127,7 +138,7 @@ export default function CommentSection({ issueId, currentUserId, users = [] }: {
           {mentionQuery !== null && filteredUsers.length > 0 && (
             <div className="bg-white border border-slate-200 shadow-md rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100">
               <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
-                Mention someone
+                {translations.commentSection.mentionSomeone}
               </div>
               {filteredUsers.map(u => (
                 <button
@@ -151,7 +162,7 @@ export default function CommentSection({ issueId, currentUserId, users = [] }: {
               className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}
-              Post Comment
+              {translations.commentSection.postComment}
             </button>
           </div>
         </div>

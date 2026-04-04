@@ -5,10 +5,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import { getTranslations } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
 export default async function IssuesPage() {
+  const locale = await getCurrentLocale();
+  const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -59,17 +63,17 @@ export default async function IssuesPage() {
     <div className="flex flex-col h-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">All Issues</h2>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.issuesPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
-            View, filter, and search all issues across the workspace.
+            {translations.issuesPage.subtitle}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <CreateIssueButton users={users} iterations={iterations} />
+          <CreateIssueButton users={users} iterations={iterations} locale={locale} />
         </div>
       </div>
 
-      <IssueList initialIssues={issues} users={users} iterations={iterations} currentUser={currentUser} />
+      <IssueList initialIssues={issues} users={users} iterations={iterations} currentUser={currentUser} locale={locale} />
     </div>
   );
 }

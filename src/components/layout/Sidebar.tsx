@@ -2,8 +2,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser, getVisibleProjectsForUser } from "@/lib/activeProject";
 import { SidebarClient } from "./SidebarClient";
+import { Locale } from "@/lib/i18n";
 
-export async function Sidebar() {
+export async function Sidebar({ locale }: { locale: Locale }) {
   const session = await getServerSession(authOptions);
   const user = session?.user;
   const userId = (user as any)?.id as string | undefined;
@@ -21,6 +22,7 @@ export async function Sidebar() {
       activeProject={activeProject}
       lockProjectScopedLinks={lockProjectScopedLinks}
       user={user}
+      locale={locale}
     />
   );
 }
