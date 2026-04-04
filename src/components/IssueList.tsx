@@ -1,9 +1,25 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef, useCallback } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Search, ListFilter, Users, ArrowLeft, ArrowRight } from "lucide-react";
+import {
+  Search,
+  ListFilter,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Users,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 import { updateIssue } from "@/app/actions/issues";
+import {
+  getIssueStatusLabel,
+  getIssueTypeLabel,
+  getPriorityLabel,
+  getTranslations,
+  Locale,
+} from "@/lib/i18n";
 
 type Issue = {
   id: string;
@@ -17,58 +33,182 @@ type Issue = {
   assigneeId?: string | null;
   assignee?: { name: string | null } | null;
   reporter?: { name: string | null } | null;
-  createdAt: Date;
+  createdAt: Date | string;
 };
 
-export default function IssueList({ initialIssues, users, iterations, currentUser }: { initialIssues: Issue[], users: any[], iterations: any[], currentUser: any }) {
+type FilterOption = {
+  value: string;
+  label: string;
+};
+
+type ColumnId = "key" | "title" | "iteration" | "status" | "type" | "priority" | "assignee";
+type ColumnConfig = {
+  id: ColumnId;
+  label: string;
+  width: number;
+};
+
+type SortField = "createdAt" | "key" | "title" | "status" | "type" | "priority" | "sprint" | "assignee";
+
+const BACKLOG_FILTER_VALUE = "__BACKLOG__";
+
+const STATUS_ORDER: Record<string, number> = {
+  TODO: 1,
+  IN_PROGRESS: 2,
+  IN_TESTING: 3,
+  DONE: 4,
+};
+
+const TYPE_ORDER: Record<string, number> = {
+  EPIC: 1,
+  STORY: 2,
+  TASK: 3,
+  BUG: 4,
+};
+
+const PRIORITY_ORDER: Record<string, number> = {
+  URGENT: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+
+const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
+  key: "key",
+  title: "title",
+  iteration: "sprint",
+  status: "status",
+  type: "type",
+  priority: "priority",
+  assignee: "assignee",
+};
+
+function MultiFilter({
+  label,
+  options,
+  selectedValues,
+  onToggle,
+  onClear,
+  clearText,
+}: {
+  label: string;
+  options: FilterOption[];
+  selectedValues: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  clearText: string;
+}) {
+  const selectedLabels = options
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+  const buttonText =
+    selectedLabels.length === 0
+      ? label
+      : selectedLabels.length === 1
+        ? selectedLabels[0]
+        : `${label} (${selectedLabels.length})`;
+
+  return (
+    <details className="relative">
+      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+        <span className="truncate max-w-40">{buttonText}</span>
+        <ChevronDown size={14} className="text-slate-400" />
+      </summary>
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-50 cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              checked={selectedValues.includes(option.value)}
+              onChange={() => onToggle(option.value)}
+              className="h-4 w-4"
+            />
+            <span className="text-slate-700">{option.label}</span>
+          </label>
+        ))}
+        {selectedValues.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+          >
+            {clearText}
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
+
+export default function IssueList({
+  initialIssues,
+  users,
+  iterations,
+  currentUser,
+  locale,
+}: {
+  initialIssues: Issue[];
+  users: any[];
+  iterations: any[];
+  currentUser: any;
+  locale: Locale;
+}) {
   const [issues, setIssues] = useState(initialIssues);
   const [search, setSearch] = useState("");
-  
-  // Filters
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState("ALL");
-  const [priorityFilter, setPriorityFilter] = useState("ALL");
-  const [assigneeFilter, setAssigneeFilter] = useState("ALL"); // ALL, ME, UNASSIGNED
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
-  
-  const [isPending, startTransition] = useTransition();
+  const translations = getTranslations(locale);
 
-  // Sync state if initialIssues change from server
-  const [columns, setColumns] = useState([
-    { id: 'key', label: 'Key', width: 80 },
-    { id: 'title', label: 'Summary', width: 0 },   // 0 = flexible, takes remaining space
-    { id: 'iteration', label: 'Sprint', width: 160 },
-    { id: 'status', label: 'Status', width: 140 },
-    { id: 'type', label: 'Type', width: 120 },
-    { id: 'priority', label: 'Priority', width: 140 },
-    { id: 'assignee', label: 'Assignee', width: 190 },
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [sprintFilter, setSprintFilter] = useState<string[]>([]);
+  const [assigneeFilter, setAssigneeFilter] = useState<"ALL" | "ME" | "UNASSIGNED">("ALL");
+  const [sortBy, setSortBy] = useState<SortField>("createdAt");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  const [, startTransition] = useTransition();
+
+  const [columns, setColumns] = useState<ColumnConfig[]>([
+    { id: "key", label: translations.issueList.key, width: 80 },
+    { id: "title", label: translations.issueList.summary, width: 0 },
+    { id: "iteration", label: translations.issueList.sprint, width: 160 },
+    { id: "status", label: translations.issueList.status, width: 140 },
+    { id: "type", label: translations.issueList.type, width: 120 },
+    { id: "priority", label: translations.issueList.priority, width: 140 },
+    { id: "assignee", label: translations.issueList.assignee, width: 190 },
   ]);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
-    e.dataTransfer.setData('colIndex', index.toString());
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData("colIndex", index.toString());
+    e.dataTransfer.effectAllowed = "move";
     setDragSourceIndex(index);
   };
 
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [dragOverSide, setDragOverSide] = useState<'left' | 'right' | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<"left" | "right" | null>(null);
 
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
-    const sourceIndexStr = e.dataTransfer.getData('colIndex');
+    const sourceIndexStr = e.dataTransfer.getData("colIndex");
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
       if (sourceIndex !== targetIndex) {
         const newCols = [...columns];
         const [removed] = newCols.splice(sourceIndex, 1);
-        // Adjust target if source was before target
-        const adjustedTarget = dragOverSide === 'right' 
-          ? (sourceIndex < targetIndex ? targetIndex : targetIndex + 1)
-          : (sourceIndex < targetIndex ? targetIndex - 1 : targetIndex);
+        const adjustedTarget =
+          dragOverSide === "right"
+            ? sourceIndex < targetIndex
+              ? targetIndex
+              : targetIndex + 1
+            : sourceIndex < targetIndex
+              ? targetIndex - 1
+              : targetIndex;
         newCols.splice(Math.max(0, adjustedTarget), 0, removed);
         setColumns(newCols);
       }
@@ -80,10 +220,10 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = "move";
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const midX = rect.left + rect.width / 2;
-    const side = e.clientX < midX ? 'left' : 'right';
+    const side = e.clientX < midX ? "left" : "right";
     setDragOverIndex(index);
     setDragOverSide(side);
   };
@@ -94,182 +234,306 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
     setDragOverSide(null);
   };
 
-  // --- Column Resize ---
   const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent, colIndex: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const col = columns[colIndex];
-    const startWidth = col.width || 150;
-    resizingRef.current = { colIndex, startX: e.clientX, startWidth };
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, colIndex: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const col = columns[colIndex];
+      const startWidth = col.width || 150;
+      resizingRef.current = { colIndex, startX: e.clientX, startWidth };
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const delta = ev.clientX - resizingRef.current.startX;
-      const newWidth = Math.max(60, resizingRef.current.startWidth + delta);
-      setColumns(prev => prev.map((c, i) => i === resizingRef.current!.colIndex ? { ...c, width: newWidth } : c));
-    };
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!resizingRef.current) return;
+        const delta = ev.clientX - resizingRef.current.startX;
+        const newWidth = Math.max(60, resizingRef.current.startWidth + delta);
+        setColumns((prev) =>
+          prev.map((c, i) => (i === resizingRef.current!.colIndex ? { ...c, width: newWidth } : c))
+        );
+      };
 
-    const onMouseUp = () => {
-      resizingRef.current = null;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
+      const onMouseUp = () => {
+        resizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, [columns]);
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [columns]
+  );
 
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
 
-  // Derived Data
-  const filteredIssues = issues.filter((issue) => {
-    if (statusFilter !== "ALL" && issue.status !== statusFilter) return false;
-    if (typeFilter !== "ALL" && issue.type !== typeFilter) return false;
-    if (priorityFilter !== "ALL" && issue.priority !== priorityFilter) return false;
-    
-    if (assigneeFilter === "ME" && issue.assigneeId !== currentUser?.id) return false;
-    if (assigneeFilter === "UNASSIGNED" && issue.assigneeId !== null) return false;
-    
-    if (search) {
-      const q = search.toLowerCase();
-      if (!issue.title.toLowerCase().includes(q) && !issue.key.toLowerCase().includes(q)) return false;
+  const statusOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "TODO", label: getIssueStatusLabel("TODO", locale) },
+      { value: "IN_PROGRESS", label: getIssueStatusLabel("IN_PROGRESS", locale) },
+      { value: "IN_TESTING", label: getIssueStatusLabel("IN_TESTING", locale) },
+      { value: "DONE", label: getIssueStatusLabel("DONE", locale) },
+    ],
+    [locale]
+  );
+
+  const typeOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "TASK", label: getIssueTypeLabel("TASK", locale) },
+      { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
+      { value: "BUG", label: getIssueTypeLabel("BUG", locale) },
+      { value: "EPIC", label: getIssueTypeLabel("EPIC", locale) },
+    ],
+    [locale]
+  );
+
+  const priorityOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "URGENT", label: getPriorityLabel("URGENT", locale) },
+      { value: "HIGH", label: getPriorityLabel("HIGH", locale) },
+      { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
+      { value: "LOW", label: getPriorityLabel("LOW", locale) },
+    ],
+    [locale]
+  );
+
+  const sprintOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: BACKLOG_FILTER_VALUE, label: translations.issueList.backlog },
+      ...iterations.map((it) => ({ value: it.id as string, label: it.name as string })),
+    ],
+    [iterations, translations.issueList.backlog]
+  );
+
+  const toggleFilterValue = (value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    setter((prev) => (prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]));
+    setCurrentPage(1);
+  };
+
+  const handleSortByColumn = (columnId: ColumnId) => {
+    const nextSortField = COLUMN_SORT_FIELD_MAP[columnId];
+    if (!nextSortField) return;
+
+    setCurrentPage(1);
+
+    if (sortBy === nextSortField) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      return;
     }
-    
-    return true;
-  });
 
-  const totalPages = Math.ceil(filteredIssues.length / itemsPerPage);
-  const paginatedIssues = filteredIssues.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    setSortBy(nextSortField);
+    setSortDirection(nextSortField === "createdAt" ? "desc" : "asc");
+  };
 
-  // Reset page if filters drastically change the array size
+  const filteredIssues = useMemo(() => {
+    return issues.filter((issue) => {
+      if (statusFilter.length > 0 && !statusFilter.includes(issue.status)) return false;
+      if (typeFilter.length > 0 && !typeFilter.includes(issue.type)) return false;
+      if (priorityFilter.length > 0 && !priorityFilter.includes(issue.priority)) return false;
+
+      if (sprintFilter.length > 0) {
+        const sprintValue = issue.iterationId ?? BACKLOG_FILTER_VALUE;
+        if (!sprintFilter.includes(sprintValue)) return false;
+      }
+
+      if (assigneeFilter === "ME" && issue.assigneeId !== currentUser?.id) return false;
+      if (assigneeFilter === "UNASSIGNED" && issue.assigneeId != null) return false;
+
+      if (search) {
+        const query = search.toLowerCase();
+        if (!issue.title.toLowerCase().includes(query) && !issue.key.toLowerCase().includes(query)) return false;
+      }
+
+      return true;
+    });
+  }, [assigneeFilter, currentUser?.id, issues, search, priorityFilter, sprintFilter, statusFilter, typeFilter]);
+
+  const sortedIssues = useMemo(() => {
+    const factor = sortDirection === "asc" ? 1 : -1;
+    const sorted = [...filteredIssues];
+
+    sorted.sort((a, b) => {
+      if (sortBy === "createdAt") {
+        return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * factor;
+      }
+      if (sortBy === "status") {
+        return ((STATUS_ORDER[a.status] || 99) - (STATUS_ORDER[b.status] || 99)) * factor;
+      }
+      if (sortBy === "type") {
+        return ((TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99)) * factor;
+      }
+      if (sortBy === "priority") {
+        return ((PRIORITY_ORDER[a.priority] || 0) - (PRIORITY_ORDER[b.priority] || 0)) * factor;
+      }
+      if (sortBy === "sprint") {
+        const aSprint = a.iteration?.name || translations.issueList.backlog;
+        const bSprint = b.iteration?.name || translations.issueList.backlog;
+        return aSprint.localeCompare(bSprint) * factor;
+      }
+      if (sortBy === "key") {
+        return a.key.localeCompare(b.key, undefined, { numeric: true }) * factor;
+      }
+      if (sortBy === "assignee") {
+        const aAssignee = a.assignee?.name || translations.issueList.unassigned;
+        const bAssignee = b.assignee?.name || translations.issueList.unassigned;
+        return aAssignee.localeCompare(bAssignee) * factor;
+      }
+      return a.title.localeCompare(b.title) * factor;
+    });
+
+    return sorted;
+  }, [filteredIssues, sortBy, sortDirection, translations.issueList.backlog]);
+
+  const totalPages = Math.ceil(sortedIssues.length / itemsPerPage);
+  const paginatedIssues = sortedIssues.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) setCurrentPage(1);
-  }, [filteredIssues.length, totalPages, currentPage]);
+    if (totalPages === 0) {
+      if (currentPage !== 1) setCurrentPage(1);
+      return;
+    }
+
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const handleInlineUpdate = (issueId: string, field: string, value: string | null) => {
-    // Optimistic update
-    setIssues(prev => prev.map(i => {
-      if (i.id === issueId) {
-        if (field === 'iterationId') {
-          const iter = iterations.find(it => it.id === value);
-          return { ...i, iterationId: value, iteration: iter ? { name: iter.name } : null };
+    setIssues((prev) =>
+      prev.map((i) => {
+        if (i.id === issueId) {
+          if (field === "iterationId") {
+            const iter = iterations.find((it) => it.id === value);
+            return { ...i, iterationId: value, iteration: iter ? { name: iter.name } : null };
+          }
+          if (field === "assigneeId") {
+            const user = users.find((u) => u.id === value);
+            return { ...i, assigneeId: value, assignee: user ? { name: user.name } : null };
+          }
+          return { ...i, [field]: value };
         }
-        if (field === 'assigneeId') {
-          const u = users.find(u => u.id === value);
-          return { ...i, assigneeId: value, assignee: u ? { name: u.name } : null };
-        }
-        return { ...i, [field]: value };
-      }
-      return i;
-    }));
-    
-    // Server action
+        return i;
+      })
+    );
+
     startTransition(() => {
       updateIssue(issueId, { [field]: value });
     });
   };
 
   return (
-    <div className="flex flex-col flex-1 space-y-4">
-      {/* Filters Bar */}
-      <div className="flex flex-col xl:flex-row gap-3 items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
-        <div className="flex items-center gap-2 w-full xl:w-80 relative">
-          <Search size={16} className="absolute left-3 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search by title or key..." 
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-9 pr-4 py-2 text-sm border-slate-200 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+    <div className="flex flex-col flex-1 space-y-4 min-h-0">
+      <div className="bg-white p-3 rounded-lg border shadow-sm sticky top-0 z-20">
+        <div className="flex flex-wrap items-center gap-2 w-full">
+          <div className="flex items-center gap-2 w-full lg:w-80 relative">
+            <Search size={16} className="absolute left-3 text-slate-400" />
+            <input
+              type="text"
+              placeholder={translations.issueList.searchPlaceholder}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-4 py-2 text-sm border-slate-200 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="h-9 px-2 inline-flex items-center text-slate-500">
+            <ListFilter size={14} />
+          </div>
+
+          <MultiFilter
+            label={translations.issueList.sprint}
+            options={sprintOptions}
+            selectedValues={sprintFilter}
+            onToggle={(value) => toggleFilterValue(value, setSprintFilter)}
+            onClear={() => {
+              setSprintFilter([]);
+              setCurrentPage(1);
+            }}
+            clearText={translations.issueList.clearSelection}
           />
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
-          {/* Status */}
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-2 py-1.5 rounded-md border">
-             <ListFilter size={14} className="text-slate-400" />
-             <select 
-              value={statusFilter} 
-              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none"
+
+          <MultiFilter
+            label={translations.issueList.status}
+            options={statusOptions}
+            selectedValues={statusFilter}
+            onToggle={(value) => toggleFilterValue(value, setStatusFilter)}
+            onClear={() => {
+              setStatusFilter([]);
+              setCurrentPage(1);
+            }}
+            clearText={translations.issueList.clearSelection}
+          />
+
+          <MultiFilter
+            label={translations.issueList.type}
+            options={typeOptions}
+            selectedValues={typeFilter}
+            onToggle={(value) => toggleFilterValue(value, setTypeFilter)}
+            onClear={() => {
+              setTypeFilter([]);
+              setCurrentPage(1);
+            }}
+            clearText={translations.issueList.clearSelection}
+          />
+
+          <MultiFilter
+            label={translations.issueList.priority}
+            options={priorityOptions}
+            selectedValues={priorityFilter}
+            onToggle={(value) => toggleFilterValue(value, setPriorityFilter)}
+            onClear={() => {
+              setPriorityFilter([]);
+              setCurrentPage(1);
+            }}
+            clearText={translations.issueList.clearSelection}
+          />
+
+          <div className="h-9 px-2 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
+            <Users size={14} className="text-slate-400" />
+            <select
+              value={assigneeFilter}
+              onChange={(e) => {
+                setAssigneeFilter(e.target.value as "ALL" | "ME" | "UNASSIGNED");
+                setCurrentPage(1);
+              }}
+              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none text-slate-700"
             >
-              <option value="ALL">All Status</option>
-              <option value="TODO">To Do</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="IN_TESTING">In Testing</option>
-              <option value="DONE">Done</option>
-            </select>
-          </div>
-          
-          {/* Type */}
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-2 py-1.5 rounded-md border">
-             <select 
-              value={typeFilter} 
-              onChange={(e) => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none"
-            >
-              <option value="ALL">All Types</option>
-              <option value="TASK">Task</option>
-              <option value="STORY">Story</option>
-              <option value="BUG">Bug</option>
-              <option value="EPIC">Epic</option>
-            </select>
-          </div>
-          
-          {/* Priority */}
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-2 py-1.5 rounded-md border">
-             <select 
-              value={priorityFilter} 
-              onChange={(e) => { setPriorityFilter(e.target.value); setCurrentPage(1); }}
-              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none"
-            >
-              <option value="ALL">All Priorities</option>
-              <option value="URGENT">Urgent</option>
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-            </select>
-          </div>
-          
-          {/* Assignee */}
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-2 py-1.5 rounded-md border">
-             <Users size={14} className="text-slate-400" />
-             <select 
-              value={assigneeFilter} 
-              onChange={(e) => { setAssigneeFilter(e.target.value); setCurrentPage(1); }}
-              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none"
-            >
-              <option value="ALL">All Users</option>
-              <option value="ME">Assigned to Me</option>
-              <option value="UNASSIGNED">Unassigned</option>
+              <option value="ALL">{translations.issueList.allUsers}</option>
+              <option value="ME">{translations.issueList.assignedToMe}</option>
+              <option value="UNASSIGNED">{translations.issueList.unassigned}</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex-1 flex flex-col">
         <div className="overflow-x-auto flex-1">
-          <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
+          <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
               <tr>
                 {columns.map((col, index) => {
-                  const showLeftLine = dragOverIndex === index && dragOverSide === 'left' && dragSourceIndex !== index;
-                  const showRightLine = dragOverIndex === index && dragOverSide === 'right' && dragSourceIndex !== index;
+                  const columnSortField = COLUMN_SORT_FIELD_MAP[col.id];
+                  const isSortedColumn = !!columnSortField && sortBy === columnSortField;
+                  const showLeftLine =
+                    dragOverIndex === index && dragOverSide === "left" && dragSourceIndex !== index;
+                  const showRightLine =
+                    dragOverIndex === index && dragOverSide === "right" && dragSourceIndex !== index;
                   const isDragging = dragSourceIndex === index;
+
                   return (
                     <th
                       key={col.id}
                       className={`px-5 py-4 cursor-grab active:cursor-grabbing hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
-                        isDragging ? 'opacity-40' : ''
+                        isDragging ? "opacity-40" : ""
                       }`}
                       style={col.width ? { width: `${col.width}px` } : undefined}
                       draggable
@@ -277,16 +541,39 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDrop={(e) => handleDrop(e, index)}
                       onDragEnd={handleDragEnd}
-                      onDragLeave={() => { if (dragOverIndex === index) { setDragOverIndex(null); setDragOverSide(null); } }}
+                      onDragLeave={() => {
+                        if (dragOverIndex === index) {
+                          setDragOverIndex(null);
+                          setDragOverSide(null);
+                        }
+                      }}
                     >
-                      {showLeftLine && (
-                        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />
-                      )}
-                      {col.label}
-                      {showRightLine && (
-                        <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />
-                      )}
-                      {/* Resize handle */}
+                      {showLeftLine && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
+
+                      <button
+                        type="button"
+                        onClick={() => handleSortByColumn(col.id)}
+                        disabled={!columnSortField}
+                        className={`inline-flex items-center gap-1 font-semibold ${
+                          columnSortField
+                            ? "cursor-pointer text-slate-600 hover:text-slate-800"
+                            : "cursor-grab text-slate-500"
+                        }`}
+                        draggable={false}
+                      >
+                        <span>{col.label}</span>
+                        {columnSortField &&
+                          isSortedColumn && (
+                            sortDirection === "asc" ? (
+                              <ArrowUp size={12} />
+                            ) : (
+                              <ArrowDown size={12} />
+                            )
+                          )}
+                      </button>
+
+                      {showRightLine && <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
+
                       <div
                         className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/50 z-20"
                         onMouseDown={(e) => handleResizeStart(e, index)}
@@ -297,142 +584,241 @@ export default function IssueList({ initialIssues, users, iterations, currentUse
                 })}
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100">
               {paginatedIssues.map((issue) => (
                 <tr key={issue.id} className="hover:bg-slate-50/70 transition-colors group">
                   {columns.map((col) => {
-                    if (col.id === 'key') return (
-                      <td key={col.id} className="px-5 py-3.5 text-slate-500 font-medium">
-                        <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 hover:underline">
-                          {issue.key}
-                        </Link>
-                      </td>
-                    );
-                    if (col.id === 'title') return (
-                      <td key={col.id} className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden text-ellipsis">
-                        <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 block w-full truncate border-b border-transparent">
-                          {issue.title}
-                        </Link>
-                      </td>
-                    );
-                    if (col.id === 'iteration') return (
-                      <td key={col.id} className="px-5 py-3.5">
-                        <select
-                          value={issue.iterationId || ""}
-                          onChange={(e) => handleInlineUpdate(issue.id, 'iterationId', e.target.value || null)}
-                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
+                    if (col.id === "key") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5 text-slate-500 font-medium">
+                          <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 hover:underline">
+                            {issue.key}
+                          </Link>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "title") {
+                      return (
+                        <td
+                          key={col.id}
+                          className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden text-ellipsis"
                         >
-                          <option value="">Backlog</option>
-                          {iterations.map((it) => (
-                            <option key={it.id} value={it.id}>{it.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                    );
-                    if (col.id === 'status') return (
-                      <td key={col.id} className="px-5 py-3.5">
-                        <select 
-                          value={issue.status}
-                          onChange={(e) => handleInlineUpdate(issue.id, 'status', e.target.value)}
-                          className={`text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
-                            issue.status === 'DONE' ? 'bg-emerald-100 text-emerald-700' :
-                            issue.status === 'IN_PROGRESS' || issue.status === 'IN_TESTING' ? 'bg-blue-100 text-blue-700' :
-                            'bg-slate-100 text-slate-600'
-                          }`} style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                        >
-                          <option value="TODO">To Do</option>
-                          <option value="IN_PROGRESS">In Progress</option>
-                          <option value="IN_TESTING">In Testing</option>
-                          <option value="DONE">Done</option>
-                        </select>
-                      </td>
-                    );
-                    if (col.id === 'type') return (
-                      <td key={col.id} className="px-5 py-3.5">
-                        <select
-                          value={issue.type}
-                          onChange={(e) => handleInlineUpdate(issue.id, 'type', e.target.value)}
-                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                        >
-                          <option value="TASK">Task</option>
-                          <option value="STORY">Story</option>
-                          <option value="BUG">Bug</option>
-                          <option value="EPIC">Epic</option>
-                        </select>
-                      </td>
-                    );
-                    if (col.id === 'priority') return (
-                      <td key={col.id} className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
-                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${issue.priority === 'URGENT' ? 'bg-red-600' : issue.priority === 'HIGH' ? 'bg-orange-500' : issue.priority === 'MEDIUM' ? 'bg-amber-400' : 'bg-green-400'}`}></span>
-                           <select
-                             value={issue.priority}
-                             onChange={(e) => handleInlineUpdate(issue.id, 'priority', e.target.value)}
-                             className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                           >
-                             <option value="LOW">Low</option>
-                             <option value="MEDIUM">Medium</option>
-                             <option value="HIGH">High</option>
-                             <option value="URGENT">Urgent</option>
-                           </select>
-                        </div>
-                      </td>
-                    );
-                    if (col.id === 'assignee') return (
-                      <td key={col.id} className="px-5 py-3.5">
-                        <select
-                          value={issue.assigneeId || ""}
-                          onChange={(e) => handleInlineUpdate(issue.id, 'assigneeId', e.target.value || null)}
-                          className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate" style={{ appearance: 'none', WebkitAppearance: 'none' }}
-                        >
-                          <option value="">Unassigned</option>
-                          {users.map((u) => (
-                            <option key={u.id} value={u.id}>{u.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                    );
+                          <Link
+                            href={`/issues/${issue.id}`}
+                            className="hover:text-blue-600 block w-full truncate border-b border-transparent"
+                          >
+                            {issue.title}
+                          </Link>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "iteration") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <select
+                            value={issue.iterationId || ""}
+                            onChange={(e) => handleInlineUpdate(issue.id, "iterationId", e.target.value || null)}
+                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
+                            style={{ appearance: "none", WebkitAppearance: "none" }}
+                          >
+                            <option value="">{translations.issueList.backlog}</option>
+                            {iterations.map((it) => (
+                              <option key={it.id} value={it.id}>
+                                {it.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "status") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <select
+                            value={issue.status}
+                            onChange={(e) => handleInlineUpdate(issue.id, "status", e.target.value)}
+                            className={`text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
+                              issue.status === "DONE"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : issue.status === "IN_PROGRESS" || issue.status === "IN_TESTING"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-slate-100 text-slate-600"
+                            }`}
+                            style={{ appearance: "none", WebkitAppearance: "none" }}
+                          >
+                            <option value="TODO">{getIssueStatusLabel("TODO", locale)}</option>
+                            <option value="IN_PROGRESS">{getIssueStatusLabel("IN_PROGRESS", locale)}</option>
+                            <option value="IN_TESTING">{getIssueStatusLabel("IN_TESTING", locale)}</option>
+                            <option value="DONE">{getIssueStatusLabel("DONE", locale)}</option>
+                          </select>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "type") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <select
+                            value={issue.type}
+                            onChange={(e) => handleInlineUpdate(issue.id, "type", e.target.value)}
+                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
+                            style={{ appearance: "none", WebkitAppearance: "none" }}
+                          >
+                            <option value="TASK">{getIssueTypeLabel("TASK", locale)}</option>
+                            <option value="STORY">{getIssueTypeLabel("STORY", locale)}</option>
+                            <option value="BUG">{getIssueTypeLabel("BUG", locale)}</option>
+                            <option value="EPIC">{getIssueTypeLabel("EPIC", locale)}</option>
+                          </select>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "priority") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                issue.priority === "URGENT"
+                                  ? "bg-red-600"
+                                  : issue.priority === "HIGH"
+                                    ? "bg-orange-500"
+                                    : issue.priority === "MEDIUM"
+                                      ? "bg-amber-400"
+                                      : "bg-green-400"
+                              }`}
+                            ></span>
+                            <select
+                              value={issue.priority}
+                              onChange={(e) => handleInlineUpdate(issue.id, "priority", e.target.value)}
+                              className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
+                              style={{ appearance: "none", WebkitAppearance: "none" }}
+                            >
+                              <option value="LOW">{getPriorityLabel("LOW", locale)}</option>
+                              <option value="MEDIUM">{getPriorityLabel("MEDIUM", locale)}</option>
+                              <option value="HIGH">{getPriorityLabel("HIGH", locale)}</option>
+                              <option value="URGENT">{getPriorityLabel("URGENT", locale)}</option>
+                            </select>
+                          </div>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "assignee") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <select
+                            value={issue.assigneeId || ""}
+                            onChange={(e) => handleInlineUpdate(issue.id, "assigneeId", e.target.value || null)}
+                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
+                            style={{ appearance: "none", WebkitAppearance: "none" }}
+                          >
+                            <option value="">{translations.issueList.unassigned}</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      );
+                    }
+
                     return <td key={col.id}></td>;
                   })}
                 </tr>
               ))}
 
-              {filteredIssues.length === 0 && (
+              {sortedIssues.length === 0 && (
                 <tr>
                   <td colSpan={columns.length} className="px-5 py-16 text-center text-slate-500">
-                    <p className="font-medium text-base mb-1">No issues match the criteria</p>
-                    <p className="text-sm">Try adjusting your filters or creating a new issue.</p>
+                    <p className="font-medium text-base mb-1">{translations.issueList.noMatchTitle}</p>
+                    <p className="text-sm">{translations.issueList.noMatchDesc}</p>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination & Count area */}
-        <div className="bg-slate-50 border-t px-5 py-3 flex items-center justify-between text-sm">
+
+        <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
           <div className="text-slate-500 font-medium">
-            Showing <span className="text-slate-800 font-bold">{filteredIssues.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> to <span className="text-slate-800 font-bold">{Math.min(currentPage * itemsPerPage, filteredIssues.length)}</span> of <span className="text-slate-800 font-bold">{filteredIssues.length}</span> issues
+            {locale === "zh" ? (
+              <>
+                {translations.issueList.showing}
+                <span className="text-slate-800 font-bold">
+                  {" "}
+                  {sortedIssues.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}{" "}
+                </span>
+                {translations.issueList.to}
+                <span className="text-slate-800 font-bold">
+                  {" "}
+                  {Math.min(currentPage * itemsPerPage, sortedIssues.length)}{" "}
+                </span>
+                {translations.issueList.of}
+                <span className="text-slate-800 font-bold"> {sortedIssues.length} </span>
+                {translations.issueList.issues}
+              </>
+            ) : (
+              <>
+                {translations.issueList.showing}{" "}
+                <span className="text-slate-800 font-bold">
+                  {sortedIssues.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}
+                </span>{" "}
+                {translations.issueList.to}{" "}
+                <span className="text-slate-800 font-bold">
+                  {Math.min(currentPage * itemsPerPage, sortedIssues.length)}
+                </span>{" "}
+                {translations.issueList.of} <span className="text-slate-800 font-bold">{sortedIssues.length}</span>{" "}
+                {translations.issueList.issues}
+              </>
+            )}
           </div>
-          
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
-            >
-              <ArrowLeft size={18} />
-            </button>
-            <span className="font-medium text-slate-700 px-2 leading-none">
-              Page {currentPage} of {totalPages || 1}
-            </span>
-            <button 
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
-            >
-              <ArrowRight size={18} />
-            </button>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-slate-500">
+              <span>{locale === "zh" ? "每页" : "Per page"}</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="h-8 px-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+              >
+                <ArrowLeft size={18} />
+              </button>
+
+              <span className="font-medium text-slate-700 px-2 leading-none">
+                {locale === "zh"
+                  ? `${translations.issueList.page} ${currentPage} / ${totalPages || 1}`
+                  : `${translations.issueList.page} ${currentPage} of ${totalPages || 1}`}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages || 1, p + 1))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+              >
+                <ArrowRight size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
