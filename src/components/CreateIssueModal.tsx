@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from "react";
 import { createIssue } from "@/app/actions/issues";
 import { X } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
+import AlertPopup from "./AlertPopup";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, Locale } from "@/lib/i18n";
 
 type CreateIssueModalProps = {
@@ -28,6 +29,7 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations, l
   });
 
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const desc = formData.description;
@@ -38,6 +40,12 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations, l
       setMentionQuery(null);
     }
   }, [formData.description]);
+
+  useEffect(() => {
+    if (!isOpen && errorMessage) {
+      setErrorMessage("");
+    }
+  }, [isOpen, errorMessage]);
 
   const filteredUsers = mentionQuery !== null
     ? users.filter(u => u.name?.toLowerCase().includes(mentionQuery))
@@ -63,6 +71,7 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations, l
     e.preventDefault();
     if (!formData.title.trim()) return;
 
+    setErrorMessage("");
     startTransition(async () => {
       const payload = {
         title: formData.title,
@@ -79,7 +88,7 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations, l
         setFormData({ title: "", description: "", type: "TASK", priority: "MEDIUM", iterationId: "", assigneeId: "", dueDate: "" });
         onClose();
       } else {
-        alert(`${translations.createIssue.failedCreateIssue}: ${result.error}`);
+        setErrorMessage(`${translations.createIssue.failedCreateIssue}: ${result.error}`);
       }
     });
   };
@@ -242,6 +251,7 @@ export default function CreateIssueModal({ isOpen, onClose, users, iterations, l
           </div>
         </form>
       </div>
+      <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
     </div>
   );
 }

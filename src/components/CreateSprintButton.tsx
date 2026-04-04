@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { createSprint } from "@/app/actions/sprints";
 import { Loader2, Plus, X } from "lucide-react";
 import { getTranslations, Locale } from "@/lib/i18n";
+import AlertPopup from "./AlertPopup";
 
 export function CreateSprintButton({ projects, locale }: { projects: { id: string; name: string; key: string }[]; locale: Locale }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -51,12 +52,6 @@ export function CreateSprintButton({ projects, locale }: { projects: { id: strin
             </div>
 
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
-              {error && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm font-medium border border-red-100">
-                  {error}
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.project}</label>
                 <select
@@ -117,6 +112,7 @@ export function CreateSprintButton({ projects, locale }: { projects: { id: strin
           </div>
         </div>
       )}
+      <AlertPopup message={error} onClose={() => setError("")} autoCloseMs={5000} />
     </>
   );
 }

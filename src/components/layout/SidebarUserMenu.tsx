@@ -2,37 +2,71 @@
 
 import { signOut } from "next-auth/react";
 import { LogOut, MessageSquare, Check } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { getTranslations, Locale } from "@/lib/i18n";
 import { AvatarPicker } from "./AvatarPicker";
 
-function getMockNotifications(locale: Locale) {
-  if (locale === "zh") {
-    return [
-      { id: 1, message: "Alex 在 PROJ-123 中提及了你", read: false, time: "5分钟前" },
-      { id: 2, message: "Sarah 更新了 PROJ-99 的状态", read: false, time: "1小时前" },
-      { id: 3, message: "系统将在今晚进行维护", read: true, time: "2天前" },
-    ];
-  }
+type NotificationItem = {
+  id: string;
+  type: string;
+  message: string;
+  link?: string | null;
+  read: boolean;
+  createdAt: string;
+  actor?: { name: string | null } | null;
+};
 
-  return [
-    { id: 1, message: "Alex mentioned you in PROJ-123", read: false, time: "5m ago" },
-    { id: 2, message: "Sarah updated the status of PROJ-99", read: false, time: "1h ago" },
-    { id: 3, message: "System maintenance tonight", read: true, time: "2d ago" },
-  ];
+function getDisplayName(notification: NotificationItem) {
+  return notification.actor?.name || "System";
 }
 
-export function SidebarUserMenu({ userId, userName, userEmail, locale }: { userId: string, userName: string, userEmail: string, locale: Locale }) {
-  const [notifications, setNotifications] = useState(() => getMockNotifications(locale));
+export function SidebarUserMenu({
+  userId,
+  userName,
+  userEmail,
+  locale,
+}: {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  locale: Locale;
+}) {
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const translations = getTranslations(locale);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as NotificationItem[];
+      setNotifications(data);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const markAllAsRead = useCallback(async () => {
+    if (unreadCount === 0) return;
+    try {
+      const res = await fetch("/api/notifications", { method: "PATCH" });
+      if (!res.ok) return;
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [unreadCount]);
 
   useEffect(() => {
-    setNotifications(getMockNotifications(locale));
-  }, [locale]);
+    void fetchNotifications();
+    const interval = setInterval(() => {
+      void fetchNotifications();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -44,12 +78,12 @@ export function SidebarUserMenu({ userId, userName, userEmail, locale }: { userI
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const handleToggleNotifications = () => {
+    const nextOpen = !isOpen;
+    setIsOpen(nextOpen);
+    if (nextOpen && unreadCount > 0) {
+      void markAllAsRead();
+    }
   };
 
   return (
@@ -63,7 +97,7 @@ export function SidebarUserMenu({ userId, userName, userEmail, locale }: { userI
       </div>
       <div className="flex items-center gap-1 relative" ref={popoverRef}>
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={handleToggleNotifications}
           className="p-2 relative rounded-md hover:bg-slate-800 text-slate-500 hover:text-blue-400 transition-colors"
           title={translations.sidebar.messages}
         >
@@ -78,32 +112,51 @@ export function SidebarUserMenu({ userId, userName, userEmail, locale }: { userI
             <div className="p-3 border-b flex justify-between items-center bg-slate-50">
               <span className="font-semibold text-sm text-slate-800">{translations.sidebar.notifications}</span>
               {unreadCount > 0 && (
-                <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline">{translations.sidebar.markAllRead}</button>
+                <button onClick={() => void markAllAsRead()} className="text-xs text-blue-600 hover:underline">
+                  {translations.sidebar.markAllRead}
+                </button>
               )}
             </div>
             <div className="max-h-64 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="p-4 text-center text-sm text-slate-500">{translations.sidebar.noNotifications}</div>
               ) : (
-                notifications.map(n => (
-                  <div 
-                    key={n.id} 
-                    onClick={() => markAsRead(n.id)}
-                    className={`p-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors flex gap-3 ${!n.read ? 'bg-blue-50/30' : ''}`}
-                  >
-                    <div className="mt-0.5">
-                      {!n.read ? (
-                        <div className="w-2 h-2 mt-1.5 rounded-full bg-blue-500"></div>
-                      ) : (
-                        <Check size={14} className="mt-0.5 text-slate-300" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className={`text-sm ${!n.read ? 'font-medium text-slate-800' : 'text-slate-600'}`}>{n.message}</p>
-                      <span className="text-xs text-slate-400 mt-1 inline-block">{n.time}</span>
-                    </div>
-                  </div>
-                ))
+                notifications.map((n) => {
+                  const actorName = getDisplayName(n);
+                  const createdAtLabel = new Date(n.createdAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <a
+                      href={n.link || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      key={n.id}
+                      onClick={() => setIsOpen(false)}
+                      className={`block p-3 border-b border-slate-100 hover:bg-slate-50 transition-colors flex gap-3 ${
+                        !n.read ? "bg-blue-50/30" : ""
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        {!n.read ? (
+                          <div className="w-2 h-2 mt-1.5 rounded-full bg-blue-500"></div>
+                        ) : (
+                          <Check size={14} className="mt-0.5 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className={`text-sm ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>
+                          <span className="font-semibold">{actorName}</span> {n.message}
+                        </p>
+                        <span className="text-xs text-slate-400 mt-1 inline-block">{createdAtLabel}</span>
+                      </div>
+                    </a>
+                  );
+                })
               )}
             </div>
           </div>

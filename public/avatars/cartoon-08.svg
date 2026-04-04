@@ -1,13 +1,17 @@
 ﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <circle cx="64" cy="64" r="62" fill="#fee2e2"/>
-  <path d="M28 45L43 24l8 21" fill="#f97316"/>
-  <path d="M100 45L85 24l-8 21" fill="#f97316"/>
-  <circle cx="64" cy="67" r="35" fill="#f97316"/>
-  <ellipse cx="64" cy="80" rx="19" ry="14" fill="#ffedd5"/>
-  <path d="M48 46l6 12M62 40l2 14M80 46l-6 12M66 40l-2 14" stroke="#111827" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="50" cy="66" r="5" fill="#111827"/>
-  <circle cx="78" cy="66" r="5" fill="#111827"/>
-  <path d="M64 72l-4 7h8z" fill="#111827"/>
-  <path d="M64 82c-4 0-8 3-8 7M64 82c4 0 8 3 8 7" stroke="#7c2d12" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <path d="M40 77h15M88 77H73" stroke="#7c2d12" stroke-width="2.5" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bg8" x1="8" y1="14" x2="120" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f1f5f9" />
+      <stop offset="1" stop-color="#cbd5e1" />
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#bg8)" />
+  <path d="M16 126c8-24 25-34 48-34s40 10 48 34z" fill="#0f766e" />
+  <circle cx="64" cy="58" r="27" fill="#f3c8a7" />
+  <path d="M36 54c0-17 12-27 28-27s28 10 28 27v3H36z" fill="#94a3b8" />
+  <path d="M42 44c4-6 11-9 22-9s18 3 22 9" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round" />
+  <circle cx="54" cy="60" r="3.2" fill="#1f2937" />
+  <circle cx="74" cy="60" r="3.2" fill="#1f2937" />
+  <path d="M64 67v5" stroke="#92400e" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M56 74c2.2 2.7 4.9 4 8 4s5.8-1.3 8-4" stroke="#7f1d1d" stroke-width="2.2" stroke-linecap="round" fill="none" />
 </svg>

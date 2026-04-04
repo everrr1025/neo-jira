@@ -92,3 +92,32 @@ export async function completeSprint(sprintId: string) {
     return { success: false, error: error.message };
   }
 }
+
+export async function deleteSprint(sprintId: string) {
+  try {
+    const sprint = await prisma.iteration.findUnique({
+      where: { id: sprintId },
+      select: { id: true, projectId: true },
+    });
+    if (!sprint) return { success: false, error: "Sprint not found" };
+
+    await checkProjectAdmin(sprint.projectId);
+
+    await prisma.$transaction([
+      prisma.issue.updateMany({
+        where: { iterationId: sprintId },
+        data: { iterationId: null },
+      }),
+      prisma.iteration.delete({
+        where: { id: sprintId },
+      }),
+    ]);
+
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}

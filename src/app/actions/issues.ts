@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { checkProjectAdmin } from "@/lib/permissions";
 
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
@@ -105,5 +106,42 @@ export async function updateIssue(issueId: string, data: any) {
   } catch (error) {
     console.error('Failed to update issue:', error);
     return { success: false, error: 'Failed to update issue' };
+  }
+}
+
+export async function deleteIssue(issueId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const issue = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: { id: true, projectId: true },
+    });
+
+    if (!issue) {
+      return { success: false, error: "Issue not found" };
+    }
+
+    await checkProjectAdmin(issue.projectId);
+
+    const issuePath = `/issues/${issueId}`;
+
+    await prisma.$transaction([
+      prisma.notification.deleteMany({
+        where: {
+          OR: [{ link: issuePath }, { link: { startsWith: `${issuePath}?` } }],
+        },
+      }),
+      prisma.issue.delete({ where: { id: issueId } }),
+    ]);
+
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete issue:", error);
+    return { success: false, error: error?.message || "Failed to delete issue" };
   }
 }

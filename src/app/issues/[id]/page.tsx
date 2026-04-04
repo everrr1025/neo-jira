@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
+import { getProjectRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -53,13 +54,26 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     orderBy: { startDate: "desc" },
   });
 
+  let canDeleteIssue = isGlobalAdmin;
+  if (!canDeleteIssue) {
+    const role = await getProjectRole(userId, issue.projectId);
+    canDeleteIssue = role === "ADMIN";
+  }
+
   return (
     <div className="flex flex-col h-full max-w-5xl mx-auto w-full pb-10">
       <div className="mb-6">
         <BackButton label={translations.issueDetail.back} />
       </div>
 
-      <IssueDetailClient initialIssue={issue} users={users} iterations={iterations} currentUserId={userId} locale={locale} />
+      <IssueDetailClient
+        initialIssue={issue}
+        users={users}
+        iterations={iterations}
+        currentUserId={userId}
+        locale={locale}
+        canDeleteIssue={canDeleteIssue}
+      />
     </div>
   );
 }

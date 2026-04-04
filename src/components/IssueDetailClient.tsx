@@ -1,11 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useState, useTransition, useEffect } from "react";
-import { updateIssue } from "@/app/actions/issues";
-import { Check, Loader2 } from "lucide-react";
+import { deleteIssue, updateIssue } from "@/app/actions/issues";
+import { Check, Loader2, Trash2 } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
 import CommentSection from "./CommentSection";
 import AttachmentUpload from "./AttachmentUpload";
+import AlertPopup from "./AlertPopup";
+import { useRouter } from "next/navigation";
 import {
   getIssueStatusLabel,
   getIssueTypeLabel,
@@ -21,17 +23,22 @@ export default function IssueDetailClient({
   iterations = [],
   currentUserId,
   locale,
+  canDeleteIssue,
 }: {
   initialIssue: any;
   users: any[];
   iterations?: any[];
   currentUserId: string;
   locale: Locale;
+  canDeleteIssue: boolean;
 }) {
+  const router = useRouter();
   const [issue, setIssue] = useState(initialIssue);
   const [isPending, startTransition] = useTransition();
+  const [isDeleting, setIsDeleting] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = useState("");
   const translations = getTranslations(locale);
 
   useEffect(() => {
@@ -84,9 +91,35 @@ export default function IssueDetailClient({
         setSuccessMsg(true);
         setTimeout(() => setSuccessMsg(false), 3000);
       } else {
-        alert(translations.issueDetail.failedToSave);
+        setAlertMessage(translations.issueDetail.failedToSave);
       }
     });
+  };
+
+  const handleDelete = async () => {
+    if (!canDeleteIssue || isDeleting) return;
+
+    const confirmed = window.confirm("Are you sure you want to delete this issue? This cannot be undone.");
+    if (!confirmed) return;
+
+    setAlertMessage("");
+    setIsDeleting(true);
+    try {
+      const result = await deleteIssue(issue.id);
+      if (!result.success) {
+        setAlertMessage(result.error || "Failed to delete issue");
+        setIsDeleting(false);
+        return;
+      }
+
+      router.replace("/issues");
+      router.refresh();
+      setIsDeleting(false);
+    } catch (error) {
+      console.error(error);
+      setAlertMessage("Failed to delete issue");
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -140,7 +173,7 @@ export default function IssueDetailClient({
         </div>
         
         {/* Save Button */}
-        <div className="pt-4 flex items-center gap-4">
+        <div className="pt-4 flex flex-wrap items-center gap-4">
           <button
             onClick={handleSave}
             disabled={isPending}
@@ -155,7 +188,20 @@ export default function IssueDetailClient({
               <Check size={16} /> {translations.issueDetail.saved}
             </span>
           )}
+
+          {canDeleteIssue && (
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-white border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2.5 rounded-md font-medium text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+            >
+              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {locale === "zh" ? "删除 Issue" : "Delete Issue"}
+            </button>
+          )}
         </div>
+
+        <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={5000} />
 
         {/* Attachment Section */}
         <AttachmentUpload issueId={issue.id} locale={locale} />
@@ -275,3 +321,5 @@ export default function IssueDetailClient({
     </div>
   );
 }
+
+

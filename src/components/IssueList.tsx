@@ -245,12 +245,14 @@ export default function IssueList({
       resizingRef.current = { colIndex, startX: e.clientX, startWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
-        if (!resizingRef.current) return;
-        const delta = ev.clientX - resizingRef.current.startX;
-        const newWidth = Math.max(60, resizingRef.current.startWidth + delta);
-        setColumns((prev) =>
-          prev.map((c, i) => (i === resizingRef.current!.colIndex ? { ...c, width: newWidth } : c))
-        );
+        const resizeState = resizingRef.current;
+        if (!resizeState) return;
+
+        const delta = ev.clientX - resizeState.startX;
+        const newWidth = Math.max(60, resizeState.startWidth + delta);
+        const resizeColIndex = resizeState.colIndex;
+
+        setColumns((prev) => prev.map((c, i) => (i === resizeColIndex ? { ...c, width: newWidth } : c)));
       };
 
       const onMouseUp = () => {

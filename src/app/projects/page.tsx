@@ -6,6 +6,7 @@ import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { redirect } from "next/navigation";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
+import { getDefaultAvatar } from "@/lib/avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,7 @@ export default async function ProjectsPage() {
   const isGlobalAdmin = userRole === "ADMIN";
   const activeProjectId = await getActiveProjectIdForUser(userId, userRole);
 
-  const whereClause = isGlobalAdmin
-    ? {}
-    : { members: { some: { userId } } };
+  const whereClause = isGlobalAdmin ? {} : { members: { some: { userId } } };
 
   const projects = await prisma.project.findMany({
     where: whereClause,
@@ -48,9 +47,7 @@ export default async function ProjectsPage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.projectsPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
-            {isGlobalAdmin
-              ? translations.projectsPage.adminSubtitle
-              : translations.projectsPage.memberSubtitle}
+            {isGlobalAdmin ? translations.projectsPage.adminSubtitle : translations.projectsPage.memberSubtitle}
           </p>
         </div>
         {isGlobalAdmin && (
@@ -67,12 +64,39 @@ export default async function ProjectsPage() {
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{translations.projectsPage.project}</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{translations.projectsPage.key}</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{translations.projectsPage.lead}</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{translations.projectsPage.members}</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{translations.projectsPage.openIssues}</th>
-              <th scope="col" className="relative px-6 py-3"><span className="sr-only">{translations.projectsPage.actions}</span></th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+              >
+                {translations.projectsPage.project}
+              </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+              >
+                {translations.projectsPage.key}
+              </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+              >
+                {translations.projectsPage.lead}
+              </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+              >
+                {translations.projectsPage.members}
+              </th>
+              <th
+                scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
+              >
+                {translations.projectsPage.openIssues}
+              </th>
+              <th scope="col" className="relative px-6 py-3">
+                <span className="sr-only">{translations.projectsPage.actions}</span>
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
@@ -80,16 +104,26 @@ export default async function ProjectsPage() {
               const isSelected = activeProjectId === project.id;
               const canManageSettings =
                 isGlobalAdmin || project.members.some((m) => m.userId === userId && m.role === "ADMIN");
+              const projectAdmins = project.members.filter((member) => member.role === "ADMIN");
+              const leadUser = projectAdmins[0]?.user || project.owner;
+              const leadName = leadUser?.name || leadUser?.email || "?";
+              const visibleMembers = project.members.slice(0, 3);
+              const hiddenMembers = project.members.slice(3);
 
               return (
-                <tr key={project.id} className={`transition-colors ${isSelected ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
+                <tr
+                  key={project.id}
+                  className={`transition-colors ${isSelected ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="flex-shrink-0 h-8 w-8 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-sm">
                         {project.key.charAt(0)}
                       </div>
                       <div className="ml-4 flex flex-col">
-                        <div className="text-sm font-medium text-slate-900 group-hover:text-blue-600 cursor-pointer">{project.name}</div>
+                        <div className="text-sm font-medium text-slate-900 group-hover:text-blue-600 cursor-pointer">
+                          {project.name}
+                        </div>
                         <div className="text-xs text-slate-500 truncate max-w-xs">{project.description}</div>
                       </div>
                     </div>
@@ -101,37 +135,47 @@ export default async function ProjectsPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-slate-900 flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">
-                        {project.owner?.name?.charAt(0) || "?"}
-                      </div>
-                      {project.owner?.name}
+                      {leadUser ? (
+                        <img
+                          src={getDefaultAvatar(leadUser.id)}
+                          alt={leadName}
+                          className="w-7 h-7 rounded-full border border-slate-200 object-cover"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">
+                          ?
+                        </div>
+                      )}
+                      <span>{leadName}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-slate-900">
-                        {locale === "zh" ? `${project.members.length} 名成员` : `${project.members.length} members`}
-                      </span>
-                      <div className="flex flex-wrap gap-1 mt-1 max-w-[200px]">
-                        {project.members.slice(0, 3).map(m => (
-                          <span key={m.userId} title={`${m.user.name || m.user.email} - ${m.role}`} className="w-6 h-6 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[10px] font-bold text-slate-600 cursor-help">
-                            {m.user.name?.charAt(0) || m.user.email?.charAt(0) || "?"}
-                          </span>
-                        ))}
-                        {project.members.length > 3 && (
+                    <div className="flex items-center gap-1.5">
+                      {visibleMembers.map((member) => {
+                        const memberName = member.user.name || member.user.email || "?";
+                        const memberInitial = memberName.charAt(0).toUpperCase();
+
+                        return (
                           <span
-                            title={locale === "zh" ? `另外 ${project.members.length - 3} 名成员` : `${project.members.length - 3} more members`}
-                            className="w-6 h-6 rounded-full bg-slate-100 border border-white flex items-center justify-center text-[10px] font-bold text-slate-500 cursor-help"
+                            key={member.userId}
+                            title={memberName}
+                            className="w-7 h-7 rounded-full bg-slate-200 border border-white flex items-center justify-center text-xs font-bold text-slate-600 cursor-help"
                           >
-                            +{project.members.length - 3}
+                            {memberInitial}
                           </span>
-                        )}
-                      </div>
+                        );
+                      })}
+                      {hiddenMembers.length > 0 && (
+                        <span
+                          title={hiddenMembers.map((member) => member.user.name || member.user.email || "?").join("\n")}
+                          className="w-7 h-7 rounded-full bg-slate-100 border border-white flex items-center justify-center text-xs font-bold text-slate-500 cursor-help"
+                        >
+                          +{hiddenMembers.length}
+                        </span>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {project._count.issues}
-                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{project._count.issues}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-3">
                       <Link

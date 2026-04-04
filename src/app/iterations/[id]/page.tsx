@@ -3,7 +3,7 @@ import KanbanBoard from "@/components/KanbanBoard";
 import CreateIssueButton from "@/components/CreateIssueButton";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { getProjectRole } from "@/lib/permissions";
@@ -44,9 +44,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
     },
   });
 
-  if (!iteration) {
-    return notFound();
-  }
+  if (!iteration) redirect("/iterations");
 
   let canManage = isGlobalAdmin;
   if (!canManage) {
@@ -76,7 +74,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
           <div className="flex -space-x-2">
             <CreateIssueButton locale={locale} />
           </div>
-          {canManage && iteration.status !== "COMPLETED" && (
+          {canManage && (
             <>
               <div className="h-6 w-px bg-slate-200 mx-2"></div>
               <SprintActionButton sprintId={iteration.id} status={iteration.status} locale={locale} />
