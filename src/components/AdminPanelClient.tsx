@@ -1,56 +1,297 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createUser, createProject, updateProjectMembers, updateMemberRole } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Check, Loader2, Crown } from "lucide-react";
+import { createUser, createProject, updateProjectMembers, deleteUser } from "@/app/actions/admin";
+import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
+import { Locale } from "@/lib/i18n";
 
-export default function AdminPanelClient({ initialUsers, initialProjects }: { initialUsers: any[], initialProjects: any[] }) {
+type UserRecord = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  createdAt: string;
+  ownedProjectsCount: number;
+};
+
+type ProjectMemberRecord = {
+  userId: string;
+  role: string;
+};
+
+type ProjectRecord = {
+  id: string;
+  name: string;
+  key: string;
+  description: string | null;
+  owner: { name: string | null };
+  members: ProjectMemberRecord[];
+  issuesCount: number;
+  createdAt: string;
+};
+
+type NewUserForm = {
+  name: string;
+  email: string;
+  password: string;
+  role: "USER" | "ADMIN";
+};
+
+type NewProjectForm = {
+  name: string;
+  key: string;
+  description: string;
+  ownerId: string;
+  memberIds: string[];
+};
+
+type UsersViewProps = {
+  users: UserRecord[];
+  setErrorMsg: React.Dispatch<React.SetStateAction<string>>;
+  locale: Locale;
+  currentUserId: string;
+};
+
+type ProjectsViewProps = {
+  projects: ProjectRecord[];
+  users: UserRecord[];
+  setErrorMsg: React.Dispatch<React.SetStateAction<string>>;
+  locale: Locale;
+};
+
+const SPECIAL_CHARS = "!@#$%^&*()-_=+[]{};:,.?/|";
+const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const LOWER = "abcdefghijklmnopqrstuvwxyz";
+const DIGITS = "0123456789";
+const PASSWORD_POOLS = [UPPER, LOWER, DIGITS, SPECIAL_CHARS];
+
+function pickChar(pool: string) {
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function shuffle(text: string) {
+  const arr = text.split("");
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.join("");
+}
+
+function generateDefaultPassword(length = 12) {
+  const chosen = shuffle("0123").slice(0, 3).split("").map((i) => PASSWORD_POOLS[Number(i)]);
+  let password = chosen.map((pool) => pickChar(pool)).join("");
+  const all = PASSWORD_POOLS.join("");
+  while (password.length < Math.max(8, length)) {
+    password += pickChar(all);
+  }
+  return shuffle(password);
+}
+
+const TEXT = {
+  en: {
+    tabs: {
+      users: "Users Management",
+      projects: "Projects & Access",
+    },
+    errors: {
+      createUser: "Failed to create user",
+      deleteUser: "Failed to delete user",
+      createProject: "Failed to create project",
+      updateAccess: "Failed to update access",
+      updateRole: "Failed to update role",
+      ownerRequired: "Please select a project owner.",
+      memberRequired: "Please select at least one project member.",
+    },
+    users: {
+      addTitle: "Add New User",
+      fullName: "Full Name",
+      email: "Email Address",
+      password: "Password",
+      passwordRule: "At least 8 chars, and include at least 3 of uppercase/lowercase/number/special.",
+      generate: "Generate",
+      show: "Show",
+      hide: "Hide",
+      systemRole: "System Role",
+      baseUser: "Base User",
+      systemAdmin: "System Administrator",
+      create: "Create User",
+      name: "Name",
+      role: "Role",
+      createdAt: "Created At",
+      actions: "Actions",
+      cannotDeleteOwner: "Project owner",
+      cannotDeleteSelf: "Current user",
+      delete: "Delete",
+      user: "USER",
+      admin: "ADMIN",
+    },
+    projects: {
+      createTitle: "Create Project",
+      projectName: "Project Name",
+      projectKey: "Key (2-4 uppercase letters)",
+      projectOwner: "Project Owner",
+      projectMembers: "Project Members",
+      description: "Description",
+      descriptionPlaceholder: "Optional details...",
+      create: "Create Project",
+      noAssignableUsers: "No non-admin users available for project assignment.",
+      noDescription: "No description provided.",
+      createdBy: "Created by",
+      totalIssues: "total issues",
+      teamAccess: "Team Access & Roles",
+      toggleAccess: "Click to toggle access",
+      demote: "Click to demote to Member",
+      promote: "Click to promote to Project Admin",
+      admin: "Admin",
+      member: "Member",
+      empty: "No projects currently exist.",
+    },
+  },
+  zh: {
+    tabs: {
+      users: "用户管理",
+      projects: "项目与权限",
+    },
+    errors: {
+      createUser: "创建用户失败",
+      deleteUser: "删除用户失败",
+      createProject: "创建项目失败",
+      updateAccess: "更新权限失败",
+      updateRole: "更新角色失败",
+      ownerRequired: "请选择项目负责人。",
+      memberRequired: "请至少选择一个项目成员。",
+    },
+    users: {
+      addTitle: "新增用户",
+      fullName: "姓名",
+      email: "邮箱地址",
+      password: "密码",
+      passwordRule: "至少 8 位，并包含大写/小写/数字/特殊符号中的至少 3 项。",
+      generate: "重生密码",
+      show: "显示",
+      hide: "隐藏",
+      systemRole: "系统角色",
+      baseUser: "普通用户",
+      systemAdmin: "系统管理员",
+      create: "创建用户",
+      name: "姓名",
+      role: "角色",
+      createdAt: "创建时间",
+      actions: "操作",
+      cannotDeleteOwner: "项目负责人",
+      cannotDeleteSelf: "当前用户",
+      delete: "删除",
+      user: "用户",
+      admin: "管理员",
+    },
+    projects: {
+      createTitle: "创建项目",
+      projectName: "项目名称",
+      projectKey: "标识（2-4 位大写字母）",
+      projectOwner: "项目负责人",
+      projectMembers: "项目成员",
+      description: "项目描述",
+      descriptionPlaceholder: "可选说明...",
+      create: "创建项目",
+      noAssignableUsers: "没有可分配的非系统管理员用户。",
+      noDescription: "暂无项目描述。",
+      createdBy: "创建人",
+      totalIssues: "个问题",
+      teamAccess: "团队权限与角色",
+      toggleAccess: "点击切换访问权限",
+      demote: "点击降级为成员",
+      promote: "点击提升为项目管理员",
+      admin: "管理员",
+      member: "成员",
+      empty: "当前还没有项目。",
+    },
+  },
+} as const;
+
+function getDisplayName(user: UserRecord) {
+  return user.name || user.email;
+}
+
+export default function AdminPanelClient({
+  initialUsers,
+  initialProjects,
+  locale,
+  currentUserId,
+}: {
+  initialUsers: UserRecord[];
+  initialProjects: ProjectRecord[];
+  locale: Locale;
+  currentUserId: string;
+}) {
   const [activeTab, setActiveTab] = useState<"USERS" | "PROJECTS">("USERS");
-  const [isPending, startTransition] = useTransition();
   const [errorMsg, setErrorMsg] = useState("");
-  
+  const text = TEXT[locale];
+
   return (
-    <div className="flex flex-col flex-1 space-y-6">
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-200/50 p-1 w-fit rounded-lg">
+    <div className="flex flex-1 flex-col space-y-6">
+      <div className="flex w-fit gap-1 rounded-lg bg-slate-200/50 p-1">
         <button
-          onClick={() => { setActiveTab("USERS"); setErrorMsg(""); }}
-          className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all ${
+          onClick={() => {
+            setActiveTab("USERS");
+            setErrorMsg("");
+          }}
+          className={`flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-all ${
             activeTab === "USERS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Users size={16} /> Users Management
+          <Users size={16} /> {text.tabs.users}
         </button>
         <button
-          onClick={() => { setActiveTab("PROJECTS"); setErrorMsg(""); }}
-          className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all ${
+          onClick={() => {
+            setActiveTab("PROJECTS");
+            setErrorMsg("");
+          }}
+          className={`flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-all ${
             activeTab === "PROJECTS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <FolderGit2 size={16} /> Projects & Access
+          <FolderGit2 size={16} /> {text.tabs.projects}
         </button>
       </div>
-      
+
       {errorMsg && (
-        <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm font-medium border border-red-100 flex items-center gap-2">
-           {errorMsg}
+        <div className="flex items-center gap-2 rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
+          {errorMsg}
         </div>
       )}
 
-      {/* Views */}
-      <div className="flex gap-6 flex-col xl:flex-row">
-         {activeTab === "USERS" ? (
-           <UsersView users={initialUsers} isPending={isPending} startTransition={startTransition} setErrorMsg={setErrorMsg} />
-         ) : (
-           <ProjectsView projects={initialProjects} users={initialUsers} isPending={isPending} startTransition={startTransition} setErrorMsg={setErrorMsg} />
-         )}
+      <div className="flex flex-col gap-6 xl:flex-row">
+        {activeTab === "USERS" ? (
+          <UsersView
+            users={initialUsers}
+            setErrorMsg={setErrorMsg}
+            locale={locale}
+            currentUserId={currentUserId}
+          />
+        ) : (
+          <ProjectsView
+            projects={initialProjects}
+            users={initialUsers}
+            setErrorMsg={setErrorMsg}
+            locale={locale}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function UsersView({ users, isPending, startTransition, setErrorMsg }: any) {
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "USER" });
+function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps) {
+  const text = TEXT[locale];
+  const [isPending, startTransition] = useTransition();
+  const [showPassword, setShowPassword] = useState(false);
+  const [newUser, setNewUser] = useState<NewUserForm>({
+    name: "",
+    email: "",
+    password: generateDefaultPassword(),
+    role: "USER",
+  });
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,229 +299,414 @@ function UsersView({ users, isPending, startTransition, setErrorMsg }: any) {
     startTransition(async () => {
       const res = await createUser(newUser);
       if (res.success) {
-        setNewUser({ name: "", email: "", password: "", role: "USER" });
+        setNewUser({ name: "", email: "", password: generateDefaultPassword(), role: "USER" });
+        setShowPassword(false);
       } else {
-        setErrorMsg(res.error || "Failed to create user");
+        setErrorMsg(res.error || text.errors.createUser);
+      }
+    });
+  };
+
+  const handleDeleteUser = (userId: string) => {
+    setErrorMsg("");
+    startTransition(async () => {
+      const res = await deleteUser(userId);
+      if (!res.success) {
+        setErrorMsg(res.error || text.errors.deleteUser);
       }
     });
   };
 
   return (
     <>
-      <div className="xl:w-1/3 bg-white p-6 rounded-xl border shadow-sm h-fit">
-        <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-          <Plus size={18} className="text-blue-600" /> Add New User
+      <div className="h-fit rounded-xl border bg-white p-6 shadow-sm xl:w-1/3">
+        <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
+          <Plus size={18} className="text-blue-600" /> {text.users.addTitle}
         </h3>
         <form onSubmit={handleCreateUser} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
-            <input required type="text" value={newUser.name} onChange={e => setNewUser(p => ({...p, name: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="Jane Doe" />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.users.fullName}</label>
+            <input
+              required
+              type="text"
+              value={newUser.name}
+              onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))}
+              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              placeholder="Jane Doe"
+            />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
-            <input required type="email" value={newUser.email} onChange={e => setNewUser(p => ({...p, email: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="jane@neo-jira.local" />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.users.email}</label>
+            <input
+              required
+              type="email"
+              value={newUser.email}
+              onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))}
+              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              placeholder="jane@neo-jira.local"
+            />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
-            <input required minLength={6} type="password" value={newUser.password} onChange={e => setNewUser(p => ({...p, password: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="••••••••" />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.users.password}</label>
+            <div className="flex gap-2">
+              <input
+                required
+                minLength={8}
+                type={showPassword ? "text" : "password"}
+                value={newUser.password}
+                onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))}
+                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                title={showPassword ? text.users.hide : text.users.show}
+                aria-label={showPassword ? text.users.hide : text.users.show}
+                className="inline-flex items-center rounded-md border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewUser((p) => ({ ...p, password: generateDefaultPassword() }))}
+                title={text.users.generate}
+                aria-label={text.users.generate}
+                className="inline-flex items-center rounded-md border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{text.users.passwordRule}</p>
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">System Role</label>
-            <select value={newUser.role} onChange={e => setNewUser(p => ({...p, role: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white">
-              <option value="USER">Base User</option>
-              <option value="ADMIN">System Administrator</option>
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.users.systemRole}</label>
+            <select
+              value={newUser.role}
+              onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value as NewUserForm["role"] }))}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            >
+              <option value="USER">{text.users.baseUser}</option>
+              <option value="ADMIN">{text.users.systemAdmin}</option>
             </select>
           </div>
-          <button disabled={isPending} type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md transition-colors shadow-sm disabled:opacity-50 mt-2 flex justify-center items-center gap-2">
-            {isPending && <Loader2 size={16} className="animate-spin" />} Create User
+          <button
+            disabled={isPending}
+            type="submit"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 py-2 font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isPending && <Loader2 size={16} className="animate-spin" />} {text.users.create}
           </button>
         </form>
       </div>
-      
-      <div className="xl:w-2/3 bg-white rounded-xl border shadow-sm overflow-hidden flex-1 h-fit">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold">
+
+      <div className="h-fit flex-1 overflow-hidden rounded-xl border bg-white shadow-sm xl:w-2/3">
+        <table className="w-full whitespace-nowrap text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
             <tr>
-              <th className="px-5 py-4 border-b">Name</th>
-              <th className="px-5 py-4 border-b">Email</th>
-              <th className="px-5 py-4 border-b w-32">Role</th>
-              <th className="px-5 py-4 border-b w-40">Created At</th>
+              <th className="border-b px-5 py-4">{text.users.name}</th>
+              <th className="border-b px-5 py-4">{text.users.email}</th>
+              <th className="w-32 border-b px-5 py-4">{text.users.role}</th>
+              <th className="w-40 border-b px-5 py-4">{text.users.createdAt}</th>
+              <th className="w-40 border-b px-5 py-4">{text.users.actions}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {users.map((u: any) => (
-              <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-5 py-3 font-medium text-slate-800 flex items-center gap-3">
-                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-700">
-                     {u.name?.charAt(0) || 'U'}
-                   </div>
-                   {u.name}
-                </td>
-                <td className="px-5 py-3 text-slate-600">{u.email}</td>
-                <td className="px-5 py-3">
-                   {u.role === 'ADMIN' ? (
-                     <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit"><Shield size={12}/> ADMIN</span>
-                   ) : (
-                     <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">USER</span>
-                   )}
-                </td>
-                <td className="px-5 py-3 text-slate-500 text-xs font-medium">{new Date(u.createdAt).toLocaleDateString()}</td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const isSelf = u.id === currentUserId;
+              const isOwner = u.ownedProjectsCount > 0;
+              const disableDelete = isSelf || isOwner || isPending;
+              return (
+                <tr key={u.id} className="transition-colors hover:bg-slate-50">
+                  <td className="flex items-center gap-3 px-5 py-3 font-medium text-slate-800">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                      {getDisplayName(u).charAt(0).toUpperCase()}
+                    </div>
+                    {getDisplayName(u)}
+                  </td>
+                  <td className="px-5 py-3 text-slate-600">{u.email}</td>
+                  <td className="px-5 py-3">
+                    {u.role === "ADMIN" ? (
+                      <span className="flex w-fit items-center gap-1 rounded bg-indigo-100 px-2 py-1 text-xs font-bold text-indigo-700">
+                        <Shield size={12} /> {text.users.admin}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{text.users.user}</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-xs font-medium text-slate-500">
+                    {new Date(u.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      type="button"
+                      disabled={disableDelete}
+                      onClick={() => handleDeleteUser(u.id)}
+                      title={isOwner ? text.users.cannotDeleteOwner : isSelf ? text.users.cannotDeleteSelf : text.users.delete}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 size={12} />
+                      {text.users.delete}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
     </>
-  )
+  );
 }
 
-function ProjectsView({ projects, users, isPending, startTransition, setErrorMsg }: any) {
-  const [newProject, setNewProject] = useState({ name: "", key: "", description: "" });
-  
+function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProps) {
+  const text = TEXT[locale];
+  const [isCreatingProject, startCreateTransition] = useTransition();
+  const [isUpdatingMembers, startUpdateTransition] = useTransition();
+  const assignableUsers = users.filter((u) => u.role !== "ADMIN");
+  const [newProject, setNewProject] = useState<NewProjectForm>({
+    name: "",
+    key: "",
+    description: "",
+    ownerId: "",
+    memberIds: [],
+  });
+
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
-    startTransition(async () => {
-      const res = await createProject({ ...newProject, memberIds: [] });
+
+    if (!newProject.ownerId) {
+      setErrorMsg(text.errors.ownerRequired);
+      return;
+    }
+    if (newProject.memberIds.length < 1) {
+      setErrorMsg(text.errors.memberRequired);
+      return;
+    }
+
+    const memberIds = newProject.memberIds.includes(newProject.ownerId)
+      ? Array.from(new Set(newProject.memberIds))
+      : Array.from(new Set([...newProject.memberIds, newProject.ownerId]));
+
+    startCreateTransition(async () => {
+      const res = await createProject({
+        name: newProject.name,
+        key: newProject.key,
+        description: newProject.description,
+        ownerId: newProject.ownerId,
+        memberIds,
+      });
       if (res.success) {
-        setNewProject({ name: "", key: "", description: "" });
+        setNewProject({ name: "", key: "", description: "", ownerId: "", memberIds: [] });
       } else {
-        setErrorMsg(res.error || "Failed to create project");
+        setErrorMsg(res.error || text.errors.createProject);
       }
     });
   };
 
-  const toggleMember = (projectId: string, userId: string, currentMembers: any[]) => {
-    const memberUserIds = currentMembers.map((m: any) => m.userId);
-    let newMemberIds: string[];
-    if (memberUserIds.includes(userId)) {
-      newMemberIds = memberUserIds.filter((id: string) => id !== userId);
-    } else {
-      newMemberIds = [...memberUserIds, userId];
-    }
-    
-    startTransition(async () => {
-      const res = await updateProjectMembers(projectId, newMemberIds);
-      if (!res.success) setErrorMsg(res.error || "Failed to update access");
-    });
-  }
+  const toggleMember = (projectId: string, userId: string, currentMembers: ProjectMemberRecord[]) => {
+    const memberUserIds = currentMembers.map((m) => m.userId);
+    const newMemberIds = memberUserIds.includes(userId)
+      ? memberUserIds.filter((id) => id !== userId)
+      : [...memberUserIds, userId];
 
-  const handleRoleChange = (projectId: string, userId: string, newRole: string) => {
-    startTransition(async () => {
-      const res = await updateMemberRole(projectId, userId, newRole);
-      if (!res.success) setErrorMsg(res.error || "Failed to update role");
+    startUpdateTransition(async () => {
+      const res = await updateProjectMembers(projectId, newMemberIds);
+      if (!res.success) setErrorMsg(res.error || text.errors.updateAccess);
     });
   };
 
   return (
     <>
-      <div className="xl:w-1/3 bg-white p-6 rounded-xl border shadow-sm h-fit">
-        <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-          <Plus size={18} className="text-emerald-600" /> Create Project
+      <div className="h-fit rounded-xl border bg-white p-6 shadow-sm xl:w-1/3">
+        <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-800">
+          <Plus size={18} className="text-emerald-600" /> {text.projects.createTitle}
         </h3>
+        {assignableUsers.length === 0 && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            {text.projects.noAssignableUsers}
+          </div>
+        )}
         <form onSubmit={handleCreateProject} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Project Name</label>
-            <input required type="text" value={newProject.name} onChange={e => setNewProject(p => ({...p, name: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="Frontend App" />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectName}</label>
+            <input
+              required
+              type="text"
+              value={newProject.name}
+              onChange={(e) => setNewProject((p) => ({ ...p, name: e.target.value }))}
+              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              placeholder="Frontend App"
+              disabled={assignableUsers.length === 0}
+            />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Key (2-4 uppercase letters)</label>
-            <input required type="text" maxLength={4} pattern="[A-Z]+" value={newProject.key} onChange={e => setNewProject(p => ({...p, key: e.target.value.toUpperCase()}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono" placeholder="FE" />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectKey}</label>
+            <input
+              required
+              type="text"
+              maxLength={4}
+              pattern="[A-Z]+"
+              value={newProject.key}
+              onChange={(e) => setNewProject((p) => ({ ...p, key: e.target.value.toUpperCase() }))}
+              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none"
+              placeholder="FE"
+              disabled={assignableUsers.length === 0}
+            />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
-            <textarea value={newProject.description} onChange={e => setNewProject(p => ({...p, description: e.target.value}))} className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none h-20" placeholder="Optional details..." />
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectOwner}</label>
+            <select
+              required
+              value={newProject.ownerId}
+              onChange={(e) => setNewProject((p) => ({ ...p, ownerId: e.target.value }))}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              disabled={assignableUsers.length === 0}
+            >
+              <option value="">--</option>
+              {assignableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {getDisplayName(u)}
+                </option>
+              ))}
+            </select>
           </div>
-          <button disabled={isPending} type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-md transition-colors shadow-sm disabled:opacity-50 mt-2 flex justify-center items-center gap-2">
-            {isPending && <Loader2 size={16} className="animate-spin" />} Create Project
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectMembers}</label>
+            <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+              {assignableUsers.map((u) => {
+                const checked = newProject.memberIds.includes(u.id);
+                return (
+                  <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setNewProject((prev) => ({
+                          ...prev,
+                          memberIds: e.target.checked
+                            ? Array.from(new Set([...prev.memberIds, u.id]))
+                            : prev.memberIds.filter((id) => id !== u.id),
+                        }))
+                      }
+                      disabled={assignableUsers.length === 0}
+                    />
+                    <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.description}</label>
+            <textarea
+              value={newProject.description}
+              onChange={(e) => setNewProject((p) => ({ ...p, description: e.target.value }))}
+              className="h-20 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+              placeholder={text.projects.descriptionPlaceholder}
+              disabled={assignableUsers.length === 0}
+            />
+          </div>
+          <button
+            disabled={isCreatingProject || assignableUsers.length === 0}
+            type="submit"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 py-2 font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {isCreatingProject && <Loader2 size={16} className="animate-spin" />} {text.projects.create}
           </button>
         </form>
       </div>
 
-      <div className="xl:w-2/3 flex flex-col gap-4">
-        {projects.map((p: any) => (
-          <div key={p.id} className="bg-white rounded-xl border shadow-sm p-5 hover:border-slate-300 transition-colors flex flex-col gap-4">
-            <div className="flex justify-between items-start">
-               <div>
-                 <div className="flex items-center gap-3 mb-1">
-                   <h4 className="text-lg font-bold text-slate-800">{p.name}</h4>
-                   <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold border font-mono tracking-wider">{p.key}</span>
-                 </div>
-                 <p className="text-sm text-slate-500">{p.description || "No description provided."}</p>
-               </div>
-               <div className="text-right text-xs bg-slate-50 p-2 rounded border border-slate-100">
-                 <div className="text-slate-400">Created by <span className="font-semibold text-slate-600">{p.owner.name}</span></div>
-                 <div className="text-slate-400 mt-1"><span className="font-bold text-slate-700">{p.issuesCount}</span> total issues</div>
-               </div>
+      <div className="flex flex-col gap-4 xl:w-2/3">
+        {projects.map((p) => {
+          const orderedUsers = [...assignableUsers].sort((a, b) => {
+            const roleA = p.members.find((m) => m.userId === a.id)?.role;
+            const roleB = p.members.find((m) => m.userId === b.id)?.role;
+            if (roleA === "ADMIN" && roleB !== "ADMIN") return -1;
+            if (roleA !== "ADMIN" && roleB === "ADMIN") return 1;
+            return getDisplayName(a).localeCompare(getDisplayName(b));
+          });
+
+          return (
+            <div
+              key={p.id}
+              className="flex flex-col gap-4 rounded-xl border bg-white p-5 shadow-sm transition-colors hover:border-slate-300"
+            >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="mb-1 flex items-center gap-3">
+                  <h4 className="text-lg font-bold text-slate-800">{p.name}</h4>
+                  <span className="rounded border bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold tracking-wider text-slate-600">
+                    {p.key}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500">{p.description || text.projects.noDescription}</p>
+              </div>
+              <div className="rounded border border-slate-100 bg-slate-50 p-2 text-right text-xs">
+                <div className="text-slate-400">
+                  {text.projects.createdBy} <span className="font-semibold text-slate-600">{p.owner.name}</span>
+                </div>
+                <div className="mt-1 text-slate-400">
+                  <span className="font-bold text-slate-700">{p.issuesCount}</span> {text.projects.totalIssues}
+                </div>
+              </div>
             </div>
 
-            <div className="border-t pt-4 mt-2">
-               <h5 className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Users size={14} /> Team Access & Roles
-               </h5>
-               <div className="flex flex-wrap gap-2">
-                 {users.map((u: any) => {
-                   const membership = p.members.find((m: any) => m.userId === u.id);
-                   const hasAccess = !!membership;
-                   const isGlobalAdmin = u.role === 'ADMIN';
-                   const isProjectAdmin = membership?.role === 'ADMIN';
-                   
-                   return (
-                     <div key={u.id} className="flex items-center gap-1">
-                       <button
-                         disabled={isPending || isGlobalAdmin}
-                         onClick={() => toggleMember(p.id, u.id, p.members)}
-                         className={`flex items-center justify-between gap-3 px-3 py-2 border rounded-l-md text-sm transition-all focus:outline-none
-                           ${isGlobalAdmin ? 'bg-slate-100 border-slate-200 opacity-70 cursor-not-allowed' : ''}
-                           ${!isGlobalAdmin && hasAccess ? 'bg-blue-50 border-blue-200 hover:border-blue-400' : ''}
-                           ${!isGlobalAdmin && !hasAccess ? 'bg-white border-slate-200 hover:border-slate-300' : ''}
-                         `}
-                         title={isGlobalAdmin ? "Admins have global access" : "Click to toggle access"}
-                       >
-                         <span className={`font-medium ${hasAccess || isGlobalAdmin ? 'text-slate-900' : 'text-slate-500'}`}>
-                           {u.name}
-                         </span>
-                         {(hasAccess || isGlobalAdmin) ? (
-                           <Check size={16} className={isGlobalAdmin ? 'text-slate-400' : 'text-blue-600'} />
-                         ) : (
-                           <div className="w-4 h-4 rounded-full border border-slate-300"></div>
-                         )}
-                       </button>
-                       {/* Role toggle button - only show for existing non-global-admin members */}
-                       {hasAccess && !isGlobalAdmin && (
-                         <button
-                           disabled={isPending}
-                           onClick={() => handleRoleChange(p.id, u.id, isProjectAdmin ? "MEMBER" : "ADMIN")}
-                           className={`px-2 py-2 border rounded-r-md text-xs font-bold transition-all focus:outline-none flex items-center gap-1
-                             ${isProjectAdmin
-                               ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                               : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                             }
-                           `}
-                           title={isProjectAdmin ? "Click to demote to Member" : "Click to promote to Project Admin"}
-                         >
-                           <Crown size={14} />
-                           {isProjectAdmin ? 'Admin' : 'Member'}
-                         </button>
-                       )}
-                       {isGlobalAdmin && (
-                         <span className="px-2 py-2 border rounded-r-md text-xs font-bold bg-indigo-50 border-indigo-200 text-indigo-600 flex items-center gap-1">
-                           <Shield size={14} /> Global
-                         </span>
-                       )}
-                     </div>
-                   );
-                 })}
-               </div>
+            <div className="mt-2 border-t pt-4">
+              <h5 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
+                <Users size={14} /> {text.projects.teamAccess}
+              </h5>
+              <div className="flex flex-wrap gap-2">
+                {orderedUsers.map((u) => {
+                  const membership = p.members.find((m) => m.userId === u.id);
+                  const hasAccess = !!membership;
+                  const isProjectAdmin = membership?.role === "ADMIN";
+
+                  return (
+                    <div key={u.id} className="flex items-center gap-1">
+                      <button
+                        disabled={isUpdatingMembers}
+                        onClick={() => toggleMember(p.id, u.id, p.members)}
+                        className={`flex items-center rounded-l-md border px-3 py-2 text-sm transition-all focus:outline-none
+                          ${hasAccess ? "border-blue-200 bg-blue-50 hover:border-blue-400" : ""}
+                          ${!hasAccess ? "border-slate-200 bg-white hover:border-slate-300" : ""}
+                        `}
+                        title={text.projects.toggleAccess}
+                      >
+                        <span
+                          className={`font-medium ${
+                            hasAccess
+                              ? isProjectAdmin
+                                ? "text-amber-700"
+                                : "text-slate-900"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          {getDisplayName(u)}
+                        </span>
+                      </button>
+                      {hasAccess && isProjectAdmin && (
+                        <span
+                          title={text.projects.admin}
+                          className="flex items-center rounded-r-md border border-amber-200 bg-amber-50 p-2 text-amber-700"
+                        >
+                          <Crown size={14} />
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+            </div>
+          );
+        })}
         {projects.length === 0 && (
-           <div className="bg-white border border-dashed rounded-xl p-8 text-center text-slate-500 font-medium">
-             No projects currently exist.
-           </div>
+          <div className="rounded-xl border border-dashed bg-white p-8 text-center font-medium text-slate-500">
+            {text.projects.empty}
+          </div>
         )}
       </div>
     </>
-  )
+  );
 }

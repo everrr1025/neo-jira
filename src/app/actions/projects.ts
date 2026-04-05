@@ -12,6 +12,18 @@ export async function updateProject(projectId: string, data: {
 }) {
   try {
     await checkProjectAdmin(projectId);
+    const existingProject = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { ownerId: true },
+    });
+
+    if (!existingProject) {
+      throw new Error("Project not found");
+    }
+
+    if (data.ownerId && data.ownerId !== existingProject.ownerId) {
+      throw new Error("Project owner cannot be changed");
+    }
 
     // If key is changing, check for uniqueness
     if (data.key) {
@@ -30,7 +42,6 @@ export async function updateProject(projectId: string, data: {
         name: data.name,
         key: data.key,
         description: data.description,
-        ownerId: data.ownerId,
       }
     });
 

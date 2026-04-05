@@ -28,6 +28,7 @@ export default async function ProjectsPage() {
     include: {
       owner: true,
       members: {
+        where: { user: { role: { not: "ADMIN" } } },
         include: { user: { select: { id: true, name: true, email: true } } },
       },
       _count: {
@@ -104,11 +105,10 @@ export default async function ProjectsPage() {
               const isSelected = activeProjectId === project.id;
               const canManageSettings =
                 isGlobalAdmin || project.members.some((m) => m.userId === userId && m.role === "ADMIN");
-              const projectAdmins = project.members.filter((member) => member.role === "ADMIN");
-              const leadUser = projectAdmins[0]?.user || project.owner;
+              const leadUser = project.owner;
               const leadName = leadUser?.name || leadUser?.email || "?";
-              const visibleMembers = project.members.slice(0, 3);
-              const hiddenMembers = project.members.slice(3);
+              const visibleMembers = project.members.slice(0, 5);
+              const hiddenMembers = project.members.slice(5);
 
               return (
                 <tr
@@ -150,25 +150,24 @@ export default async function ProjectsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center">
                       {visibleMembers.map((member) => {
                         const memberName = member.user.name || member.user.email || "?";
-                        const memberInitial = memberName.charAt(0).toUpperCase();
 
                         return (
-                          <span
+                          <img
                             key={member.userId}
+                            src={getDefaultAvatar(member.user.id)}
+                            alt={memberName}
                             title={memberName}
-                            className="w-7 h-7 rounded-full bg-slate-200 border border-white flex items-center justify-center text-xs font-bold text-slate-600 cursor-help"
-                          >
-                            {memberInitial}
-                          </span>
+                            className="-ml-1 h-7 w-7 rounded-full border-2 border-white object-cover first:ml-0"
+                          />
                         );
                       })}
                       {hiddenMembers.length > 0 && (
                         <span
-                          title={hiddenMembers.map((member) => member.user.name || member.user.email || "?").join("\n")}
-                          className="w-7 h-7 rounded-full bg-slate-100 border border-white flex items-center justify-center text-xs font-bold text-slate-500 cursor-help"
+                          title={hiddenMembers.map((member) => member.user.name || member.user.email || "?").join(", ")}
+                          className="-ml-1 inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-100 text-[11px] font-semibold text-slate-600 first:ml-0"
                         >
                           +{hiddenMembers.length}
                         </span>

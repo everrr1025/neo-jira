@@ -8,7 +8,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function ProjectSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const locale = await getCurrentLocale();
@@ -16,7 +16,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     locale === "zh"
       ? {
           accessDeniedTitle: "访问被拒绝",
-          accessDeniedDesc: "你没有权限管理该项目设置。",
+          accessDeniedDesc: "你没有权限管理该项目的设置。",
           backToProjects: "返回项目列表",
           projects: "项目",
           settingsSuffix: "设置",
@@ -34,20 +34,22 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         };
 
   const session = await getServerSession(authOptions);
-  if (!session?.user) redirect('/login');
+  if (!session?.user) redirect("/login");
 
   const resolvedParams = await params;
-  const userId = (session.user as any).id;
+  const currentUser = session.user as { id?: string };
+  const userId = currentUser.id;
   const projectId = resolvedParams.id;
 
-  // Permission check: Project admin or global admin
+  if (!userId) redirect("/login");
+
   const role = await getProjectRole(userId, projectId);
-  if (role !== 'ADMIN') {
+  if (role !== "ADMIN") {
     return (
-      <div className="bg-red-50 border border-red-200 p-8 rounded-xl text-center">
+      <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
         <h2 className="text-xl font-bold text-red-800">{text.accessDeniedTitle}</h2>
-        <p className="text-red-600 mt-2">{text.accessDeniedDesc}</p>
-        <Link href="/projects" className="inline-block mt-4 text-sm font-medium text-blue-600 hover:underline">
+        <p className="mt-2 text-red-600">{text.accessDeniedDesc}</p>
+        <Link href="/projects" className="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">
           {text.backToProjects}
         </Link>
       </div>
@@ -56,33 +58,31 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { owner: true }
+    include: { owner: true },
   });
 
   if (!project) notFound();
 
-  const users = await prisma.user.findMany({
-    orderBy: { name: 'asc' }
-  });
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Link href="/projects" className="hover:text-blue-600 transition-colors flex items-center gap-1">
+        <Link href="/projects" className="flex items-center gap-1 transition-colors hover:text-blue-600">
           <ChevronLeft size={16} />
           {text.projects}
         </Link>
         <span>/</span>
-        <span className="text-slate-800 font-medium">{project.name} {text.settingsSuffix}</span>
+        <span className="font-medium text-slate-800">
+          {project.name} {text.settingsSuffix}
+        </span>
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm p-8">
+      <div className="rounded-xl border bg-white p-8 shadow-sm">
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-slate-800">{text.detailsTitle}</h2>
-          <p className="text-sm text-slate-500 mt-1">{text.detailsDesc}</p>
+          <p className="mt-1 text-sm text-slate-500">{text.detailsDesc}</p>
         </div>
 
-        <ProjectSettingsForm project={project} users={users} locale={locale} />
+        <ProjectSettingsForm project={project} locale={locale} />
       </div>
     </div>
   );
