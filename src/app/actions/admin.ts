@@ -2,6 +2,7 @@
 
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { randomInt } from "crypto";
 import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin } from "@/lib/permissions";
 
@@ -16,6 +17,28 @@ function countPasswordCategories(password: string) {
 
 function isValidPassword(password: string) {
   return password.length >= 8 && countPasswordCategories(password) >= 3;
+}
+
+function generateSecurePassword(length = 12) {
+  const special = "!@#$%^&*()-_=+[]{};:,.?/|";
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const pools = [upper, lower, digits, special];
+  const requiredPools = [upper, lower, digits];
+
+  let generated = requiredPools.map((pool) => pool[randomInt(pool.length)]).join("");
+  const allChars = pools.join("");
+  while (generated.length < Math.max(8, length)) {
+    generated += allChars[randomInt(allChars.length)];
+  }
+
+  const chars = generated.split("");
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
 }
 
 export async function createUser(data: any) {
@@ -127,6 +150,37 @@ export async function deleteUser(userId: string) {
     revalidatePath("/");
     revalidatePath("/issues");
     return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function resetUserPassword(userId: string) {
+  try {
+    await checkGlobalAdmin();
+
+    if (!userId) {
+      return { success: false, error: "User id is required." };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      return { success: false, error: "User not found." };
+    }
+
+    const nextPassword = generateSecurePassword();
+    const hashedPassword = await bcrypt.hash(nextPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    revalidatePath("/admin");
+    return { success: true, password: nextPassword };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
@@ -278,6 +332,72 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
     await prisma.projectMember.updateMany({
       where: { projectId, role: "ADMIN", userId: { not: ownerId } },
       data: { role: "MEMBER" },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/projects");
+    revalidatePath("/");
+    revalidatePath("/issues");
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function updateProjectOwner(projectId: string, ownerId: string) {
+  try {
+    await checkGlobalAdmin();
+
+    if (!projectId || !ownerId) {
+      return { success: false, error: "Project id and owner id are required." };
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        owner: { select: { role: true } },
+        members: true,
+      },
+    });
+    if (!project) {
+      return { success: false, error: "Project not found." };
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { id: true, role: true },
+    });
+    if (!targetUser) {
+      return { success: false, error: "Target owner not found." };
+    }
+    if (targetUser.role === "ADMIN") {
+      return { success: false, error: "System admin cannot be project owner." };
+    }
+
+    const targetMembership = project.members.find((m) => m.userId === ownerId);
+    if (!targetMembership) {
+      return { success: false, error: "Project owner must be a project member." };
+    }
+
+    if (project.ownerId === ownerId && targetMembership.role === "ADMIN") {
+      return { success: true };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: { ownerId },
+      });
+
+      await tx.projectMember.updateMany({
+        where: { projectId, role: "ADMIN", userId: { not: ownerId } },
+        data: { role: "MEMBER" },
+      });
+
+      await tx.projectMember.update({
+        where: { userId_projectId: { userId: ownerId, projectId } },
+        data: { role: "ADMIN" },
+      });
     });
 
     revalidatePath("/admin");

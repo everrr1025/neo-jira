@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createUser, createProject, updateProjectMembers, deleteUser } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser } from "@/app/actions/admin";
+import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound } from "lucide-react";
 import { Locale } from "@/lib/i18n";
 
 type UserRecord = {
@@ -17,6 +18,8 @@ type UserRecord = {
 type ProjectMemberRecord = {
   userId: string;
   role: string;
+  userName?: string | null;
+  userEmail?: string;
 };
 
 type ProjectRecord = {
@@ -24,7 +27,8 @@ type ProjectRecord = {
   name: string;
   key: string;
   description: string | null;
-  owner: { name: string | null };
+  ownerId: string;
+  owner: { id: string; name: string | null; email: string };
   members: ProjectMemberRecord[];
   issuesCount: number;
   createdAt: string;
@@ -97,6 +101,7 @@ const TEXT = {
     errors: {
       createUser: "Failed to create user",
       deleteUser: "Failed to delete user",
+      resetPassword: "Failed to reset password",
       createProject: "Failed to create project",
       updateAccess: "Failed to update access",
       updateRole: "Failed to update role",
@@ -120,6 +125,7 @@ const TEXT = {
       role: "Role",
       createdAt: "Created At",
       actions: "Actions",
+      resetPassword: "Reset Password",
       cannotDeleteOwner: "Project owner",
       cannotDeleteSelf: "Current user",
       delete: "Delete",
@@ -156,6 +162,7 @@ const TEXT = {
     errors: {
       createUser: "创建用户失败",
       deleteUser: "删除用户失败",
+      resetPassword: "重置密码失败",
       createProject: "创建项目失败",
       updateAccess: "更新权限失败",
       updateRole: "更新角色失败",
@@ -179,6 +186,7 @@ const TEXT = {
       role: "角色",
       createdAt: "创建时间",
       actions: "操作",
+      resetPassword: "重置密码",
       cannotDeleteOwner: "项目负责人",
       cannotDeleteSelf: "当前用户",
       delete: "删除",
@@ -211,6 +219,10 @@ const TEXT = {
 
 function getDisplayName(user: UserRecord) {
   return user.name || user.email;
+}
+
+function getMemberDisplayName(member: ProjectMemberRecord) {
+  return member.userName || member.userEmail || member.userId;
 }
 
 export default function AdminPanelClient({
@@ -285,7 +297,10 @@ export default function AdminPanelClient({
 function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps) {
   const text = TEXT[locale];
   const [isPending, startTransition] = useTransition();
+  const [isResettingPassword, startResetPasswordTransition] = useTransition();
   const [showPassword, setShowPassword] = useState(false);
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [resettingPasswordUserId, setResettingPasswordUserId] = useState<string | null>(null);
   const [newUser, setNewUser] = useState<NewUserForm>({
     name: "",
     email: "",
@@ -313,6 +328,23 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
       const res = await deleteUser(userId);
       if (!res.success) {
         setErrorMsg(res.error || text.errors.deleteUser);
+      }
+    });
+  };
+
+  const handleResetPassword = (userId: string) => {
+    setErrorMsg("");
+    setResettingPasswordUserId(userId);
+    startResetPasswordTransition(async () => {
+      try {
+        const res = await resetUserPassword(userId);
+        if (!res.success || !res.password) {
+          setErrorMsg(res.error || text.errors.resetPassword);
+          return;
+        }
+        setRevealedPasswords((prev) => ({ ...prev, [userId]: res.password }));
+      } finally {
+        setResettingPasswordUserId(null);
       }
     });
   };
@@ -407,7 +439,7 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
               <th className="border-b px-5 py-4">{text.users.email}</th>
               <th className="w-32 border-b px-5 py-4">{text.users.role}</th>
               <th className="w-40 border-b px-5 py-4">{text.users.createdAt}</th>
-              <th className="w-40 border-b px-5 py-4">{text.users.actions}</th>
+              <th className="w-72 border-b px-5 py-4">{text.users.actions}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -415,6 +447,7 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
               const isSelf = u.id === currentUserId;
               const isOwner = u.ownedProjectsCount > 0;
               const disableDelete = isSelf || isOwner || isPending;
+              const isResettingThisUser = isResettingPassword && resettingPasswordUserId === u.id;
               return (
                 <tr key={u.id} className="transition-colors hover:bg-slate-50">
                   <td className="flex items-center gap-3 px-5 py-3 font-medium text-slate-800">
@@ -437,16 +470,34 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
                     {new Date(u.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                   </td>
                   <td className="px-5 py-3">
-                    <button
-                      type="button"
-                      disabled={disableDelete}
-                      onClick={() => handleDeleteUser(u.id)}
-                      title={isOwner ? text.users.cannotDeleteOwner : isSelf ? text.users.cannotDeleteSelf : text.users.delete}
-                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Trash2 size={12} />
-                      {text.users.delete}
-                    </button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={isResettingThisUser}
+                          onClick={() => handleResetPassword(u.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          {isResettingThisUser ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                          {text.users.resetPassword}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={disableDelete}
+                          onClick={() => handleDeleteUser(u.id)}
+                          title={isOwner ? text.users.cannotDeleteOwner : isSelf ? text.users.cannotDeleteSelf : text.users.delete}
+                          className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                          {text.users.delete}
+                        </button>
+                      </div>
+                      {revealedPasswords[u.id] && (
+                        <div className="max-w-72 truncate rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">
+                          {revealedPasswords[u.id]}
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -460,9 +511,44 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
 
 function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProps) {
   const text = TEXT[locale];
+  const extraText =
+    locale === "zh"
+      ? {
+          addMembers: "添加成员",
+          confirmAdd: "确认添加",
+          remove: "移除",
+          owner: "负责人",
+          noMembers: "暂无成员",
+          changeOwner: "更改项目负责人",
+          saveOwner: "更新负责人",
+          selectOwner: "通过菜单选择负责人",
+          ownerSelected: "已选负责人",
+          selectMembers: "通过菜单选择成员",
+          selectedMembers: "已选成员",
+          updateOwnerFailed: "更新负责人失败",
+        }
+      : {
+          addMembers: "Add Members",
+          confirmAdd: "Add Selected",
+          remove: "Remove",
+          owner: "Owner",
+          noMembers: "No members.",
+          changeOwner: "Change Project Owner",
+          saveOwner: "Update Owner",
+          selectOwner: "Select owner from menu",
+          ownerSelected: "Selected owner",
+          selectMembers: "Select members from menu",
+          selectedMembers: "Selected members",
+          updateOwnerFailed: "Failed to update project owner",
+        };
+  const router = useRouter();
   const [isCreatingProject, startCreateTransition] = useTransition();
   const [isUpdatingMembers, startUpdateTransition] = useTransition();
+  const [isChangingOwner, startOwnerTransition] = useTransition();
+  const [changingOwnerProjectId, setChangingOwnerProjectId] = useState<string | null>(null);
   const assignableUsers = users.filter((u) => u.role !== "ADMIN");
+  const [pendingAddMemberIds, setPendingAddMemberIds] = useState<Record<string, string[]>>({});
+  const [pendingOwnerByProject, setPendingOwnerByProject] = useState<Record<string, string>>({});
   const [newProject, setNewProject] = useState<NewProjectForm>({
     name: "",
     key: "",
@@ -470,6 +556,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
     ownerId: "",
     memberIds: [],
   });
+  const selectedNewOwner = assignableUsers.find((u) => u.id === newProject.ownerId);
 
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
@@ -498,21 +585,80 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
       });
       if (res.success) {
         setNewProject({ name: "", key: "", description: "", ownerId: "", memberIds: [] });
+        router.refresh();
       } else {
         setErrorMsg(res.error || text.errors.createProject);
       }
     });
   };
 
-  const toggleMember = (projectId: string, userId: string, currentMembers: ProjectMemberRecord[]) => {
-    const memberUserIds = currentMembers.map((m) => m.userId);
-    const newMemberIds = memberUserIds.includes(userId)
-      ? memberUserIds.filter((id) => id !== userId)
-      : [...memberUserIds, userId];
+  const toggleCreateProjectMember = (userId: string, checked: boolean) => {
+    setNewProject((prev) => ({
+      ...prev,
+      memberIds: checked
+        ? Array.from(new Set([...prev.memberIds, userId]))
+        : prev.memberIds.filter((id) => id !== userId),
+    }));
+  };
+
+  const togglePendingMember = (projectId: string, userId: string, checked: boolean) => {
+    setPendingAddMemberIds((prev) => {
+      const current = prev[projectId] || [];
+      const next = checked ? Array.from(new Set([...current, userId])) : current.filter((id) => id !== userId);
+      return { ...prev, [projectId]: next };
+    });
+  };
+
+  const addSelectedMembers = (project: ProjectRecord) => {
+    const selected = pendingAddMemberIds[project.id] || [];
+    if (selected.length === 0) return;
+
+    const currentMemberIds = project.members.map((m) => m.userId);
+    const nextMemberIds = Array.from(new Set([...currentMemberIds, ...selected]));
 
     startUpdateTransition(async () => {
-      const res = await updateProjectMembers(projectId, newMemberIds);
-      if (!res.success) setErrorMsg(res.error || text.errors.updateAccess);
+      const res = await updateProjectMembers(project.id, nextMemberIds);
+      if (!res.success) {
+        setErrorMsg(res.error || text.errors.updateAccess);
+        return;
+      }
+
+      setPendingAddMemberIds((prev) => ({ ...prev, [project.id]: [] }));
+      router.refresh();
+    });
+  };
+
+  const removeMember = (project: ProjectRecord, userId: string) => {
+    if (project.ownerId === userId) return;
+    const nextMemberIds = project.members.map((m) => m.userId).filter((id) => id !== userId);
+
+    startUpdateTransition(async () => {
+      const res = await updateProjectMembers(project.id, nextMemberIds);
+      if (!res.success) {
+        setErrorMsg(res.error || text.errors.updateAccess);
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const changeProjectOwner = (project: ProjectRecord) => {
+    const nextOwnerId = pendingOwnerByProject[project.id] || project.ownerId;
+    if (!nextOwnerId || nextOwnerId === project.ownerId) return;
+    if (changingOwnerProjectId && changingOwnerProjectId !== project.id) return;
+
+    startOwnerTransition(async () => {
+      setChangingOwnerProjectId(project.id);
+      try {
+        const res = await updateProjectOwner(project.id, nextOwnerId);
+        if (!res.success) {
+          setErrorMsg(res.error || extraText.updateOwnerFailed);
+          return;
+        }
+        router.refresh();
+      } finally {
+        setChangingOwnerProjectId(null);
+      }
     });
   };
 
@@ -556,46 +702,62 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectOwner}</label>
-            <select
-              required
-              value={newProject.ownerId}
-              onChange={(e) => setNewProject((p) => ({ ...p, ownerId: e.target.value }))}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              disabled={assignableUsers.length === 0}
-            >
-              <option value="">--</option>
-              {assignableUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {getDisplayName(u)}
-                </option>
-              ))}
-            </select>
+            <details className="rounded-md border border-slate-200 bg-white">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
+                <span>
+                  {newProject.ownerId
+                    ? `${extraText.ownerSelected}: ${selectedNewOwner ? getDisplayName(selectedNewOwner) : newProject.ownerId}`
+                    : extraText.selectOwner}
+                </span>
+                <ChevronDown size={14} className="text-slate-500" />
+              </summary>
+              <div className="max-h-40 space-y-1 overflow-y-auto border-t border-slate-200 bg-slate-50 p-2">
+                {assignableUsers.map((u) => {
+                  const checked = newProject.ownerId === u.id;
+                  return (
+                    <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white">
+                      <input
+                        type="radio"
+                        name="new-project-owner"
+                        checked={checked}
+                        onChange={() => setNewProject((p) => ({ ...p, ownerId: u.id }))}
+                        disabled={assignableUsers.length === 0}
+                      />
+                      <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </details>
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectMembers}</label>
-            <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
-              {assignableUsers.map((u) => {
-                const checked = newProject.memberIds.includes(u.id);
-                return (
-                  <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) =>
-                        setNewProject((prev) => ({
-                          ...prev,
-                          memberIds: e.target.checked
-                            ? Array.from(new Set([...prev.memberIds, u.id]))
-                            : prev.memberIds.filter((id) => id !== u.id),
-                        }))
-                      }
-                      disabled={assignableUsers.length === 0}
-                    />
-                    <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
-                  </label>
-                );
-              })}
-            </div>
+            <details className="rounded-md border border-slate-200 bg-white">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
+                <span>
+                  {newProject.memberIds.length > 0
+                    ? `${extraText.selectedMembers}: ${newProject.memberIds.length}`
+                    : extraText.selectMembers}
+                </span>
+                <ChevronDown size={14} className="text-slate-500" />
+              </summary>
+              <div className="max-h-40 space-y-1 overflow-y-auto border-t border-slate-200 bg-slate-50 p-2">
+                {assignableUsers.map((u) => {
+                  const checked = newProject.memberIds.includes(u.id);
+                  return (
+                    <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => toggleCreateProjectMember(u.id, e.target.checked)}
+                        disabled={assignableUsers.length === 0}
+                      />
+                      <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </details>
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.description}</label>
@@ -619,85 +781,160 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
 
       <div className="flex flex-col gap-4 xl:w-2/3">
         {projects.map((p) => {
-          const orderedUsers = [...assignableUsers].sort((a, b) => {
-            const roleA = p.members.find((m) => m.userId === a.id)?.role;
-            const roleB = p.members.find((m) => m.userId === b.id)?.role;
+          const orderedMembers = [...p.members].sort((a, b) => {
+            const roleA = a.role;
+            const roleB = b.role;
             if (roleA === "ADMIN" && roleB !== "ADMIN") return -1;
             if (roleA !== "ADMIN" && roleB === "ADMIN") return 1;
-            return getDisplayName(a).localeCompare(getDisplayName(b));
+            return getMemberDisplayName(a).localeCompare(getMemberDisplayName(b));
           });
+          const memberIds = new Set(p.members.map((m) => m.userId));
+          const candidateUsers = assignableUsers.filter((u) => !memberIds.has(u.id));
+          const selectedToAdd = pendingAddMemberIds[p.id] || [];
+          const selectedOwnerId = pendingOwnerByProject[p.id] || p.ownerId;
+          const isChangingOwnerThisProject = isChangingOwner && changingOwnerProjectId === p.id;
 
           return (
             <div
               key={p.id}
               className="flex flex-col gap-4 rounded-xl border bg-white p-5 shadow-sm transition-colors hover:border-slate-300"
             >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="mb-1 flex items-center gap-3">
-                  <h4 className="text-lg font-bold text-slate-800">{p.name}</h4>
-                  <span className="rounded border bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold tracking-wider text-slate-600">
-                    {p.key}
-                  </span>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="mb-1 flex items-center gap-3">
+                    <h4 className="text-lg font-bold text-slate-800">{p.name}</h4>
+                    <span className="rounded border bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold tracking-wider text-slate-600">
+                      {p.key}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-500">{p.description || text.projects.noDescription}</p>
                 </div>
-                <p className="text-sm text-slate-500">{p.description || text.projects.noDescription}</p>
-              </div>
-              <div className="rounded border border-slate-100 bg-slate-50 p-2 text-right text-xs">
-                <div className="text-slate-400">
-                  {text.projects.createdBy} <span className="font-semibold text-slate-600">{p.owner.name}</span>
-                </div>
-                <div className="mt-1 text-slate-400">
-                  <span className="font-bold text-slate-700">{p.issuesCount}</span> {text.projects.totalIssues}
+                <div className="rounded border border-slate-100 bg-slate-50 p-2 text-right text-xs">
+                  <div className="text-slate-400">
+                    <span className="font-bold text-slate-700">{p.issuesCount}</span> {text.projects.totalIssues}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="mt-2 border-t pt-4">
-              <h5 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
-                <Users size={14} /> {text.projects.teamAccess}
-              </h5>
-              <div className="flex flex-wrap gap-2">
-                {orderedUsers.map((u) => {
-                  const membership = p.members.find((m) => m.userId === u.id);
-                  const hasAccess = !!membership;
-                  const isProjectAdmin = membership?.role === "ADMIN";
-
-                  return (
-                    <div key={u.id} className="flex items-center gap-1">
+              <div className="mt-2 border-t pt-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h5 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
+                    <Users size={14} /> {text.projects.teamAccess}
+                  </h5>
+                  <details className="relative">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                      <UserPlus size={12} />
+                      {extraText.addMembers}
+                      <ChevronDown size={12} />
+                    </summary>
+                    <div className="absolute right-0 z-10 mt-1 w-56 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+                      {candidateUsers.length === 0 ? (
+                        <p className="px-1 py-2 text-xs text-slate-500">{text.projects.noAssignableUsers}</p>
+                      ) : (
+                        <div className="max-h-44 space-y-1 overflow-y-auto">
+                          {candidateUsers.map((u) => {
+                            const checked = selectedToAdd.includes(u.id);
+                            return (
+                              <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-slate-50">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => togglePendingMember(p.id, u.id, e.target.checked)}
+                                />
+                                <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
                       <button
-                        disabled={isUpdatingMembers}
-                        onClick={() => toggleMember(p.id, u.id, p.members)}
-                        className={`flex items-center rounded-l-md border px-3 py-2 text-sm transition-all focus:outline-none
-                          ${hasAccess ? "border-blue-200 bg-blue-50 hover:border-blue-400" : ""}
-                          ${!hasAccess ? "border-slate-200 bg-white hover:border-slate-300" : ""}
-                        `}
-                        title={text.projects.toggleAccess}
+                        type="button"
+                        onClick={() => addSelectedMembers(p)}
+                        disabled={isUpdatingMembers || selectedToAdd.length === 0}
+                        className="mt-2 w-full rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                       >
+                        {isUpdatingMembers && <Loader2 size={12} className="mr-1 inline animate-spin" />}
+                        {extraText.confirmAdd}
+                      </button>
+                    </div>
+                  </details>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {orderedMembers.map((member) => {
+                    const isOwner = member.userId === p.ownerId;
+                    const isProjectAdmin = member.role === "ADMIN";
+                    return (
+                      <div
+                        key={member.userId}
+                        className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1.5"
+                      >
+                        <span className="text-sm font-medium text-slate-800">{getMemberDisplayName(member)}</span>
                         <span
-                          className={`font-medium ${
-                            hasAccess
-                              ? isProjectAdmin
-                                ? "text-amber-700"
-                                : "text-slate-900"
-                              : "text-slate-500"
+                          className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
+                            isOwner
+                              ? "bg-amber-100 text-amber-700"
+                              : isProjectAdmin
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-100 text-slate-600"
                           }`}
                         >
-                          {getDisplayName(u)}
+                          {isOwner ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Crown size={12} />
+                              {extraText.owner}
+                            </span>
+                          ) : isProjectAdmin ? (
+                            text.projects.admin
+                          ) : (
+                            text.projects.member
+                          )}
                         </span>
-                      </button>
-                      {hasAccess && isProjectAdmin && (
-                        <span
-                          title={text.projects.admin}
-                          className="flex items-center rounded-r-md border border-amber-200 bg-amber-50 p-2 text-amber-700"
-                        >
-                          <Crown size={14} />
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                        {!isOwner && (
+                          <button
+                            type="button"
+                            onClick={() => removeMember(p, member.userId)}
+                            disabled={isUpdatingMembers}
+                            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 disabled:opacity-50"
+                            title={extraText.remove}
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {orderedMembers.length === 0 && <p className="text-sm text-slate-500">{extraText.noMembers}</p>}
+
+                <div className="mt-4 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-700">{extraText.changeOwner}</label>
+                    <select
+                      value={selectedOwnerId}
+                      onChange={(e) => setPendingOwnerByProject((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                      disabled={isChangingOwnerThisProject || orderedMembers.length === 0}
+                    >
+                      {orderedMembers.map((member) => (
+                        <option key={member.userId} value={member.userId}>
+                          {getMemberDisplayName(member)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => changeProjectOwner(p)}
+                    disabled={isChangingOwnerThisProject || selectedOwnerId === p.ownerId || orderedMembers.length === 0}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-amber-600 px-3 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {isChangingOwnerThisProject && <Loader2 size={14} className="animate-spin" />}
+                    {extraText.saveOwner}
+                  </button>
+                </div>
               </div>
-            </div>
             </div>
           );
         })}

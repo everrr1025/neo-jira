@@ -31,17 +31,31 @@ async function normalizeProjectAdminOwnership() {
 
     let targetOwnerId = project.owner?.role === "ADMIN" ? "" : project.ownerId;
     if (!targetOwnerId) {
-      if (nonAdminMembers.length > 0 && normalUserIds.length > 0) {
-        const randomIdx = Math.floor(Math.random() * nonAdminMembers.length);
-        targetOwnerId = nonAdminMembers[randomIdx].userId;
-      } else if (normalUserIds.length > 0) {
-        const randomIdx = Math.floor(Math.random() * normalUserIds.length);
-        targetOwnerId = normalUserIds[randomIdx];
-      }
+      targetOwnerId = nonAdminMembers[0]?.userId || normalUserIds[0] || "";
+    }
+
+    const targetMembership = targetOwnerId
+      ? project.members.find((m) => m.userId === targetOwnerId)
+      : null;
+    const needsDeleteSystemAdmins = adminMemberIds.length > 0;
+    const needsOwnerUpdate = !!targetOwnerId && project.ownerId !== targetOwnerId;
+    const needsCreateTargetMembership = !!targetOwnerId && !targetMembership;
+    const needsPromoteTargetMembership = !!targetOwnerId && !!targetMembership && targetMembership.role !== "ADMIN";
+    const needsDemoteOtherAdmins =
+      !!targetOwnerId && project.members.some((m) => m.role === "ADMIN" && m.userId !== targetOwnerId);
+
+    if (
+      !needsDeleteSystemAdmins &&
+      !needsOwnerUpdate &&
+      !needsCreateTargetMembership &&
+      !needsPromoteTargetMembership &&
+      !needsDemoteOtherAdmins
+    ) {
+      continue;
     }
 
     await prisma.$transaction(async (tx) => {
-      if (adminMemberIds.length > 0) {
+      if (needsDeleteSystemAdmins) {
         await tx.projectMember.deleteMany({
           where: { projectId: project.id, userId: { in: adminMemberIds } },
         });
@@ -51,34 +65,34 @@ async function normalizeProjectAdminOwnership() {
         return;
       }
 
-      await tx.project.update({
-        where: { id: project.id },
-        data: { ownerId: targetOwnerId },
-      });
+      if (needsOwnerUpdate) {
+        await tx.project.update({
+          where: { id: project.id },
+          data: { ownerId: targetOwnerId },
+        });
+      }
 
-      const targetMembership = await tx.projectMember.findUnique({
-        where: { userId_projectId: { userId: targetOwnerId, projectId: project.id } },
-      });
-
-      if (!targetMembership) {
+      if (needsCreateTargetMembership) {
         await tx.projectMember.create({
           data: { userId: targetOwnerId, projectId: project.id, role: "ADMIN" },
         });
-      } else if (targetMembership.role !== "ADMIN") {
+      } else if (needsPromoteTargetMembership) {
         await tx.projectMember.update({
-          where: { id: targetMembership.id },
+          where: { userId_projectId: { userId: targetOwnerId, projectId: project.id } },
           data: { role: "ADMIN" },
         });
       }
 
-      await tx.projectMember.updateMany({
-        where: {
-          projectId: project.id,
-          role: "ADMIN",
-          userId: { not: targetOwnerId },
-        },
-        data: { role: "MEMBER" },
-      });
+      if (needsDemoteOtherAdmins) {
+        await tx.projectMember.updateMany({
+          where: {
+            projectId: project.id,
+            role: "ADMIN",
+            userId: { not: targetOwnerId },
+          },
+          data: { role: "MEMBER" },
+        });
+      }
     });
   }
 }
@@ -139,10 +153,17 @@ export default async function AdminPage() {
     name: p.name,
     key: p.key,
     description: p.description,
-    owner: { name: p.owner.name },
+    ownerId: p.ownerId,
+    owner: {
+      id: p.owner.id,
+      name: p.owner.name,
+      email: p.owner.email,
+    },
     members: p.members.map(m => ({
       userId: m.userId,
       role: m.role,
+      userName: m.user.name,
+      userEmail: m.user.email,
     })),
     issuesCount: p._count.issues,
     createdAt: p.createdAt.toISOString()
