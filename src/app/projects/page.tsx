@@ -177,14 +177,21 @@ export default async function ProjectsPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{project._count.issues}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-3">
-                      <Link
-                        href={`/projects/select?projectId=${project.id}&from=/`}
-                        className={isSelected ? "text-emerald-600 font-semibold" : "text-blue-600 hover:text-blue-900"}
+                      <a
+                        href={`/projects/select?projectId=${project.id}`}
+                        className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          isSelected
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 pointer-events-none"
+                            : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        }`}
                       >
                         {isSelected ? translations.projectsPage.selected : translations.projectsPage.select}
-                      </Link>
+                      </a>
                       {canManageSettings && (
-                        <Link href={`/projects/${project.id}/settings`} className="text-slate-600 hover:text-slate-900">
+                        <Link
+                          href={`/projects/${project.id}/settings`}
+                          className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                        >
                           {translations.projectsPage.settings}
                         </Link>
                       )}

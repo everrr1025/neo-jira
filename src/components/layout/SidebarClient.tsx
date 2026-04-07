@@ -32,11 +32,11 @@ export function SidebarClient({
   };
 
   return (
-    <aside className={`transition-all duration-300 ease-in-out bg-slate-900 text-slate-300 flex flex-col items-start h-screen sticky top-0 relative shadow-xl ${collapsed ? 'w-20' : 'w-64'}`}>
+    <aside className={`transition-all duration-300 ease-in-out bg-slate-900 text-slate-300 flex flex-col items-start h-screen sticky top-0 relative overflow-visible z-30 shrink-0 shadow-xl ${collapsed ? 'w-20' : 'w-64'}`}>
       
       <button 
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-8 bg-slate-800 text-slate-400 hover:text-white border border-slate-700 w-6 h-6 rounded-full flex items-center justify-center z-20 shadow-sm"
+        className="absolute right-0 translate-x-1/2 top-8 bg-slate-800 text-slate-400 hover:text-white border border-slate-700 w-6 h-6 rounded-full flex items-center justify-center z-40 shadow-sm"
       >
         <svg className={`w-3.5 h-3.5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

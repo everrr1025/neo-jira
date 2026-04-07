@@ -13,13 +13,11 @@ export async function GET(request: NextRequest) {
   const userId = (session.user as any).id as string;
   const userRole = (session.user as any).role as string;
   const projectId = request.nextUrl.searchParams.get("projectId");
-  const from = request.nextUrl.searchParams.get("from");
 
   if (!projectId) {
     return NextResponse.redirect(new URL("/projects", request.url));
   }
 
-  const safeFrom = from && from.startsWith("/") && !from.startsWith("//") ? from : "/";
   let hasAccess = false;
 
   if (userRole === "ADMIN") {
@@ -36,12 +34,13 @@ export async function GET(request: NextRequest) {
     hasAccess = !!membership;
   }
 
-  const response = NextResponse.redirect(new URL(hasAccess ? safeFrom : "/projects", request.url));
+  const response = NextResponse.redirect(new URL(hasAccess ? "/" : "/projects", request.url));
   if (hasAccess) {
     response.cookies.set(ACTIVE_PROJECT_COOKIE, projectId, {
       path: "/",
       sameSite: "lax",
       httpOnly: true,
+      maxAge: 60 * 60 * 24 * 30,
     });
   }
 

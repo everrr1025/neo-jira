@@ -53,6 +53,22 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   }
 
   const issues = iteration.issues;
+  const [users, iterations] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        OR: [
+          { role: "ADMIN" },
+          { projectMemberships: { some: { projectId: iteration.project.id } } },
+        ],
+      },
+      orderBy: { name: "asc" },
+    }),
+    prisma.iteration.findMany({
+      where: { projectId: iteration.project.id },
+      orderBy: { startDate: "desc" },
+    }),
+  ]);
+  const defaultDueDate = iteration.endDate.toISOString().slice(0, 10);
 
   return (
     <div className="flex flex-col h-full">
@@ -72,7 +88,13 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
 
         <div className="flex items-center gap-3">
           <div className="flex -space-x-2">
-            <CreateIssueButton locale={locale} />
+            <CreateIssueButton
+              locale={locale}
+              users={users}
+              iterations={iterations}
+              defaultIterationId={iteration.id}
+              defaultDueDate={defaultDueDate}
+            />
           </div>
           {canManage && (
             <>

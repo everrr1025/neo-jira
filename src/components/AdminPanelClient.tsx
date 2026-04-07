@@ -702,7 +702,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectOwner}</label>
-            <details className="rounded-md border border-slate-200 bg-white">
+            <details className="relative rounded-md border border-slate-200 bg-white">
               <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
                 <span>
                   {newProject.ownerId
@@ -711,7 +711,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                 </span>
                 <ChevronDown size={14} className="text-slate-500" />
               </summary>
-              <div className="max-h-40 space-y-1 overflow-y-auto border-t border-slate-200 bg-slate-50 p-2">
+              <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
                 {assignableUsers.map((u) => {
                   const checked = newProject.ownerId === u.id;
                   return (
@@ -732,7 +732,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectMembers}</label>
-            <details className="rounded-md border border-slate-200 bg-white">
+            <details className="relative rounded-md border border-slate-200 bg-white">
               <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
                 <span>
                   {newProject.memberIds.length > 0
@@ -741,7 +741,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                 </span>
                 <ChevronDown size={14} className="text-slate-500" />
               </summary>
-              <div className="max-h-40 space-y-1 overflow-y-auto border-t border-slate-200 bg-slate-50 p-2">
+              <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
                 {assignableUsers.map((u) => {
                   const checked = newProject.memberIds.includes(u.id);
                   return (
@@ -792,6 +792,8 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           const candidateUsers = assignableUsers.filter((u) => !memberIds.has(u.id));
           const selectedToAdd = pendingAddMemberIds[p.id] || [];
           const selectedOwnerId = pendingOwnerByProject[p.id] || p.ownerId;
+          const selectedOwnerMember = orderedMembers.find((member) => member.userId === selectedOwnerId);
+          const selectedOwnerLabel = selectedOwnerMember ? getMemberDisplayName(selectedOwnerMember) : extraText.selectOwner;
           const isChangingOwnerThisProject = isChangingOwner && changingOwnerProjectId === p.id;
 
           return (
@@ -911,18 +913,33 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                 <div className="mt-4 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-700">{extraText.changeOwner}</label>
-                    <select
-                      value={selectedOwnerId}
-                      onChange={(e) => setPendingOwnerByProject((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                      disabled={isChangingOwnerThisProject || orderedMembers.length === 0}
-                    >
-                      {orderedMembers.map((member) => (
-                        <option key={member.userId} value={member.userId}>
-                          {getMemberDisplayName(member)}
-                        </option>
-                      ))}
-                    </select>
+                    <details className="relative rounded-md border border-slate-200 bg-white">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
+                        <span>{selectedOwnerLabel}</span>
+                        <ChevronDown size={14} className="text-slate-500" />
+                      </summary>
+                      <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+                        {orderedMembers.map((member) => (
+                          <button
+                            type="button"
+                            key={member.userId}
+                            onClick={(event) => {
+                              setPendingOwnerByProject((prev) => ({ ...prev, [p.id]: member.userId }));
+                              const details = (event.currentTarget as HTMLElement).closest("details");
+                              if (details) {
+                                details.open = false;
+                              }
+                            }}
+                            disabled={isChangingOwnerThisProject}
+                            className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors ${
+                              selectedOwnerId === member.userId ? "bg-slate-100 text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                            } disabled:opacity-50`}
+                          >
+                            {getMemberDisplayName(member)}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
                   </div>
                   <button
                     type="button"
