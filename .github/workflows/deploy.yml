@@ -19,6 +19,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           # 连接成功后在服务器上执行的命令
           script: |
+            # 0. 加载 NVM 环境变量 (解决 npm: command not found 问题)
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
             # 1. 进入你的代码目录 (根据你实际的部署路径修改)
             cd /var/www/neo-jira
             
