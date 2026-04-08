@@ -27,7 +27,9 @@ jobs:
             cd /var/www/neo-jira
             
             # 2. 从 Github 拉取最新代码
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             
             # 3. 安装依赖和初始化 Prisma
             npm install
