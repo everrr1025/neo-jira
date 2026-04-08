@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition } from "react";
 import { deleteIssue, updateIssue } from "@/app/actions/issues";
 import { Check, Loader2, Trash2 } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
@@ -17,6 +17,35 @@ import {
   localeDateMap,
 } from "@/lib/i18n";
 
+type IssueUser = {
+  id: string;
+  name: string | null;
+  role?: string | null;
+};
+
+type IssueIteration = {
+  id: string;
+  name: string;
+};
+
+type IssueRecord = {
+  id: string;
+  key: string;
+  title: string;
+  description: string | null;
+  status: string;
+  type: string;
+  priority: string;
+  assigneeId: string | null;
+  iterationId: string | null;
+  dueDate: string | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  reporter: {
+    name: string | null;
+  } | null;
+};
+
 export default function IssueDetailClient({
   initialIssue,
   users,
@@ -25,9 +54,9 @@ export default function IssueDetailClient({
   locale,
   canDeleteIssue,
 }: {
-  initialIssue: any;
-  users: any[];
-  iterations?: any[];
+  initialIssue: IssueRecord;
+  users: IssueUser[];
+  iterations?: IssueIteration[];
   currentUserId: string;
   locale: Locale;
   canDeleteIssue: boolean;
@@ -37,40 +66,30 @@ export default function IssueDetailClient({
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [alertMessage, setAlertMessage] = useState("");
   const translations = getTranslations(locale);
 
-  useEffect(() => {
-    const desc = issue.description || "";
-    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
-    if (match) {
-      setMentionQuery(match[1].toLowerCase());
-    } else {
-      setMentionQuery(null);
-    }
-  }, [issue.description]);
+  const description = issue.description || "";
+  const mentionQuery = description.match(/(?:\s|^)@([^\s]*)$/)?.[1]?.toLowerCase() || null;
 
   const filteredUsers = mentionQuery !== null && users
-    ? users.filter(u => u.name?.toLowerCase().includes(mentionQuery) && u.id !== currentUserId)
+    ? users.filter((user) => user.name?.toLowerCase().includes(mentionQuery) && user.id !== currentUserId)
     : [];
 
   const handleMentionInsert = (name: string) => {
-    const desc = issue.description || "";
-    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
+    const match = description.match(/(?:\s|^)@([^\s]*)$/);
     if (match) {
-      const index = desc.lastIndexOf(`@${match[1]}`);
+      const index = description.lastIndexOf(`@${match[1]}`);
       if (index !== -1) {
-        const textBefore = desc.substring(0, index);
-        const textAfter = desc.substring(index + match[1].length + 1);
+        const textBefore = description.substring(0, index);
+        const textAfter = description.substring(index + match[1].length + 1);
         handleChange("description", textBefore + `@${name} ` + textAfter);
       }
     }
-    setMentionQuery(null);
   };
 
-  const handleChange = (field: string, value: any) => {
-    setIssue((prev: any) => ({ ...prev, [field]: value }));
+  const handleChange = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
+    setIssue((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = () => {
@@ -144,11 +163,11 @@ export default function IssueDetailClient({
         {/* Description */}
         <div>
           <label className="block text-sm font-bold text-slate-700 mb-2">{translations.issueDetail.description}</label>
-          <div className="border-2 border-slate-200 rounded-md overflow-hidden focus-within:border-transparent transition-all">
+          <div>
             <RichTextEditor
               value={issue.description || ""}
               onChange={(val) => handleChange("description", val || "")}
-              height={300}
+              height={340}
             />
           </div>
           {mentionQuery !== null && filteredUsers.length > 0 && (
@@ -156,16 +175,16 @@ export default function IssueDetailClient({
               <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
                 {translations.issueDetail.mentionSomeone}
               </div>
-              {filteredUsers.map(u => (
+              {filteredUsers.map((user) => (
                 <button
-                  key={u.id}
-                  onClick={() => handleMentionInsert(u.name)}
+                  key={user.id}
+                  onClick={() => handleMentionInsert(user.name || user.id)}
                   className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
                 >
                   <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
-                    {u.name?.charAt(0) || "U"}
+                    {user.name?.charAt(0) || "U"}
                   </div>
-                  {u.name}
+                  {user.name || user.id}
                 </button>
               ))}
             </div>
@@ -321,5 +340,3 @@ export default function IssueDetailClient({
     </div>
   );
 }
-
-

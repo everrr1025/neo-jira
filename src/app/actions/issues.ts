@@ -35,6 +35,7 @@ export async function createIssue(data: {
   iterationId?: string | null;
   assigneeId?: string | null;
   dueDate?: string | null;
+  attachments?: { fileName: string; fileUrl: string }[];
 }) {
   try {
     const session = await getServerSession(authOptions);
@@ -109,6 +110,13 @@ export async function createIssue(data: {
         assigneeId: data.assigneeId,
         reporterId: userId,
         dueDate: dueDateValue,
+        attachments: data.attachments && data.attachments.length > 0 ? {
+          create: data.attachments.map(att => ({
+            fileName: att.fileName,
+            fileUrl: att.fileUrl,
+            uploaderId: userId,
+          }))
+        } : undefined,
       }
     });
 

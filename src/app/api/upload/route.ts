@@ -16,8 +16,8 @@ export async function POST(request: Request) {
     const file = formData.get("file") as File;
     const issueId = formData.get("issueId") as string;
 
-    if (!file || !issueId) {
-      return NextResponse.json({ error: "File and issueId are required" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "File is required" }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
@@ -33,17 +33,20 @@ export async function POST(request: Request) {
 
     await fs.writeFile(filePath, buffer);
 
-    const attachment = await prisma.attachment.create({
-      data: {
-        fileName: file.name,
-        fileUrl: fileUrl,
-        issueId: issueId,
-        uploaderId: userId,
-      },
-      include: { uploader: { select: { id: true, name: true } } },
-    });
-
-    return NextResponse.json(attachment, { status: 201 });
+    if (issueId) {
+      const attachment = await prisma.attachment.create({
+        data: {
+          fileName: file.name,
+          fileUrl: fileUrl,
+          issueId: issueId,
+          uploaderId: userId,
+        },
+        include: { uploader: { select: { id: true, name: true } } },
+      });
+      return NextResponse.json(attachment, { status: 201 });
+    } else {
+      return NextResponse.json({ fileName: file.name, fileUrl: fileUrl }, { status: 201 });
+    }
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });

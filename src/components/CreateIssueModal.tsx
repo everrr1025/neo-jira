@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createIssue } from "@/app/actions/issues";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, X, Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
 import AlertPopup from "./AlertPopup";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, Locale } from "@/lib/i18n";
@@ -36,6 +36,7 @@ type FormDataState = {
   iterationId: string;
   assigneeId: string;
   dueDate: string;
+  attachments: { fileName: string; fileUrl: string; id: string }[];
 };
 
 type DropdownOption = {
@@ -126,12 +127,14 @@ export default function CreateIssueModal({
       iterationId: fallbackIteration?.id || "",
       assigneeId: "",
       dueDate: defaultDueDate || toDateInputValue(fallbackIteration?.endDate),
+      attachments: [],
     };
   };
 
   const [formData, setFormData] = useState<FormDataState>(getInitialFormData);
   const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const mentionQuery = (() => {
     const match = formData.description.match(/(?:\s|^)@([^\s]*)$/);
@@ -163,6 +166,66 @@ export default function CreateIssueModal({
         dueDate: isDueDateManuallyEdited ? prev.dueDate : syncedDueDate,
       };
     });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    
+    setErrorMessage("");
+    const file = e.target.files[0];
+    
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorMessage("文件大小不能超过 50MB");
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: data,
+      });
+      
+      if (res.ok) {
+        const result = await res.json();
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, { fileName: result.fileName, fileUrl: result.fileUrl, id: Date.now().toString() }]
+        }));
+      } else {
+        const errorData = await res.json().catch(() => null);
+        setErrorMessage(`上传失败: ${errorData?.error || res.statusText || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("上传失败，请检查网络连接");
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter(a => a.id !== id)
+    }));
+  };
+
+  const getFileIcon = (fileName: string) => {
+    const isImage = fileName.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+    if (isImage) return "IMAGE";
+    const isPdf = fileName.match(/\.(pdf)$/i);
+    if (isPdf) return "PDF";
+    const isExcel = fileName.match(/\.(xls|xlsx|csv)$/i);
+    if (isExcel) return "EXCEL";
+    const isWord = fileName.match(/\.(doc|docx)$/i);
+    if (isWord) return "WORD";
+    return "OTHER";
   };
 
   if (!isOpen) return null;
@@ -202,6 +265,7 @@ export default function CreateIssueModal({
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
         dueDate: formData.dueDate || null,
+        attachments: formData.attachments.map(a => ({ fileName: a.fileName, fileUrl: a.fileUrl })),
       };
 
       const result = await createIssue(payload);
@@ -228,8 +292,8 @@ export default function CreateIssueModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
-          <div className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto min-h-0">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="title" className="text-sm font-medium text-slate-700">
                 {translations.createIssue.summary} <span className="text-red-500">*</span>
@@ -294,15 +358,15 @@ export default function CreateIssueModal({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5 h-64 mb-10 border-b pb-4 relative z-0">
+            <div className="flex flex-col gap-1.5 h-48 mb-6 border-b pb-4 relative z-0">
               <label htmlFor="description" className="text-sm font-medium text-slate-700">
                 {translations.createIssue.description}
               </label>
-              <div className="border border-slate-300 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 focus-within:border-blue-500 transition-shadow">
+              <div>
                 <RichTextEditor
                   value={formData.description}
                   onChange={(value) => setFormData((prev) => ({ ...prev, description: value || "" }))}
-                  height={220}
+                  height={180}
                 />
               </div>
               {mentionQuery !== null && filteredUsers.length > 0 && (
@@ -326,9 +390,56 @@ export default function CreateIssueModal({
                 </div>
               )}
             </div>
+
+            <div className="flex flex-col gap-2 relative z-0 pb-2">
+               <div className="flex items-center justify-between">
+                 <label className="text-sm font-medium text-slate-700">
+                   附件 ({formData.attachments.length})
+                 </label>
+                 <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 shadow-sm border border-slate-200">
+                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                   {uploading ? '上传中...' : '添加附件'}
+                   <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || isPending} />
+                 </label>
+               </div>
+               
+               {formData.attachments.length > 0 && (
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                   {formData.attachments.map((file) => {
+                     const fileType = getFileIcon(file.fileName);
+                     return (
+                       <div key={file.id} className="relative border border-slate-200 rounded-lg p-2 flex flex-col gap-2 hover:border-blue-400 hover:shadow-sm transition-all group bg-white">
+                         <div className="h-24 w-full bg-slate-50 flex flex-col items-center justify-center rounded-md overflow-hidden relative border border-slate-100 hover:bg-slate-100 transition-colors">
+                           {fileType === "IMAGE" && (
+                             <img src={file.fileUrl} alt={file.fileName} className="object-cover w-full h-full" />
+                           )}
+                           {fileType === "PDF" && <FileText size={24} className="text-red-500" />}
+                           {fileType === "EXCEL" && <FileText size={24} className="text-green-600" />}
+                           {fileType === "WORD" && <FileText size={24} className="text-blue-600" />}
+                           {fileType === "OTHER" && <FileText size={24} className="text-slate-400" />}
+                         </div>
+                         <div className="flex justify-between items-center px-1">
+                           <span className="text-xs truncate font-medium text-slate-700 pr-2 block w-full">
+                             {file.fileName}
+                           </span>
+                           <button
+                             type="button"
+                             onClick={() => removeAttachment(file.id)}
+                             className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity rounded-md hover:bg-slate-100 z-10 shrink-0"
+                             title="删除"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                         </div>
+                       </div>
+                     );
+                   })}
+                 </div>
+               )}
+            </div>
           </div>
 
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 mt-auto">
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
             <button
               type="button"
               onClick={onClose}

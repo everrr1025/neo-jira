@@ -5,6 +5,11 @@ import RichTextEditor from "./RichTextEditor";
 import { Loader2 } from "lucide-react";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 
+type CommentUser = {
+  id: string;
+  name: string | null;
+};
+
 interface Comment {
   id: string;
   content: string;
@@ -24,27 +29,19 @@ export default function CommentSection({
 }: {
   issueId: string;
   currentUserId: string;
-  users?: any[];
+  users?: CommentUser[];
   locale: Locale;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const translations = getTranslations(locale);
 
-  useEffect(() => {
-    const match = newComment.match(/(?:\s|^)@([^\s]*)$/);
-    if (match) {
-      setMentionQuery(match[1].toLowerCase());
-    } else {
-      setMentionQuery(null);
-    }
-  }, [newComment]);
+  const mentionQuery = newComment.match(/(?:\s|^)@([^\s]*)$/)?.[1]?.toLowerCase() || null;
 
   const filteredUsers = mentionQuery !== null && users
-    ? users.filter(u => u.name?.toLowerCase().includes(mentionQuery) && u.id !== currentUserId)
+    ? users.filter((user) => user.name?.toLowerCase().includes(mentionQuery) && user.id !== currentUserId)
     : [];
 
   const handleMentionInsert = (name: string) => {
@@ -57,26 +54,25 @@ export default function CommentSection({
         setNewComment(textBefore + `@${name} ` + textAfter);
       }
     }
-    setMentionQuery(null);
   };
 
   useEffect(() => {
-    fetchComments();
-  }, [issueId]);
-
-  const fetchComments = async () => {
-    try {
-      const res = await fetch(`/api/issues/${issueId}/comments`);
-      if (res.ok) {
-        const data = await res.json();
-        setComments(data);
+    const fetchComments = async () => {
+      try {
+        const res = await fetch(`/api/issues/${issueId}/comments`);
+        if (res.ok) {
+          const data = await res.json();
+          setComments(data);
+        }
+      } catch (error) {
+        console.error("Failed to load comments", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to load comments", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    void fetchComments();
+  }, [issueId]);
 
   const handleSubmit = async () => {
     if (!newComment.trim()) return;
@@ -131,7 +127,7 @@ export default function CommentSection({
           {translations.commentSection.me}
         </div>
         <div className="flex-1 space-y-3">
-          <div className="border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all shadow-sm">
+          <div>
             <RichTextEditor value={newComment} onChange={(v) => setNewComment(v || "")} height={150} />
           </div>
 
