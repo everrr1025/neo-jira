@@ -13,6 +13,7 @@ type CreateIssueModalProps = {
   users: CreateIssueUser[];
   iterations: CreateIssueIteration[];
   locale: Locale;
+  currentUserId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
 };
@@ -111,6 +112,7 @@ export default function CreateIssueModal({
   users,
   iterations,
   locale,
+  currentUserId,
   defaultIterationId,
   defaultDueDate,
 }: CreateIssueModalProps) {
@@ -135,26 +137,6 @@ export default function CreateIssueModal({
   const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [uploading, setUploading] = useState(false);
-
-  const mentionQuery = (() => {
-    const match = formData.description.match(/(?:\s|^)@([^\s]*)$/);
-    return match ? match[1].toLowerCase() : null;
-  })();
-  const filteredUsers =
-    mentionQuery !== null ? users.filter((user) => user.name?.toLowerCase().includes(mentionQuery)) : [];
-
-  const handleMentionInsert = (name: string) => {
-    const desc = formData.description;
-    const match = desc.match(/(?:\s|^)@([^\s]*)$/);
-    if (match) {
-      const index = desc.lastIndexOf(`@${match[1]}`);
-      if (index !== -1) {
-        const textBefore = desc.substring(0, index);
-        const textAfter = desc.substring(index + match[1].length + 1);
-        setFormData((prev) => ({ ...prev, description: textBefore + `@${name} ` + textAfter }));
-      }
-    }
-  };
 
   const handleSprintChange = (iterationId: string) => {
     setFormData((prev) => {
@@ -358,7 +340,7 @@ export default function CreateIssueModal({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5 h-48 mb-6 border-b pb-4 relative z-0">
+            <div className="flex flex-col gap-1.5 mb-2 relative">
               <label htmlFor="description" className="text-sm font-medium text-slate-700">
                 {translations.createIssue.description}
               </label>
@@ -367,28 +349,11 @@ export default function CreateIssueModal({
                   value={formData.description}
                   onChange={(value) => setFormData((prev) => ({ ...prev, description: value || "" }))}
                   height={180}
+                  mentionUsers={users}
+                  mentionLabel={translations.createIssue.mentionSomeone}
+                  currentUserId={currentUserId}
                 />
               </div>
-              {mentionQuery !== null && filteredUsers.length > 0 && (
-                <div className="absolute top-full mt-1 bg-white border border-slate-200 shadow-xl rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100 z-[99]">
-                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
-                    {translations.createIssue.mentionSomeone}
-                  </div>
-                  {filteredUsers.map((user) => (
-                    <button
-                      type="button"
-                      key={user.id}
-                      onClick={() => handleMentionInsert(user.name || user.id)}
-                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
-                    >
-                      <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
-                        {user.name?.charAt(0) || "U"}
-                      </div>
-                      {user.name || user.id}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="flex flex-col gap-2 relative z-0 pb-2">

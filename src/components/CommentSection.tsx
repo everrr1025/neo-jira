@@ -38,24 +38,6 @@ export default function CommentSection({
   const [submitting, setSubmitting] = useState(false);
   const translations = getTranslations(locale);
 
-  const mentionQuery = newComment.match(/(?:\s|^)@([^\s]*)$/)?.[1]?.toLowerCase() || null;
-
-  const filteredUsers = mentionQuery !== null && users
-    ? users.filter((user) => user.name?.toLowerCase().includes(mentionQuery) && user.id !== currentUserId)
-    : [];
-
-  const handleMentionInsert = (name: string) => {
-    const match = newComment.match(/(?:\s|^)@([^\s]*)$/);
-    if (match) {
-      const index = newComment.lastIndexOf(`@${match[1]}`);
-      if (index !== -1) {
-        const textBefore = newComment.substring(0, index);
-        const textAfter = newComment.substring(index + match[1].length + 1);
-        setNewComment(textBefore + `@${name} ` + textAfter);
-      }
-    }
-  };
-
   useEffect(() => {
     const fetchComments = async () => {
       try {
@@ -128,28 +110,15 @@ export default function CommentSection({
         </div>
         <div className="flex-1 space-y-3">
           <div>
-            <RichTextEditor value={newComment} onChange={(v) => setNewComment(v || "")} height={150} />
+            <RichTextEditor
+              value={newComment}
+              onChange={(v) => setNewComment(v || "")}
+              height={150}
+              mentionUsers={users}
+              mentionLabel={translations.commentSection.mentionSomeone}
+              currentUserId={currentUserId}
+            />
           </div>
-
-          {mentionQuery !== null && filteredUsers.length > 0 && (
-            <div className="bg-white border border-slate-200 shadow-md rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
-                {translations.commentSection.mentionSomeone}
-              </div>
-              {filteredUsers.map(u => (
-                <button
-                  key={u.id}
-                  onClick={() => handleMentionInsert(u.name)}
-                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
-                >
-                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
-                    {u.name?.charAt(0) || "U"}
-                  </div>
-                  {u.name}
-                </button>
-              ))}
-            </div>
-          )}
 
           <div className="flex justify-end">
             <button

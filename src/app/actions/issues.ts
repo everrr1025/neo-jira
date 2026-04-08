@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { checkProjectAdmin } from "@/lib/permissions";
+import { notifyIssueMentions } from "@/lib/notifications";
 
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
@@ -120,6 +121,16 @@ export async function createIssue(data: {
       }
     });
 
+    if (typeof data.description === "string" && data.description.trim()) {
+      await notifyIssueMentions({
+        actorId: userId,
+        issueId: newIssue.id,
+        issueKey: newIssue.key,
+        projectId: newIssue.projectId,
+        content: data.description,
+      });
+    }
+
     revalidatePath("/issues");
     revalidatePath("/iterations");
 
@@ -135,10 +146,38 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const existingIssue = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: {
+        id: true,
+        key: true,
+        projectId: true,
+        description: true,
+      },
+    });
+    if (!existingIssue) throw new Error("Issue not found");
+
     const updatedIssue = await prisma.issue.update({
       where: { id: issueId },
       data
     });
+
+    const nextDescription =
+      typeof data.description === "string" ? data.description : data.description === null ? "" : null;
+
+    if (nextDescription !== null && nextDescription !== (existingIssue.description || "")) {
+      await notifyIssueMentions({
+        actorId: userId,
+        issueId: existingIssue.id,
+        issueKey: existingIssue.key,
+        projectId: existingIssue.projectId,
+        content: nextDescription,
+        previousContent: existingIssue.description,
+      });
+    }
     
     revalidatePath(`/issues/${issueId}`);
     revalidatePath('/issues');

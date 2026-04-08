@@ -38,14 +38,9 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   if (!issue) return notFound();
 
   const users = await prisma.user.findMany({
-    where: isGlobalAdmin
-      ? {}
-      : {
-          OR: [
-            { role: "ADMIN" },
-            { projectMemberships: { some: { projectId: issue.projectId } } },
-          ],
-        },
+    where: {
+      projectMemberships: { some: { projectId: issue.projectId } },
+    },
     orderBy: { name: "asc" },
   });
 

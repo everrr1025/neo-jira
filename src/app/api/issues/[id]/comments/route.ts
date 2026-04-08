@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
-import { parseMentionsAndNotify } from "@/lib/notifications";
+import { notifyCommentMentions } from "@/lib/notifications";
 
 export async function GET(
   request: Request,
@@ -54,10 +54,18 @@ export async function POST(
       include: { author: { select: { id: true, name: true, email: true } } },
     });
 
-    const issue = await prisma.issue.findUnique({ where: { id: resolvedParams.id } });
+    const issue = await prisma.issue.findUnique({
+      where: { id: resolvedParams.id },
+      select: { key: true, projectId: true },
+    });
     if (issue) {
-      // Phase 3 - Mention parsing and notification logic
-      await parseMentionsAndNotify(content, resolvedParams.id, userId, issue.key);
+      await notifyCommentMentions({
+        actorId: userId,
+        issueId: resolvedParams.id,
+        issueKey: issue.key,
+        projectId: issue.projectId,
+        content,
+      });
     }
 
     return NextResponse.json(comment, { status: 201 });

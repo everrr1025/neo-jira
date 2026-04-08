@@ -8,6 +8,7 @@ type CreateIssueButtonProps = {
   users?: CreateIssueUser[];
   iterations?: CreateIssueIteration[];
   locale: Locale;
+  currentUserId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
 };
@@ -16,6 +17,7 @@ export default function CreateIssueButton({
   users = [],
   iterations = [],
   locale,
+  currentUserId,
   defaultIterationId,
   defaultDueDate,
 }: CreateIssueButtonProps) {
@@ -42,6 +44,7 @@ export default function CreateIssueButton({
         users={users} 
         iterations={iterations}
         locale={locale}
+        currentUserId={currentUserId}
         defaultIterationId={defaultIterationId}
         defaultDueDate={defaultDueDate}
       />

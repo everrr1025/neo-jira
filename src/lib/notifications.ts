@@ -1,34 +1,129 @@
 import prisma from "@/lib/prisma";
 
-export async function parseMentionsAndNotify(content: string, issueId: string, actorId: string, issueKey: string) {
-  const mentionRegex = /(?:\s|^)@([^\s]+)/g;
-  let match;
-  const mentionedNames = [];
-  while ((match = mentionRegex.exec(content)) !== null) {
-    mentionedNames.push(match[1]);
+type MentionNotificationParams = {
+  actorId: string;
+  issueId: string;
+  issueKey: string;
+  projectId: string;
+  content: string;
+  previousContent?: string | null;
+};
+
+function stripRichText(content: string) {
+  return content
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildMentionPattern(name: string) {
+  return new RegExp(
+    `(?:^|\\s)@${escapeRegex(name)}(?=$|[\\s.,!?;:，。！？；：()\\[\\]{}])`,
+    "i",
+  );
+}
+
+async function resolveMentionedUserIds(content: string, projectId: string, actorId: string) {
+  const normalizedContent = stripRichText(content);
+  if (!normalizedContent) {
+    return new Set<string>();
   }
 
-  if (mentionedNames.length === 0) return;
+  const projectMembers = await prisma.user.findMany({
+    where: {
+      projectMemberships: {
+        some: {
+          projectId,
+        },
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
 
-  const users = await prisma.user.findMany();
   const mentionedUserIds = new Set<string>();
-  
-  for (const name of mentionedNames) {
-    const user = users.find(u => u.name?.toLowerCase() === name.toLowerCase() || u.name?.toLowerCase().startsWith(name.toLowerCase()));
-    if (user && user.id !== actorId) {
-      mentionedUserIds.add(user.id);
+
+  for (const member of projectMembers) {
+    const memberName = member.name?.trim();
+
+    if (!memberName || member.id === actorId) {
+      continue;
+    }
+
+    if (buildMentionPattern(memberName).test(normalizedContent)) {
+      mentionedUserIds.add(member.id);
     }
   }
 
-  for (const userId of mentionedUserIds) {
-    await prisma.notification.create({
-      data: {
-        type: "MENTION",
-        message: `mentioned you in ${issueKey}`,
-        link: `/issues/${issueId}`,
-        userId: userId,
-        actorId: actorId,
-      }
-    });
+  return mentionedUserIds;
+}
+
+async function createNotifications(userIds: Iterable<string>, actorId: string, message: string, issueId: string) {
+  const notificationPayload = Array.from(userIds).map((userId) => ({
+    type: "MENTION",
+    message,
+    link: `/issues/${issueId}`,
+    userId,
+    actorId,
+  }));
+
+  if (notificationPayload.length === 0) {
+    return;
   }
+
+  await prisma.notification.createMany({
+    data: notificationPayload,
+  });
+}
+
+export async function notifyCommentMentions({
+  actorId,
+  issueId,
+  issueKey,
+  projectId,
+  content,
+}: MentionNotificationParams) {
+  const mentionedUserIds = await resolveMentionedUserIds(content, projectId, actorId);
+
+  await createNotifications(
+    mentionedUserIds,
+    actorId,
+    `mentioned you in a comment on ${issueKey}`,
+    issueId,
+  );
+}
+
+export async function notifyIssueMentions({
+  actorId,
+  issueId,
+  issueKey,
+  projectId,
+  content,
+  previousContent,
+}: MentionNotificationParams) {
+  const mentionedUserIds = await resolveMentionedUserIds(content, projectId, actorId);
+
+  if (previousContent) {
+    const previousMentionedUserIds = await resolveMentionedUserIds(previousContent, projectId, actorId);
+
+    for (const userId of previousMentionedUserIds) {
+      mentionedUserIds.delete(userId);
+    }
+  }
+
+  await createNotifications(mentionedUserIds, actorId, `mentioned you in ${issueKey}`, issueId);
 }

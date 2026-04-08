@@ -44,10 +44,7 @@ export default async function IssuesPage() {
     where: isGlobalAdmin
       ? {}
       : {
-          OR: [
-            { role: "ADMIN" },
-            { projectMemberships: { some: { projectId: activeProjectId! } } },
-          ],
+          projectMemberships: { some: { projectId: activeProjectId! } },
         },
     orderBy: { name: "asc" },
   });
@@ -69,7 +66,7 @@ export default async function IssuesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <CreateIssueButton users={users} iterations={iterations} locale={locale} />
+          <CreateIssueButton users={users} iterations={iterations} locale={locale} currentUserId={userId} />
         </div>
       </div>
 

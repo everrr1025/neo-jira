@@ -38,7 +38,7 @@ type IssueRecord = {
   priority: string;
   assigneeId: string | null;
   iterationId: string | null;
-  dueDate: string | null;
+  dueDate: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   reporter: {
@@ -68,25 +68,6 @@ export default function IssueDetailClient({
   const [successMsg, setSuccessMsg] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const translations = getTranslations(locale);
-
-  const description = issue.description || "";
-  const mentionQuery = description.match(/(?:\s|^)@([^\s]*)$/)?.[1]?.toLowerCase() || null;
-
-  const filteredUsers = mentionQuery !== null && users
-    ? users.filter((user) => user.name?.toLowerCase().includes(mentionQuery) && user.id !== currentUserId)
-    : [];
-
-  const handleMentionInsert = (name: string) => {
-    const match = description.match(/(?:\s|^)@([^\s]*)$/);
-    if (match) {
-      const index = description.lastIndexOf(`@${match[1]}`);
-      if (index !== -1) {
-        const textBefore = description.substring(0, index);
-        const textAfter = description.substring(index + match[1].length + 1);
-        handleChange("description", textBefore + `@${name} ` + textAfter);
-      }
-    }
-  };
 
   const handleChange = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
     setIssue((prev) => ({ ...prev, [field]: value }));
@@ -168,27 +149,11 @@ export default function IssueDetailClient({
               value={issue.description || ""}
               onChange={(val) => handleChange("description", val || "")}
               height={340}
+              mentionUsers={users}
+              mentionLabel={translations.issueDetail.mentionSomeone}
+              currentUserId={currentUserId}
             />
           </div>
-          {mentionQuery !== null && filteredUsers.length > 0 && (
-            <div className="mt-1 bg-white border border-slate-200 shadow-md rounded-lg max-h-40 overflow-y-auto w-full md:w-64 animate-in fade-in zoom-in-95 duration-100 z-10 relative">
-              <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border-b border-slate-100">
-                {translations.issueDetail.mentionSomeone}
-              </div>
-              {filteredUsers.map((user) => (
-                <button
-                  key={user.id}
-                  onClick={() => handleMentionInsert(user.name || user.id)}
-                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2"
-                >
-                  <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">
-                    {user.name?.charAt(0) || "U"}
-                  </div>
-                  {user.name || user.id}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
         
         {/* Save Button */}
