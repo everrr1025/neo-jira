@@ -1,0 +1,37 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main # 如果你的主分支叫 master，请将其改为 master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          # SSH 连接信息将从 Github Secrets 中读取，保证安全
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          # 连接成功后在服务器上执行的命令
+          script: |
+            # 1. 进入你的代码目录 (根据你实际的部署路径修改)
+            cd /var/www/neo-jira
+            
+            # 2. 从 Github 拉取最新代码
+            git pull origin main
+            
+            # 3. 安装依赖和初始化 Prisma
+            npm install
+            npx prisma generate
+            npx prisma db push
+            
+            # 4. 构建 Next.js 生产环境版本
+            npm run build
+            
+            # 5. 重启 PM2 服务
+            pm2 restart neo-jira
