@@ -52,7 +52,7 @@ export async function createIssue(data: {
     const selectedIteration = data.iterationId
       ? await prisma.iteration.findUnique({
           where: { id: data.iterationId },
-          select: { id: true, projectId: true },
+          select: { id: true, projectId: true, status: true },
         })
       : null;
 
@@ -62,6 +62,10 @@ export async function createIssue(data: {
 
     if (!isGlobalAdmin && selectedIteration && selectedIteration.projectId !== activeProjectId) {
       throw new Error("Unauthorized");
+    }
+
+    if (selectedIteration?.status === "COMPLETED") {
+      throw new Error("Cannot add issues to a completed sprint");
     }
 
     let targetProjectId = selectedIteration?.projectId || activeProjectId;

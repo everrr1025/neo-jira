@@ -96,6 +96,20 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
       : Promise.resolve([]),
   ]);
   const defaultDueDate = iteration.endDate.toISOString().slice(0, 10);
+  const unfinishedIssueCount = issues.filter((issue) => issue.status !== "DONE").length;
+  const plannedSprintOptions = iterations
+    .filter((item) => item.id !== iteration.id && item.status === "PLANNED")
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  const recommendedSprint =
+    plannedSprintOptions.find((item) => item.startDate.getTime() >= iteration.endDate.getTime()) || null;
+  const plannedSprints = plannedSprintOptions.map((item) => ({
+    id: item.id,
+    name: item.name,
+    startDate: item.startDate.toISOString(),
+    endDate: item.endDate.toISOString(),
+    recommended: item.id === recommendedSprint?.id,
+  }));
+  const canChangeSprintIssues = iteration.status !== "COMPLETED";
 
   return (
     <div className="flex flex-col h-full">
@@ -114,7 +128,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </div>
 
         <div className="flex items-center gap-3">
-          {canManage && (
+          {canManage && canChangeSprintIssues && (
             <AddExistingIssuesButton
               sprintId={iteration.id}
               sprintName={iteration.name}
@@ -122,19 +136,27 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
               locale={locale}
             />
           )}
-          <div className="flex -space-x-2">
-            <CreateIssueButton
-              locale={locale}
-              users={users}
-              iterations={iterations}
-              defaultIterationId={iteration.id}
-              defaultDueDate={defaultDueDate}
-            />
-          </div>
-          {canManage && (
+          {canChangeSprintIssues && (
+            <div className="flex -space-x-2">
+              <CreateIssueButton
+                locale={locale}
+                users={users}
+                iterations={iterations}
+                defaultIterationId={iteration.id}
+                defaultDueDate={defaultDueDate}
+              />
+            </div>
+          )}
+          {canManage && iteration.status !== "COMPLETED" && (
             <>
               <div className="h-6 w-px bg-slate-200 mx-2"></div>
-              <SprintActionButton sprintId={iteration.id} status={iteration.status} locale={locale} />
+              <SprintActionButton
+                sprintId={iteration.id}
+                status={iteration.status}
+                locale={locale}
+                plannedSprints={plannedSprints}
+                unfinishedIssueCount={unfinishedIssueCount}
+              />
             </>
           )}
         </div>

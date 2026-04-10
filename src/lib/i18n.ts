@@ -208,7 +208,22 @@ type TranslationBundle = {
   sprintAction: {
     startSprint: string;
     completeSprint: string;
+    moveBackToPlanned: string;
+    deleteSprint: string;
+    completeTitle: string;
+    completeDescription: string;
+    unfinishedCount: string;
+    moveUnfinishedTo: string;
+    moveToBacklog: string;
+    moveToSprint: string;
+    recommended: string;
+    noPlannedSprints: string;
+    cancel: string;
+    completing: string;
+    confirmComplete: string;
     actionFailed: string;
+    deleteConfirm: string;
+    deleteFailed: string;
   };
 };
 
@@ -406,7 +421,22 @@ const translations: Record<Locale, TranslationBundle> = {
     sprintAction: {
       startSprint: "Start Sprint",
       completeSprint: "Complete Sprint",
+      moveBackToPlanned: "Move back to planned",
+      deleteSprint: "Delete Sprint",
+      completeTitle: "Complete Sprint",
+      completeDescription: "Choose where unfinished issues should move before this sprint is completed.",
+      unfinishedCount: "Unfinished issues",
+      moveUnfinishedTo: "Move unfinished issues to",
+      moveToBacklog: "Backlog",
+      moveToSprint: "A planned Sprint",
+      recommended: "Recommended",
+      noPlannedSprints: "No planned sprints available.",
+      cancel: "Cancel",
+      completing: "Completing...",
+      confirmComplete: "Complete Sprint",
       actionFailed: "Action failed",
+      deleteConfirm: "Delete this sprint? All issues in it will be moved to backlog.",
+      deleteFailed: "Failed to delete sprint",
     },
   },
   zh: {
@@ -602,7 +632,22 @@ const translations: Record<Locale, TranslationBundle> = {
     sprintAction: {
       startSprint: "开始 Sprint",
       completeSprint: "完成 Sprint",
+      moveBackToPlanned: "回退为未开始",
+      deleteSprint: "删除 Sprint",
+      completeTitle: "完成 Sprint",
+      completeDescription: "完成前请选择未完成问题的移动位置。",
+      unfinishedCount: "未完成问题",
+      moveUnfinishedTo: "将未完成问题移动到",
+      moveToBacklog: "待办池",
+      moveToSprint: "未开始 Sprint",
+      recommended: "推荐",
+      noPlannedSprints: "暂无可选的未开始 Sprint。",
+      cancel: "取消",
+      completing: "完成中...",
+      confirmComplete: "完成 Sprint",
       actionFailed: "操作失败",
+      deleteConfirm: "确定删除这个 Sprint 吗？其中所有问题会移动到待办池。",
+      deleteFailed: "删除 Sprint 失败",
     },
   },
 };
@@ -662,14 +707,14 @@ export function getPriorityLabel(priority: string, locale: Locale) {
 export function getIterationStatusLabel(status: string, locale: Locale) {
   if (locale === "zh") {
     if (status === "ACTIVE") return "进行中";
-    if (status === "PLANNED") return "已计划";
+    if (status === "PLANNED") return "未开始";
     if (status === "COMPLETED") return "已完成";
     return status;
   }
 
-  if (status === "ACTIVE") return "ACTIVE";
-  if (status === "PLANNED") return "PLANNED";
-  if (status === "COMPLETED") return "COMPLETED";
+  if (status === "ACTIVE") return "Active";
+  if (status === "PLANNED") return "Not Started";
+  if (status === "COMPLETED") return "Completed";
   return status;
 }
 
