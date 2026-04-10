@@ -141,6 +141,62 @@ export async function createIssue(data: {
   }
 }
 
+export async function addBacklogIssuesToSprint(sprintId: string, issueIds: string[]) {
+  try {
+    const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
+    if (uniqueIssueIds.length === 0) {
+      throw new Error("Please select at least one issue");
+    }
+
+    const sprint = await prisma.iteration.findUnique({
+      where: { id: sprintId },
+      select: { id: true, projectId: true, status: true },
+    });
+    if (!sprint) throw new Error("Sprint not found");
+
+    await checkProjectAdmin(sprint.projectId);
+
+    if (sprint.status === "COMPLETED") {
+      throw new Error("Cannot add issues to a completed sprint");
+    }
+
+    const eligibleIssueFilter = {
+      id: { in: uniqueIssueIds },
+      projectId: sprint.projectId,
+      iterationId: null,
+      status: { not: "DONE" },
+    };
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const eligibleIssues = await tx.issue.findMany({
+        where: eligibleIssueFilter,
+        select: { id: true },
+      });
+
+      if (eligibleIssues.length !== uniqueIssueIds.length) {
+        throw new Error("Only unfinished backlog issues can be added to this sprint");
+      }
+
+      return tx.issue.updateMany({
+        where: eligibleIssueFilter,
+        data: { iterationId: sprint.id },
+      });
+    });
+
+    revalidatePath(`/iterations/${sprint.id}`);
+    revalidatePath("/iterations");
+    revalidatePath("/issues");
+
+    return { success: true, count: updated.count };
+  } catch (error: unknown) {
+    console.error("Failed to add backlog issues to sprint:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to add issues to sprint",
+    };
+  }
+}
+
 export async function updateIssue(issueId: string, data: Record<string, unknown>) {
   try {
     const session = await getServerSession(authOptions);

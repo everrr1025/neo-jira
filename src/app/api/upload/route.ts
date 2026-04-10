@@ -52,3 +52,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { fileUrl } = await request.json();
+    if (!fileUrl || !fileUrl.startsWith("/uploads/")) {
+      return NextResponse.json({ error: "Invalid file URL" }, { status: 400 });
+    }
+
+    const fileName = fileUrl.substring("/uploads/".length);
+    const filePath = path.join(process.cwd(), "public/uploads", fileName);
+
+    try {
+      await fs.unlink(filePath);
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      console.error("Failed to delete local file:", err);
+      return NextResponse.json({ error: "File not found or already deleted" }, { status: 404 });
+    }
+  } catch (error) {
+    console.error("Delete error:", error);
+    return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });
+  }
+}

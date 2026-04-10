@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useTransition } from "react";
 import { deleteIssue, updateIssue } from "@/app/actions/issues";
@@ -16,6 +16,7 @@ import {
   Locale,
   localeDateMap,
 } from "@/lib/i18n";
+import { DropdownField } from "./DropdownField";
 
 type IssueUser = {
   id: string;
@@ -200,79 +201,70 @@ export default function IssueDetailClient({
           <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide border-b pb-2">{translations.issueDetail.properties}</h3>
           
           {/* Status */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.status}</label>
-            <select
-              value={issue.status}
-              onChange={(e) => handleChange("status", e.target.value)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-            >
-              <option value="TODO">{getIssueStatusLabel("TODO", locale)}</option>
-              <option value="IN_PROGRESS">{getIssueStatusLabel("IN_PROGRESS", locale)}</option>
-              <option value="IN_TESTING">{getIssueStatusLabel("IN_TESTING", locale)}</option>
-              <option value="DONE">{getIssueStatusLabel("DONE", locale)}</option>
-            </select>
-          </div>
+          <DropdownField
+            id="status"
+            label={translations.issueDetail.status}
+            value={issue.status}
+            onChange={(val) => handleChange("status", val)}
+            options={[
+              { value: "TODO", label: getIssueStatusLabel("TODO", locale) },
+              { value: "IN_PROGRESS", label: getIssueStatusLabel("IN_PROGRESS", locale) },
+              { value: "IN_TESTING", label: getIssueStatusLabel("IN_TESTING", locale) },
+              { value: "DONE", label: getIssueStatusLabel("DONE", locale) },
+            ]}
+          />
 
           {/* Sprint */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.sprint}</label>
-            <select
-              value={issue.iterationId || ""}
-              onChange={(e) => handleChange("iterationId", e.target.value || null)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-            >
-              <option value="">{translations.issueList.backlog}</option>
-              {iterations.map((it) => (
-                <option key={it.id} value={it.id}>{it.name}</option>
-              ))}
-            </select>
-          </div>
+          <DropdownField
+            id="iteration"
+            label={translations.issueDetail.sprint}
+            value={issue.iterationId || ""}
+            onChange={(val) => handleChange("iterationId", val || null)}
+            options={[
+              { value: "", label: translations.issueList.backlog },
+              ...iterations.map((it) => ({ value: it.id, label: it.name })),
+            ]}
+          />
 
           {/* Type */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.type}</label>
-            <select
-              value={issue.type}
-              onChange={(e) => handleChange("type", e.target.value)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-            >
-              <option value="TASK">{getIssueTypeLabel("TASK", locale)}</option>
-              <option value="STORY">{getIssueTypeLabel("STORY", locale)}</option>
-              <option value="BUG">{getIssueTypeLabel("BUG", locale)}</option>
-              <option value="EPIC">{getIssueTypeLabel("EPIC", locale)}</option>
-            </select>
-          </div>
+          <DropdownField
+            id="type"
+            label={translations.issueDetail.type}
+            value={issue.type}
+            onChange={(val) => handleChange("type", val)}
+            options={[
+              { value: "TASK", label: getIssueTypeLabel("TASK", locale) },
+              { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
+              { value: "BUG", label: getIssueTypeLabel("BUG", locale) },
+              { value: "EPIC", label: getIssueTypeLabel("EPIC", locale) },
+            ]}
+          />
 
           {/* Priority */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.priority}</label>
-            <select
-              value={issue.priority}
-              onChange={(e) => handleChange("priority", e.target.value)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-            >
-              <option value="LOW">{getPriorityLabel("LOW", locale)}</option>
-              <option value="MEDIUM">{getPriorityLabel("MEDIUM", locale)}</option>
-              <option value="HIGH">{getPriorityLabel("HIGH", locale)}</option>
-              <option value="URGENT">{getPriorityLabel("URGENT", locale)}</option>
-            </select>
-          </div>
+          <DropdownField
+            id="priority"
+            label={translations.issueDetail.priority}
+            value={issue.priority}
+            onChange={(val) => handleChange("priority", val)}
+            options={[
+              { value: "LOW", label: getPriorityLabel("LOW", locale) },
+              { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
+              { value: "HIGH", label: getPriorityLabel("HIGH", locale) },
+              { value: "URGENT", label: getPriorityLabel("URGENT", locale) },
+            ]}
+          />
 
           {/* Assignee */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.assignee}</label>
-            <select
-              value={issue.assigneeId || ""}
-              onChange={(e) => handleChange("assigneeId", e.target.value || null)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
-            >
-              <option value="">{translations.issueList.unassigned}</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-              ))}
-            </select>
-          </div>
+          <DropdownField
+            id="assignee"
+            label={translations.issueDetail.assignee}
+            value={issue.assigneeId || ""}
+            onChange={(val) => handleChange("assigneeId", val || null)}
+            options={[
+              { value: "", label: translations.issueList.unassigned },
+              ...users.map((u) => ({ value: u.id, label: u.name || u.id })),
+            ]}
+          />
 
           {/* Due Date */}
           <div className="flex flex-col gap-1.5">

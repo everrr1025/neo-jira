@@ -29,7 +29,7 @@ export default async function ProjectsPage() {
       owner: true,
       members: {
         where: { user: { role: { not: "ADMIN" } } },
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
       },
       _count: {
         select: {
@@ -137,7 +137,7 @@ export default async function ProjectsPage() {
                     <div className="text-sm text-slate-900 flex items-center gap-2">
                       {leadUser ? (
                         <img
-                          src={getDefaultAvatar(leadUser.id)}
+                          src={leadUser.avatar || getDefaultAvatar(leadUser.id)}
                           alt={leadName}
                           className="w-7 h-7 rounded-full border border-slate-200 object-cover"
                         />
@@ -157,7 +157,7 @@ export default async function ProjectsPage() {
                         return (
                           <img
                             key={member.userId}
-                            src={getDefaultAvatar(member.user.id)}
+                            src={member.user.avatar || getDefaultAvatar(member.user.id)}
                             alt={memberName}
                             title={memberName}
                             className="-ml-1 h-7 w-7 rounded-full border-2 border-white object-cover first:ml-0"

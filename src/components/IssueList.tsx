@@ -98,6 +98,19 @@ function MultiFilter({
   onClear: () => void;
   clearText: string;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const selectedLabels = options
     .filter((option) => selectedValues.includes(option.value))
     .map((option) => option.label);
@@ -109,7 +122,7 @@ function MultiFilter({
         : `${label} (${selectedLabels.length})`;
 
   return (
-    <details className="relative">
+    <details ref={detailsRef} className="relative">
       <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
         <span className="truncate max-w-40">{buttonText}</span>
         <ChevronDown size={14} className="text-slate-400" />

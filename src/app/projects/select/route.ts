@@ -4,18 +4,36 @@ import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { ACTIVE_PROJECT_COOKIE } from "@/lib/activeProject";
 
+type SessionUser = {
+  id?: string;
+  role?: string | null;
+};
+
+function redirectTo(path: string) {
+  return new NextResponse(null, {
+    status: 307,
+    headers: {
+      Location: path,
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirectTo("/login");
   }
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as typeof session.user & SessionUser;
+  const userId = sessionUser.id;
+  const userRole = sessionUser.role;
+  if (!userId) {
+    return redirectTo("/login");
+  }
   const projectId = request.nextUrl.searchParams.get("projectId");
 
   if (!projectId) {
-    return NextResponse.redirect(new URL("/projects", request.url));
+    return redirectTo("/projects");
   }
 
   let hasAccess = false;
@@ -34,7 +52,7 @@ export async function GET(request: NextRequest) {
     hasAccess = !!membership;
   }
 
-  const response = NextResponse.redirect(new URL(hasAccess ? "/" : "/projects", request.url));
+  const response = redirectTo(hasAccess ? "/" : "/projects");
   if (hasAccess) {
     response.cookies.set(ACTIVE_PROJECT_COOKIE, projectId, {
       path: "/",

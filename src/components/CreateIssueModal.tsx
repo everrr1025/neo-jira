@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { createIssue } from "@/app/actions/issues";
 import { Check, ChevronDown, X, Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
 import RichTextEditor from "./RichTextEditor";
 import AlertPopup from "./AlertPopup";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, Locale } from "@/lib/i18n";
+import { DropdownField } from "./DropdownField";
 
 type CreateIssueModalProps = {
   isOpen: boolean;
@@ -45,65 +46,11 @@ type DropdownOption = {
   label: string;
 };
 
-type DropdownFieldProps = {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: DropdownOption[];
-};
-
 function toDateInputValue(dateLike?: string | Date | null) {
   if (!dateLike) return "";
   const date = new Date(dateLike);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
-}
-
-function DropdownField({ id, label, value, onChange, options }: DropdownFieldProps) {
-  const selectedOption = options.find((item) => item.value === value);
-
-  const handleSelect = (nextValue: string, target: EventTarget | null) => {
-    onChange(nextValue);
-    const details = (target as HTMLElement | null)?.closest("details");
-    if (details) {
-      details.open = false;
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-1.5 flex-1">
-      <label htmlFor={id} className="text-sm font-medium text-slate-700">
-        {label}
-      </label>
-      <details className="relative rounded-md border border-slate-200 bg-white">
-        <summary
-          id={id}
-          className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
-        >
-          <span className={selectedOption ? "text-slate-700" : "text-slate-400"}>
-            {selectedOption?.label || ""}
-          </span>
-          <ChevronDown size={14} className="text-slate-500" />
-        </summary>
-        <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-44 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option.value || "__empty"}
-              onClick={(event) => handleSelect(option.value, event.currentTarget)}
-              className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors flex items-center justify-between ${
-                option.value === value ? "bg-white text-blue-700" : "text-slate-700 hover:bg-white"
-              }`}
-            >
-              <span>{option.label}</span>
-              {option.value === value && <Check size={14} className="text-blue-600" />}
-            </button>
-          ))}
-        </div>
-      </details>
-    </div>
-  );
 }
 
 export default function CreateIssueModal({
@@ -191,11 +138,42 @@ export default function CreateIssueModal({
     }
   };
 
-  const removeAttachment = (id: string) => {
+  const removeAttachment = async (id: string, fileUrl: string) => {
+    // Optimistically update UI
     setFormData(prev => ({
       ...prev,
       attachments: prev.attachments.filter(a => a.id !== id)
     }));
+
+    // Delete from server
+    try {
+      await fetch("/api/upload", {
+        method: "DELETE",
+        body: JSON.stringify({ fileUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Failed to delete attachment:", error);
+    }
+  };
+
+  const handleCancelAndClose = async () => {
+    if (formData.attachments.length > 0) {
+      try {
+        await Promise.all(
+          formData.attachments.map(a => 
+            fetch("/api/upload", {
+              method: "DELETE",
+              body: JSON.stringify({ fileUrl: a.fileUrl }),
+              headers: { "Content-Type": "application/json" },
+            })
+          )
+        );
+      } catch (error) {
+        console.error("Failed to cleanup attachments:", error);
+      }
+    }
+    onClose();
   };
 
   const getFileIcon = (fileName: string) => {
@@ -267,7 +245,7 @@ export default function CreateIssueModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-xl font-bold text-slate-800">{translations.createIssue.modalTitle}</h2>
           <button
-            onClick={onClose}
+            onClick={handleCancelAndClose}
             className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
           >
             <X size={20} />
@@ -298,6 +276,7 @@ export default function CreateIssueModal({
                 value={formData.type}
                 onChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}
                 options={typeOptions}
+                className="flex-1"
               />
               <DropdownField
                 id="priority"
@@ -305,6 +284,7 @@ export default function CreateIssueModal({
                 value={formData.priority}
                 onChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}
                 options={priorityOptions}
+                className="flex-1"
               />
             </div>
 
@@ -315,6 +295,7 @@ export default function CreateIssueModal({
                 value={formData.iterationId}
                 onChange={handleSprintChange}
                 options={iterationOptions}
+                className="flex-1"
               />
               <DropdownField
                 id="assignee"
@@ -322,6 +303,7 @@ export default function CreateIssueModal({
                 value={formData.assigneeId}
                 onChange={(value) => setFormData((prev) => ({ ...prev, assigneeId: value }))}
                 options={assigneeOptions}
+                className="flex-1"
               />
               <div className="flex flex-col gap-1.5 flex-1">
                 <label htmlFor="dueDate" className="text-sm font-medium text-slate-700">
@@ -389,7 +371,7 @@ export default function CreateIssueModal({
                            </span>
                            <button
                              type="button"
-                             onClick={() => removeAttachment(file.id)}
+                             onClick={() => removeAttachment(file.id, file.fileUrl)}
                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity rounded-md hover:bg-slate-100 z-10 shrink-0"
                              title="删除"
                            >
@@ -407,7 +389,7 @@ export default function CreateIssueModal({
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCancelAndClose}
               disabled={isPending}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50"
             >

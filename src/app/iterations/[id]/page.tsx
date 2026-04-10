@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import KanbanBoard from "@/components/KanbanBoard";
 import CreateIssueButton from "@/components/CreateIssueButton";
+import AddExistingIssuesButton from "@/components/AddExistingIssuesButton";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
@@ -14,14 +15,21 @@ import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id?: string;
+  role?: string | null;
+};
+
 export default async function IterationKanbanPage({ params }: { params: Promise<{ id: string }> }) {
   const locale = await getCurrentLocale();
   const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as typeof session.user & SessionUser;
+  const userId = sessionUser.id;
+  const userRole = sessionUser.role ?? "USER";
+  if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
   let activeProjectId: string | null = null;
@@ -53,7 +61,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   }
 
   const issues = iteration.issues;
-  const [users, iterations] = await Promise.all([
+  const [users, iterations, backlogIssues] = await Promise.all([
     prisma.user.findMany({
       where: {
         OR: [
@@ -67,6 +75,25 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
       where: { projectId: iteration.project.id },
       orderBy: { startDate: "desc" },
     }),
+    canManage
+      ? prisma.issue.findMany({
+          where: {
+            projectId: iteration.project.id,
+            iterationId: null,
+            status: { not: "DONE" },
+          },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            status: true,
+            priority: true,
+            type: true,
+            assignee: { select: { name: true } },
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
   const defaultDueDate = iteration.endDate.toISOString().slice(0, 10);
 
@@ -87,6 +114,14 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </div>
 
         <div className="flex items-center gap-3">
+          {canManage && (
+            <AddExistingIssuesButton
+              sprintId={iteration.id}
+              sprintName={iteration.name}
+              issues={backlogIssues}
+              locale={locale}
+            />
+          )}
           <div className="flex -space-x-2">
             <CreateIssueButton
               locale={locale}

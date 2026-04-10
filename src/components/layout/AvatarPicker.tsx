@@ -1,40 +1,36 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AVATAR_PRESETS, getAvatarStorageKey, getDefaultAvatar } from "@/lib/avatar";
+import { AVATAR_PRESETS, getDefaultAvatar } from "@/lib/avatar";
 import { getTranslations, Locale } from "@/lib/i18n";
+import { updateUserAvatar } from "@/app/actions/user";
 
 type AvatarPickerProps = {
   userKey: string;
   userName: string;
   locale: Locale;
+  initialAvatar?: string | null;
   size?: "sm" | "md";
 };
 
-export function AvatarPicker({ userKey, userName, locale, size = "md" }: AvatarPickerProps) {
+export function AvatarPicker({ userKey, userName, locale, initialAvatar, size = "md" }: AvatarPickerProps) {
   const translations = getTranslations(locale);
   const defaultAvatar = useMemo(() => getDefaultAvatar(userKey), [userKey]);
-  const [avatar, setAvatar] = useState<string>(defaultAvatar);
+  const [avatar, setAvatar] = useState<string>(initialAvatar || defaultAvatar);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    const storageKey = getAvatarStorageKey(userKey);
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored && AVATAR_PRESETS.includes(stored as (typeof AVATAR_PRESETS)[number])) {
-      setAvatar(stored);
-      return;
+    if (initialAvatar) {
+      setAvatar(initialAvatar);
     }
-
-    setAvatar(defaultAvatar);
-    window.localStorage.setItem(storageKey, defaultAvatar);
-  }, [defaultAvatar, userKey]);
+  }, [initialAvatar]);
 
   const avatarSize = size === "sm" ? "w-8 h-8" : "w-9 h-9";
 
-  const chooseAvatar = (avatarUrl: string) => {
+  const chooseAvatar = async (avatarUrl: string) => {
     setAvatar(avatarUrl);
-    window.localStorage.setItem(getAvatarStorageKey(userKey), avatarUrl);
     setIsOpen(false);
+    await updateUserAvatar(userKey, avatarUrl);
   };
 
   return (

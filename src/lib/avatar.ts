@@ -7,6 +7,10 @@ export const AVATAR_PRESETS = [
   "/avatars/cartoon-06.svg",
   "/avatars/cartoon-07.svg",
   "/avatars/cartoon-08.svg",
+  "/avatars/cartoon-09.svg",
+  "/avatars/cartoon-10.svg",
+  "/avatars/cartoon-11.svg",
+  "/avatars/cartoon-12.svg",
 ] as const;
 
 export function getAvatarStorageKey(userKey: string) {

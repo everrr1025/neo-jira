@@ -158,6 +158,18 @@ type TranslationBundle = {
     board: string;
     ends: string;
   };
+  addExistingIssues: {
+    button: string;
+    modalTitle: string;
+    searchPlaceholder: string;
+    allUnfinished: string;
+    empty: string;
+    selected: string;
+    selectedSuffix: string;
+    addToSprint: string;
+    adding: string;
+    failed: string;
+  };
   issueDetail: {
     back: string;
     issueSummaryPlaceholder: string;
@@ -344,6 +356,18 @@ const translations: Record<Locale, TranslationBundle> = {
       board: "Board",
       ends: "Ends",
     },
+    addExistingIssues: {
+      button: "Add existing issues",
+      modalTitle: "Add existing issues to",
+      searchPlaceholder: "Search by key, title, or assignee...",
+      allUnfinished: "All unfinished",
+      empty: "No unfinished backlog issues available.",
+      selected: "Selected",
+      selectedSuffix: "issues",
+      addToSprint: "Add to Sprint",
+      adding: "Adding...",
+      failed: "Failed to add issues",
+    },
     issueDetail: {
       back: "Back",
       issueSummaryPlaceholder: "Issue Summary",
@@ -527,6 +551,18 @@ const translations: Record<Locale, TranslationBundle> = {
       backToSprints: "返回 Sprint 列表",
       board: "看板",
       ends: "结束于",
+    },
+    addExistingIssues: {
+      button: "添加已有问题",
+      modalTitle: "添加已有问题到",
+      searchPlaceholder: "搜索编号、标题或经办人...",
+      allUnfinished: "全部未完成",
+      empty: "当前待办池没有可添加的未完成问题。",
+      selected: "已选择",
+      selectedSuffix: "个问题",
+      addToSprint: "添加到 Sprint",
+      adding: "添加中...",
+      failed: "添加问题失败",
     },
     issueDetail: {
       back: "返回",
