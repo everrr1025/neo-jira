@@ -3,41 +3,49 @@ name: Deploy to Server
 on:
   push:
     branches:
-      - main # 如果你的主分支叫 master，请将其改为 master
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # SSH 连接信息将从 Github Secrets 中读取，保证安全
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          # 连接成功后在服务器上执行的命令
           script: |
-            # 0. 加载 NVM 环境变量 (解决 npm: command not found 问题)
+            set -e
+
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-            # 1. 进入你的代码目录 (根据你实际的部署路径修改)
             cd /var/www/neo-jira
-            
-            # 2. 从 Github 拉取最新代码
+
+            # Keep production SQLite data outside the git checkout.
+            # The first deploy after this change migrates the current DB if it exists.
+            mkdir -p /var/www/neo-jira-data
+            if [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
+              cp prisma/dev.db /var/www/neo-jira-data/dev.db
+            fi
+
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
-            
-            # 3. 安装依赖和初始化 Prisma
+
+            # Ensure Prisma and the app use the protected production DB path.
+            touch .env
+            if grep -q '^DATABASE_URL=' .env; then
+              sed -i 's|^DATABASE_URL=.*|DATABASE_URL="file:/var/www/neo-jira-data/dev.db"|' .env
+            else
+              printf '\nDATABASE_URL="file:/var/www/neo-jira-data/dev.db"\n' >> .env
+            fi
+
             npm install
             npx prisma generate
             npx prisma db push
-            
-            # 4. 构建 Next.js 生产环境版本
+
             npm run build
-            
-            # 5. 重启 PM2 服务
             pm2 restart neo-jira
