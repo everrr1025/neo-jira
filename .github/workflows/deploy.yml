@@ -35,12 +35,6 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            # Temporary recovery path: if this commit includes a checked-in DB,
-            # use it to restore the protected production DB.
-            if [ -f prisma/dev.db ]; then
-              cp prisma/dev.db /var/www/neo-jira-data/dev.db
-            fi
-
             # Ensure Prisma and the app use the protected production DB path.
             touch .env
             if grep -q '^DATABASE_URL=' .env; then
