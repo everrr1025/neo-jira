@@ -77,16 +77,6 @@ export async function createIssue(data: {
     const project = await prisma.project.findUnique({ where: { id: targetProjectId } });
     if (!project) throw new Error("Project not found or no access");
 
-    const activeIteration = data.iterationId
-      ? null
-      : await prisma.iteration.findFirst({
-          where: {
-            status: "ACTIVE",
-            projectId: project.id,
-          },
-          select: { id: true },
-        });
-
     const count = await prisma.issue.count({ where: { projectId: project.id } });
     const issueKey = `${project.key}-${count + 1}`;
     const dueDateValue = data.dueDate
@@ -111,7 +101,7 @@ export async function createIssue(data: {
         priority: data.priority,
         type: data.type,
         projectId: project.id,
-        iterationId: data.iterationId ?? activeIteration?.id ?? null,
+        iterationId: data.iterationId ?? null,
         assigneeId: data.assigneeId,
         reporterId: userId,
         dueDate: dueDateValue,

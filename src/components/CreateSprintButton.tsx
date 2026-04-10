@@ -32,8 +32,8 @@ function FloatingDropdownField({ label, value, options, onChange }: DropdownFiel
   };
 
   return (
-    <div>
-      <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
       <details className="relative rounded-md border border-slate-200 bg-white">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
           <span>{selectedOption?.label || ""}</span>
@@ -118,7 +118,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
               <FloatingDropdownField
                 label={translations.createSprint.project}
                 value={formData.projectId}
@@ -126,21 +126,21 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                 options={projects.map((proj) => ({ value: proj.id, label: `${proj.name} (${proj.key})` }))}
               />
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.sprintName}</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-700">{translations.createSprint.sprintName}</label>
                 <input
                   required
                   type="text"
                   value={formData.name}
                   onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
-                  className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
                   placeholder={translations.createSprint.sprintNamePlaceholder}
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.startDate}</label>
+              <div className="flex gap-4">
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <label className="text-sm font-medium text-slate-700">{translations.createSprint.startDate}</label>
                   <input
                     required
                     type="date"
@@ -153,11 +153,11 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                         endDate: isEndDateManuallyEdited ? prev.endDate : getDefaultEndDate(startDate),
                       }));
                     }}
-                    className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">{translations.createSprint.endDate}</label>
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <label className="text-sm font-medium text-slate-700">{translations.createSprint.endDate}</label>
                   <input
                     required
                     type="date"
@@ -166,7 +166,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                       setIsEndDateManuallyEdited(true);
                       setFormData((prev) => ({ ...prev, endDate: e.target.value }));
                     }}
-                    className="w-full border-slate-200 border rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
                   />
                 </div>
               </div>

@@ -152,7 +152,7 @@ export function SprintActionButton({
             type="button"
             disabled={isPending || isDeleting}
             onClick={() => setIsMenuOpen((open) => !open)}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
             title={text.moreActions}
           >
             {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}

@@ -1,112 +1,90 @@
-import { PrismaClient } from '@prisma/client'
-import bcrypt from 'bcryptjs'
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { randomInt } from "crypto";
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient();
+
+function generateSecurePassword(length = 12) {
+  const special = "!@#$%^&*()-_=+[]{};:,.?/|";
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const pools = [upper, lower, digits, special];
+  const requiredPools = [upper, lower, digits];
+
+  let generated = requiredPools.map((pool) => pool[randomInt(pool.length)]).join("");
+  const allChars = pools.join("");
+  while (generated.length < Math.max(8, length)) {
+    generated += allChars[randomInt(allChars.length)];
+  }
+
+  const chars = generated.split("");
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+function countPasswordCategories(password: string) {
+  let categories = 0;
+  if (/[A-Z]/.test(password)) categories += 1;
+  if (/[a-z]/.test(password)) categories += 1;
+  if (/[0-9]/.test(password)) categories += 1;
+  if (/[^A-Za-z0-9]/.test(password)) categories += 1;
+  return categories;
+}
+
+function isValidPassword(password: string) {
+  return password.length >= 8 && countPasswordCategories(password) >= 3;
+}
 
 async function main() {
-  console.log('Seeding database...')
+  const adminEmail = (process.env.ADMIN_EMAIL || "admin@neo-jira.local").trim().toLowerCase();
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
 
-  // Clean data
-  await prisma.issue.deleteMany()
-  await prisma.iteration.deleteMany()
-  await prisma.projectMember.deleteMany()
-  await prisma.project.deleteMany()
-  await prisma.user.deleteMany()
+  if (existingAdmin) {
+    if (existingAdmin.role !== "ADMIN") {
+      await prisma.user.update({
+        where: { id: existingAdmin.id },
+        data: { role: "ADMIN" },
+      });
+      console.log(`Admin role restored for ${adminEmail}.`);
+      return;
+    }
 
-  // Hash common passwords
-  const adminPassword = await bcrypt.hash('admin123', 10);
-  const defaultPassword = await bcrypt.hash('password123', 10);
+    console.log(`Admin user already exists: ${adminEmail}. Seed did not change the password or delete data.`);
+    return;
+  }
 
-  // Create Users
-  const user1 = await prisma.user.create({
-    data: { name: 'Admin User', email: 'admin@neo-jira.local', role: 'ADMIN', password: adminPassword },
-  })
-  const user2 = await prisma.user.create({
-    data: { name: 'Alice', email: 'alice@neo-jira.local', role: 'USER', password: defaultPassword },
-  })
-  const user3 = await prisma.user.create({
-    data: { name: 'Bob', email: 'bob@neo-jira.local', role: 'USER', password: defaultPassword },
-  })
-  
-  // Create Project
-  const project = await prisma.project.create({
+  const password = process.env.ADMIN_PASSWORD || generateSecurePassword();
+  if (!isValidPassword(password)) {
+    throw new Error(
+      "ADMIN_PASSWORD must be at least 8 characters and include at least 3 of: uppercase, lowercase, number, special character.",
+    );
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  await prisma.user.create({
     data: {
-      name: 'Neo-Jira Platform',
-      key: 'NJ',
-      description: 'The core project management platform.',
-      ownerId: user1.id,
+      name: "System Admin",
+      email: adminEmail,
+      password: hashedPassword,
+      role: "ADMIN",
     },
-  })
+  });
 
-  // Create ProjectMember records (owner is project ADMIN, others are MEMBERs)
-  await prisma.projectMember.create({
-    data: { userId: user1.id, projectId: project.id, role: 'ADMIN' },
-  })
-  await prisma.projectMember.create({
-    data: { userId: user2.id, projectId: project.id, role: 'MEMBER' },
-  })
-  await prisma.projectMember.create({
-    data: { userId: user3.id, projectId: project.id, role: 'MEMBER' },
-  })
-
-  // Create Iterations
-  const sprint4 = await prisma.iteration.create({
-    data: {
-      name: 'Sprint 4',
-      startDate: new Date(),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 14)),
-      projectId: project.id,
-      status: 'ACTIVE',
-    },
-  })
-  
-  const sprint5 = await prisma.iteration.create({
-    data: {
-      name: 'Sprint 5',
-      startDate: new Date(new Date().setDate(new Date().getDate() + 14)),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 28)),
-      projectId: project.id,
-      status: 'PLANNED',
-    },
-  })
-
-  // Create Issues
-  await prisma.issue.create({
-    data: {
-      key: 'NJ-101',
-      title: 'Design system component updates for the new navigation',
-      status: 'TODO',
-      type: 'TASK',
-      priority: 'HIGH',
-      projectId: project.id,
-      iterationId: sprint4.id,
-      assigneeId: user2.id,
-      reporterId: user1.id,
-    },
-  })
-  
-  await prisma.issue.create({
-    data: {
-      key: 'NJ-102',
-      title: 'Implement user authentication flow',
-      status: 'IN_PROGRESS',
-      type: 'STORY',
-      priority: 'URGENT',
-      projectId: project.id,
-      iterationId: sprint4.id,
-      assigneeId: user3.id,
-      reporterId: user1.id,
-    },
-  })
-
-  console.log('Database seeded successfully!')
+  console.log(`Admin user created: ${adminEmail}`);
+  console.log(`Initial admin password: ${password}`);
+  console.log("Save this password. Running seed again will not reset it.");
 }
 
 main()
   .catch((e) => {
-    console.error(e)
-    process.exit(1)
+    console.error(e);
+    process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect()
-  })
+    await prisma.$disconnect();
+  });

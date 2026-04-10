@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -39,6 +39,16 @@ type Issue = {
 type FilterOption = {
   value: string;
   label: string;
+};
+
+type IssueUser = {
+  id: string;
+  name: string | null;
+};
+
+type IssueIteration = {
+  id: string;
+  name: string;
 };
 
 type ColumnId = "key" | "title" | "iteration" | "status" | "type" | "priority" | "assignee";
@@ -156,6 +166,158 @@ function MultiFilter({
   );
 }
 
+function SingleFilter({
+  value,
+  options,
+  onChange,
+  renderSummary,
+}: {
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+  };
+
+  return (
+    <details ref={detailsRef} className="relative">
+      <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            onClick={() => handleSelect(option.value)}
+            className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+              option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function InlineSelect({
+  value,
+  options,
+  onChange,
+  renderSummary,
+  className = "relative",
+}: {
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
+  className?: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0 });
+
+  const updateMenuPosition = useCallback(() => {
+    const rect = summaryRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setMenuPosition({
+      top: rect.bottom + 8,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <details
+      ref={detailsRef}
+      className={className}
+      onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open) updateMenuPosition();
+      }}
+    >
+      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      {isOpen && (
+        <div
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          style={{ top: menuPosition.top, left: menuPosition.left, minWidth: menuPosition.width }}
+        >
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onClick={() => handleSelect(option.value)}
+              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className="block truncate">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </details>
+  );
+}
+
 export default function IssueList({
   initialIssues,
   users,
@@ -164,9 +326,9 @@ export default function IssueList({
   locale,
 }: {
   initialIssues: Issue[];
-  users: any[];
-  iterations: any[];
-  currentUser: any;
+  users: IssueUser[];
+  iterations: IssueIteration[];
+  currentUser: { id: string } | null;
   locale: Locale;
 }) {
   const [issues, setIssues] = useState(initialIssues);
@@ -318,12 +480,56 @@ export default function IssueList({
     [locale]
   );
 
+  const priorityInlineOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "LOW", label: getPriorityLabel("LOW", locale) },
+      { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
+      { value: "HIGH", label: getPriorityLabel("HIGH", locale) },
+      { value: "URGENT", label: getPriorityLabel("URGENT", locale) },
+    ],
+    [locale]
+  );
+
+  const assigneeFilterOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "ALL", label: translations.issueList.allUsers },
+      { value: "ME", label: translations.issueList.assignedToMe },
+      { value: "UNASSIGNED", label: translations.issueList.unassigned },
+    ],
+    [translations.issueList.allUsers, translations.issueList.assignedToMe, translations.issueList.unassigned]
+  );
+
   const sprintOptions = useMemo<FilterOption[]>(
     () => [
       { value: BACKLOG_FILTER_VALUE, label: translations.issueList.backlog },
       ...iterations.map((it) => ({ value: it.id as string, label: it.name as string })),
     ],
     [iterations, translations.issueList.backlog]
+  );
+
+  const iterationInlineOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "", label: translations.issueList.backlog },
+      ...iterations.map((it) => ({ value: it.id as string, label: it.name as string })),
+    ],
+    [iterations, translations.issueList.backlog]
+  );
+
+  const assigneeInlineOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "", label: translations.issueList.unassigned },
+      ...users.map((u) => ({ value: u.id as string, label: (u.name || u.id) as string })),
+    ],
+    [translations.issueList.unassigned, users]
+  );
+
+  const perPageOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "10", label: "10" },
+      { value: "20", label: "20" },
+      { value: "50", label: "50" },
+    ],
+    []
   );
 
   const toggleFilterValue = (value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
@@ -403,7 +609,7 @@ export default function IssueList({
     });
 
     return sorted;
-  }, [filteredIssues, sortBy, sortDirection, translations.issueList.backlog]);
+  }, [filteredIssues, sortBy, sortDirection, translations.issueList.backlog, translations.issueList.unassigned]);
 
   const totalPages = Math.ceil(sortedIssues.length / itemsPerPage);
   const paginatedIssues = sortedIssues.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -512,21 +718,21 @@ export default function IssueList({
             clearText={translations.issueList.clearSelection}
           />
 
-          <div className="h-9 px-2 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
-            <Users size={14} className="text-slate-400" />
-            <select
-              value={assigneeFilter}
-              onChange={(e) => {
-                setAssigneeFilter(e.target.value as "ALL" | "ME" | "UNASSIGNED");
-                setCurrentPage(1);
-              }}
-              className="bg-transparent font-medium focus:outline-none cursor-pointer p-0 border-none text-slate-700"
-            >
-              <option value="ALL">{translations.issueList.allUsers}</option>
-              <option value="ME">{translations.issueList.assignedToMe}</option>
-              <option value="UNASSIGNED">{translations.issueList.unassigned}</option>
-            </select>
-          </div>
+          <SingleFilter
+            value={assigneeFilter}
+            options={assigneeFilterOptions}
+            onChange={(value) => {
+              setAssigneeFilter(value as "ALL" | "ME" | "UNASSIGNED");
+              setCurrentPage(1);
+            }}
+            renderSummary={(label) => (
+              <div className="h-9 px-2 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
+                <Users size={14} className="text-slate-400" />
+                <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+            )}
+          />
         </div>
       </div>
 
@@ -633,19 +839,17 @@ export default function IssueList({
                     if (col.id === "iteration") {
                       return (
                         <td key={col.id} className="px-5 py-3.5">
-                          <select
+                          <InlineSelect
                             value={issue.iterationId || ""}
-                            onChange={(e) => handleInlineUpdate(issue.id, "iterationId", e.target.value || null)}
-                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
-                            style={{ appearance: "none", WebkitAppearance: "none" }}
-                          >
-                            <option value="">{translations.issueList.backlog}</option>
-                            {iterations.map((it) => (
-                              <option key={it.id} value={it.id}>
-                                {it.name}
-                              </option>
-                            ))}
-                          </select>
+                            options={iterationInlineOptions}
+                            className="relative block w-full"
+                            onChange={(value) => handleInlineUpdate(issue.id, "iterationId", value || null)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
                         </td>
                       );
                     }
@@ -653,23 +857,25 @@ export default function IssueList({
                     if (col.id === "status") {
                       return (
                         <td key={col.id} className="px-5 py-3.5">
-                          <select
+                          <InlineSelect
                             value={issue.status}
-                            onChange={(e) => handleInlineUpdate(issue.id, "status", e.target.value)}
-                            className={`text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
-                              issue.status === "DONE"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : issue.status === "IN_PROGRESS" || issue.status === "IN_TESTING"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-slate-100 text-slate-600"
-                            }`}
-                            style={{ appearance: "none", WebkitAppearance: "none" }}
-                          >
-                            <option value="TODO">{getIssueStatusLabel("TODO", locale)}</option>
-                            <option value="IN_PROGRESS">{getIssueStatusLabel("IN_PROGRESS", locale)}</option>
-                            <option value="IN_TESTING">{getIssueStatusLabel("IN_TESTING", locale)}</option>
-                            <option value="DONE">{getIssueStatusLabel("DONE", locale)}</option>
-                          </select>
+                            options={statusOptions}
+                            className="relative block w-full"
+                            onChange={(value) => handleInlineUpdate(issue.id, "status", value)}
+                            renderSummary={(label) => (
+                              <span
+                                className={`inline-block text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
+                                  issue.status === "DONE"
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : issue.status === "IN_PROGRESS" || issue.status === "IN_TESTING"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {label}
+                              </span>
+                            )}
+                          />
                         </td>
                       );
                     }
@@ -677,17 +883,17 @@ export default function IssueList({
                     if (col.id === "type") {
                       return (
                         <td key={col.id} className="px-5 py-3.5">
-                          <select
+                          <InlineSelect
                             value={issue.type}
-                            onChange={(e) => handleInlineUpdate(issue.id, "type", e.target.value)}
-                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
-                            style={{ appearance: "none", WebkitAppearance: "none" }}
-                          >
-                            <option value="TASK">{getIssueTypeLabel("TASK", locale)}</option>
-                            <option value="STORY">{getIssueTypeLabel("STORY", locale)}</option>
-                            <option value="BUG">{getIssueTypeLabel("BUG", locale)}</option>
-                            <option value="EPIC">{getIssueTypeLabel("EPIC", locale)}</option>
-                          </select>
+                            options={typeOptions}
+                            className="relative block w-full"
+                            onChange={(value) => handleInlineUpdate(issue.id, "type", value)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
                         </td>
                       );
                     }
@@ -707,17 +913,17 @@ export default function IssueList({
                                       : "bg-green-400"
                               }`}
                             ></span>
-                            <select
+                            <InlineSelect
                               value={issue.priority}
-                              onChange={(e) => handleInlineUpdate(issue.id, "priority", e.target.value)}
-                              className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
-                              style={{ appearance: "none", WebkitAppearance: "none" }}
-                            >
-                              <option value="LOW">{getPriorityLabel("LOW", locale)}</option>
-                              <option value="MEDIUM">{getPriorityLabel("MEDIUM", locale)}</option>
-                              <option value="HIGH">{getPriorityLabel("HIGH", locale)}</option>
-                              <option value="URGENT">{getPriorityLabel("URGENT", locale)}</option>
-                            </select>
+                              options={priorityInlineOptions}
+                              className="relative block w-full"
+                              onChange={(value) => handleInlineUpdate(issue.id, "priority", value)}
+                              renderSummary={(label) => (
+                                <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                  {label}
+                                </span>
+                              )}
+                            />
                           </div>
                         </td>
                       );
@@ -726,19 +932,17 @@ export default function IssueList({
                     if (col.id === "assignee") {
                       return (
                         <td key={col.id} className="px-5 py-3.5">
-                          <select
+                          <InlineSelect
                             value={issue.assigneeId || ""}
-                            onChange={(e) => handleInlineUpdate(issue.id, "assigneeId", e.target.value || null)}
-                            className="text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate"
-                            style={{ appearance: "none", WebkitAppearance: "none" }}
-                          >
-                            <option value="">{translations.issueList.unassigned}</option>
-                            {users.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.name}
-                              </option>
-                            ))}
-                          </select>
+                            options={assigneeInlineOptions}
+                            className="relative block w-full"
+                            onChange={(value) => handleInlineUpdate(issue.id, "assigneeId", value || null)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
                         </td>
                       );
                     }
@@ -797,18 +1001,19 @@ export default function IssueList({
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-slate-500">
               <span>{locale === "zh" ? "每页" : "Per page"}</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
+              <InlineSelect
+                value={String(itemsPerPage)}
+                options={perPageOptions}
+                onChange={(value) => {
+                  setItemsPerPage(Number(value));
                   setCurrentPage(1);
                 }}
-                className="h-8 px-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
+                renderSummary={(label) => (
+                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    {label}
+                  </span>
+                )}
+              />
             </div>
 
             <div className="flex items-center gap-2">
