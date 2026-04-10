@@ -108,9 +108,12 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
       {isOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b">
-              <h3 className="text-lg font-bold text-slate-800">{translations.createSprint.modalTitle}</h3>
-              <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">{translations.createSprint.modalTitle}</h2>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
+              >
                 <X size={20} />
               </button>
             </div>

@@ -113,15 +113,26 @@ export function SprintActionButton({
     <>
       <div className="relative flex items-center gap-2">
         {status === "PLANNED" && (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={() => runAction(() => startSprint(sprintId))}
-            className="flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50"
-          >
-            {isPending && <Loader2 size={16} className="animate-spin" />}
-            {text.startSprint}
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => runAction(() => startSprint(sprintId, locale))}
+              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {isPending && <Loader2 size={16} className="animate-spin" />}
+              {text.startSprint}
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleDelete}
+              className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+            >
+              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {text.deleteSprint}
+            </button>
+          </>
         )}
 
         {status === "ACTIVE" && (
@@ -136,15 +147,17 @@ export function SprintActionButton({
           </button>
         )}
 
-        <button
-          type="button"
-          disabled={isPending || isDeleting}
-          onClick={() => setIsMenuOpen((open) => !open)}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-          title={text.moreActions}
-        >
-          {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}
-        </button>
+        {status === "ACTIVE" && (
+          <button
+            type="button"
+            disabled={isPending || isDeleting}
+            onClick={() => setIsMenuOpen((open) => !open)}
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            title={text.moreActions}
+          >
+            {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}
+          </button>
+        )}
 
         {isMenuOpen && (
           <>
@@ -163,16 +176,6 @@ export function SprintActionButton({
                 >
                   <RotateCcw size={15} />
                   {text.moveBackToPlanned}
-                </button>
-              )}
-              {status === "PLANNED" && (
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <Trash2 size={15} />
-                  {text.deleteSprint}
                 </button>
               )}
             </div>

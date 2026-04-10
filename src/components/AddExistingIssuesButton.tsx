@@ -12,6 +12,8 @@ import {
   Locale,
 } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
+import CreateIssueButton from "./CreateIssueButton";
+import { type CreateIssueIteration, type CreateIssueUser } from "./CreateIssueModal";
 
 export type BacklogIssueOption = {
   id: string;
@@ -28,6 +30,10 @@ type AddExistingIssuesButtonProps = {
   sprintName: string;
   issues: BacklogIssueOption[];
   locale: Locale;
+  users: CreateIssueUser[];
+  iterations: CreateIssueIteration[];
+  currentUserId?: string;
+  defaultDueDate?: string;
 };
 
 const STATUS_FILTERS = ["ALL", "TODO", "IN_PROGRESS", "IN_TESTING"] as const;
@@ -42,6 +48,10 @@ export default function AddExistingIssuesButton({
   sprintName,
   issues,
   locale,
+  users,
+  iterations,
+  currentUserId,
+  defaultDueDate,
 }: AddExistingIssuesButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -121,7 +131,7 @@ export default function AddExistingIssuesButton({
       <button
         type="button"
         onClick={openModal}
-        className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+        className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
       >
         {text.button}
       </button>
@@ -201,9 +211,9 @@ export default function AddExistingIssuesButton({
                             <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
                               {getPriorityLabel(issue.priority, locale)}
                             </span>
+                            <span className="text-xs font-medium text-slate-500">{assigneeName}</span>
                           </div>
                           <p className="mt-1 truncate text-sm font-medium text-slate-800">{issue.title}</p>
-                          <p className="mt-1 text-xs text-slate-500">{assigneeName}</p>
                         </div>
                       </label>
                     );
@@ -229,6 +239,14 @@ export default function AddExistingIssuesButton({
                 >
                   {translations.createIssue.cancel}
                 </button>
+                <CreateIssueButton
+                  users={users}
+                  iterations={iterations}
+                  locale={locale}
+                  currentUserId={currentUserId}
+                  defaultIterationId={sprintId}
+                  defaultDueDate={defaultDueDate}
+                />
                 <button
                   type="button"
                   onClick={handleSubmit}

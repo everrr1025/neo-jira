@@ -373,8 +373,8 @@ const translations: Record<Locale, TranslationBundle> = {
       ends: "Ends",
     },
     addExistingIssues: {
-      button: "Add existing issues",
-      modalTitle: "Add existing issues to",
+      button: "Add issues",
+      modalTitle: "Add issues to",
       searchPlaceholder: "Search by key, title, or assignee...",
       allUnfinished: "All unfinished",
       empty: "No unfinished backlog issues available.",
@@ -585,8 +585,8 @@ const translations: Record<Locale, TranslationBundle> = {
       ends: "结束于",
     },
     addExistingIssues: {
-      button: "添加已有问题",
-      modalTitle: "添加已有问题到",
+      button: "添加问题",
+      modalTitle: "添加问题到",
       searchPlaceholder: "搜索编号、标题或经办人...",
       allUnfinished: "全部未完成",
       empty: "当前待办池没有可添加的未完成问题。",

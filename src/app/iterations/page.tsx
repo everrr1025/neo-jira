@@ -10,14 +10,21 @@ import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id?: string;
+  role?: string | null;
+};
+
 export default async function IterationsPage() {
   const locale = await getCurrentLocale();
   const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as typeof session.user & SessionUser;
+  const userId = sessionUser.id;
+  const userRole = sessionUser.role ?? "USER";
+  if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
   let activeProjectId: string | null = null;
@@ -67,9 +74,10 @@ export default async function IterationsPage() {
   });
 
   iterations = [...iterations].sort((a, b) => {
-    if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
-    if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
-    return 0; // maintain descending start date order for the rest
+    const statusOrder: Record<string, number> = { ACTIVE: 0, PLANNED: 1, COMPLETED: 2 };
+    const statusDiff = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+    if (statusDiff !== 0) return statusDiff;
+    return b.startDate.getTime() - a.startDate.getTime();
   });
 
   return (
@@ -114,11 +122,11 @@ export default async function IterationsPage() {
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm gap-4">
                   <div className="flex items-center gap-6">
-                    <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-slate-500">{translations.iterationsPage.issues}</span>
                       <span className="font-semibold text-slate-800">{totalIssues}</span>
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-slate-500">{translations.iterationsPage.completed}</span>
                       <span className="font-semibold text-slate-800">{completedIssues}</span>
                     </div>

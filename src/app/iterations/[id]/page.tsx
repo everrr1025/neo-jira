@@ -136,15 +136,21 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   sprintName={iteration.name}
                   issues={backlogIssues}
                   locale={locale}
+                  users={users}
+                  iterations={iterations}
+                  currentUserId={userId}
+                  defaultDueDate={defaultDueDate}
                 />
               )}
-              <CreateIssueButton
-                locale={locale}
-                users={users}
-                iterations={iterations}
-                defaultIterationId={iteration.id}
-                defaultDueDate={defaultDueDate}
-              />
+              {!canManage && (
+                <CreateIssueButton
+                  locale={locale}
+                  users={users}
+                  iterations={iterations}
+                  defaultIterationId={iteration.id}
+                  defaultDueDate={defaultDueDate}
+                />
+              )}
             </div>
           )}
           {canManage && iteration.status !== "COMPLETED" && (

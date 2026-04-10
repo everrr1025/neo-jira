@@ -4,6 +4,14 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { checkProjectAdmin } from "@/lib/permissions";
 
+function activeSprintExistsMessage(sprintName: string, locale?: string) {
+  if (locale === "zh") {
+    return `Sprint "${sprintName}" 正在进行中。请先完成或回退它。`;
+  }
+
+  return `Sprint "${sprintName}" is already active. Complete or move it back to planned first.`;
+}
+
 export async function createSprint(data: {
   name: string;
   startDate: string;
@@ -30,7 +38,7 @@ export async function createSprint(data: {
   }
 }
 
-export async function startSprint(sprintId: string) {
+export async function startSprint(sprintId: string, locale?: string) {
   try {
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
@@ -50,7 +58,7 @@ export async function startSprint(sprintId: string) {
     if (activeSprint) {
       return {
         success: false,
-        error: `Sprint "${activeSprint.name}" is already active. Complete it first.`,
+        error: activeSprintExistsMessage(activeSprint.name, locale),
       };
     }
 
@@ -59,7 +67,7 @@ export async function startSprint(sprintId: string) {
         where: { projectId: sprint.projectId, status: "ACTIVE" },
       });
       if (activeSprint) {
-        throw new Error(`Sprint "${activeSprint.name}" is already active. Complete it first.`);
+        throw new Error(activeSprintExistsMessage(activeSprint.name, locale));
       }
 
       return tx.iteration.update({
