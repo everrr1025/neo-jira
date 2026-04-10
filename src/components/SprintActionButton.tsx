@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
@@ -32,6 +32,7 @@ export function SprintActionButton({
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCompleteOpen, setIsCompleteOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState<"BACKLOG" | "SPRINT">("BACKLOG");
   const [targetSprintId, setTargetSprintId] = useState("");
   const [error, setError] = useState("");
@@ -44,6 +45,7 @@ export function SprintActionButton({
   );
 
   const openCompleteDialog = () => {
+    setIsMenuOpen(false);
     setError("");
     if (unfinishedIssueCount === 0) {
       completeWithTarget("BACKLOG");
@@ -56,6 +58,7 @@ export function SprintActionButton({
   };
 
   const runAction = (action: () => Promise<{ success: boolean; error?: string }>) => {
+    setIsMenuOpen(false);
     setError("");
     startTransition(async () => {
       const res = await action();
@@ -78,6 +81,7 @@ export function SprintActionButton({
 
   const handleDelete = async () => {
     if (isDeleting) return;
+    setIsMenuOpen(false);
 
     const confirmed = window.confirm(text.deleteConfirm);
     if (!confirmed) return;
@@ -107,50 +111,71 @@ export function SprintActionButton({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="relative flex items-center gap-2">
         {status === "PLANNED" && (
-          <>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => runAction(() => startSprint(sprintId))}
-              className="flex items-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              {isPending && <Loader2 size={16} className="animate-spin" />}
-              {text.startSprint}
-            </button>
-            <button
-              type="button"
-              disabled={isDeleting}
-              onClick={handleDelete}
-              className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 disabled:opacity-50"
-            >
-              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              {text.deleteSprint}
-            </button>
-          </>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => runAction(() => startSprint(sprintId))}
+            className="flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50"
+          >
+            {isPending && <Loader2 size={16} className="animate-spin" />}
+            {text.startSprint}
+          </button>
         )}
 
         {status === "ACTIVE" && (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={openCompleteDialog}
+            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {isPending && <Loader2 size={16} className="animate-spin" />}
+            {text.completeSprint}
+          </button>
+        )}
+
+        <button
+          type="button"
+          disabled={isPending || isDeleting}
+          onClick={() => setIsMenuOpen((open) => !open)}
+          className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+          title={text.moreActions}
+        >
+          {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}
+        </button>
+
+        {isMenuOpen && (
           <>
             <button
               type="button"
-              disabled={isPending}
-              onClick={openCompleteDialog}
-              className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {isPending && <Loader2 size={16} className="animate-spin" />}
-              {text.completeSprint}
-            </button>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => runAction(() => reopenSprint(sprintId))}
-              className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              <RotateCcw size={16} />
-              {text.moveBackToPlanned}
-            </button>
+              aria-label={text.moreActions}
+              className="fixed inset-0 z-30 cursor-default bg-transparent"
+              onClick={() => setIsMenuOpen(false)}
+            />
+            <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-md border border-slate-200 bg-white p-1.5 shadow-xl">
+              {status === "ACTIVE" && (
+                <button
+                  type="button"
+                  onClick={() => runAction(() => reopenSprint(sprintId))}
+                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  <RotateCcw size={15} />
+                  {text.moveBackToPlanned}
+                </button>
+              )}
+              {status === "PLANNED" && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                >
+                  <Trash2 size={15} />
+                  {text.deleteSprint}
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

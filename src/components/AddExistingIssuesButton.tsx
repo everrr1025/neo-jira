@@ -121,7 +121,7 @@ export default function AddExistingIssuesButton({
       <button
         type="button"
         onClick={openModal}
-        className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100"
+        className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
       >
         {text.button}
       </button>

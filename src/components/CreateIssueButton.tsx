@@ -32,7 +32,7 @@ export default function CreateIssueButton({
           setModalKey((value) => value + 1);
           setIsModalOpen(true);
         }}
-        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm whitespace-nowrap flex items-center justify-center gap-1"
+        className="flex items-center justify-center gap-1 whitespace-nowrap rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
         title={translations.createIssue.createNewIssue}
       >
         <span className="text-lg leading-none mb-[2px]">+</span> {translations.createIssue.create}

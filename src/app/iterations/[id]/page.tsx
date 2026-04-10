@@ -119,25 +119,25 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </Link>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{iteration.name} {translations.iterationDetail.board}</h2>
           <p className="text-sm text-slate-500 mt-1">
             {getIterationStatusLabel(iteration.status, locale)} | {translations.iterationDetail.ends} {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {canManage && canChangeSprintIssues && (
-            <AddExistingIssuesButton
-              sprintId={iteration.id}
-              sprintName={iteration.name}
-              issues={backlogIssues}
-              locale={locale}
-            />
-          )}
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           {canChangeSprintIssues && (
-            <div className="flex -space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {canManage && (
+                <AddExistingIssuesButton
+                  sprintId={iteration.id}
+                  sprintName={iteration.name}
+                  issues={backlogIssues}
+                  locale={locale}
+                />
+              )}
               <CreateIssueButton
                 locale={locale}
                 users={users}
@@ -148,8 +148,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
             </div>
           )}
           {canManage && iteration.status !== "COMPLETED" && (
-            <>
-              <div className="h-6 w-px bg-slate-200 mx-2"></div>
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
               <SprintActionButton
                 sprintId={iteration.id}
                 status={iteration.status}
@@ -157,7 +156,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                 plannedSprints={plannedSprints}
                 unfinishedIssueCount={unfinishedIssueCount}
               />
-            </>
+            </div>
           )}
         </div>
       </div>

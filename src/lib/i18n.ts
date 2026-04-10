@@ -208,6 +208,7 @@ type TranslationBundle = {
   sprintAction: {
     startSprint: string;
     completeSprint: string;
+    moreActions: string;
     moveBackToPlanned: string;
     deleteSprint: string;
     completeTitle: string;
@@ -421,6 +422,7 @@ const translations: Record<Locale, TranslationBundle> = {
     sprintAction: {
       startSprint: "Start Sprint",
       completeSprint: "Complete Sprint",
+      moreActions: "More actions",
       moveBackToPlanned: "Move back to planned",
       deleteSprint: "Delete Sprint",
       completeTitle: "Complete Sprint",
@@ -632,6 +634,7 @@ const translations: Record<Locale, TranslationBundle> = {
     sprintAction: {
       startSprint: "开始 Sprint",
       completeSprint: "完成 Sprint",
+      moreActions: "更多操作",
       moveBackToPlanned: "回退为未开始",
       deleteSprint: "删除 Sprint",
       completeTitle: "完成 Sprint",
