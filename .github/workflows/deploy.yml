@@ -18,6 +18,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
+            PROD_DATABASE_URL="file:/var/www/neo-jira-data/dev.db"
 
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -35,17 +36,24 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            # Temporary recovery path: this restore commit includes a checked-in DB.
+            # Copy it into the protected production DB location before Prisma runs.
+            if [ -f prisma/dev.db ]; then
+              cp prisma/dev.db /var/www/neo-jira-data/dev.db
+            fi
+
             # Ensure Prisma and the app use the protected production DB path.
             touch .env
             if grep -q '^DATABASE_URL=' .env; then
-              sed -i 's|^DATABASE_URL=.*|DATABASE_URL="file:/var/www/neo-jira-data/dev.db"|' .env
+              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$PROD_DATABASE_URL\"|" .env
             else
-              printf '\nDATABASE_URL="file:/var/www/neo-jira-data/dev.db"\n' >> .env
+              printf '\nDATABASE_URL="%s"\n' "$PROD_DATABASE_URL" >> .env
             fi
+            export DATABASE_URL="$PROD_DATABASE_URL"
 
             npm install
             npx prisma generate
             npx prisma db push
 
             npm run build
-            pm2 restart neo-jira
+            pm2 restart neo-jira --update-env
