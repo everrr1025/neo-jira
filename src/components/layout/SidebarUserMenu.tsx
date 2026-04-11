@@ -89,15 +89,17 @@ export function SidebarUserMenu({
   };
 
   return (
-    <div className="flex items-center justify-between w-full">
-      <div className="flex items-center gap-3 px-3 py-2 rounded-md">
-        <AvatarPicker userKey={userId} userName={userName} locale={locale} initialAvatar={userAvatar} size="sm" />
-        <div className="flex flex-col">
-          <span className="text-white font-medium text-sm">{userName}</span>
-          <span className="text-slate-500 text-xs">{userEmail}</span>
+    <div className="flex items-center justify-between w-full gap-2">
+      <div className="flex items-center gap-3 px-3 py-2 rounded-md min-w-0 flex-1">
+        <div className="flex-shrink-0">
+          <AvatarPicker userKey={userId} userName={userName} locale={locale} initialAvatar={userAvatar} size="sm" />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-white font-medium text-sm truncate" title={userName}>{userName}</span>
+          <span className="text-slate-500 text-xs truncate" title={userEmail}>{userEmail}</span>
         </div>
       </div>
-      <div className="flex items-center gap-1 relative" ref={popoverRef}>
+      <div className="flex items-center gap-1 relative flex-shrink-0" ref={popoverRef}>
         <button
           onClick={handleToggleNotifications}
           className="p-2 relative rounded-md hover:bg-slate-800 text-slate-500 hover:text-blue-400 transition-colors"
