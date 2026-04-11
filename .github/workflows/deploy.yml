@@ -33,15 +33,16 @@ jobs:
             mkdir -p /var/www/neo-jira-data
             
             # ONE-TIME DATABASE IMPORT LOGIC
-            # If you want to replace the production DB with your local one:
-            # 1. Rename your local prisma/dev.db to prisma/import-me.db
-            # 2. Add, commit, and push prisma/import-me.db
-            # 3. This script will move it to the safe location and the app will use it.
             if [ -f prisma/import-me.db ]; then
               echo "🚀 Found prisma/import-me.db. Performing one-time database import..."
-              # Use -f to force overwrite existing (empty) production DB
               mv -f prisma/import-me.db /var/www/neo-jira-data/dev.db
-              echo "✅ Import completed."
+              echo "✅ Import completed to /var/www/neo-jira-data/dev.db"
+              
+              # CRITICAL: If the .env is still pointing to the old local path, update it!
+              if grep -q "DATABASE_URL=.*prisma/dev.db" .env; then
+                echo "📝 Updating .env to point to the new production database path..."
+                sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$PROD_DATABASE_URL\"|" .env
+              fi
             elif [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
               echo "📦 Initializing production DB from prisma/dev.db..."
               cp prisma/dev.db /var/www/neo-jira-data/dev.db
