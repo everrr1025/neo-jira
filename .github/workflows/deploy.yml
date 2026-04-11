@@ -26,9 +26,19 @@ jobs:
             cd /var/www/neo-jira
 
             # Keep production SQLite data outside the git checkout.
-            # The first deploy after this change migrates the current DB if it exists.
             mkdir -p /var/www/neo-jira-data
-            if [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
+            
+            # ONE-TIME DATABASE IMPORT LOGIC
+            # If you want to replace the production DB with your local one:
+            # 1. Rename your local prisma/dev.db to prisma/import-me.db
+            # 2. Add, commit, and push prisma/import-me.db
+            # 3. This script will move it to the safe location and the app will use it.
+            if [ -f prisma/import-me.db ]; then
+              echo "🚀 Found prisma/import-me.db. Performing one-time database import..."
+              mv prisma/import-me.db /var/www/neo-jira-data/dev.db
+              echo "✅ Import completed."
+            elif [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
+              echo "📦 Initializing production DB from prisma/dev.db..."
               cp prisma/dev.db /var/www/neo-jira-data/dev.db
             fi
 
@@ -37,13 +47,19 @@ jobs:
             git clean -fd
 
             # Ensure Prisma and the app use the protected production DB path.
+            # Only set DATABASE_URL if it's not already defined in .env
             touch .env
             if grep -q '^DATABASE_URL=' .env; then
-              sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$PROD_DATABASE_URL\"|" .env
+              echo "DATABASE_URL already set in .env, respecting existing configuration."
             else
+              echo "DATABASE_URL not set, using default managed path: $PROD_DATABASE_URL"
               printf '\nDATABASE_URL="%s"\n' "$PROD_DATABASE_URL" >> .env
             fi
-            export DATABASE_URL="$PROD_DATABASE_URL"
+            
+            # Export for current session use (Prisma needs it)
+            # Find the value in .env or use PROD_DATABASE_URL as a fallback for the current run
+            CURRENT_DB_URL=$(grep '^DATABASE_URL=' .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+            export DATABASE_URL="${CURRENT_DB_URL:-$PROD_DATABASE_URL}"
 
             npm install
             npx prisma generate
