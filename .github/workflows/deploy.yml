@@ -25,6 +25,10 @@ jobs:
 
             cd /var/www/neo-jira
 
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+
             # Keep production SQLite data outside the git checkout.
             mkdir -p /var/www/neo-jira-data
             
@@ -35,16 +39,13 @@ jobs:
             # 3. This script will move it to the safe location and the app will use it.
             if [ -f prisma/import-me.db ]; then
               echo "🚀 Found prisma/import-me.db. Performing one-time database import..."
-              mv prisma/import-me.db /var/www/neo-jira-data/dev.db
+              # Use -f to force overwrite existing (empty) production DB
+              mv -f prisma/import-me.db /var/www/neo-jira-data/dev.db
               echo "✅ Import completed."
             elif [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
               echo "📦 Initializing production DB from prisma/dev.db..."
               cp prisma/dev.db /var/www/neo-jira-data/dev.db
             fi
-
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd
 
             # Ensure Prisma and the app use the protected production DB path.
             # Only set DATABASE_URL if it's not already defined in .env
