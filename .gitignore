@@ -46,6 +46,6 @@ next-env.d.ts
 /public/uploads
 
 # database
-prisma/dev.db
+/prisma/dev.db
 /prisma/dev.db-journal
 /prisma/*.bak

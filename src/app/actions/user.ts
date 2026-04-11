@@ -10,8 +10,7 @@ export async function updateUserAvatar(userId: string, avatarUrl: string) {
       data: { avatar: avatarUrl },
     });
     
-    revalidatePath("/projects");
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     
     return { success: true };
   } catch (error) {

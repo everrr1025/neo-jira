@@ -24,11 +24,13 @@ export function SidebarUserMenu({
   userId,
   userName,
   userEmail,
+  userAvatar,
   locale,
 }: {
   userId: string;
   userName: string;
   userEmail: string;
+  userAvatar?: string | null;
   locale: Locale;
 }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -89,7 +91,7 @@ export function SidebarUserMenu({
   return (
     <div className="flex items-center justify-between w-full">
       <div className="flex items-center gap-3 px-3 py-2 rounded-md">
-        <AvatarPicker userKey={userId} userName={userName} locale={locale} size="sm" />
+        <AvatarPicker userKey={userId} userName={userName} locale={locale} initialAvatar={userAvatar} size="sm" />
         <div className="flex flex-col">
           <span className="text-white font-medium text-sm">{userName}</span>
           <span className="text-slate-500 text-xs">{userEmail}</span>

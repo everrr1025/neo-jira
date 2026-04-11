@@ -17,7 +17,7 @@ export function SidebarClient({
   isAdmin: boolean;
   activeProject: { id: string; name: string; key: string } | null;
   lockProjectScopedLinks: boolean;
-  user: { id?: string; name?: string | null; email?: string | null } | null | undefined;
+  user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -102,6 +102,7 @@ export function SidebarClient({
             userKey={user?.id || user?.email || user?.name || "anonymous"}
             userName={user?.name || translations.sidebar.userFallback}
             locale={locale}
+            initialAvatar={user?.avatar}
             size="sm"
           />
         ) : (
@@ -109,6 +110,7 @@ export function SidebarClient({
             userId={user?.id || user?.email || user?.name || "anonymous"}
             userName={user?.name || translations.sidebar.userFallback}
             userEmail={user?.email || ""}
+            userAvatar={user?.avatar}
             locale={locale}
           />
         )}

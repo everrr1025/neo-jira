@@ -15,7 +15,7 @@ export async function GET(
     const resolvedParams = await params;
     const comments = await prisma.comment.findMany({
       where: { issueId: resolvedParams.id },
-      include: { author: { select: { id: true, name: true, email: true } } },
+      include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
       orderBy: { createdAt: "asc" },
     });
 
@@ -51,7 +51,7 @@ export async function POST(
         issueId: resolvedParams.id,
         authorId: userId,
       },
-      include: { author: { select: { id: true, name: true, email: true } } },
+      include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
     });
 
     const issue = await prisma.issue.findUnique({
