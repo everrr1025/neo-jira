@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, MoreHorizontal, RotateCcw, Trash2, Pencil } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
+import { EditSprintModal } from "./EditSprintModal";
 
 type PlannedSprintOption = {
   id: string;
@@ -14,12 +15,20 @@ type PlannedSprintOption = {
   recommended?: boolean;
 };
 
+type SprintData = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+};
+
 type SprintActionButtonProps = {
   sprintId: string;
   status: string;
   locale: Locale;
   plannedSprints: PlannedSprintOption[];
   unfinishedIssueCount: number;
+  sprintData: SprintData;
 };
 
 export function SprintActionButton({
@@ -28,10 +37,12 @@ export function SprintActionButton({
   locale,
   plannedSprints,
   unfinishedIssueCount,
+  sprintData,
 }: SprintActionButtonProps) {
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCompleteOpen, setIsCompleteOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState<"BACKLOG" | "SPRINT">("BACKLOG");
   const [targetSprintId, setTargetSprintId] = useState("");
@@ -83,7 +94,11 @@ export function SprintActionButton({
     if (isDeleting) return;
     setIsMenuOpen(false);
 
-    const confirmed = window.confirm(text.deleteConfirm);
+    const dialogMsg = locale === "zh" 
+      ? "确定删除此迭代吗？操作不可撤销，删除迭代不会删除迭代内的issue。"
+      : "Are you sure you want to delete this sprint? This operation is irreversible, deleting the sprint will not delete the issues within it.";
+      
+    const confirmed = window.confirm(dialogMsg);
     if (!confirmed) return;
 
     setError("");
@@ -105,34 +120,19 @@ export function SprintActionButton({
 
   const formatDate = (dateValue: string) => new Date(dateValue).toLocaleDateString(localeDateMap[locale]);
 
-  if (status === "COMPLETED") {
-    return <AlertPopup message={error} onClose={() => setError("")} autoCloseMs={5000} />;
-  }
-
   return (
     <>
       <div className="relative flex items-center gap-2">
         {status === "PLANNED" && (
-          <>
-            <button
-              type="button"
-              disabled={isPending}
-              onClick={() => runAction(() => startSprint(sprintId, locale))}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isPending && <Loader2 size={16} className="animate-spin" />}
-              {text.startSprint}
-            </button>
-            <button
-              type="button"
-              disabled={isDeleting}
-              onClick={handleDelete}
-              className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-            >
-              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              {text.deleteSprint}
-            </button>
-          </>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => runAction(() => startSprint(sprintId, locale))}
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isPending && <Loader2 size={16} className="animate-spin" />}
+            {text.startSprint}
+          </button>
         )}
 
         {status === "ACTIVE" && (
@@ -146,6 +146,27 @@ export function SprintActionButton({
             {text.completeSprint}
           </button>
         )}
+
+        <button
+          type="button"
+          disabled={isPending || isDeleting}
+          onClick={() => setIsEditOpen(true)}
+          className="flex flex-row items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 sm:px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          title={locale === "zh" ? "编辑迭代" : "Edit Sprint"}
+        >
+          <Pencil size={16} />
+          <span className="hidden sm:inline">{locale === "zh" ? "编辑迭代" : "Edit Sprint"}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isDeleting}
+          onClick={handleDelete}
+          className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+        >
+          {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+          {text.deleteSprint}
+        </button>
 
         {status === "ACTIVE" && (
           <button
@@ -272,6 +293,13 @@ export function SprintActionButton({
           </div>
         </div>
       )}
+
+      <EditSprintModal 
+        isOpen={isEditOpen} 
+        onClose={() => setIsEditOpen(false)} 
+        sprint={sprintData} 
+        locale={locale} 
+      />
 
       <AlertPopup message={error} onClose={() => setError("")} autoCloseMs={5000} />
     </>

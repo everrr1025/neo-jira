@@ -494,3 +494,67 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
     return { success: false, error: error.message };
   }
 }
+
+export async function deleteProject(projectId: string) {
+  try {
+    await checkGlobalAdmin();
+
+    if (!projectId) {
+      return { success: false, error: "Project id is required." };
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (!project) {
+      return { success: false, error: "Project not found." };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Cascade delete order to respect foreign keys
+      const issues = await tx.issue.findMany({
+        where: { projectId },
+        select: { id: true },
+      });
+      const issueIds = issues.map((i) => i.id);
+
+      if (issueIds.length > 0) {
+        await tx.attachment.deleteMany({
+          where: { issueId: { in: issueIds } },
+        });
+
+        await tx.comment.deleteMany({
+          where: { issueId: { in: issueIds } },
+        });
+
+        await tx.issue.deleteMany({
+          where: { projectId },
+        });
+      }
+
+      await tx.iteration.deleteMany({
+        where: { projectId },
+      });
+
+      await tx.projectMember.deleteMany({
+        where: { projectId },
+      });
+
+      await tx.project.delete({
+        where: { id: projectId },
+      });
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/projects");
+    revalidatePath("/");
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete project:", error);
+    return { success: false, error: error.message || "Failed to delete project" };
+  }
+}
+

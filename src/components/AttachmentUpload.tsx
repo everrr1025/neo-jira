@@ -116,7 +116,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
       <div className="flex flex-col mb-4 gap-2">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-lg text-slate-800">{translations.attachmentSection.title} ({attachments.length})</h3>
-          <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 shadow-sm border border-slate-200">
+          <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border border-slate-200">
             {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
             {uploading ? translations.attachmentSection.uploading : translations.attachmentSection.addFile}
             <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />

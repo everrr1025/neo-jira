@@ -36,11 +36,12 @@ type AddExistingIssuesButtonProps = {
   defaultDueDate?: string;
 };
 
-const STATUS_FILTERS = ["ALL", "TODO", "IN_PROGRESS", "IN_TESTING"] as const;
+const STATUS_FILTERS = ["ALL", "TODO", "IN_PROGRESS", "IN_TESTING", "DONE"] as const;
 const STATUS_ORDER: Record<string, number> = {
   TODO: 0,
   IN_PROGRESS: 1,
   IN_TESTING: 2,
+  DONE: 3,
 };
 
 export default function AddExistingIssuesButton({

@@ -188,8 +188,8 @@ export async function deleteSprint(sprintId: string) {
 
     await checkProjectAdmin(sprint.projectId);
 
-    if (sprint.status !== "PLANNED") {
-      return { success: false, error: "Only planned sprints can be deleted" };
+    if (sprint.status !== "PLANNED" && sprint.status !== "COMPLETED" && sprint.status !== "ACTIVE") {
+      return { success: false, error: "Invalid sprint status" };
     }
 
     await prisma.$transaction([
@@ -208,5 +208,32 @@ export async function deleteSprint(sprintId: string) {
     return { success: true };
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to delete sprint" };
+  }
+}
+
+export async function updateSprint(sprintId: string, data: { name: string; startDate: string; endDate: string }) {
+  try {
+    const sprint = await prisma.iteration.findUnique({
+      where: { id: sprintId },
+      select: { id: true, projectId: true },
+    });
+    if (!sprint) return { success: false, error: "Sprint not found" };
+
+    await checkProjectAdmin(sprint.projectId);
+
+    const updated = await prisma.iteration.update({
+      where: { id: sprintId },
+      data: {
+        name: data.name,
+        startDate: new Date(data.startDate),
+        endDate: new Date(data.endDate),
+      },
+    });
+
+    revalidatePath("/iterations");
+    revalidatePath(`/iterations/${sprintId}`);
+    return { success: true, sprint: updated };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update sprint" };
   }
 }

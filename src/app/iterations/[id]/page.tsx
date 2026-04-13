@@ -80,7 +80,6 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
           where: {
             projectId: iteration.project.id,
             iterationId: null,
-            status: { not: "DONE" },
           },
           select: {
             id: true,
@@ -161,6 +160,12 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                 locale={locale}
                 plannedSprints={plannedSprints}
                 unfinishedIssueCount={unfinishedIssueCount}
+                sprintData={{
+                  id: iteration.id,
+                  name: iteration.name,
+                  startDate: iteration.startDate.toISOString(),
+                  endDate: iteration.endDate.toISOString(),
+                }}
               />
             </div>
           )}

@@ -343,7 +343,7 @@ export default function CreateIssueModal({
                  <label className="text-sm font-medium text-slate-700">
                    附件 ({formData.attachments.length})
                  </label>
-                 <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 shadow-sm border border-slate-200">
+                 <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border border-slate-200">
                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
                    {uploading ? '上传中...' : '添加附件'}
                    <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || isPending} />

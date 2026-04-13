@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound } from "lucide-react";
+import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser, deleteProject } from "@/app/actions/admin";
+import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle } from "lucide-react";
 import { Locale } from "@/lib/i18n";
 
 type UserRecord = {
@@ -125,10 +125,11 @@ const TEXT = {
       role: "Role",
       createdAt: "Created At",
       actions: "Actions",
-      resetPassword: "Reset Password",
+      resetPassword: "Reset",
       cannotDeleteOwner: "Project owner",
       cannotDeleteSelf: "Current user",
       delete: "Delete",
+      deleteWarning: "Are you sure you want to delete this user? Their assigned issues will be unassigned, and their comments/attachments will be reassigned to you. This action cannot be undone.",
       user: "USER",
       admin: "ADMIN",
     },
@@ -152,6 +153,11 @@ const TEXT = {
       admin: "Admin",
       member: "Member",
       empty: "No projects currently exist.",
+      deleteProject: "Delete",
+      deleteWarning: "Are you absolutely sure you want to delete this project? This will completely destroy all associated iterations, issues, and attachments. This action cannot be undone.",
+      typeToConfirm: "Please type the exact project name to confirm:",
+      cancel: "Cancel",
+      deleteFailed: "Failed to delete project",
     },
   },
   zh: {
@@ -186,10 +192,11 @@ const TEXT = {
       role: "角色",
       createdAt: "创建时间",
       actions: "操作",
-      resetPassword: "重置密码",
+      resetPassword: "重置",
       cannotDeleteOwner: "项目负责人",
       cannotDeleteSelf: "当前用户",
       delete: "删除",
+      deleteWarning: "确定要删除该用户吗？该用户经办的问题将变更为未分配，其发表的评论和上传的附件将转交给您。操作不可撤销。",
       user: "用户",
       admin: "管理员",
     },
@@ -213,6 +220,11 @@ const TEXT = {
       admin: "管理员",
       member: "成员",
       empty: "当前还没有项目。",
+      deleteProject: "删除",
+      deleteWarning: "确定要删除该项目吗？这将会永久销毁此项目下的所有迭代、问题和附件。操作不可撤销。",
+      typeToConfirm: "请输入准确的项目名称以确认删除：",
+      cancel: "取消",
+      deleteFailed: "删除项目失败",
     },
   },
 } as const;
@@ -307,6 +319,7 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
     password: generateDefaultPassword(),
     role: "USER",
   });
+  const [deletingUser, setDeletingUser] = useState<UserRecord | null>(null);
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,13 +335,15 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
     });
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = () => {
+    if (!deletingUser) return;
     setErrorMsg("");
     startTransition(async () => {
-      const res = await deleteUser(userId);
+      const res = await deleteUser(deletingUser.id);
       if (!res.success) {
         setErrorMsg(res.error || text.errors.deleteUser);
       }
+      setDeletingUser(null);
     });
   };
 
@@ -471,12 +486,12 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-1">
+                      <div className="flex flex-nowrap items-center gap-2">
                         <button
                           type="button"
                           disabled={isResettingThisUser}
                           onClick={() => handleResetPassword(u.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-50 disabled:opacity-50"
                         >
                           {isResettingThisUser ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
                           {text.users.resetPassword}
@@ -484,9 +499,9 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
                         <button
                           type="button"
                           disabled={disableDelete}
-                          onClick={() => handleDeleteUser(u.id)}
+                          onClick={() => setDeletingUser(u)}
                           title={isOwner ? text.users.cannotDeleteOwner : isSelf ? text.users.cannotDeleteSelf : text.users.delete}
-                          className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Trash2 size={12} />
                           {text.users.delete}
@@ -505,6 +520,46 @@ function UsersView({ users, setErrorMsg, locale, currentUserId }: UsersViewProps
           </tbody>
         </table>
       </div>
+
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-rose-600">
+                <AlertTriangle size={24} />
+                {text.users.delete}
+              </h2>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm font-medium text-slate-700">
+                {text.users.deleteWarning}
+              </p>
+              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
+                {getDisplayName(deletingUser)} ({deletingUser.email})
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setDeletingUser(null)}
+                disabled={isPending}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {text.projects.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleDeleteUser}
+                className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                {isPending && <Loader2 size={16} className="animate-spin" />}
+                {text.users.delete}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -521,9 +576,9 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           noMembers: "暂无成员",
           changeOwner: "更改项目负责人",
           saveOwner: "更新负责人",
-          selectOwner: "通过菜单选择负责人",
+          selectOwner: "选择负责人",
           ownerSelected: "已选负责人",
-          selectMembers: "通过菜单选择成员",
+          selectMembers: "选择成员",
           selectedMembers: "已选成员",
           updateOwnerFailed: "更新负责人失败",
         }
@@ -535,9 +590,9 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           noMembers: "No members.",
           changeOwner: "Change Project Owner",
           saveOwner: "Update Owner",
-          selectOwner: "Select owner from menu",
+          selectOwner: "Select owner",
           ownerSelected: "Selected owner",
-          selectMembers: "Select members from menu",
+          selectMembers: "Select members",
           selectedMembers: "Selected members",
           updateOwnerFailed: "Failed to update project owner",
         };
@@ -545,6 +600,9 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
   const [isCreatingProject, startCreateTransition] = useTransition();
   const [isUpdatingMembers, startUpdateTransition] = useTransition();
   const [isChangingOwner, startOwnerTransition] = useTransition();
+  const [isDeletingProject, startDeleteTransition] = useTransition();
+  const [deletingProject, setDeletingProject] = useState<ProjectRecord | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [changingOwnerProjectId, setChangingOwnerProjectId] = useState<string | null>(null);
   const assignableUsers = users.filter((u) => u.role !== "ADMIN");
   const [pendingAddMemberIds, setPendingAddMemberIds] = useState<Record<string, string[]>>({});
@@ -811,10 +869,23 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                   </div>
                   <p className="text-sm text-slate-500">{p.description || text.projects.noDescription}</p>
                 </div>
-                <div className="rounded border border-slate-100 bg-slate-50 p-2 text-right text-xs">
-                  <div className="text-slate-400">
-                    <span className="font-bold text-slate-700">{p.issuesCount}</span> {text.projects.totalIssues}
+                <div className="flex flex-row items-center gap-3">
+                  <div className="flex items-center rounded border border-slate-100 bg-slate-50 px-2 py-1 text-right text-xs">
+                    <div className="text-slate-400">
+                      <span className="font-bold text-slate-700">{p.issuesCount}</span> {text.projects.totalIssues}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeletingProject(p);
+                      setDeleteConfirmText("");
+                    }}
+                    className="flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50"
+                  >
+                    <Trash2 size={12} />
+                    {text.projects.deleteProject}
+                  </button>
                 </div>
               </div>
 
@@ -912,7 +983,6 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
 
                 <div className="mt-4 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{extraText.changeOwner}</label>
                     <details className="relative rounded-md border border-slate-200 bg-white">
                       <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
                         <span>{selectedOwnerLabel}</span>
@@ -945,7 +1015,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                     type="button"
                     onClick={() => changeProjectOwner(p)}
                     disabled={isChangingOwnerThisProject || selectedOwnerId === p.ownerId || orderedMembers.length === 0}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-amber-600 px-3 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
                   >
                     {isChangingOwnerThisProject && <Loader2 size={14} className="animate-spin" />}
                     {extraText.saveOwner}
@@ -961,6 +1031,73 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
         )}
       </div>
+
+      {deletingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-rose-600">
+                <AlertTriangle size={24} />
+                {text.projects.deleteProject}
+              </h2>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              <p className="text-sm font-medium text-slate-700">
+                {text.projects.deleteWarning}
+              </p>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
+                {deletingProject.name}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  {text.projects.typeToConfirm}
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
+                  placeholder={deletingProject.name}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeletingProject(null);
+                  setDeleteConfirmText("");
+                }}
+                disabled={isDeletingProject}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {text.projects.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProject || deleteConfirmText !== deletingProject.name}
+                onClick={() => {
+                  startDeleteTransition(async () => {
+                    const res = await deleteProject(deletingProject.id);
+                    if (res.success) {
+                      setDeletingProject(null);
+                      setDeleteConfirmText("");
+                    } else {
+                      setErrorMsg(res.error || text.projects.deleteFailed);
+                      setDeletingProject(null);
+                      setDeleteConfirmText("");
+                    }
+                  });
+                }}
+                className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeletingProject && <Loader2 size={16} className="animate-spin" />}
+                {text.projects.deleteProject}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
