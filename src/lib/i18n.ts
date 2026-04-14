@@ -196,6 +196,14 @@ type TranslationBundle = {
     me: string;
     mentionSomeone: string;
     postComment: string;
+    editComment: string;
+    saveComment: string;
+    cancelEdit: string;
+    edited: string;
+    failedToSave: string;
+    deleteComment: string;
+    deleteConfirm: string;
+    failedToDelete: string;
   };
   attachmentSection: {
     title: string;
@@ -410,6 +418,14 @@ const translations: Record<Locale, TranslationBundle> = {
       me: "Me",
       mentionSomeone: "Mention someone",
       postComment: "Post Comment",
+      editComment: "Edit",
+      saveComment: "Save",
+      cancelEdit: "Cancel",
+      edited: "Edited",
+      failedToSave: "Failed to save comment",
+      deleteComment: "Delete",
+      deleteConfirm: "Delete this comment?",
+      failedToDelete: "Failed to delete comment",
     },
     attachmentSection: {
       title: "Attachments",
@@ -622,6 +638,14 @@ const translations: Record<Locale, TranslationBundle> = {
       me: "我",
       mentionSomeone: "提及成员",
       postComment: "发表评论",
+      editComment: "编辑",
+      saveComment: "保存",
+      cancelEdit: "取消",
+      edited: "已编辑",
+      failedToSave: "保存评论失败",
+      deleteComment: "删除",
+      deleteConfirm: "确定删除这条评论吗？",
+      failedToDelete: "删除评论失败",
     },
     attachmentSection: {
       title: "附件",
