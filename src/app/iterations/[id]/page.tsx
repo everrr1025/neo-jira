@@ -152,8 +152,8 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
               )}
             </div>
           )}
-          {canManage && iteration.status !== "COMPLETED" && (
-            <div className="flex items-center gap-2 border-l border-slate-200 pl-2">
+          {canManage && (
+            <div className={`flex items-center gap-2 ${canChangeSprintIssues ? "border-l border-slate-200 pl-2" : ""}`}>
               <SprintActionButton
                 sprintId={iteration.id}
                 status={iteration.status}

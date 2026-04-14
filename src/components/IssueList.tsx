@@ -238,17 +238,36 @@ function InlineSelect({
   const summaryRef = useRef<HTMLElement>(null);
   const selectedOption = options.find((option) => option.value === value) || options[0];
   const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [menuPosition, setMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    openingUpward: boolean;
+  }>({ left: 0, width: 0, openingUpward: false });
 
   const updateMenuPosition = useCallback(() => {
     const rect = summaryRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    setMenuPosition({
-      top: rect.bottom + 8,
-      left: rect.left,
-      width: rect.width,
-    });
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openingUpward = spaceBelow < 280;
+
+    if (openingUpward) {
+      setMenuPosition({
+        bottom: window.innerHeight - rect.top + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: true,
+      });
+    } else {
+      setMenuPosition({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: false,
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -298,7 +317,12 @@ function InlineSelect({
       {isOpen && (
         <div
           className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
-          style={{ top: menuPosition.top, left: menuPosition.left, minWidth: menuPosition.width }}
+          style={{
+            top: menuPosition.top,
+            bottom: menuPosition.bottom,
+            left: menuPosition.left,
+            minWidth: menuPosition.width,
+          }}
         >
           {options.map((option) => (
             <button
