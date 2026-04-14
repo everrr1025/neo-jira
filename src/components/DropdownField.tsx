@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
 
 type DropdownOption = {
@@ -20,6 +20,7 @@ type DropdownFieldProps = {
 export function DropdownField({ id, label, value, onChange, options, className = "" }: DropdownFieldProps) {
   const selectedOption = options.find((item) => item.value === value);
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -31,6 +32,14 @@ export function DropdownField({ id, label, value, onChange, options, className =
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleToggle = (e: React.ToggleEvent<HTMLDetailsElement>) => {
+    if (e.currentTarget.open) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 280);
+    }
+  };
 
   const handleSelect = (nextValue: string) => {
     onChange(nextValue);
@@ -44,7 +53,11 @@ export function DropdownField({ id, label, value, onChange, options, className =
       <label htmlFor={id} className="text-sm font-medium text-slate-700">
         {label}
       </label>
-      <details ref={detailsRef} className="relative rounded-md border border-slate-200 bg-white">
+      <details
+        ref={detailsRef}
+        className="relative rounded-md border border-slate-200 bg-white"
+        onToggle={handleToggle}
+      >
         <summary
           id={id}
           className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
@@ -54,7 +67,11 @@ export function DropdownField({ id, label, value, onChange, options, className =
           </span>
           <ChevronDown size={14} className="text-slate-500" />
         </summary>
-        <div className="absolute left-0 top-full z-40 mt-1 min-w-full w-max max-w-[280px] space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+        <div
+          className={`absolute left-0 z-40 min-w-full w-max max-w-[280px] space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
+            openUpward ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
+        >
           {options.map((option) => (
             <button
               type="button"
