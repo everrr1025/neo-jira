@@ -326,7 +326,7 @@ export default function CreateIssueModal({
               <label htmlFor="description" className="text-sm font-medium text-slate-700">
                 {translations.createIssue.description}
               </label>
-              <div>
+              <div className="rounded-lg">
                 <RichTextEditor
                   value={formData.description}
                   onChange={(value) => setFormData((prev) => ({ ...prev, description: value || "" }))}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import RichTextEditor from "./RichTextEditor";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
 
@@ -16,6 +16,7 @@ interface Comment {
   id: string;
   content: string;
   createdAt: string;
+  updatedAt: string;
   author: {
     id: string;
     name: string;
@@ -39,6 +40,10 @@ export default function CommentSection({
   const [newComment, setNewComment] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const translations = getTranslations(locale);
 
   const currentUserAvatar = users.find((u) => u.id === currentUserId)?.avatar || getDefaultAvatar(currentUserId);
@@ -82,6 +87,76 @@ export default function CommentSection({
     }
   };
 
+  const handleStartEdit = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditingContent(comment.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditingContent("");
+    setSavingCommentId(null);
+  };
+
+  const handleSaveEdit = async (commentId: string) => {
+    if (!editingContent.trim()) {
+      return;
+    }
+
+    setSavingCommentId(commentId);
+    try {
+      const res = await fetch(`/api/issues/${issueId}/comments`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId, content: editingContent }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save comment");
+      }
+
+      const updated = (await res.json()) as Comment;
+      setComments((currentComments) =>
+        currentComments.map((comment) => (comment.id === updated.id ? updated : comment)),
+      );
+      handleCancelEdit();
+    } catch (error) {
+      console.error("Failed to update comment", error);
+      alert(translations.commentSection.failedToSave);
+      setSavingCommentId(null);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!window.confirm(translations.commentSection.deleteConfirm)) {
+      return;
+    }
+
+    setDeletingCommentId(commentId);
+    try {
+      const res = await fetch(`/api/issues/${issueId}/comments`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete comment");
+      }
+
+      setComments((currentComments) => currentComments.filter((comment) => comment.id !== commentId));
+
+      if (editingCommentId === commentId) {
+        handleCancelEdit();
+      }
+    } catch (error) {
+      console.error("Failed to delete comment", error);
+      alert(translations.commentSection.failedToDelete);
+    } finally {
+      setDeletingCommentId(null);
+    }
+  };
+
   if (loading) {
     return <div className="py-4 text-center text-slate-500"><Loader2 className="animate-spin inline mr-2" size={16}/>{translations.commentSection.loading}</div>;
   }
@@ -93,6 +168,11 @@ export default function CommentSection({
       <div className="space-y-6 mb-8">
         {comments.map((comment) => {
           const avatarUrl = comment.author.avatar || getDefaultAvatar(comment.author.id);
+          const isAuthor = comment.author.id === currentUserId;
+          const isEditing = editingCommentId === comment.id;
+          const isEdited = new Date(comment.updatedAt).getTime() > new Date(comment.createdAt).getTime();
+          const isSaving = savingCommentId === comment.id;
+          const isDeleting = deletingCommentId === comment.id;
           return (
             <div key={comment.id} className="bg-white border rounded-lg overflow-hidden shadow-sm">
               <div className="bg-slate-50 px-4 py-2 border-b flex items-center justify-between text-sm">
@@ -101,11 +181,70 @@ export default function CommentSection({
                     <img src={avatarUrl} alt={comment.author.name} className="w-full h-full object-cover" />
                   </div>
                   <span className="font-semibold text-slate-800">{comment.author.name}</span>
+                  {isEdited && (
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                      {translations.commentSection.edited}
+                    </span>
+                  )}
                 </div>
-                <span className="text-slate-500 text-xs font-medium">{new Date(comment.createdAt).toLocaleString(localeDateMap[locale])}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-500 text-xs font-medium">{new Date(comment.createdAt).toLocaleString(localeDateMap[locale])}</span>
+                  {isAuthor && !isEditing && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(comment)}
+                        className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-800"
+                      >
+                        {translations.commentSection.editComment}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        disabled={isDeleting}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-red-600 disabled:opacity-50"
+                      >
+                        {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        {translations.commentSection.deleteComment}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="p-4">
-                <RichTextEditor value={comment.content} onChange={() => {}} readOnly />
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <RichTextEditor
+                      value={editingContent}
+                      onChange={(value) => setEditingContent(value || "")}
+                      height={150}
+                      mentionUsers={users}
+                      mentionLabel={translations.commentSection.mentionSomeone}
+                      currentUserId={currentUserId}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        disabled={isSaving}
+                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {translations.commentSection.cancelEdit}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(comment.id)}
+                        disabled={isSaving || !editingContent.trim()}
+                        className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isSaving && <Loader2 size={14} className="animate-spin" />}
+                        {translations.commentSection.saveComment}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <RichTextEditor value={comment.content} onChange={() => {}} readOnly />
+                )}
               </div>
             </div>
           );

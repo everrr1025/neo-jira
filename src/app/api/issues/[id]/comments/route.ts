@@ -34,7 +34,8 @@ export async function POST(
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as any).id as string;
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = await request.json();
     const { content } = body;
 
@@ -72,5 +73,96 @@ export async function POST(
   } catch (error) {
     console.error("Failed to create comment:", error);
     return NextResponse.json({ error: "Failed to create comment" }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const body = await request.json();
+    const { commentId, content } = body as { commentId?: string; content?: string };
+
+    if (!commentId) {
+      return NextResponse.json({ error: "Comment id is required" }, { status: 400 });
+    }
+
+    if (!content || !content.trim()) {
+      return NextResponse.json({ error: "Content is required" }, { status: 400 });
+    }
+
+    const resolvedParams = await params;
+    const existingComment = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, issueId: true, authorId: true },
+    });
+
+    if (!existingComment || existingComment.issueId !== resolvedParams.id) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+
+    if (existingComment.authorId !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const updatedComment = await prisma.comment.update({
+      where: { id: commentId },
+      data: { content: content.trim() },
+      include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
+    });
+
+    return NextResponse.json(updatedComment);
+  } catch (error) {
+    console.error("Failed to update comment:", error);
+    return NextResponse.json({ error: "Failed to update comment" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const body = (await request.json()) as { commentId?: string };
+    const commentId = body.commentId;
+
+    if (!commentId) {
+      return NextResponse.json({ error: "Comment id is required" }, { status: 400 });
+    }
+
+    const resolvedParams = await params;
+    const existingComment = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, issueId: true, authorId: true },
+    });
+
+    if (!existingComment || existingComment.issueId !== resolvedParams.id) {
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+    }
+
+    if (existingComment.authorId !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    await prisma.comment.delete({
+      where: { id: commentId },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete comment:", error);
+    return NextResponse.json({ error: "Failed to delete comment" }, { status: 500 });
   }
 }

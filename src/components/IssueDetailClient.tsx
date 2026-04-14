@@ -190,7 +190,7 @@ export default function IssueDetailClient({
               </div>
             )}
           </div>
-          <div>
+          <div className={isEditingDescription ? "" : "rounded-lg border bg-white p-3"}>
             <RichTextEditor
               value={issue.description || ""}
               onChange={(val) => handleChange("description", val || "")}
@@ -215,7 +215,7 @@ export default function IssueDetailClient({
       </div>
 
       {/* Sidebar Area */}
-      <div className="w-full lg:w-80 flex flex-col gap-6">
+      <div className="w-full shrink-0 flex flex-col gap-6 lg:w-56 xl:w-52">
         <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 flex flex-col gap-4">
           <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide border-b pb-2">{translations.issueDetail.properties}</h3>
           

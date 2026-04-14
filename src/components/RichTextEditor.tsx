@@ -9,11 +9,11 @@ import {
   Bold,
   Italic,
   Link2,
-  Palette,
-  Quote,
+  Image as ImageIcon,
 } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { type ChangeEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { TiptapImageResize } from "@/lib/tiptapImageResize";
 import { TiptapTextColor } from "@/lib/tiptapTextColor";
 import { TiptapTextAlign } from "@/lib/tiptapTextAlign";
 
@@ -67,7 +67,26 @@ function contentToHTML(content: string) {
 
 function serializeContent(editor: Editor) {
   const plainText = editor.getText({ blockSeparator: "\n" }).trim();
-  return plainText ? editor.getHTML() : "";
+  const hasImages = editor.getHTML().includes('<img');
+  return plainText || hasImages ? editor.getHTML() : "";
+}
+
+async function uploadImage(file: File): Promise<string | null> {
+  const formData = new FormData();
+  // Provide a dummy issueId to just upload the file or use the endpoint as is
+  formData.append("file", file);
+  try {
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) throw new Error("Upload failed");
+    const data = await response.json();
+    return data.fileUrl;
+  } catch (error) {
+    console.error("Failed to upload image:", error);
+    return null;
+  }
 }
 
 function getMentionState(editor: Editor): MentionState {
@@ -98,6 +117,7 @@ function getCurrentAlignment(editor: Editor): TextAlignValue {
     editor.getAttributes("orderedList").textAlign,
     editor.getAttributes("listItem").textAlign,
     editor.getAttributes("blockquote").textAlign,
+    editor.getAttributes("imageResize").textAlign,
   ] as Array<TextAlignValue | undefined>;
 
   return alignments.find(Boolean) || "left";
@@ -105,34 +125,6 @@ function getCurrentAlignment(editor: Editor): TextAlignValue {
 
 function getCurrentTextColor(editor: Editor) {
   return (editor.getAttributes("textColor").color as string | undefined) || null;
-}
-
-function normalizeColorValue(color: string | null) {
-  if (!color) {
-    return "#0f172a";
-  }
-
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    return color;
-  }
-
-  if (/^#[0-9a-f]{3}$/i.test(color)) {
-    return `#${color
-      .slice(1)
-      .split("")
-      .map((character) => `${character}${character}`)
-      .join("")}`;
-  }
-
-  const rgbMatch = color.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
-  if (!rgbMatch) {
-    return "#0f172a";
-  }
-
-  return `#${rgbMatch
-    .slice(1)
-    .map((value) => Number(value).toString(16).padStart(2, "0"))
-    .join("")}`;
 }
 
 type ToolbarButtonProps = {
@@ -239,11 +231,13 @@ function ColorPickerButton({
 function MenuBar({
   editor,
   onInsertLink,
+  onInsertImage,
   currentTextColor,
   onSelectPresetColor,
 }: {
   editor: Editor;
   onInsertLink: () => void;
+  onInsertImage: () => void;
   currentTextColor: string | null;
   onSelectPresetColor: (color: string) => void;
 }) {
@@ -363,6 +357,16 @@ function MenuBar({
       >
         <Link2 size={16} />
       </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("imageResize") || editor.isActive("image")}
+        title="Insert image"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          onInsertImage();
+        }}
+      >
+        <ImageIcon size={16} />
+      </ToolbarButton>
 
       <div className="mx-1 h-4 w-px bg-slate-300" />
 
@@ -372,6 +376,28 @@ function MenuBar({
       />
     </div>
   );
+}
+
+function getMentionPosition(
+  editor: Editor | null,
+  mentionState: MentionState,
+  container: HTMLDivElement | null,
+) {
+  if (!editor || !mentionState || !container) {
+    return null;
+  }
+
+  try {
+    const coords = editor.view.coordsAtPos(mentionState.from);
+    const containerRect = container.getBoundingClientRect();
+
+    return {
+      top: coords.bottom - containerRect.top + 4,
+      left: coords.left - containerRect.left,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default function RichTextEditor({
@@ -386,9 +412,26 @@ export default function RichTextEditor({
   const [, setUiVersion] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
   const [mentionState, setMentionState] = useState<MentionState>(null);
-  const [mentionPosition, setMentionPosition] = useState<{ top: number; left: number } | null>(null);
+  const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
   const lastSelectionRef = useRef<SelectionSnapshot>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = async (file: File, view: Editor["view"], pos: number | null = null) => {
+    const url = await uploadImage(file);
+    if (url) {
+      const imageNode = view.state.schema.nodes.imageResize ?? view.state.schema.nodes.image;
+
+      if (!imageNode) {
+        return;
+      }
+
+      if (pos !== null) {
+        view.dispatch(view.state.tr.insert(pos, imageNode.create({ src: url })));
+      } else {
+        view.dispatch(view.state.tr.replaceSelectionWith(imageNode.create({ src: url })));
+      }
+    }
+  };
 
   const editor = useEditor({
     extensions: [
@@ -404,6 +447,7 @@ export default function RichTextEditor({
       }),
       TiptapTextColor,
       TiptapTextAlign,
+      TiptapImageResize,
     ],
     editable: !readOnly,
     editorProps: {
@@ -411,13 +455,36 @@ export default function RichTextEditor({
         className:
           "neo-rich-text-editor__content h-full w-full overflow-y-auto text-slate-800 focus:outline-none",
       },
+      handlePaste: (view, event) => {
+        if (event.clipboardData && event.clipboardData.files && event.clipboardData.files.length > 0) {
+          const file = event.clipboardData.files[0];
+          if (file.type.startsWith("image/")) {
+            event.preventDefault();
+            handleImageUpload(file, view, view.state.selection.from);
+            return true;
+          }
+        }
+        return false;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          const file = event.dataTransfer.files[0];
+          if (file.type.startsWith("image/")) {
+            event.preventDefault();
+            const coordinates = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            handleImageUpload(file, view, coordinates?.pos);
+            return true;
+          }
+        }
+        return false;
+      },
     },
     content: contentToHTML(value || ""),
     onUpdate: ({ editor: nextEditor }) => {
       onChange(serializeContent(nextEditor));
     },
     immediatelyRender: false,
-  });
+  }, [readOnly]);
 
   useEffect(() => {
     if (!editor) {
@@ -447,27 +514,6 @@ export default function RichTextEditor({
       editor.off("blur", syncEditorUi);
     };
   }, [editor]);
-
-  useEffect(() => {
-    if (!editor || !mentionState || !containerRef.current) {
-      setMentionPosition(null);
-      return;
-    }
-
-    try {
-      const { view } = editor;
-      const { from } = mentionState;
-      const coords = view.coordsAtPos(from);
-      const containerRect = containerRef.current.getBoundingClientRect();
-
-      setMentionPosition({
-        top: coords.bottom - containerRect.top + 4,
-        left: coords.left - containerRect.left,
-      });
-    } catch (e) {
-      setMentionPosition(null);
-    }
-  }, [editor, mentionState]);
 
   useEffect(() => {
     if (!editor) {
@@ -508,6 +554,7 @@ export default function RichTextEditor({
           return trimmedName.toLowerCase().includes(mentionState.query.toLowerCase());
         });
   const currentTextColor = editor ? getCurrentTextColor(editor) : null;
+  const mentionPosition = getMentionPosition(editor, mentionState, containerElement);
 
   const handleInsertMention = (name: string) => {
     if (!editor || !mentionState) {
@@ -579,17 +626,21 @@ export default function RichTextEditor({
     editor.chain().focus().extendMarkRange("link").setLink({ href: normalizedUrl }).run();
   };
 
-  const handleTextColorChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!editor) {
-      return;
-    }
+  const handleInsertImageClick = () => {
+    fileInputRef.current?.click();
+  };
 
-    const chain = editor.chain().focus();
-    if (lastSelectionRef.current) {
-      chain.setTextSelection(lastSelectionRef.current);
+  const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && editor && !editor.isDestroyed) {
+      const url = await uploadImage(file);
+      if (url) {
+        editor.chain().focus().setImage({ src: url }).run();
+      }
     }
-
-    chain.setTextColor(event.target.value).run();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSelectPresetColor = (color: string) => {
@@ -606,7 +657,7 @@ export default function RichTextEditor({
   };
 
   return (
-    <div className={`relative w-full ${mentionState ? "z-50" : "z-10"}`} ref={containerRef}>
+    <div className={`relative w-full ${mentionState ? "z-50" : "z-10"}`} ref={setContainerElement}>
       <div
         className={`w-full ${
           readOnly
@@ -618,10 +669,18 @@ export default function RichTextEditor({
           <MenuBar
             editor={editor}
             onInsertLink={handleInsertLink}
+            onInsertImage={handleInsertImageClick}
             currentTextColor={currentTextColor}
             onSelectPresetColor={handleSelectPresetColor}
           />
         )}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*"
+          onChange={handleFileInputChange}
+        />
         <div
           className={readOnly ? "" : "neo-rich-text-editor__scroll min-h-0 cursor-text bg-white"}
           style={readOnly ? undefined : { minHeight: `${height}px`, height: "100%" }}

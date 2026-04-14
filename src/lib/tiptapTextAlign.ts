@@ -2,6 +2,10 @@ import { Extension } from "@tiptap/core";
 import type { EditorState, SelectionRange } from "@tiptap/pm/state";
 
 type TextAlignValue = "left" | "center" | "right";
+type TextAlignNodeAttrs = Record<string, unknown> & {
+  containerStyle?: string;
+  textAlign?: TextAlignValue;
+};
 
 function collectTargetNodePositions(state: EditorState, types: string[]) {
   const positions = new Set<number>();
@@ -51,7 +55,7 @@ export const TiptapTextAlign = Extension.create({
     return {
       alignments: ["left", "center", "right"] as TextAlignValue[],
       defaultAlignment: null as TextAlignValue | null,
-      types: ["heading", "paragraph", "bulletList", "orderedList", "listItem", "blockquote"],
+      types: ["heading", "paragraph", "bulletList", "orderedList", "listItem", "blockquote", "imageResize"],
     };
   },
 
@@ -103,10 +107,27 @@ export const TiptapTextAlign = Extension.create({
                 return;
               }
 
-              tr.setNodeMarkup(pos, undefined, {
+              const nextAttrs: TextAlignNodeAttrs = {
                 ...node.attrs,
                 textAlign: alignment,
-              });
+              };
+
+              if (node.type.name === 'imageResize') {
+                 const containerStr = typeof nextAttrs.containerStyle === "string" ? nextAttrs.containerStyle : "";
+                 let newContainerStyle = containerStr.replace(/margin:\s*[^;]+;?/g, '').trim();
+                 if (newContainerStyle && !newContainerStyle.endsWith(';')) newContainerStyle += ';';
+                 
+                 if (alignment === 'center') {
+                   newContainerStyle += ' margin: 0 auto;';
+                 } else if (alignment === 'right') {
+                   newContainerStyle += ' margin: 0 0 0 auto;';
+                 } else if (alignment === 'left') {
+                   newContainerStyle += ' margin: 0 auto 0 0;';
+                 }
+                 nextAttrs.containerStyle = newContainerStyle.trim();
+              }
+
+              tr.setNodeMarkup(pos, undefined, nextAttrs);
             });
           }
 
@@ -128,8 +149,14 @@ export const TiptapTextAlign = Extension.create({
                 return;
               }
 
-              const nextAttrs = { ...node.attrs };
+              const nextAttrs: TextAlignNodeAttrs = { ...node.attrs };
               delete nextAttrs.textAlign;
+
+              if (node.type.name === 'imageResize') {
+                 const containerStr = typeof nextAttrs.containerStyle === "string" ? nextAttrs.containerStyle : "";
+                 const newContainerStyle = containerStr.replace(/margin:\s*[^;]+;?/g, '').trim();
+                 nextAttrs.containerStyle = newContainerStyle;
+              }
 
               tr.setNodeMarkup(pos, undefined, nextAttrs);
             });
