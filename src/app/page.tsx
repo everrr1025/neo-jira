@@ -27,6 +27,7 @@ type DashboardIssue = {
 type ActiveIterationSummary = {
   id: string;
   name: string;
+  startDate: Date;
   endDate: Date;
   project: {
     name: string;
@@ -43,6 +44,13 @@ type SessionUser = {
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+function formatDateQueryValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default async function Dashboard({
   searchParams,
@@ -84,8 +92,11 @@ export default async function Dashboard({
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const nextWeek = new Date(startOfToday);
-  nextWeek.setDate(nextWeek.getDate() + 7);
+  const nextThreeDays = new Date(startOfToday);
+  nextThreeDays.setDate(nextThreeDays.getDate() + 3);
+
+  const yesterday = new Date(startOfToday);
+  yesterday.setDate(yesterday.getDate() - 1);
 
   const query = typeof params?.search === "string" ? params.search.trim() : "";
 
@@ -95,6 +106,10 @@ export default async function Dashboard({
     inProgressCount,
     inTestingCount,
     doneCount,
+    myIssuesTotal,
+    highPriorityIssuesTotal,
+    overdueIssuesTotal,
+    dueSoonIssuesTotal,
     myIssues,
     highPriorityIssues,
     overdueIssues,
@@ -107,6 +122,25 @@ export default async function Dashboard({
     prisma.issue.count({ where: { ...projectFilter, status: "IN_PROGRESS" } }),
     prisma.issue.count({ where: { ...projectFilter, status: "IN_TESTING" } }),
     prisma.issue.count({ where: { ...projectFilter, status: "DONE" } }),
+    prisma.issue.count({ where: { ...projectFilter, assigneeId: userId } }),
+    prisma.issue.count({
+      where: {
+        ...projectFilter,
+        priority: { in: ["HIGH", "URGENT"] },
+      },
+    }),
+    prisma.issue.count({
+      where: {
+        ...projectFilter,
+        dueDate: { not: null, lt: startOfToday },
+      },
+    }),
+    prisma.issue.count({
+      where: {
+        ...projectFilter,
+        dueDate: { not: null, gte: startOfToday, lte: nextThreeDays },
+      },
+    }),
     prisma.issue.findMany({
       where: { ...openIssueFilter, assigneeId: userId },
       orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
@@ -155,7 +189,7 @@ export default async function Dashboard({
     prisma.issue.findMany({
       where: {
         ...openIssueFilter,
-        dueDate: { not: null, gte: startOfToday, lte: nextWeek },
+        dueDate: { not: null, gte: startOfToday, lte: nextThreeDays },
       },
       orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
       take: 5,
@@ -205,6 +239,7 @@ export default async function Dashboard({
 
   const stats = [
     {
+      id: "total",
       label: translations.dashboard.totalIssues,
       value: totalIssues,
       tone: "text-slate-900",
@@ -212,6 +247,7 @@ export default async function Dashboard({
       fill: "bg-slate-800",
     },
     {
+      id: "todo",
       label: translations.dashboard.toDo,
       value: todoCount,
       tone: "text-amber-700",
@@ -219,6 +255,7 @@ export default async function Dashboard({
       fill: "bg-amber-500",
     },
     {
+      id: "in-progress",
       label: translations.dashboard.inProgress,
       value: inProgressCount,
       tone: "text-blue-700",
@@ -226,6 +263,7 @@ export default async function Dashboard({
       fill: "bg-blue-500",
     },
     {
+      id: "in-testing",
       label: translations.dashboard.inTesting,
       value: inTestingCount,
       tone: "text-violet-700",
@@ -233,6 +271,7 @@ export default async function Dashboard({
       fill: "bg-violet-500",
     },
     {
+      id: "done",
       label: translations.dashboard.done,
       value: doneCount,
       tone: "text-emerald-700",
@@ -240,6 +279,11 @@ export default async function Dashboard({
       fill: "bg-emerald-500",
     },
   ];
+
+  const assignedToMeHref = `/issues?assignee=ME`;
+  const highPriorityHref = `/issues?priority=HIGH,URGENT`;
+  const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
+  const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
 
   return (
     <div className="space-y-6">
@@ -293,7 +337,7 @@ export default async function Dashboard({
                           {typedActiveIteration.name}
                         </h3>
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                          {locale === "zh" ? "进行中" : "Active"}
+                          {translations.dashboard.activeStatus}
                         </span>
                       </div>
                       {isGlobalAdmin && (
@@ -306,7 +350,7 @@ export default async function Dashboard({
                       href={`/iterations/${typedActiveIteration.id}`}
                       className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800"
                     >
-                      {locale === "zh" ? "看板" : translations.dashboard.viewBoard}
+                      {translations.dashboard.viewBoard}
                     </Link>
                   </div>
 
@@ -338,8 +382,11 @@ export default async function Dashboard({
                     </div>
                   </div>
 
-                  <div className="text-sm text-slate-500">
-                    {translations.dashboard.sprintEnds}:{" "}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                    <span className="font-medium text-slate-700">
+                      {typedActiveIteration.startDate.toLocaleDateString(localeDateMap[locale])}
+                    </span>
+                    <span className="text-slate-300">-</span>
                     <span className="font-medium text-slate-700">
                       {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
                     </span>
@@ -348,10 +395,7 @@ export default async function Dashboard({
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm font-medium text-slate-500">
-                      {translations.dashboard.activeSprint}
-                    </p>
-                    <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+                    <h3 className="text-2xl font-semibold tracking-tight text-slate-900">
                       {translations.dashboard.noActiveSprint}
                     </h3>
                   </div>
@@ -376,7 +420,7 @@ export default async function Dashboard({
               <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {stats.map((stat) => (
                   <IssueOverviewStat
-                    key={stat.label}
+                    key={stat.id}
                     label={stat.label}
                     value={stat.value}
                     tone={stat.tone}
@@ -397,6 +441,8 @@ export default async function Dashboard({
               locale={locale}
               meta="status"
               accent="blue"
+              href={assignedToMeHref}
+              count={myIssuesTotal}
             />
             <IssueCollectionCard
               title={translations.dashboard.highPriority}
@@ -405,6 +451,8 @@ export default async function Dashboard({
               locale={locale}
               meta="priority"
               accent="rose"
+              href={highPriorityHref}
+              count={highPriorityIssuesTotal}
             />
             <IssueCollectionCard
               title={translations.dashboard.overdue}
@@ -413,6 +461,8 @@ export default async function Dashboard({
               locale={locale}
               meta="dueDate"
               accent="rose"
+              href={overdueHref}
+              count={overdueIssuesTotal}
             />
             <IssueCollectionCard
               title={translations.dashboard.dueSoon}
@@ -421,6 +471,8 @@ export default async function Dashboard({
               locale={locale}
               meta="dueDate"
               accent="orange"
+              href={dueSoonHref}
+              count={dueSoonIssuesTotal}
             />
           </div>
         </>
@@ -479,6 +531,8 @@ function IssueCollectionCard({
   locale,
   meta,
   accent,
+  href,
+  count,
 }: {
   title: string;
   issues: DashboardIssue[];
@@ -486,6 +540,8 @@ function IssueCollectionCard({
   locale: Locale;
   meta: "status" | "priority" | "dueDate";
   accent: "blue" | "orange" | "rose";
+  href?: string;
+  count: number;
 }) {
   const accentClass =
     accent === "blue"
@@ -495,9 +551,18 @@ function IssueCollectionCard({
         : "hover:border-rose-300 hover:bg-rose-50/40";
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col min-h-80">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col self-start">
       <div className="p-5 border-b border-slate-100">
-        <h3 className="font-semibold text-slate-900">{title}</h3>
+        <div className="flex items-center gap-2">
+          {href ? (
+            <Link href={href} className="font-semibold text-slate-900 hover:text-blue-600 hover:underline">
+              {title}
+            </Link>
+          ) : (
+            <h3 className="font-semibold text-slate-900">{title}</h3>
+          )}
+          <span className="text-sm font-semibold text-slate-400">{count}</span>
+        </div>
       </div>
       <div className="p-4 space-y-3">
         {issues.length > 0 ? (

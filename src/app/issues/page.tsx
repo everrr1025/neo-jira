@@ -10,14 +10,21 @@ import { getTranslations } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id?: string;
+  role?: string | null;
+};
+
 export default async function IssuesPage() {
   const locale = await getCurrentLocale();
   const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as typeof session.user & SessionUser;
+  const userId = sessionUser.id;
+  const userRole = sessionUser.role ?? "USER";
+  if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
   let activeProjectId: string | null = null;

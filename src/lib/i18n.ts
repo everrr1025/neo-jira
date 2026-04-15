@@ -53,9 +53,24 @@ type TranslationBundle = {
     totalIssues: string;
     toDo: string;
     inProgress: string;
+    inTesting: string;
     done: string;
+    activeStatus: string;
+    viewBoard: string;
+    daysLeft: string;
+    issuesInSprint: string;
+    completedIssues: string;
+    sprintProgress: string;
+    sprintEnds: string;
+    activeSprint: string;
+    noActiveSprint: string;
     assignedToMe: string;
     noTasksAssigned: string;
+    highPriority: string;
+    noHighPriorityIssues: string;
+    overdue: string;
+    noOverdueIssues: string;
+    viewAll: string;
     watchedIssues: string;
     notWatchingAnyActiveIssues: string;
     dueSoon: string;
@@ -97,11 +112,21 @@ type TranslationBundle = {
     type: string;
     priority: string;
     assignee: string;
+    due: string;
     searchPlaceholder: string;
     allStatus: string;
     allTypes: string;
     allPriorities: string;
     allUsers: string;
+    allDue: string;
+    overdue: string;
+    dueSoon: string;
+    dateEquals: string;
+    dateOnOrAfter: string;
+    dateOnOrBefore: string;
+    dateBetween: string;
+    startDate: string;
+    endDate: string;
     assignedToMe: string;
     unassigned: string;
     backlog: string;
@@ -275,13 +300,28 @@ const translations: Record<Locale, TranslationBundle> = {
       totalIssues: "Total Issues",
       toDo: "To Do",
       inProgress: "In Progress",
+      inTesting: "In Testing",
       done: "Done",
+      activeStatus: "Active",
+      viewBoard: "View Board",
+      daysLeft: "Days Left",
+      issuesInSprint: "Issues in Sprint",
+      completedIssues: "Completed Issues",
+      sprintProgress: "Sprint Progress",
+      sprintEnds: "Sprint Ends",
+      activeSprint: "Active Sprint",
+      noActiveSprint: "No active sprint",
       assignedToMe: "Assigned to me",
       noTasksAssigned: "No tasks assigned",
+      highPriority: "High Priority",
+      noHighPriorityIssues: "No high priority issues",
+      overdue: "Overdue",
+      noOverdueIssues: "No overdue issues",
+      viewAll: "View all",
       watchedIssues: "Watched Issues",
       notWatchingAnyActiveIssues: "Not watching any active issues",
-      dueSoon: "Due Soon (7 Days)",
-      noTasksDueThisWeek: "No tasks due this week",
+      dueSoon: "Due Soon (3 Days)",
+      noTasksDueThisWeek: "No tasks due in the next 3 days",
     },
     issuesPage: {
       title: "All Issues",
@@ -319,11 +359,21 @@ const translations: Record<Locale, TranslationBundle> = {
       type: "Type",
       priority: "Priority",
       assignee: "Assignee",
+      due: "Due",
       searchPlaceholder: "Search by title or key...",
       allStatus: "All Status",
       allTypes: "All Types",
       allPriorities: "All Priorities",
       allUsers: "All Users",
+      allDue: "All dates",
+      overdue: "Overdue",
+      dueSoon: "Due Soon (3 Days)",
+      dateEquals: "Equals",
+      dateOnOrAfter: "On or after",
+      dateOnOrBefore: "On or before",
+      dateBetween: "Between",
+      startDate: "Start date",
+      endDate: "End date",
       assignedToMe: "Assigned to Me",
       unassigned: "Unassigned",
       backlog: "Backlog",
@@ -495,13 +545,28 @@ const translations: Record<Locale, TranslationBundle> = {
       totalIssues: "问题总数",
       toDo: "待办",
       inProgress: "进行中",
+      inTesting: "测试中",
       done: "已完成",
+      activeStatus: "进行中",
+      viewBoard: "看板",
+      daysLeft: "剩余天数",
+      issuesInSprint: "迭代内问题",
+      completedIssues: "已完成问题",
+      sprintProgress: "迭代进度",
+      sprintEnds: "迭代结束",
+      activeSprint: "当前迭代",
+      noActiveSprint: "暂无进行中的迭代",
       assignedToMe: "分配给我",
       noTasksAssigned: "暂无分配给我的任务",
+      highPriority: "高优先级",
+      noHighPriorityIssues: "暂无高优先级问题",
+      overdue: "已逾期",
+      noOverdueIssues: "暂无逾期问题",
+      viewAll: "全部",
       watchedIssues: "关注的问题",
       notWatchingAnyActiveIssues: "当前未关注活跃问题",
-      dueSoon: "即将到期（7天内）",
-      noTasksDueThisWeek: "本周没有即将到期任务",
+      dueSoon: "即将到期（3天内）",
+      noTasksDueThisWeek: "未来3天没有即将到期任务",
     },
     issuesPage: {
       title: "所有问题",
@@ -539,11 +604,21 @@ const translations: Record<Locale, TranslationBundle> = {
       type: "类型",
       priority: "优先级",
       assignee: "经办人",
+      due: "到期",
       searchPlaceholder: "按标题或标识搜索...",
       allStatus: "全部状态",
       allTypes: "全部类型",
       allPriorities: "全部优先级",
       allUsers: "全部用户",
+      allDue: "全部时间",
+      overdue: "已逾期",
+      dueSoon: "即将到期（3天内）",
+      dateEquals: "等于",
+      dateOnOrAfter: "大于等于",
+      dateOnOrBefore: "小于等于",
+      dateBetween: "介于",
+      startDate: "开始日期",
+      endDate: "结束日期",
       assignedToMe: "分配给我",
       unassigned: "未分配",
       backlog: "待办池",

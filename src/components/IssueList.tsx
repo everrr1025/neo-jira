@@ -2,13 +2,13 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Search,
   ListFilter,
   ArrowLeft,
   ArrowRight,
   ChevronDown,
-  Users,
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
+  localeDateMap,
   Locale,
 } from "@/lib/i18n";
 
@@ -34,6 +35,7 @@ type Issue = {
   assignee?: { name: string | null } | null;
   reporter?: { name: string | null } | null;
   createdAt: Date | string;
+  dueDate?: Date | string | null;
 };
 
 type FilterOption = {
@@ -51,14 +53,15 @@ type IssueIteration = {
   name: string;
 };
 
-type ColumnId = "key" | "title" | "iteration" | "status" | "type" | "priority" | "assignee";
+type ColumnId = "key" | "title" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
 type ColumnConfig = {
   id: ColumnId;
   label: string;
   width: number;
 };
 
-type SortField = "createdAt" | "key" | "title" | "status" | "type" | "priority" | "sprint" | "assignee";
+type SortField = "createdAt" | "key" | "title" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
+type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
 
@@ -90,8 +93,18 @@ const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   status: "status",
   type: "type",
   priority: "priority",
+  dueDate: "dueDate",
   assignee: "assignee",
 };
+
+function parseDateInputValue(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
 
 function MultiFilter({
   label,
@@ -355,6 +368,7 @@ export default function IssueList({
   currentUser: { id: string } | null;
   locale: Locale;
 }) {
+  const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
   const [search, setSearch] = useState("");
   const translations = getTranslations(locale);
@@ -363,7 +377,10 @@ export default function IssueList({
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [sprintFilter, setSprintFilter] = useState<string[]>([]);
-  const [assigneeFilter, setAssigneeFilter] = useState<"ALL" | "ME" | "UNASSIGNED">("ALL");
+  const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [dueFilter, setDueFilter] = useState<DueFilterValue>("ALL");
+  const [dueDateValue, setDueDateValue] = useState("");
+  const [duePreset, setDuePreset] = useState<"NONE" | "NEXT_3_DAYS">("NONE");
   const [sortBy, setSortBy] = useState<SortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
@@ -379,6 +396,7 @@ export default function IssueList({
     { id: "status", label: translations.issueList.status, width: 140 },
     { id: "type", label: translations.issueList.type, width: 120 },
     { id: "priority", label: translations.issueList.priority, width: 140 },
+    { id: "dueDate", label: translations.issueList.due, width: 140 },
     { id: "assignee", label: translations.issueList.assignee, width: 190 },
   ]);
 
@@ -474,6 +492,48 @@ export default function IssueList({
     setIssues(initialIssues);
   }, [initialIssues]);
 
+  useEffect(() => {
+    const csv = (value: string | null) =>
+      value
+        ? value
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+
+    const assignee = searchParams.get("assignee");
+    const duePresetParam = searchParams.get("duePreset");
+    const dueOp = searchParams.get("dueOp");
+    const dueDate = searchParams.get("dueDate") ?? "";
+
+    let nextDueFilter: DueFilterValue = "ALL";
+    let nextDueDateValue = "";
+    let nextDuePreset: "NONE" | "NEXT_3_DAYS" = "NONE";
+
+    if (dueOp === "EQ" || dueOp === "GTE" || dueOp === "LTE" || dueOp === "ALL") {
+      nextDueFilter = dueOp;
+      nextDueDateValue = dueDate;
+    }
+    if (duePresetParam === "NEXT_3_DAYS") {
+      nextDuePreset = "NEXT_3_DAYS";
+    }
+
+    setStatusFilter(csv(searchParams.get("status")));
+    setTypeFilter(csv(searchParams.get("type")));
+    setPriorityFilter(csv(searchParams.get("priority")));
+    setSprintFilter(csv(searchParams.get("sprint")));
+    const assigneeValues = csv(assignee);
+    const validAssigneeValues = assigneeValues.filter(
+      (value) => value === "ME" || value === "UNASSIGNED" || users.some((user) => user.id === value)
+    );
+
+    setAssigneeFilter(validAssigneeValues);
+    setDueFilter(nextDueFilter);
+    setDueDateValue(nextDueDateValue);
+    setDuePreset(nextDuePreset);
+    setCurrentPage(1);
+  }, [searchParams, users]);
+
   const statusOptions = useMemo<FilterOption[]>(
     () => [
       { value: "TODO", label: getIssueStatusLabel("TODO", locale) },
@@ -516,11 +576,31 @@ export default function IssueList({
 
   const assigneeFilterOptions = useMemo<FilterOption[]>(
     () => [
-      { value: "ALL", label: translations.issueList.allUsers },
       { value: "ME", label: translations.issueList.assignedToMe },
       { value: "UNASSIGNED", label: translations.issueList.unassigned },
+      ...users
+        .filter((user) => user.id !== currentUser?.id)
+        .map((user) => ({
+          value: user.id,
+          label: user.name || user.id,
+        })),
     ],
-    [translations.issueList.allUsers, translations.issueList.assignedToMe, translations.issueList.unassigned]
+    [currentUser?.id, translations.issueList.assignedToMe, translations.issueList.unassigned, users]
+  );
+
+  const dueFilterOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "ALL", label: translations.issueList.allDue },
+      { value: "EQ", label: translations.issueList.dateEquals },
+      { value: "GTE", label: translations.issueList.dateOnOrAfter },
+      { value: "LTE", label: translations.issueList.dateOnOrBefore },
+    ],
+    [
+      translations.issueList.allDue,
+      translations.issueList.dateEquals,
+      translations.issueList.dateOnOrAfter,
+      translations.issueList.dateOnOrBefore,
+    ]
   );
 
   const sprintOptions = useMemo<FilterOption[]>(
@@ -587,8 +667,51 @@ export default function IssueList({
         if (!sprintFilter.includes(sprintValue)) return false;
       }
 
-      if (assigneeFilter === "ME" && issue.assigneeId !== currentUser?.id) return false;
-      if (assigneeFilter === "UNASSIGNED" && issue.assigneeId != null) return false;
+      if (assigneeFilter.length > 0) {
+        const matchesAssignee = assigneeFilter.some((selectedAssignee) => {
+          if (selectedAssignee === "ME") {
+            return issue.assigneeId === currentUser?.id;
+          }
+
+          if (selectedAssignee === "UNASSIGNED") {
+            return issue.assigneeId == null;
+          }
+
+          return issue.assigneeId === selectedAssignee;
+        });
+
+        if (!matchesAssignee) return false;
+      }
+
+      if (dueFilter !== "ALL") {
+        if (!issue.dueDate) return false;
+
+        const dueDate = new Date(issue.dueDate);
+        if (Number.isNaN(dueDate.getTime())) return false;
+        dueDate.setHours(0, 0, 0, 0);
+
+        const selectedDate = dueDateValue ? parseDateInputValue(dueDateValue) : null;
+
+        if (dueFilter === "EQ" && selectedDate && dueDate.getTime() !== selectedDate.getTime()) return false;
+        if (dueFilter === "GTE" && selectedDate && dueDate < selectedDate) return false;
+        if (dueFilter === "LTE" && selectedDate && dueDate > selectedDate) return false;
+      }
+
+      if (duePreset === "NEXT_3_DAYS") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (!issue.dueDate) return false;
+
+        const dueDate = new Date(issue.dueDate);
+        if (Number.isNaN(dueDate.getTime())) return false;
+        dueDate.setHours(0, 0, 0, 0);
+
+        const threeDaysLater = new Date(today);
+        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+
+        if (dueDate < today || dueDate > threeDaysLater) return false;
+      }
 
       if (search) {
         const query = search.toLowerCase();
@@ -597,7 +720,19 @@ export default function IssueList({
 
       return true;
     });
-  }, [assigneeFilter, currentUser?.id, issues, search, priorityFilter, sprintFilter, statusFilter, typeFilter]);
+  }, [
+    assigneeFilter,
+    currentUser?.id,
+    dueDateValue,
+    dueFilter,
+    duePreset,
+    issues,
+    search,
+    priorityFilter,
+    sprintFilter,
+    statusFilter,
+    typeFilter,
+  ]);
 
   const sortedIssues = useMemo(() => {
     const factor = sortDirection === "asc" ? 1 : -1;
@@ -615,6 +750,11 @@ export default function IssueList({
       }
       if (sortBy === "priority") {
         return ((PRIORITY_ORDER[a.priority] || 0) - (PRIORITY_ORDER[b.priority] || 0)) * factor;
+      }
+      if (sortBy === "dueDate") {
+        const aDueDate = a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+        const bDueDate = b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+        return (aDueDate - bDueDate) * factor;
       }
       if (sortBy === "sprint") {
         const aSprint = a.iteration?.name || translations.issueList.backlog;
@@ -742,21 +882,51 @@ export default function IssueList({
             clearText={translations.issueList.clearSelection}
           />
 
-          <SingleFilter
-            value={assigneeFilter}
+          <MultiFilter
+            label={translations.issueList.assignee}
             options={assigneeFilterOptions}
+            selectedValues={assigneeFilter}
+            onToggle={(value) => toggleFilterValue(value, setAssigneeFilter)}
+            onClear={() => {
+              setAssigneeFilter([]);
+              setCurrentPage(1);
+            }}
+            clearText={translations.issueList.clearSelection}
+          />
+
+          <SingleFilter
+            value={dueFilter}
+            options={dueFilterOptions}
             onChange={(value) => {
-              setAssigneeFilter(value as "ALL" | "ME" | "UNASSIGNED");
+              setDuePreset("NONE");
+              setDueFilter(value as DueFilterValue);
+              if (value === "ALL") {
+                setDueDateValue("");
+              }
               setCurrentPage(1);
             }}
             renderSummary={(label) => (
-              <div className="h-9 px-2 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
-                <Users size={14} className="text-slate-400" />
+              <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
+                <span className="text-slate-500">{translations.issueList.due}</span>
                 <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
                 <ChevronDown size={14} className="text-slate-400" />
               </div>
             )}
           />
+
+          {dueFilter !== "ALL" ? (
+            <input
+              type="date"
+              aria-label={translations.issueList.due}
+              value={dueDateValue}
+              onChange={(e) => {
+                setDuePreset("NONE");
+                setDueDateValue(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : null}
         </div>
       </div>
 
@@ -949,6 +1119,14 @@ export default function IssueList({
                               )}
                             />
                           </div>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "dueDate") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+                          {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString(localeDateMap[locale]) : ""}
                         </td>
                       );
                     }
