@@ -112,7 +112,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
   };
 
   return (
-    <div className="mt-8 border-t pt-8">
+    <div className="mt-8">
       <div className="flex flex-col mb-4 gap-2">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-lg text-slate-800">{translations.attachmentSection.title} ({attachments.length})</h3>
