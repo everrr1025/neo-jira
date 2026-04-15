@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { createIssue } from "@/app/actions/issues";
-import { Check, ChevronDown, X, Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
-import RichTextEditor from "./RichTextEditor";
+import { X, Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
+import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import AlertPopup from "./AlertPopup";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, Locale } from "@/lib/i18n";
 import { DropdownField } from "./DropdownField";
@@ -84,6 +84,7 @@ export default function CreateIssueModal({
   const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
 
   const handleSprintChange = (iterationId: string) => {
     setFormData((prev) => {
@@ -158,6 +159,8 @@ export default function CreateIssueModal({
   };
 
   const handleCancelAndClose = async () => {
+    await descriptionEditorRef.current?.discardPendingUploads();
+
     if (formData.attachments.length > 0) {
       try {
         await Promise.all(
@@ -173,6 +176,9 @@ export default function CreateIssueModal({
         console.error("Failed to cleanup attachments:", error);
       }
     }
+
+    setFormData(getInitialFormData());
+    setIsDueDateManuallyEdited(false);
     onClose();
   };
 
@@ -230,6 +236,7 @@ export default function CreateIssueModal({
 
       const result = await createIssue(payload);
       if (result.success) {
+        descriptionEditorRef.current?.commitPendingUploads();
         setFormData(getInitialFormData());
         setIsDueDateManuallyEdited(false);
         onClose();
@@ -328,6 +335,7 @@ export default function CreateIssueModal({
               </label>
               <div className="rounded-lg">
                 <RichTextEditor
+                  ref={descriptionEditorRef}
                   value={formData.description}
                   onChange={(value) => setFormData((prev) => ({ ...prev, description: value || "" }))}
                   height={180}

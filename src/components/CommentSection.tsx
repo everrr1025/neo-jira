@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import RichTextEditor from "./RichTextEditor";
+import { useState, useEffect, useRef } from "react";
+import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import { Loader2, Trash2 } from "lucide-react";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
@@ -45,6 +45,8 @@ export default function CommentSection({
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const translations = getTranslations(locale);
+  const newCommentEditorRef = useRef<RichTextEditorHandle>(null);
+  const editingCommentEditorRef = useRef<RichTextEditorHandle>(null);
 
   const currentUserAvatar = users.find((u) => u.id === currentUserId)?.avatar || getDefaultAvatar(currentUserId);
 
@@ -76,6 +78,7 @@ export default function CommentSection({
         body: JSON.stringify({ content: newComment }),
       });
       if (res.ok) {
+        newCommentEditorRef.current?.commitPendingUploads();
         const created = await res.json();
         setComments([...comments, created]);
         setNewComment("");
@@ -88,11 +91,16 @@ export default function CommentSection({
   };
 
   const handleStartEdit = (comment: Comment) => {
+    if (editingCommentId && editingCommentId !== comment.id) {
+      void editingCommentEditorRef.current?.discardPendingUploads();
+    }
+
     setEditingCommentId(comment.id);
     setEditingContent(comment.content);
   };
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = async () => {
+    await editingCommentEditorRef.current?.discardPendingUploads();
     setEditingCommentId(null);
     setEditingContent("");
     setSavingCommentId(null);
@@ -116,10 +124,13 @@ export default function CommentSection({
       }
 
       const updated = (await res.json()) as Comment;
+      editingCommentEditorRef.current?.commitPendingUploads();
       setComments((currentComments) =>
         currentComments.map((comment) => (comment.id === updated.id ? updated : comment)),
       );
-      handleCancelEdit();
+      setEditingCommentId(null);
+      setEditingContent("");
+      setSavingCommentId(null);
     } catch (error) {
       console.error("Failed to update comment", error);
       alert(translations.commentSection.failedToSave);
@@ -147,7 +158,7 @@ export default function CommentSection({
       setComments((currentComments) => currentComments.filter((comment) => comment.id !== commentId));
 
       if (editingCommentId === commentId) {
-        handleCancelEdit();
+        await handleCancelEdit();
       }
     } catch (error) {
       console.error("Failed to delete comment", error);
@@ -215,6 +226,7 @@ export default function CommentSection({
                 {isEditing ? (
                   <div className="space-y-3">
                     <RichTextEditor
+                      ref={editingCommentEditorRef}
                       value={editingContent}
                       onChange={(value) => setEditingContent(value || "")}
                       height={150}
@@ -260,6 +272,7 @@ export default function CommentSection({
         </div>
         <div>
           <RichTextEditor
+            ref={newCommentEditorRef}
             value={newComment}
             onChange={(v) => setNewComment(v || "")}
             height={150}

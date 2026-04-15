@@ -152,10 +152,10 @@ export function SprintActionButton({
           disabled={isPending || isDeleting}
           onClick={() => setIsEditOpen(true)}
           className="flex flex-row items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 sm:px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
-          title={locale === "zh" ? "编辑迭代" : "Edit Sprint"}
+          title={locale === "zh" ? "编辑" : "Edit Sprint"}
         >
           <Pencil size={16} />
-          <span className="hidden sm:inline">{locale === "zh" ? "编辑迭代" : "Edit Sprint"}</span>
+          <span className="hidden sm:inline">{locale === "zh" ? "编辑" : "Edit Sprint"}</span>
         </button>
 
         <button
@@ -165,7 +165,7 @@ export function SprintActionButton({
           className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
         >
           {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-          {text.deleteSprint}
+          {locale === "zh" ? "删除" : text.deleteSprint}
         </button>
 
         {status === "ACTIVE" && (

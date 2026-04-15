@@ -117,8 +117,8 @@ export default async function ProjectsPage() {
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="flex-shrink-0 h-8 w-8 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-sm">
-                        {project.key.charAt(0)}
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 font-bold text-white shadow shadow-blue-500/50">
+                        {project.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="ml-4 flex flex-col">
                         <div className="text-sm font-medium text-slate-900 group-hover:text-blue-600 cursor-pointer">

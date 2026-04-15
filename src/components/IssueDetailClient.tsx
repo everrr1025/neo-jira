@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { deleteIssue, updateIssue } from "@/app/actions/issues";
 import { Check, Loader2, Trash2 } from "lucide-react";
-import RichTextEditor from "./RichTextEditor";
+import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import CommentSection from "./CommentSection";
 import AttachmentUpload from "./AttachmentUpload";
 import AlertPopup from "./AlertPopup";
@@ -69,6 +69,8 @@ export default function IssueDetailClient({
   const [successMsg, setSuccessMsg] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
+  const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
 
   const handleChange = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
@@ -114,13 +116,46 @@ export default function IssueDetailClient({
     }
   };
 
+  const handleStartEditingDescription = () => {
+    setDraftDescription(issue.description || "");
+    setIsEditingDescription(true);
+  };
+
+  const handleCancelEditingDescription = async () => {
+    await descriptionEditorRef.current?.discardPendingUploads();
+    setDraftDescription(issue.description || "");
+    setIsEditingDescription(false);
+  };
+
+  const handleSaveDescription = () => {
+    startTransition(async () => {
+      const result = await updateIssue(issue.id, { description: draftDescription });
+      if (result.success) {
+        descriptionEditorRef.current?.commitPendingUploads();
+        setIssue((prev) => ({ ...prev, description: draftDescription }));
+        setIsEditingDescription(false);
+        setSuccessMsg(true);
+        setTimeout(() => setSuccessMsg(false), 3000);
+      } else {
+        setAlertMessage(translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-8 bg-white p-6 md:p-8 rounded-xl border shadow-sm">
       {/* Main Content Area */}
       <div className="flex-1 space-y-6">
-        <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-500 uppercase tracking-widest mb-2">
-          <div className="flex items-center gap-3">
-            <span>{issue.key}</span>
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <input
+              type="text"
+              value={issue.title}
+              onChange={(e) => handleChange("title", e.target.value)}
+              onBlur={(e) => handleAutoSave("title", e.target.value)}
+              className="w-full min-w-0 rounded-md border-2 border-transparent px-2 py-1 -ml-2 text-2xl font-bold text-slate-900 outline-none transition-all hover:border-slate-200 focus:border-blue-500 focus:bg-white"
+              placeholder={translations.issueDetail.issueSummaryPlaceholder}
+            />
             {successMsg && (
               <span className="text-emerald-600 text-xs font-medium flex items-center gap-1 animate-in fade-in duration-300 normal-case tracking-normal">
                 <Check size={14} /> {translations.issueDetail.saved}
@@ -132,7 +167,7 @@ export default function IssueDetailClient({
               </span>
             )}
           </div>
-          
+
           {canDeleteIssue && (
             <button
               onClick={handleDelete}
@@ -144,18 +179,6 @@ export default function IssueDetailClient({
             </button>
           )}
         </div>
-        
-        {/* Title */}
-        <div>
-          <input
-            type="text"
-            value={issue.title}
-            onChange={(e) => handleChange("title", e.target.value)}
-            onBlur={(e) => handleAutoSave("title", e.target.value)}
-            className="w-full text-2xl font-bold text-slate-900 border-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white rounded-md px-2 py-1 -ml-2 transition-all outline-none"
-            placeholder={translations.issueDetail.issueSummaryPlaceholder}
-          />
-        </div>
 
         {/* Description */}
         <div>
@@ -163,7 +186,7 @@ export default function IssueDetailClient({
             <label className="block text-sm font-bold text-slate-700">{translations.issueDetail.description}</label>
             {!isEditingDescription ? (
               <button
-                onClick={() => setIsEditingDescription(true)}
+                onClick={handleStartEditingDescription}
                 className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors"
                 title={locale === "zh" ? "编辑描述" : "Edit description"}
               >
@@ -172,17 +195,14 @@ export default function IssueDetailClient({
             ) : (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => {
-                    handleAutoSave("description", issue.description);
-                    setIsEditingDescription(false);
-                  }}
+                  onClick={handleSaveDescription}
                   className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1 shadow-sm"
                 >
                   {isPending && <Loader2 size={12} className="animate-spin" />}
                   {locale === "zh" ? "保存" : "Save"}
                 </button>
                 <button
-                  onClick={() => setIsEditingDescription(false)}
+                  onClick={() => void handleCancelEditingDescription()}
                   className="text-xs text-slate-500 hover:text-slate-700 font-medium"
                 >
                   {locale === "zh" ? "取消" : "Cancel"}
@@ -191,15 +211,27 @@ export default function IssueDetailClient({
             )}
           </div>
           <div className={isEditingDescription ? "" : "rounded-lg border bg-white p-3"}>
-            <RichTextEditor
-              value={issue.description || ""}
-              onChange={(val) => handleChange("description", val || "")}
-              height={340}
-              mentionUsers={users}
-              mentionLabel={translations.issueDetail.mentionSomeone}
-              currentUserId={currentUserId}
-              readOnly={!isEditingDescription}
-            />
+            {isEditingDescription ? (
+              <RichTextEditor
+                ref={descriptionEditorRef}
+                value={draftDescription}
+                onChange={(val) => setDraftDescription(val || "")}
+                height={340}
+                mentionUsers={users}
+                mentionLabel={translations.issueDetail.mentionSomeone}
+                currentUserId={currentUserId}
+              />
+            ) : (
+              <RichTextEditor
+                value={issue.description || ""}
+                onChange={() => {}}
+                height={340}
+                mentionUsers={users}
+                mentionLabel={translations.issueDetail.mentionSomeone}
+                currentUserId={currentUserId}
+                readOnly
+              />
+            )}
           </div>
         </div>
         
@@ -217,7 +249,12 @@ export default function IssueDetailClient({
       {/* Sidebar Area */}
       <div className="w-full shrink-0 flex flex-col gap-6 lg:w-56 xl:w-52">
         <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 flex flex-col gap-4">
-          <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide border-b pb-2">{translations.issueDetail.properties}</h3>
+          <div className="flex items-center gap-2 border-b pb-2">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
+              {translations.issueDetail.properties}
+            </h3>
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">{issue.key}</span>
+          </div>
           
           {/* Status */}
           <DropdownField

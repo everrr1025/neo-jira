@@ -1,5 +1,16 @@
 "use client";
 
+import {
+  type ChangeEvent,
+  type ForwardedRef,
+  forwardRef,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { EditorContent, type Editor, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -12,7 +23,6 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import MarkdownIt from "markdown-it";
-import { type ChangeEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { TiptapImageResize } from "@/lib/tiptapImageResize";
 import { TiptapTextColor } from "@/lib/tiptapTextColor";
 import { TiptapTextAlign } from "@/lib/tiptapTextAlign";
@@ -31,6 +41,11 @@ interface RichTextEditorProps {
   mentionLabel?: string;
   currentUserId?: string;
 }
+
+export type RichTextEditorHandle = {
+  commitPendingUploads: () => void;
+  discardPendingUploads: () => Promise<void>;
+};
 
 type TextAlignValue = "left" | "center" | "right";
 
@@ -73,7 +88,6 @@ function serializeContent(editor: Editor) {
 
 async function uploadImage(file: File): Promise<string | null> {
   const formData = new FormData();
-  // Provide a dummy issueId to just upload the file or use the endpoint as is
   formData.append("file", file);
   try {
     const response = await fetch("/api/upload", {
@@ -87,6 +101,41 @@ async function uploadImage(file: File): Promise<string | null> {
     console.error("Failed to upload image:", error);
     return null;
   }
+}
+
+async function deleteUploadedFile(fileUrl: string) {
+  if (!fileUrl.startsWith("/uploads/")) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/upload", {
+      method: "DELETE",
+      body: JSON.stringify({ fileUrl }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok && response.status !== 404) {
+      console.error("Failed to cleanup uploaded image:", fileUrl, response.statusText);
+    }
+  } catch (error) {
+    console.error("Failed to cleanup uploaded image:", error);
+  }
+}
+
+function extractUploadUrlsFromContent(content: string) {
+  const uploadUrls = new Set<string>();
+  const imageSrcPattern = /<img\b[^>]*\bsrc=(['"])(.*?)\1/gi;
+
+  for (const match of content.matchAll(imageSrcPattern)) {
+    const src = match[2]?.trim();
+
+    if (src?.startsWith("/uploads/")) {
+      uploadUrls.add(src);
+    }
+  }
+
+  return uploadUrls;
 }
 
 function getMentionState(editor: Editor): MentionState {
@@ -130,7 +179,7 @@ function getCurrentTextColor(editor: Editor) {
 type ToolbarButtonProps = {
   active?: boolean;
   title: string;
-  onMouseDown: (event: MouseEvent<HTMLButtonElement>) => void;
+  onMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 };
 
@@ -400,21 +449,64 @@ function getMentionPosition(
   }
 }
 
-export default function RichTextEditor({
-  value,
-  onChange,
-  readOnly = false,
-  height = 200,
-  mentionUsers = [],
-  mentionLabel = "Mention someone",
-  currentUserId,
-}: RichTextEditorProps) {
+const RichTextEditor = forwardRef(function RichTextEditor(
+  {
+    value,
+    onChange,
+    readOnly = false,
+    height = 200,
+    mentionUsers = [],
+    mentionLabel = "Mention someone",
+    currentUserId,
+  }: RichTextEditorProps,
+  ref: ForwardedRef<RichTextEditorHandle>,
+) {
   const [, setUiVersion] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
   const [mentionState, setMentionState] = useState<MentionState>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
   const lastSelectionRef = useRef<SelectionSnapshot>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingUploadedImageUrlsRef = useRef(new Set<string>());
+  const latestContentRef = useRef(value || "");
+
+  const cleanupRemovedPendingUploads = (content: string) => {
+    latestContentRef.current = content;
+    const currentUploadUrls = extractUploadUrlsFromContent(content);
+
+    Array.from(pendingUploadedImageUrlsRef.current).forEach((fileUrl) => {
+      if (currentUploadUrls.has(fileUrl)) {
+        return;
+      }
+
+      pendingUploadedImageUrlsRef.current.delete(fileUrl);
+      void deleteUploadedFile(fileUrl);
+    });
+  };
+
+  const commitPendingUploads = () => {
+    const persistedUploadUrls = extractUploadUrlsFromContent(latestContentRef.current);
+
+    Array.from(pendingUploadedImageUrlsRef.current).forEach((fileUrl) => {
+      pendingUploadedImageUrlsRef.current.delete(fileUrl);
+
+      if (!persistedUploadUrls.has(fileUrl)) {
+        void deleteUploadedFile(fileUrl);
+      }
+    });
+  };
+
+  const discardPendingUploads = async () => {
+    const pendingFileUrls = Array.from(pendingUploadedImageUrlsRef.current);
+    pendingUploadedImageUrlsRef.current.clear();
+
+    await Promise.allSettled(pendingFileUrls.map((fileUrl) => deleteUploadedFile(fileUrl)));
+  };
+
+  useImperativeHandle(ref, () => ({
+    commitPendingUploads,
+    discardPendingUploads,
+  }));
 
   const handleImageUpload = async (file: File, view: Editor["view"], pos: number | null = null) => {
     const url = await uploadImage(file);
@@ -422,8 +514,11 @@ export default function RichTextEditor({
       const imageNode = view.state.schema.nodes.imageResize ?? view.state.schema.nodes.image;
 
       if (!imageNode) {
+        void deleteUploadedFile(url);
         return;
       }
+
+      pendingUploadedImageUrlsRef.current.add(url);
 
       if (pos !== null) {
         view.dispatch(view.state.tr.insert(pos, imageNode.create({ src: url })));
@@ -481,7 +576,9 @@ export default function RichTextEditor({
     },
     content: contentToHTML(value || ""),
     onUpdate: ({ editor: nextEditor }) => {
-      onChange(serializeContent(nextEditor));
+      const serializedContent = serializeContent(nextEditor);
+      cleanupRemovedPendingUploads(serializedContent);
+      onChange(serializedContent);
     },
     immediatelyRender: false,
   }, [readOnly]);
@@ -530,13 +627,23 @@ export default function RichTextEditor({
 
     const nextValue = value || "";
     const currentValue = serializeContent(editor);
+    latestContentRef.current = nextValue;
 
     if (nextValue === currentValue) {
+      cleanupRemovedPendingUploads(nextValue);
       return;
     }
 
     editor.commands.setContent(contentToHTML(nextValue), { emitUpdate: false });
+    cleanupRemovedPendingUploads(nextValue);
   }, [value, editor]);
+
+  useEffect(
+    () => () => {
+      void discardPendingUploads();
+    },
+    [],
+  );
 
   const filteredMentionUsers =
     mentionState === null
@@ -635,7 +742,14 @@ export default function RichTextEditor({
     if (file && editor && !editor.isDestroyed) {
       const url = await uploadImage(file);
       if (url) {
-        editor.chain().focus().setImage({ src: url }).run();
+        const imageNode = editor.state.schema.nodes.imageResize ?? editor.state.schema.nodes.image;
+
+        if (!imageNode) {
+          void deleteUploadedFile(url);
+        } else {
+          pendingUploadedImageUrlsRef.current.add(url);
+          editor.chain().focus().setImage({ src: url }).run();
+        }
       }
     }
     if (fileInputRef.current) {
@@ -729,4 +843,8 @@ export default function RichTextEditor({
       )}
     </div>
   );
-}
+});
+
+RichTextEditor.displayName = "RichTextEditor";
+
+export default RichTextEditor;
