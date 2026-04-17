@@ -5,13 +5,15 @@ import { authOptions } from "@/lib/authOptions";
 import { promises as fs } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
+import { createAuditLogs } from "@/lib/audit";
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as any).id as string;
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const formData = await request.formData();
     const file = formData.get("file") as File;
     const issueId = formData.get("issueId") as string;
@@ -34,16 +36,47 @@ export async function POST(request: Request) {
     await fs.writeFile(filePath, buffer);
 
     if (issueId) {
-      const attachment = await prisma.attachment.create({
-        data: {
-          fileName: file.name,
-          fileUrl: fileUrl,
-          issueId: issueId,
-          uploaderId: userId,
-        },
-        include: { uploader: { select: { id: true, name: true } } },
+      const attachment = await prisma.$transaction(async (tx) => {
+        const createdAttachment = await tx.attachment.create({
+          data: {
+            fileName: file.name,
+            fileUrl: fileUrl,
+            issueId: issueId,
+            uploaderId: userId,
+          },
+          include: {
+            uploader: { select: { id: true, name: true } },
+            issue: { select: { projectId: true } },
+          },
+        });
+
+        await createAuditLogs(tx, [
+          {
+            issueId: createdAttachment.issueId,
+            projectId: createdAttachment.issue.projectId,
+            entityType: "ATTACHMENT",
+            entityId: createdAttachment.id,
+            action: "CREATE",
+            actorId: userId,
+            metadata: { fileName: createdAttachment.fileName },
+          },
+        ]);
+
+        return createdAttachment;
       });
-      return NextResponse.json(attachment, { status: 201 });
+
+      return NextResponse.json(
+        {
+          id: attachment.id,
+          fileName: attachment.fileName,
+          fileUrl: attachment.fileUrl,
+          issueId: attachment.issueId,
+          uploaderId: attachment.uploaderId,
+          createdAt: attachment.createdAt,
+          uploader: attachment.uploader,
+        },
+        { status: 201 },
+      );
     } else {
       return NextResponse.json({ fileName: file.name, fileUrl: fileUrl }, { status: 201 });
     }

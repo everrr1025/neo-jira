@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
 import { getTranslations, Locale } from "@/lib/i18n";
+import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 
 interface Attachment {
   id: string;
@@ -20,11 +21,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const translations = getTranslations(locale);
 
-  useEffect(() => {
-    fetchAttachments();
-  }, [issueId]);
-
-  const fetchAttachments = async () => {
+  const fetchAttachments = useCallback(async () => {
     try {
       const res = await fetch(`/api/issues/${issueId}/attachments`);
       if (res.ok) {
@@ -34,7 +31,11 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [issueId]);
+
+  useEffect(() => {
+    void fetchAttachments();
+  }, [fetchAttachments]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -63,6 +64,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
       if (res.ok) {
         const newAttachment = await res.json();
         setAttachments([newAttachment, ...attachments]);
+        emitIssueActivityUpdated(issueId);
       } else {
         const errorData = await res.json().catch(() => null);
         setErrorMsg(`上传失败: ${errorData?.error || res.statusText || '未知错误'}`);
@@ -85,6 +87,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
       });
       if (res.ok) {
         setAttachments(attachments.filter(a => a.id !== id));
+        emitIssueActivityUpdated(issueId);
       } else {
         const errorData = await res.json().catch(() => null);
         setErrorMsg(`删除失败: ${errorData?.error || res.statusText}`);

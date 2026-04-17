@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { notifyCommentMentions } from "@/lib/notifications";
+import { createAuditLogs, extractAuditTextPreview } from "@/lib/audit";
 
 export async function GET(
   request: Request,
@@ -45,20 +46,40 @@ export async function POST(
 
     const resolvedParams = await params;
     
-    // Create comment
-    const comment = await prisma.comment.create({
-      data: {
-        content: content.trim(),
-        issueId: resolvedParams.id,
-        authorId: userId,
-      },
-      include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
-    });
-
     const issue = await prisma.issue.findUnique({
       where: { id: resolvedParams.id },
       select: { key: true, projectId: true },
     });
+
+    if (!issue) {
+      return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+    }
+
+    const comment = await prisma.$transaction(async (tx) => {
+      const createdComment = await tx.comment.create({
+        data: {
+          content: content.trim(),
+          issueId: resolvedParams.id,
+          authorId: userId,
+        },
+        include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
+      });
+
+      await createAuditLogs(tx, [
+        {
+          issueId: resolvedParams.id,
+          projectId: issue.projectId,
+          entityType: "COMMENT",
+          entityId: createdComment.id,
+          action: "CREATE",
+          actorId: userId,
+          metadata: { preview: extractAuditTextPreview(createdComment.content) },
+        },
+      ]);
+
+      return createdComment;
+    });
+
     if (issue) {
       await notifyCommentMentions({
         actorId: userId,
@@ -100,7 +121,13 @@ export async function PATCH(
     const resolvedParams = await params;
     const existingComment = await prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, issueId: true, authorId: true },
+      select: {
+        id: true,
+        issueId: true,
+        authorId: true,
+        content: true,
+        issue: { select: { projectId: true } },
+      },
     });
 
     if (!existingComment || existingComment.issueId !== resolvedParams.id) {
@@ -111,10 +138,28 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const updatedComment = await prisma.comment.update({
-      where: { id: commentId },
-      data: { content: content.trim() },
-      include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
+    const updatedComment = await prisma.$transaction(async (tx) => {
+      const nextComment = await tx.comment.update({
+        where: { id: commentId },
+        data: { content: content.trim() },
+        include: { author: { select: { id: true, name: true, email: true, avatar: true } } },
+      });
+
+      if (existingComment.content.trim() !== nextComment.content.trim()) {
+        await createAuditLogs(tx, [
+          {
+            issueId: resolvedParams.id,
+            projectId: existingComment.issue.projectId,
+            entityType: "COMMENT",
+            entityId: nextComment.id,
+            action: "UPDATE",
+            actorId: userId,
+            metadata: { preview: extractAuditTextPreview(nextComment.content) },
+          },
+        ]);
+      }
+
+      return nextComment;
     });
 
     return NextResponse.json(updatedComment);
@@ -145,7 +190,13 @@ export async function DELETE(
     const resolvedParams = await params;
     const existingComment = await prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, issueId: true, authorId: true },
+      select: {
+        id: true,
+        issueId: true,
+        authorId: true,
+        content: true,
+        issue: { select: { projectId: true } },
+      },
     });
 
     if (!existingComment || existingComment.issueId !== resolvedParams.id) {
@@ -156,8 +207,22 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.comment.delete({
-      where: { id: commentId },
+    await prisma.$transaction(async (tx) => {
+      await createAuditLogs(tx, [
+        {
+          issueId: resolvedParams.id,
+          projectId: existingComment.issue.projectId,
+          entityType: "COMMENT",
+          entityId: existingComment.id,
+          action: "DELETE",
+          actorId: userId,
+          metadata: { preview: extractAuditTextPreview(existingComment.content) },
+        },
+      ]);
+
+      await tx.comment.delete({
+        where: { id: commentId },
+      });
     });
 
     return NextResponse.json({ success: true });

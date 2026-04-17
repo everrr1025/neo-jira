@@ -4,17 +4,27 @@ import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { promises as fs } from "fs";
 import path from "path";
+import { createAuditLogs } from "@/lib/audit";
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as any).id as string;
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { id } = await context.params;
 
     const attachment = await prisma.attachment.findUnique({
       where: { id },
+      select: {
+        id: true,
+        issueId: true,
+        fileName: true,
+        fileUrl: true,
+        uploaderId: true,
+        issue: { select: { projectId: true } },
+      },
     });
 
     if (!attachment) {
@@ -37,8 +47,22 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       }
     }
 
-    await prisma.attachment.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      await createAuditLogs(tx, [
+        {
+          issueId: attachment.issueId,
+          projectId: attachment.issue.projectId,
+          entityType: "ATTACHMENT",
+          entityId: attachment.id,
+          action: "DELETE",
+          actorId: userId,
+          metadata: { fileName: attachment.fileName },
+        },
+      ]);
+
+      await tx.attachment.delete({
+        where: { id },
+      });
     });
 
     return NextResponse.json({ success: true }, { status: 200 });

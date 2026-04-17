@@ -5,6 +5,7 @@ import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import { Loader2, Trash2 } from "lucide-react";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
+import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 
 type CommentUser = {
   id: string;
@@ -82,6 +83,7 @@ export default function CommentSection({
         const created = await res.json();
         setComments([...comments, created]);
         setNewComment("");
+        emitIssueActivityUpdated(issueId);
       }
     } catch (error) {
       console.error("Failed to post comment", error);
@@ -131,6 +133,7 @@ export default function CommentSection({
       setEditingCommentId(null);
       setEditingContent("");
       setSavingCommentId(null);
+      emitIssueActivityUpdated(issueId);
     } catch (error) {
       console.error("Failed to update comment", error);
       alert(translations.commentSection.failedToSave);
@@ -156,6 +159,7 @@ export default function CommentSection({
       }
 
       setComments((currentComments) => currentComments.filter((comment) => comment.id !== commentId));
+      emitIssueActivityUpdated(issueId);
 
       if (editingCommentId === commentId) {
         await handleCancelEdit();

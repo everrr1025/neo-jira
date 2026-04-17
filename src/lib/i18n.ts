@@ -235,6 +235,24 @@ type TranslationBundle = {
     uploading: string;
     addFile: string;
   };
+  activitySection: {
+    title: string;
+    loading: string;
+    noActivity: string;
+    unknownUser: string;
+    issueCreated: string;
+    issueDeleted: string;
+    changed: string;
+    from: string;
+    to: string;
+    updatedDescription: string;
+    commentAdded: string;
+    commentUpdated: string;
+    commentDeleted: string;
+    attachmentAdded: string;
+    attachmentDeleted: string;
+    emptyValue: string;
+  };
   kanban: {
     dropHere: string;
   };
@@ -482,6 +500,24 @@ const translations: Record<Locale, TranslationBundle> = {
       uploading: "Uploading...",
       addFile: "Add File",
     },
+    activitySection: {
+      title: "Activity",
+      loading: "Loading activity...",
+      noActivity: "No activity yet.",
+      unknownUser: "Someone",
+      issueCreated: "created the issue",
+      issueDeleted: "deleted the issue",
+      changed: "changed",
+      from: "from",
+      to: "to",
+      updatedDescription: "updated the description",
+      commentAdded: "added a comment",
+      commentUpdated: "updated a comment",
+      commentDeleted: "deleted a comment",
+      attachmentAdded: "uploaded attachment",
+      attachmentDeleted: "removed attachment",
+      emptyValue: "empty",
+    },
     kanban: {
       dropHere: "Drop here",
     },
@@ -726,6 +762,24 @@ const translations: Record<Locale, TranslationBundle> = {
       title: "附件",
       uploading: "上传中...",
       addFile: "添加文件",
+    },
+    activitySection: {
+      title: "活动记录",
+      loading: "活动记录加载中...",
+      noActivity: "暂无活动记录。",
+      unknownUser: "某位成员",
+      issueCreated: "创建了该问题",
+      issueDeleted: "删除了该问题",
+      changed: "修改了",
+      from: "从",
+      to: "到",
+      updatedDescription: "更新了描述",
+      commentAdded: "添加了评论",
+      commentUpdated: "编辑了评论",
+      commentDeleted: "删除了评论",
+      attachmentAdded: "上传了附件",
+      attachmentDeleted: "删除了附件",
+      emptyValue: "空",
     },
     kanban: {
       dropHere: "拖拽到这里",

@@ -7,19 +7,55 @@ import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { checkProjectAdmin } from "@/lib/permissions";
 import { notifyIssueMentions } from "@/lib/notifications";
+import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
+
+const issueAuditSelect = {
+  id: true,
+  key: true,
+  projectId: true,
+  title: true,
+  status: true,
+  priority: true,
+  type: true,
+  assigneeId: true,
+  iterationId: true,
+  dueDate: true,
+  description: true,
+} as const;
 
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) throw new Error("Unauthorized");
 
-    const issue = await prisma.issue.update({
-      where: { id: issueId },
-      data: { status }
+    const issue = await prisma.$transaction(async (tx) => {
+      const existingIssue = await tx.issue.findUnique({
+        where: { id: issueId },
+        select: issueAuditSelect,
+      });
+      if (!existingIssue) throw new Error("Issue not found");
+
+      const updatedIssue = await tx.issue.update({
+        where: { id: issueId },
+        data: { status },
+        select: issueAuditSelect,
+      });
+
+      const auditLogs = buildIssueUpdateAuditLogs({
+        before: existingIssue as IssueAuditSnapshot,
+        after: updatedIssue as IssueAuditSnapshot,
+        actorId: userId,
+      });
+      await createAuditLogs(tx, auditLogs);
+
+      return updatedIssue;
     });
     
     revalidatePath('/issues');
     revalidatePath('/iterations');
+    revalidatePath(`/issues/${issueId}`);
     
     return { success: true, issue };
   } catch (error) {
@@ -91,28 +127,58 @@ export async function createIssue(data: {
         })()
       : null;
 
-    console.log("Creating issue with data:", data, "and reporterId:", userId);
-    const newIssue = await prisma.issue.create({
-      data: {
-        key: issueKey,
-        title: data.title,
-        description: data.description,
-        status: "TODO",
-        priority: data.priority,
-        type: data.type,
-        projectId: project.id,
-        iterationId: data.iterationId ?? null,
-        assigneeId: data.assigneeId,
-        reporterId: userId,
-        dueDate: dueDateValue,
-        attachments: data.attachments && data.attachments.length > 0 ? {
-          create: data.attachments.map(att => ({
-            fileName: att.fileName,
-            fileUrl: att.fileUrl,
-            uploaderId: userId,
-          }))
-        } : undefined,
-      }
+    const newIssue = await prisma.$transaction(async (tx) => {
+      const createdIssue = await tx.issue.create({
+        data: {
+          key: issueKey,
+          title: data.title,
+          description: data.description,
+          status: "TODO",
+          priority: data.priority,
+          type: data.type,
+          projectId: project.id,
+          iterationId: data.iterationId ?? null,
+          assigneeId: data.assigneeId,
+          reporterId: userId,
+          dueDate: dueDateValue,
+          attachments: data.attachments && data.attachments.length > 0 ? {
+            create: data.attachments.map(att => ({
+              fileName: att.fileName,
+              fileUrl: att.fileUrl,
+              uploaderId: userId,
+            }))
+          } : undefined,
+        },
+        include: {
+          attachments: {
+            select: { id: true, fileName: true },
+          },
+        },
+      });
+
+      const auditLogs = [
+        {
+          issueId: createdIssue.id,
+          projectId: createdIssue.projectId,
+          entityType: "ISSUE" as const,
+          entityId: createdIssue.id,
+          action: "CREATE" as const,
+          actorId: userId,
+        },
+        ...createdIssue.attachments.map((attachment) => ({
+          issueId: createdIssue.id,
+          projectId: createdIssue.projectId,
+          entityType: "ATTACHMENT" as const,
+          entityId: attachment.id,
+          action: "CREATE" as const,
+          actorId: userId,
+          metadata: { fileName: attachment.fileName },
+        })),
+      ];
+
+      await createAuditLogs(tx, auditLogs);
+
+      return createdIssue;
     });
 
     if (typeof data.description === "string" && data.description.trim()) {
@@ -199,20 +265,30 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const userId = (session.user as { id?: string }).id;
     if (!userId) throw new Error("Unauthorized");
 
-    const existingIssue = await prisma.issue.findUnique({
-      where: { id: issueId },
-      select: {
-        id: true,
-        key: true,
-        projectId: true,
-        description: true,
-      },
-    });
-    if (!existingIssue) throw new Error("Issue not found");
+    const { existingIssue, updatedIssue } = await prisma.$transaction(async (tx) => {
+      const previousIssue = await tx.issue.findUnique({
+        where: { id: issueId },
+        select: issueAuditSelect,
+      });
+      if (!previousIssue) throw new Error("Issue not found");
 
-    const updatedIssue = await prisma.issue.update({
-      where: { id: issueId },
-      data
+      const nextIssue = await tx.issue.update({
+        where: { id: issueId },
+        data,
+        select: issueAuditSelect,
+      });
+
+      const auditLogs = buildIssueUpdateAuditLogs({
+        before: previousIssue as IssueAuditSnapshot,
+        after: nextIssue as IssueAuditSnapshot,
+        actorId: userId,
+      });
+      await createAuditLogs(tx, auditLogs);
+
+      return {
+        existingIssue: previousIssue,
+        updatedIssue: nextIssue,
+      };
     });
 
     const nextDescription =
@@ -245,6 +321,9 @@ export async function deleteIssue(issueId: string) {
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) throw new Error("Unauthorized");
+
     const issue = await prisma.issue.findUnique({
       where: { id: issueId },
       select: { id: true, projectId: true },
@@ -258,14 +337,26 @@ export async function deleteIssue(issueId: string) {
 
     const issuePath = `/issues/${issueId}`;
 
-    await prisma.$transaction([
-      prisma.notification.deleteMany({
+    await prisma.$transaction(async (tx) => {
+      await createAuditLogs(tx, [
+        {
+          issueId: issue.id,
+          projectId: issue.projectId,
+          entityType: "ISSUE",
+          entityId: issue.id,
+          action: "DELETE",
+          actorId: userId,
+        },
+      ]);
+
+      await tx.notification.deleteMany({
         where: {
           OR: [{ link: issuePath }, { link: { startsWith: `${issuePath}?` } }],
         },
-      }),
-      prisma.issue.delete({ where: { id: issueId } }),
-    ]);
+      });
+
+      await tx.issue.delete({ where: { id: issueId } });
+    });
 
     revalidatePath("/issues");
     revalidatePath("/iterations");

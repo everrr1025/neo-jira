@@ -7,6 +7,7 @@ import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import CommentSection from "./CommentSection";
 import AttachmentUpload from "./AttachmentUpload";
 import AlertPopup from "./AlertPopup";
+import ActivityLogSection from "./ActivityLogSection";
 import { useRouter } from "next/navigation";
 import {
   getIssueStatusLabel,
@@ -17,6 +18,7 @@ import {
   localeDateMap,
 } from "@/lib/i18n";
 import { DropdownField } from "./DropdownField";
+import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 
 type IssueUser = {
   id: string;
@@ -82,6 +84,7 @@ export default function IssueDetailClient({
     startTransition(async () => {
       const result = await updateIssue(issue.id, { [field]: value });
       if (result.success) {
+        emitIssueActivityUpdated(issue.id);
         setSuccessMsg(true);
         setTimeout(() => setSuccessMsg(false), 3000);
       } else {
@@ -134,6 +137,7 @@ export default function IssueDetailClient({
         descriptionEditorRef.current?.commitPendingUploads();
         setIssue((prev) => ({ ...prev, description: draftDescription }));
         setIsEditingDescription(false);
+        emitIssueActivityUpdated(issue.id);
         setSuccessMsg(true);
         setTimeout(() => setSuccessMsg(false), 3000);
       } else {
@@ -244,6 +248,8 @@ export default function IssueDetailClient({
 
         {/* Comment Section */}
         <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} locale={locale} />
+
+        <ActivityLogSection issueId={issue.id} users={users} iterations={iterations} locale={locale} />
       </div>
 
       {/* Sidebar Area */}

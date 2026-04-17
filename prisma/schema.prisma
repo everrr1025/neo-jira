@@ -22,6 +22,7 @@ model User {
   notifications Notification[] @relation("UserNotifications")
   actionsTriggered Notification[] @relation("NotificationActor")
   attachments   Attachment[]
+  auditLogs     AuditLog[] @relation("AuditLogActor")
   watchedIssues Issue[]   @relation("IssueWatchers")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -130,4 +131,25 @@ model Attachment {
   uploaderId String
   uploader   User     @relation(fields: [uploaderId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  issueId    String?
+  projectId  String?
+  entityType String
+  entityId   String
+  action     String
+  field      String?
+  oldValue   String?
+  newValue   String?
+  metadata   String?
+  actorId    String?
+  actor      User?    @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([issueId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }
