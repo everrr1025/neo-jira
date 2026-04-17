@@ -7,6 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:migrate:verify": "bash scripts/verify-migrations.sh",
     "system:reset": "tsx scripts/system-reset.ts"
   },
   "dependencies": {

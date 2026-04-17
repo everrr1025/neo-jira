@@ -48,11 +48,13 @@ cd neo-jira
 ```bash
 # 将本地的 .env 拷贝上来，或者用 nano 手动创建
 nano .env 
-# 务必保证内容包含: DATABASE_URL="file:./prisma/dev.db"
+# 建议直接使用仓库外的生产数据库路径:
+# DATABASE_URL="file:/var/www/neo-jira-data/dev.db"
 
-npm install
+mkdir -p /var/www/neo-jira-data
+npm ci
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 npm run build
 ```
 
@@ -161,7 +163,67 @@ git push
 打开仓库的 **Actions** 面板，你将看到云端小机器人在帮你全自动化 SSH 登录服务器、拉取代码、生成数据库、Build并重启应用。
 你只需泡杯咖啡，2分钟后刷新网页，新功能即刻上线。
 
+## 第六步：后续 schema 变更如何安全发布
+
+从现在开始，不再建议在线上使用 `npx prisma db push`。更稳妥的流程是：
+
+1. 本地修改 [prisma/schema.prisma](/Users/lihongda/Documents/dev/neo-jira/prisma/schema.prisma)
+2. 本地生成迁移文件：
+```bash
+npx prisma migrate dev --name 你的变更名称
+```
+3. 提交代码时把 `prisma/migrations/` 一并提交
+4. 推送到 `main` 后，线上自动执行 `npx prisma migrate deploy`
+
+这样线上只会应用已经进入版本库的迁移，避免生产库被 `db push` 直接改结构。
+
+部署脚本现在还会额外校验 `/var/www/neo-jira/.env` 里的 `DATABASE_URL`。
+如果它不是 `file:/var/www/neo-jira-data/dev.db`，发布会直接失败，避免误连到仓库内数据库或其他路径。
+
+### 本地如何验证 migrate 流程
+
+本地建议把开发环境数据库写成：
+
+```bash
+DATABASE_URL="file:./dev.db"
+```
+
+这是因为 [schema.prisma](/Users/lihongda/Documents/dev/neo-jira/prisma/schema.prisma) 位于 `prisma/` 目录，SQLite 相对路径按 schema 目录解析时会更稳定，避免出现 `prisma/prisma/dev.db` 这类套娃路径。
+
+每次修改 schema 并生成 migration 后，先运行：
+
+```bash
+npm run db:migrate:verify
+```
+
+这个脚本会自动验证两件事：
+
+1. 用全新 SQLite 数据库执行 `prisma migrate deploy`
+2. 模拟“已有旧库 + baseline + deploy”的升级流程
+
+两条都通过，说明你的 migration 目录至少在“新库初始化”和“旧库平滑接入”两个关键场景下是通的。
+
+### 已有线上 SQLite 数据如何平滑切换到 Prisma Migrate
+
+仓库已经提供了初始基线迁移。部署脚本会在首次发布时自动做三件事：
+
+1. 先备份 `/var/www/neo-jira-data/dev.db`
+2. 检查数据库里是否已有业务表但还没有 `_prisma_migrations`
+3. 如果是老库，就先把初始迁移标记为已应用，再执行 `migrate deploy`
+
+这意味着已有线上数据不会因为接入 Prisma Migrate 被重建。
+
+### 建议的变更发布策略
+
+为了尽量不影响线上数据，schema 改动尽量采用“两阶段”或“三阶段”：
+
+1. 先加表、加可空字段、加索引
+2. 再发布业务代码开始读写新结构
+3. 最后再清理旧字段或把字段改成必填
+
+像“删列”“改唯一约束”“可空改必填”这类高风险变更，不建议和业务代码一起硬切。
+
 ---
 
 > [!CAUTION]
-> **风险管理最终提醒**：全量代码均在 `/var/www/neo-jira` 中，而所有宝贵的数据全都保存在 `/var/www/neo-jira/prisma/dev.db` 这一块单薄的文件里。请定期将该文件通过 SFTP 下载到你个人电脑或备份至云盘中，作为防坑退路。
+> **风险管理最终提醒**：全量代码均在 `/var/www/neo-jira` 中，而所有宝贵的数据都应保存在 `/var/www/neo-jira-data/dev.db`。请定期将该文件或 `/var/www/neo-jira-data/backups/` 目录中的备份下载到你个人电脑或云盘中，作为退路。

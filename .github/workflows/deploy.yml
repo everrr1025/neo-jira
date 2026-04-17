@@ -18,7 +18,9 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
+            INITIAL_MIGRATION="20260417000000_init"
             PROD_DATABASE_URL="file:/var/www/neo-jira-data/dev.db"
+            BACKUP_DIR="/var/www/neo-jira-data/backups"
 
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -30,7 +32,7 @@ jobs:
             git clean -fd
 
             # Keep production SQLite data outside the git checkout.
-            mkdir -p /var/www/neo-jira-data
+            mkdir -p /var/www/neo-jira-data "$BACKUP_DIR"
             
             # ONE-TIME DATABASE IMPORT LOGIC
             if [ -f prisma/import-me.db ]; then
@@ -49,23 +51,68 @@ jobs:
             fi
 
             # Ensure Prisma and the app use the protected production DB path.
-            # Only set DATABASE_URL if it's not already defined in .env
             touch .env
-            if grep -q '^DATABASE_URL=' .env; then
-              echo "DATABASE_URL already set in .env, respecting existing configuration."
-            else
-              echo "DATABASE_URL not set, using default managed path: $PROD_DATABASE_URL"
-              printf '\nDATABASE_URL="%s"\n' "$PROD_DATABASE_URL" >> .env
+            if ! grep -q '^DATABASE_URL=' .env; then
+              echo "❌ DATABASE_URL is missing from /var/www/neo-jira/.env"
+              echo "Expected: DATABASE_URL=\"$PROD_DATABASE_URL\""
+              exit 1
             fi
             
-            # Export for current session use (Prisma needs it)
-            # Find the value in .env or use PROD_DATABASE_URL as a fallback for the current run
-            CURRENT_DB_URL=$(grep '^DATABASE_URL=' .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-            export DATABASE_URL="${CURRENT_DB_URL:-$PROD_DATABASE_URL}"
+            # Fail fast if production DATABASE_URL drifts away from the managed external SQLite path.
+            CURRENT_DB_URL=$(grep '^DATABASE_URL=' .env | tail -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+            if [ "$CURRENT_DB_URL" != "$PROD_DATABASE_URL" ]; then
+              echo "❌ DATABASE_URL mismatch in /var/www/neo-jira/.env"
+              echo "Expected: $PROD_DATABASE_URL"
+              echo "Actual:   $CURRENT_DB_URL"
+              exit 1
+            fi
 
-            npm install
+            export DATABASE_URL="$CURRENT_DB_URL"
+
+            if [ -f /var/www/neo-jira-data/dev.db ]; then
+              TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+              cp /var/www/neo-jira-data/dev.db "$BACKUP_DIR/dev-$TIMESTAMP.db"
+              echo "📦 Backed up SQLite database to $BACKUP_DIR/dev-$TIMESTAMP.db"
+            fi
+
+            npm ci
             npx prisma generate
-            npx prisma db push
+
+            NEED_BASELINE=$(python3 - <<'PY'
+            import os
+            import sqlite3
+
+            db_url = os.environ.get("DATABASE_URL", "")
+            if not db_url.startswith("file:"):
+                print("0")
+                raise SystemExit(0)
+
+            db_path = db_url[len("file:"):]
+            if not os.path.isabs(db_path):
+                db_path = os.path.abspath(db_path)
+
+            if not os.path.exists(db_path):
+                print("0")
+                raise SystemExit(0)
+
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            tables = {row[0] for row in cur.fetchall()}
+            conn.close()
+
+            user_tables = tables - {"_prisma_migrations"}
+            needs_baseline = bool(user_tables) and "_prisma_migrations" not in tables
+            print("1" if needs_baseline else "0")
+            PY
+            )
+
+            if [ "$NEED_BASELINE" = "1" ]; then
+              echo "🧭 Existing SQLite data detected without Prisma migration history. Recording baseline..."
+              npx prisma migrate resolve --applied "$INITIAL_MIGRATION"
+            fi
+
+            npx prisma migrate deploy
 
             npm run build
             pm2 restart neo-jira --update-env
