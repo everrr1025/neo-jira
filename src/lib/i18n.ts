@@ -75,6 +75,9 @@ type TranslationBundle = {
     notWatchingAnyActiveIssues: string;
     dueSoon: string;
     noTasksDueThisWeek: string;
+    recentActivity: string;
+    noRecentActivity: string;
+    activityForIssue: string;
   };
   issuesPage: {
     title: string;
@@ -340,6 +343,9 @@ const translations: Record<Locale, TranslationBundle> = {
       notWatchingAnyActiveIssues: "Not watching any active issues",
       dueSoon: "Due Soon (3 Days)",
       noTasksDueThisWeek: "No tasks due in the next 3 days",
+      recentActivity: "Recent Activity",
+      noRecentActivity: "No recent activity.",
+      activityForIssue: "Issue",
     },
     issuesPage: {
       title: "All Issues",
@@ -603,6 +609,9 @@ const translations: Record<Locale, TranslationBundle> = {
       notWatchingAnyActiveIssues: "当前未关注活跃问题",
       dueSoon: "即将到期（3天内）",
       noTasksDueThisWeek: "未来3天没有即将到期任务",
+      recentActivity: "最近活动",
+      noRecentActivity: "暂无最近活动。",
+      activityForIssue: "关联问题",
     },
     issuesPage: {
       title: "所有问题",

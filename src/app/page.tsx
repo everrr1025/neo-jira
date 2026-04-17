@@ -2,27 +2,21 @@ import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
-  getPriorityLabel,
   getStatusLabel,
   getTranslations,
   localeDateMap,
   type Locale,
 } from "@/lib/i18n";
+import { formatActivityEntry, type ActivityLogEntry } from "@/lib/activityLogFormatter";
+import { getDefaultAvatar } from "@/lib/avatar";
+import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
 
 export const dynamic = "force-dynamic";
-
-type DashboardIssue = {
-  id: string;
-  key: string;
-  title: string;
-  status: string;
-  priority: string;
-  dueDate: Date | null;
-};
 
 type ActiveIterationSummary = {
   id: string;
@@ -41,6 +35,26 @@ type ActiveIterationSummary = {
 type SessionUser = {
   id?: string;
   role?: string | null;
+};
+
+type DashboardActivityLog = ActivityLogEntry & {
+  issueId: string | null;
+  projectId: string | null;
+  actor: {
+    id: string;
+    name: string | null;
+    avatar: string | null;
+  } | null;
+};
+
+type DashboardActivityIssue = {
+  id: string;
+  key: string;
+  title: string;
+  project: {
+    key: string;
+    name: string;
+  };
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -116,6 +130,7 @@ export default async function Dashboard({
     dueSoonIssues,
     activeIteration,
     searchResults,
+    recentActivity,
   ] = await Promise.all([
     prisma.issue.count({ where: projectFilter }),
     prisma.issue.count({ where: { ...projectFilter, status: "TODO" } }),
@@ -225,7 +240,68 @@ export default async function Dashboard({
           },
         })
       : Promise.resolve([]),
+    prisma.auditLog.findMany({
+      where: projectFilter,
+      include: {
+        actor: {
+          select: { id: true, name: true, avatar: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
   ]);
+
+  const typedRecentActivity = recentActivity as DashboardActivityLog[];
+  const recentActivityIssueIds = [...new Set(typedRecentActivity.map((entry) => entry.issueId).filter(Boolean))] as string[];
+  const assigneeIds = [
+    ...new Set(
+      typedRecentActivity.flatMap((entry) =>
+        entry.field === "assigneeId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
+      ),
+    ),
+  ] as string[];
+  const iterationIds = [
+    ...new Set(
+      typedRecentActivity.flatMap((entry) =>
+        entry.field === "iterationId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
+      ),
+    ),
+  ] as string[];
+
+  const [activityIssues, activityUsers, activityIterations] = await Promise.all([
+    recentActivityIssueIds.length > 0
+      ? prisma.issue.findMany({
+          where: { id: { in: recentActivityIssueIds } },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            project: { select: { key: true, name: true } },
+          },
+        })
+      : Promise.resolve([]),
+    assigneeIds.length > 0
+      ? prisma.user.findMany({
+          where: { id: { in: assigneeIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    iterationIds.length > 0
+      ? prisma.iteration.findMany({
+          where: { id: { in: iterationIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const activityIssueMap = new Map(activityIssues.map((issue) => [issue.id, issue as DashboardActivityIssue]));
+  const activityAssigneeNameById = Object.fromEntries(
+    activityUsers.map((user) => [user.id, user.name || user.id]),
+  );
+  const activityIterationNameById = Object.fromEntries(
+    activityIterations.map((iteration) => [iteration.id, iteration.name]),
+  );
 
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
   const sprintIssueCount = typedActiveIteration?.issues.length ?? 0;
@@ -433,48 +509,61 @@ export default async function Dashboard({
             </div>
           </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-            <IssueCollectionCard
-              title={translations.dashboard.assignedToMe}
-              issues={myIssues}
-              emptyText={translations.dashboard.noTasksAssigned}
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
+            <RecentActivityCard
+              activity={typedRecentActivity}
+              issuesById={activityIssueMap}
+              assigneeNameById={activityAssigneeNameById}
+              iterationNameById={activityIterationNameById}
               locale={locale}
-              meta="status"
-              accent="blue"
-              href={assignedToMeHref}
-              count={myIssuesTotal}
+              isGlobalAdmin={isGlobalAdmin}
             />
-            <IssueCollectionCard
-              title={translations.dashboard.highPriority}
-              issues={highPriorityIssues}
-              emptyText={translations.dashboard.noHighPriorityIssues}
+            <DashboardIssueTabsCard
               locale={locale}
-              meta="priority"
-              accent="rose"
-              href={highPriorityHref}
-              count={highPriorityIssuesTotal}
+              tabs={[
+                {
+                  id: "assigned",
+                  title: translations.dashboard.assignedToMe,
+                  issues: myIssues,
+                  emptyText: translations.dashboard.noTasksAssigned,
+                  meta: "status",
+                  accent: "blue",
+                  href: assignedToMeHref,
+                  count: myIssuesTotal,
+                },
+                {
+                  id: "priority",
+                  title: translations.dashboard.highPriority,
+                  issues: highPriorityIssues,
+                  emptyText: translations.dashboard.noHighPriorityIssues,
+                  meta: "priority",
+                  accent: "rose",
+                  href: highPriorityHref,
+                  count: highPriorityIssuesTotal,
+                },
+                {
+                  id: "overdue",
+                  title: translations.dashboard.overdue,
+                  issues: overdueIssues,
+                  emptyText: translations.dashboard.noOverdueIssues,
+                  meta: "dueDate",
+                  accent: "rose",
+                  href: overdueHref,
+                  count: overdueIssuesTotal,
+                },
+                {
+                  id: "due-soon",
+                  title: translations.dashboard.dueSoon,
+                  issues: dueSoonIssues,
+                  emptyText: translations.dashboard.noTasksDueThisWeek,
+                  meta: "dueDate",
+                  accent: "orange",
+                  href: dueSoonHref,
+                  count: dueSoonIssuesTotal,
+                },
+              ]}
             />
-            <IssueCollectionCard
-              title={translations.dashboard.overdue}
-              issues={overdueIssues}
-              emptyText={translations.dashboard.noOverdueIssues}
-              locale={locale}
-              meta="dueDate"
-              accent="rose"
-              href={overdueHref}
-              count={overdueIssuesTotal}
-            />
-            <IssueCollectionCard
-              title={translations.dashboard.dueSoon}
-              issues={dueSoonIssues}
-              emptyText={translations.dashboard.noTasksDueThisWeek}
-              locale={locale}
-              meta="dueDate"
-              accent="orange"
-              href={dueSoonHref}
-              count={dueSoonIssuesTotal}
-            />
-          </div>
+          </section>
         </>
       )}
     </div>
@@ -524,91 +613,93 @@ function SprintMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function IssueCollectionCard({
-  title,
-  issues,
-  emptyText,
+function RecentActivityCard({
+  activity,
+  issuesById,
+  assigneeNameById,
+  iterationNameById,
   locale,
-  meta,
-  accent,
-  href,
-  count,
+  isGlobalAdmin,
 }: {
-  title: string;
-  issues: DashboardIssue[];
-  emptyText: string;
+  activity: DashboardActivityLog[];
+  issuesById: Map<string, DashboardActivityIssue>;
+  assigneeNameById: Record<string, string>;
+  iterationNameById: Record<string, string>;
   locale: Locale;
-  meta: "status" | "priority" | "dueDate";
-  accent: "blue" | "orange" | "rose";
-  href?: string;
-  count: number;
+  isGlobalAdmin: boolean;
 }) {
-  const accentClass =
-    accent === "blue"
-      ? "hover:border-blue-300 hover:bg-blue-50/40"
-      : accent === "orange"
-        ? "hover:border-orange-300 hover:bg-orange-50/40"
-        : "hover:border-rose-300 hover:bg-rose-50/40";
+  const translations = getTranslations(locale);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col self-start">
-      <div className="p-5 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          {href ? (
-            <Link href={href} className="font-semibold text-slate-900 hover:text-blue-600 hover:underline">
-              {title}
-            </Link>
-          ) : (
-            <h3 className="font-semibold text-slate-900">{title}</h3>
-          )}
-          <span className="text-sm font-semibold text-slate-400">{count}</span>
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-semibold text-slate-900">{translations.dashboard.recentActivity}</h3>
         </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+          {activity.length}
+        </span>
       </div>
-      <div className="p-4 space-y-3">
-        {issues.length > 0 ? (
-          issues.map((issue) => (
-            <Link
-              key={issue.id}
-              href={`/issues/${issue.id}`}
-              className={`block rounded-xl border border-slate-200 p-3 transition-colors ${accentClass}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-xs font-semibold text-slate-500">{issue.key}</span>
-                <span className={getIssueMetaBadge(meta, issue)}>{getIssueMetaText(meta, issue, locale)}</span>
+
+      {activity.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          {translations.dashboard.noRecentActivity}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {activity.map((entry) => {
+            const issue = entry.issueId ? issuesById.get(entry.issueId) : undefined;
+            const message = formatActivityEntry(entry, locale, {
+              assigneeNameById,
+              iterationNameById,
+            });
+            const avatarUrl = entry.actor?.avatar || getDefaultAvatar(entry.actor?.id || entry.id);
+
+            return (
+              <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition-colors hover:border-slate-300 hover:bg-slate-50">
+                <div className="flex gap-3">
+                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-white">
+                    <Image
+                      src={avatarUrl}
+                      alt={entry.actor?.name || translations.activitySection.unknownUser}
+                      width={40}
+                      height={40}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-sm font-medium leading-6 text-slate-800">{message.primary}</div>
+                      <div className="shrink-0 text-xs text-slate-400">
+                        {new Date(entry.createdAt).toLocaleString(localeDateMap[locale])}
+                      </div>
+                    </div>
+                    {message.secondary ? (
+                      <div className="mt-1 line-clamp-2 text-sm text-slate-500">{message.secondary}</div>
+                    ) : null}
+                    {issue ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-400">{translations.dashboard.activityForIssue}</span>
+                        <Link href={`/issues/${issue.id}`} className="font-semibold text-blue-600 hover:underline">
+                          {issue.key}
+                        </Link>
+                        <span className="truncate text-slate-600">{issue.title}</span>
+                        {isGlobalAdmin ? (
+                          <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-600">
+                            {issue.project.key}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <h4 className="mt-2 text-sm font-medium text-slate-800 line-clamp-2">{issue.title}</h4>
-            </Link>
-          ))
-        ) : (
-          <div className="text-center text-sm text-slate-400 py-10">{emptyText}</div>
-        )}
-      </div>
-    </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
-}
-
-function getIssueMetaText(meta: "status" | "priority" | "dueDate", issue: DashboardIssue, locale: Locale) {
-  if (meta === "dueDate") {
-    return issue.dueDate ? issue.dueDate.toLocaleDateString(localeDateMap[locale]) : "--";
-  }
-
-  if (meta === "priority") {
-    return getPriorityLabel(issue.priority, locale);
-  }
-
-  return getStatusLabel(issue.status, locale);
-}
-
-function getIssueMetaBadge(meta: "status" | "priority" | "dueDate", issue: DashboardIssue) {
-  if (meta === "dueDate") {
-    return "text-[11px] font-bold text-rose-600";
-  }
-
-  if (meta === "priority") {
-    return getPriorityBadgeClass(issue.priority);
-  }
-
-  return getStatusBadgeClass(issue.status);
 }
 
 function getStatusBadgeClass(status: string) {
@@ -621,20 +712,4 @@ function getStatusBadgeClass(status: string) {
   }
 
   return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600";
-}
-
-function getPriorityBadgeClass(priority: string) {
-  if (priority === "URGENT") {
-    return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700`;
-  }
-
-  if (priority === "HIGH") {
-    return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700`;
-  }
-
-  if (priority === "MEDIUM") {
-    return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700`;
-  }
-
-  return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700`;
 }
