@@ -99,10 +99,9 @@ jobs:
             cur = conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
             tables = {row[0] for row in cur.fetchall()}
-            conn.close()
-
             user_tables = tables - {"_prisma_migrations"}
-            if not user_tables or "_prisma_migrations" in tables:
+            if not user_tables:
+                conn.close()
                 print("")
                 raise SystemExit(0)
 
@@ -113,6 +112,20 @@ jobs:
                 migrations.append("20260417072536_add_audit_logs")
             if {"ProjectWorkflowStatus", "ProjectWorkflowTransition"}.issubset(tables):
                 migrations.append("20260418022713_add_project_workflows")
+
+            if "_prisma_migrations" in tables:
+                try:
+                    cur.execute("SELECT migration_name FROM _prisma_migrations")
+                    applied_migrations = {row[0] for row in cur.fetchall()}
+                except sqlite3.DatabaseError:
+                    applied_migrations = set()
+                migrations = [
+                    migration
+                    for migration in migrations
+                    if migration not in applied_migrations
+                ]
+
+            conn.close()
 
             print("\n".join(migrations))
             PY
