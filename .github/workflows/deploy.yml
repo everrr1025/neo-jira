@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # No-op update to trigger a fresh deployment run for diagnostics.
 
     steps:
       - name: Check SSH connectivity
