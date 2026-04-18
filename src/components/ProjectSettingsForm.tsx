@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { updateProject } from "@/app/actions/projects";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
@@ -9,6 +9,7 @@ import AlertPopup from "./AlertPopup";
 import {
   DEFAULT_WORKFLOW_TEMPLATE,
   getWorkflowCategoryLabel,
+  getWorkflowStatusName,
   type WorkflowStatusCategory,
 } from "@/lib/workflows";
 
@@ -24,6 +25,13 @@ type WorkflowDraftState = {
   statuses: WorkflowStatusDraft[];
   transitions: Set<string>;
 };
+
+function cloneWorkflowDraftState(draft: WorkflowDraftState): WorkflowDraftState {
+  return {
+    statuses: draft.statuses.map((status) => ({ ...status })),
+    transitions: new Set(draft.transitions),
+  };
+}
 
 type ProjectSettingsFormProps = {
   project: {
@@ -51,19 +59,35 @@ type ProjectSettingsFormProps = {
   locale: Locale;
 };
 
-function buildInitialWorkflowDraft(project: ProjectSettingsFormProps["project"]): WorkflowDraftState {
+function buildInitialWorkflowDraft(
+  project: ProjectSettingsFormProps["project"],
+  locale: Locale
+): WorkflowDraftState {
   const baseStatuses =
     project.workflowStatuses.length > 0
       ? [...project.workflowStatuses].sort((a, b) => a.position - b.position).map((status) => ({
           clientId: status.id,
           id: status.id,
-          name: status.name === status.key ? status.key : status.name,
+          name: getWorkflowStatusName(status.key, [status], locale),
           category: status.category as WorkflowStatusCategory,
           isInitial: status.isInitial,
         }))
       : DEFAULT_WORKFLOW_TEMPLATE.statuses.map((status) => ({
           clientId: status.key,
-          name: status.name,
+          name: getWorkflowStatusName(
+            status.key,
+            [
+              {
+                id: status.key,
+                key: status.key,
+                name: status.name,
+                category: status.category,
+                position: status.position,
+                isInitial: status.isInitial,
+              },
+            ],
+            locale
+          ),
           category: status.category,
           isInitial: status.isInitial,
         })) as WorkflowStatusDraft[];
@@ -73,8 +97,8 @@ function buildInitialWorkflowDraft(project: ProjectSettingsFormProps["project"])
       ? new Set(project.workflowTransitions.map((transition) => `${transition.fromStatusId}->${transition.toStatusId}`))
       : new Set(
           DEFAULT_WORKFLOW_TEMPLATE.transitions.map((transition) => {
-            const fromStatus = baseStatuses.find((status) => status.name === transition.fromKey);
-            const toStatus = baseStatuses.find((status) => status.name === transition.toKey);
+            const fromStatus = baseStatuses.find((status) => status.clientId === transition.fromKey);
+            const toStatus = baseStatuses.find((status) => status.clientId === transition.toKey);
             return fromStatus && toStatus ? `${fromStatus.clientId}->${toStatus.clientId}` : "";
           }).filter(Boolean)
         );
@@ -186,15 +210,27 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
         };
 
   const [isPending, startTransition] = useTransition();
+  const initialWorkflowDraft = useMemo(() => buildInitialWorkflowDraft(project, locale), [project, locale]);
   const [formData, setFormData] = useState({
     name: project.name || "",
     key: project.key || "",
     description: project.description || "",
   });
-  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftState>(() => buildInitialWorkflowDraft(project));
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftState>(() => cloneWorkflowDraftState(initialWorkflowDraft));
+  const [savedWorkflowDraft, setSavedWorkflowDraft] = useState<WorkflowDraftState>(() => cloneWorkflowDraftState(initialWorkflowDraft));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
+
+  useEffect(() => {
+    setFormData({
+      name: project.name || "",
+      key: project.key || "",
+      description: project.description || "",
+    });
+    setWorkflowDraft(cloneWorkflowDraftState(initialWorkflowDraft));
+    setSavedWorkflowDraft(cloneWorkflowDraftState(initialWorkflowDraft));
+  }, [initialWorkflowDraft, project.description, project.key, project.name]);
 
   const categoryOptions = useMemo(
     () =>
@@ -301,10 +337,11 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     setAlertMessage("");
 
     startTransition(async () => {
+      const submittedWorkflowDraft = cloneWorkflowDraftState(workflowDraft);
       const result = await updateProject(project.id, {
         ...formData,
         workflow: {
-          statuses: workflowDraft.statuses.map((status, index) => ({
+          statuses: submittedWorkflowDraft.statuses.map((status, index) => ({
             clientId: status.clientId,
             id: status.id,
             name: status.name,
@@ -312,7 +349,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
             isInitial: status.isInitial,
             position: index,
           })),
-          transitions: [...workflowDraft.transitions].map((transitionKey) => {
+          transitions: [...submittedWorkflowDraft.transitions].map((transitionKey) => {
             const [fromClientId, toClientId] = transitionKey.split("->");
             return { fromClientId, toClientId };
           }),
@@ -320,12 +357,14 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
       });
 
       if (result.success) {
+        setSavedWorkflowDraft(cloneWorkflowDraftState(submittedWorkflowDraft));
         setSuccess(true);
         router.refresh();
         return;
       }
 
       const formattedError = formatWorkflowSaveError(result.error || text.updateFailed, locale);
+      setWorkflowDraft(cloneWorkflowDraftState(savedWorkflowDraft));
       setError(formattedError);
       setAlertMessage(formattedError);
     });

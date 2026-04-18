@@ -12,6 +12,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "db:migrate:verify": "bash scripts/verify-migrations.sh",
+    "workflow:backfill": "tsx scripts/backfill-workflows.ts",
     "system:reset": "tsx scripts/system-reset.ts"
   },
   "dependencies": {

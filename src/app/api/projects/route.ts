@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import prisma from "@/lib/prisma";
 import { authOptions } from "@/lib/authOptions";
-import { DEFAULT_WORKFLOW_TEMPLATE } from "@/lib/workflows";
+import { createDefaultWorkflowForProject } from "@/lib/workflows";
 
 export async function GET() {
   try {
@@ -63,9 +63,6 @@ export async function POST(request: Request) {
     if (!name || !key || !ownerId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-    if (memberIds.length < 1) {
-      return NextResponse.json({ error: "At least one project member is required" }, { status: 400 });
-    }
     if (!memberIds.includes(ownerId)) {
       memberIds.push(ownerId);
     }
@@ -104,30 +101,7 @@ export async function POST(request: Request) {
         })),
       });
 
-      const createdStatuses = [];
-      for (const status of DEFAULT_WORKFLOW_TEMPLATE.statuses) {
-        createdStatuses.push(
-          await tx.projectWorkflowStatus.create({
-            data: {
-              projectId: createdProject.id,
-              key: status.key,
-              name: status.name,
-              category: status.category,
-              position: status.position,
-              isInitial: status.isInitial,
-            },
-          })
-        );
-      }
-
-      const statusIdByKey = new Map(createdStatuses.map((status) => [status.key, status.id]));
-      await tx.projectWorkflowTransition.createMany({
-        data: DEFAULT_WORKFLOW_TEMPLATE.transitions.map((transition) => ({
-          projectId: createdProject.id,
-          fromStatusId: statusIdByKey.get(transition.fromKey)!,
-          toStatusId: statusIdByKey.get(transition.toKey)!,
-        })),
-      });
+      await createDefaultWorkflowForProject(tx, createdProject.id);
 
       return createdProject;
     });

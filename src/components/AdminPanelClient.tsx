@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser, deleteProject } from "@/app/actions/admin";
 import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle } from "lucide-react";
@@ -604,6 +604,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
   const [deletingProject, setDeletingProject] = useState<ProjectRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [changingOwnerProjectId, setChangingOwnerProjectId] = useState<string | null>(null);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const assignableUsers = users.filter((u) => u.role !== "ADMIN");
   const [pendingAddMemberIds, setPendingAddMemberIds] = useState<Record<string, string[]>>({});
   const [pendingOwnerByProject, setPendingOwnerByProject] = useState<Record<string, string>>({});
@@ -615,6 +616,33 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
     memberIds: [],
   });
   const selectedNewOwner = assignableUsers.find((u) => u.id === newProject.ownerId);
+  const createProjectMemberOptions = assignableUsers.filter((u) => u.id !== newProject.ownerId);
+  const selectedCreateProjectMemberCount = newProject.memberIds.length + (newProject.ownerId ? 1 : 0);
+
+  useEffect(() => {
+    if (!openDropdownId) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(`[data-admin-dropdown="${openDropdownId}"]`)) {
+        return;
+      }
+      setOpenDropdownId(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenDropdownId(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openDropdownId]);
 
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
@@ -622,10 +650,6 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
 
     if (!newProject.ownerId) {
       setErrorMsg(text.errors.ownerRequired);
-      return;
-    }
-    if (newProject.memberIds.length < 1) {
-      setErrorMsg(text.errors.memberRequired);
       return;
     }
 
@@ -760,8 +784,18 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectOwner}</label>
-            <details className="relative rounded-md border border-slate-200 bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
+            <details
+              className="relative rounded-md border border-slate-200 bg-white"
+              data-admin-dropdown="create-project-owner"
+              open={openDropdownId === "create-project-owner"}
+            >
+              <summary
+                onClick={(event) => {
+                  event.preventDefault();
+                  setOpenDropdownId((prev) => (prev === "create-project-owner" ? null : "create-project-owner"));
+                }}
+                className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
+              >
                 <span>
                   {newProject.ownerId
                     ? `${extraText.ownerSelected}: ${selectedNewOwner ? getDisplayName(selectedNewOwner) : newProject.ownerId}`
@@ -778,7 +812,14 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                         type="radio"
                         name="new-project-owner"
                         checked={checked}
-                        onChange={() => setNewProject((p) => ({ ...p, ownerId: u.id }))}
+                        onChange={() =>
+                          setNewProject((p) => ({
+                            ...p,
+                            ownerId: u.id,
+                            memberIds: p.memberIds.filter((id) => id !== u.id),
+                          }))
+                        }
+                        onClick={() => setOpenDropdownId(null)}
                         disabled={assignableUsers.length === 0}
                       />
                       <span className="text-sm text-slate-700">{getDisplayName(u)}</span>
@@ -790,17 +831,27 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">{text.projects.projectMembers}</label>
-            <details className="relative rounded-md border border-slate-200 bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden">
+            <details
+              className="relative rounded-md border border-slate-200 bg-white"
+              data-admin-dropdown="create-project-members"
+              open={openDropdownId === "create-project-members"}
+            >
+              <summary
+                onClick={(event) => {
+                  event.preventDefault();
+                  setOpenDropdownId((prev) => (prev === "create-project-members" ? null : "create-project-members"));
+                }}
+                className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
+              >
                 <span>
-                  {newProject.memberIds.length > 0
-                    ? `${extraText.selectedMembers}: ${newProject.memberIds.length}`
+                  {selectedCreateProjectMemberCount > 0
+                    ? `${extraText.selectedMembers}: ${selectedCreateProjectMemberCount}`
                     : extraText.selectMembers}
                 </span>
                 <ChevronDown size={14} className="text-slate-500" />
               </summary>
               <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                {assignableUsers.map((u) => {
+                {createProjectMemberOptions.map((u) => {
                   const checked = newProject.memberIds.includes(u.id);
                   return (
                     <label key={u.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white">
@@ -894,8 +945,18 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                   <h5 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
                     <Users size={14} /> {text.projects.teamAccess}
                   </h5>
-                  <details className="relative">
-                    <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                  <details
+                    className="relative"
+                    data-admin-dropdown={`add-members-${p.id}`}
+                    open={openDropdownId === `add-members-${p.id}`}
+                  >
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setOpenDropdownId((prev) => (prev === `add-members-${p.id}` ? null : `add-members-${p.id}`));
+                      }}
+                      className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden"
+                    >
                       <UserPlus size={12} />
                       {extraText.addMembers}
                       <ChevronDown size={12} />
@@ -922,7 +983,10 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                       )}
                       <button
                         type="button"
-                        onClick={() => addSelectedMembers(p)}
+                        onClick={() => {
+                          setOpenDropdownId(null);
+                          addSelectedMembers(p);
+                        }}
                         disabled={isUpdatingMembers || selectedToAdd.length === 0}
                         className="mt-2 w-full rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                       >

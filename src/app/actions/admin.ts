@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { randomInt } from "crypto";
 import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin } from "@/lib/permissions";
+import { createDefaultWorkflowForProject } from "@/lib/workflows";
 
 import { isValidPassword } from "@/lib/validation";
 
@@ -193,9 +194,6 @@ export async function createProject(data: any) {
     if (!ownerId) {
       return { success: false, error: "Project owner is required." };
     }
-    if (memberIds.length < 1) {
-      return { success: false, error: "At least one project member is required." };
-    }
     if (!memberIds.includes(ownerId)) {
       memberIds.push(ownerId);
     }
@@ -216,21 +214,27 @@ export async function createProject(data: any) {
       return { success: false, error: "System admin cannot be project owner or project member." };
     }
 
-    const project = await prisma.project.create({
-      data: {
-        name,
-        key,
-        description: description || null,
-        ownerId,
-      }
-    });
+    const project = await prisma.$transaction(async (tx) => {
+      const createdProject = await tx.project.create({
+        data: {
+          name,
+          key,
+          description: description || null,
+          ownerId,
+        }
+      });
 
-    await prisma.projectMember.createMany({
-      data: memberIds.map((memberId) => ({
-        userId: memberId,
-        projectId: project.id,
-        role: memberId === ownerId ? "ADMIN" : "MEMBER",
-      })),
+      await tx.projectMember.createMany({
+        data: memberIds.map((memberId) => ({
+          userId: memberId,
+          projectId: createdProject.id,
+          role: memberId === ownerId ? "ADMIN" : "MEMBER",
+        })),
+      });
+
+      await createDefaultWorkflowForProject(tx, createdProject.id);
+
+      return createdProject;
     });
 
     revalidatePath("/admin");

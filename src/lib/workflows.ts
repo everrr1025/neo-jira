@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { getIssueStatusLabel, type Locale } from "@/lib/i18n";
 
 export const WORKFLOW_STATUS_CATEGORIES = ["TODO", "IN_PROGRESS", "DONE"] as const;
@@ -49,6 +50,11 @@ export const DEFAULT_WORKFLOW_TEMPLATE = {
     { fromKey: "DONE", toKey: "IN_PROGRESS" },
   ],
 } as const;
+
+type WorkflowPersistenceClient = Pick<
+  Prisma.TransactionClient,
+  "projectWorkflowStatus" | "projectWorkflowTransition"
+>;
 
 const LEGACY_STATUS_TO_CATEGORY: Record<string, WorkflowStatusCategory> = {
   TODO: "TODO",
@@ -169,7 +175,8 @@ export function buildWorkflowStatusOptions(
 function toWorkflowKeySegment(value: string) {
   return value
     .trim()
-    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_")
     .toUpperCase();
@@ -220,4 +227,38 @@ export function validateWorkflowDraft(
       throw new Error("Workflow transition references an invalid status");
     }
   }
+}
+
+export async function createDefaultWorkflowForProject(
+  db: WorkflowPersistenceClient,
+  projectId: string
+) {
+  const createdStatuses = [];
+
+  for (const status of DEFAULT_WORKFLOW_TEMPLATE.statuses) {
+    createdStatuses.push(
+      await db.projectWorkflowStatus.create({
+        data: {
+          projectId,
+          key: status.key,
+          name: status.name,
+          category: status.category,
+          position: status.position,
+          isInitial: status.isInitial,
+        },
+      })
+    );
+  }
+
+  const statusIdByKey = new Map(createdStatuses.map((status) => [status.key, status.id]));
+
+  await db.projectWorkflowTransition.createMany({
+    data: DEFAULT_WORKFLOW_TEMPLATE.transitions.map((transition) => ({
+      projectId,
+      fromStatusId: statusIdByKey.get(transition.fromKey)!,
+      toStatusId: statusIdByKey.get(transition.toKey)!,
+    })),
+  });
+
+  return createdStatuses;
 }

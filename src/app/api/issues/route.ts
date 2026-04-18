@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from "@prisma/client";
-import { getInitialWorkflowStatusKey, type WorkflowStatusRecord } from "@/lib/workflows";
+import {
+  createDefaultWorkflowForProject,
+  getInitialWorkflowStatusKey,
+  type WorkflowStatusRecord,
+} from "@/lib/workflows";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -52,23 +56,42 @@ export async function POST(request: Request) {
     }
     
     // Generate Issue Key based on Project Key
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: {
-        id: true,
-        key: true,
-        workflowStatuses: {
-          select: {
-            id: true,
-            key: true,
-            name: true,
-            category: true,
-            position: true,
-            isInitial: true,
+    const project = await prisma.$transaction(async (tx) => {
+      const existingProject = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+
+      if (!existingProject) {
+        return null;
+      }
+
+      const workflowStatusCount = await tx.projectWorkflowStatus.count({
+        where: { projectId },
+      });
+
+      if (workflowStatusCount === 0) {
+        await createDefaultWorkflowForProject(tx, projectId);
+      }
+
+      return tx.project.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true,
+          key: true,
+          workflowStatuses: {
+            select: {
+              id: true,
+              key: true,
+              name: true,
+              category: true,
+              position: true,
+              isInitial: true,
+            },
+            orderBy: { position: "asc" },
           },
-          orderBy: { position: "asc" },
         },
-      },
+      });
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
     

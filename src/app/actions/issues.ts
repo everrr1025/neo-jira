@@ -10,6 +10,7 @@ import { notifyIssueMentions } from "@/lib/notifications";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import {
   canTransitionWorkflowStatus,
+  createDefaultWorkflowForProject,
   getInitialWorkflowStatusKey,
   isDoneWorkflowStatus,
   type WorkflowStatusRecord,
@@ -159,23 +160,42 @@ export async function createIssue(data: {
     }
     if (!targetProjectId) throw new Error("Project not found or no access");
 
-    const project = await prisma.project.findUnique({
-      where: { id: targetProjectId },
-      select: {
-        id: true,
-        key: true,
-        workflowStatuses: {
-          select: {
-            id: true,
-            key: true,
-            name: true,
-            category: true,
-            position: true,
-            isInitial: true,
+    const project = await prisma.$transaction(async (tx) => {
+      const existingProject = await tx.project.findUnique({
+        where: { id: targetProjectId! },
+        select: { id: true },
+      });
+
+      if (!existingProject) {
+        return null;
+      }
+
+      const workflowStatusCount = await tx.projectWorkflowStatus.count({
+        where: { projectId: targetProjectId! },
+      });
+
+      if (workflowStatusCount === 0) {
+        await createDefaultWorkflowForProject(tx, targetProjectId!);
+      }
+
+      return tx.project.findUnique({
+        where: { id: targetProjectId! },
+        select: {
+          id: true,
+          key: true,
+          workflowStatuses: {
+            select: {
+              id: true,
+              key: true,
+              name: true,
+              category: true,
+              position: true,
+              isInitial: true,
+            },
+            orderBy: { position: "asc" },
           },
-          orderBy: { position: "asc" },
         },
-      },
+      });
     });
     if (!project) throw new Error("Project not found or no access");
 
