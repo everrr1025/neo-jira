@@ -14,16 +14,24 @@ import {
 } from "lucide-react";
 import { updateIssue } from "@/app/actions/issues";
 import {
-  getIssueStatusLabel,
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
   localeDateMap,
   Locale,
 } from "@/lib/i18n";
+import {
+  buildWorkflowStatusOptions,
+  buildWorkflowTransitionMap,
+  getWorkflowStatusBadgeClass,
+  sortWorkflowStatuses,
+  type WorkflowStatusRecord,
+  type WorkflowTransitionRecord,
+} from "@/lib/workflows";
 
 type Issue = {
   id: string;
+  projectId: string;
   key: string;
   title: string;
   status: string;
@@ -64,13 +72,6 @@ type SortField = "createdAt" | "key" | "title" | "status" | "type" | "priority" 
 type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
-
-const STATUS_ORDER: Record<string, number> = {
-  TODO: 1,
-  IN_PROGRESS: 2,
-  IN_TESTING: 3,
-  DONE: 4,
-};
 
 const TYPE_ORDER: Record<string, number> = {
   EPIC: 1,
@@ -359,12 +360,18 @@ export default function IssueList({
   initialIssues,
   users,
   iterations,
+  workflowProjects,
   currentUser,
   locale,
 }: {
   initialIssues: Issue[];
   users: IssueUser[];
   iterations: IssueIteration[];
+  workflowProjects: Array<{
+    id: string;
+    workflowStatuses: WorkflowStatusRecord[];
+    workflowTransitions: WorkflowTransitionRecord[];
+  }>;
   currentUser: { id: string } | null;
   locale: Locale;
 }) {
@@ -372,6 +379,27 @@ export default function IssueList({
   const [issues, setIssues] = useState(initialIssues);
   const [search, setSearch] = useState("");
   const translations = getTranslations(locale);
+  const workflowByProject = useMemo(
+    () =>
+      new Map(
+        workflowProjects.map((project) => [
+          project.id,
+          {
+            statuses: sortWorkflowStatuses(project.workflowStatuses),
+            transitions: project.workflowTransitions,
+          },
+        ])
+      ),
+    [workflowProjects]
+  );
+  const getWorkflowForProject = useCallback(
+    (projectId: string) =>
+      workflowByProject.get(projectId) || {
+        statuses: [] as WorkflowStatusRecord[],
+        transitions: [] as WorkflowTransitionRecord[],
+      },
+    [workflowByProject]
+  );
 
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
@@ -535,13 +563,20 @@ export default function IssueList({
   }, [searchParams, users]);
 
   const statusOptions = useMemo<FilterOption[]>(
-    () => [
-      { value: "TODO", label: getIssueStatusLabel("TODO", locale) },
-      { value: "IN_PROGRESS", label: getIssueStatusLabel("IN_PROGRESS", locale) },
-      { value: "IN_TESTING", label: getIssueStatusLabel("IN_TESTING", locale) },
-      { value: "DONE", label: getIssueStatusLabel("DONE", locale) },
-    ],
-    [locale]
+    () => {
+      const optionMap = new Map<string, string>();
+
+      for (const project of workflowProjects) {
+        for (const option of buildWorkflowStatusOptions(project.workflowStatuses, locale)) {
+          if (!optionMap.has(option.value)) {
+            optionMap.set(option.value, option.label);
+          }
+        }
+      }
+
+      return [...optionMap.entries()].map(([value, label]) => ({ value, label }));
+    },
+    [locale, workflowProjects]
   );
 
   const typeOptions = useMemo<FilterOption[]>(
@@ -743,7 +778,11 @@ export default function IssueList({
         return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * factor;
       }
       if (sortBy === "status") {
-        return ((STATUS_ORDER[a.status] || 99) - (STATUS_ORDER[b.status] || 99)) * factor;
+        const aStatuses = getWorkflowForProject(a.projectId).statuses;
+        const bStatuses = getWorkflowForProject(b.projectId).statuses;
+        const aRank = aStatuses.findIndex((status) => status.key === a.status);
+        const bRank = bStatuses.findIndex((status) => status.key === b.status);
+        return (((aRank >= 0 ? aRank : 99) - (bRank >= 0 ? bRank : 99)) || a.status.localeCompare(b.status)) * factor;
       }
       if (sortBy === "type") {
         return ((TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99)) * factor;
@@ -773,7 +812,7 @@ export default function IssueList({
     });
 
     return sorted;
-  }, [filteredIssues, sortBy, sortDirection, translations.issueList.backlog, translations.issueList.unassigned]);
+  }, [filteredIssues, getWorkflowForProject, sortBy, sortDirection, translations.issueList.backlog, translations.issueList.unassigned]);
 
   const totalPages = Math.ceil(sortedIssues.length / itemsPerPage);
   const paginatedIssues = sortedIssues.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -1049,22 +1088,25 @@ export default function IssueList({
                     }
 
                     if (col.id === "status") {
+                      const workflow = getWorkflowForProject(issue.projectId);
+                      const transitionMap = buildWorkflowTransitionMap(workflow.transitions, workflow.statuses);
+                      const allowedTargets = transitionMap.get(issue.status);
+                      const statusInlineOptions = buildWorkflowStatusOptions(
+                        workflow.statuses.filter(
+                          (status) => status.key === issue.status || allowedTargets?.has(status.key)
+                        ),
+                        locale
+                      );
                       return (
                         <td key={col.id} className="px-5 py-3.5">
                           <InlineSelect
                             value={issue.status}
-                            options={statusOptions}
+                            options={statusInlineOptions.length > 0 ? statusInlineOptions : buildWorkflowStatusOptions(workflow.statuses, locale)}
                             className="relative block w-full"
                             onChange={(value) => handleInlineUpdate(issue.id, "status", value)}
                             renderSummary={(label) => (
                               <span
-                                className={`inline-block text-sm font-medium px-2 py-0.5 rounded-full cursor-pointer border-none outline-none focus:ring-0 transition-colors ${
-                                  issue.status === "DONE"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : issue.status === "IN_PROGRESS" || issue.status === "IN_TESTING"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : "bg-slate-100 text-slate-600"
-                                }`}
+                                className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium cursor-pointer border-none outline-none focus:ring-0 transition-colors ${getWorkflowStatusBadgeClass(issue.status, workflow.statuses)}`}
                               >
                                 {label}
                               </span>

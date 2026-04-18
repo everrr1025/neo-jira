@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import prisma from "@/lib/prisma";
 import { authOptions } from "@/lib/authOptions";
+import { DEFAULT_WORKFLOW_TEMPLATE } from "@/lib/workflows";
 
 export async function GET() {
   try {
@@ -10,8 +11,9 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = (session.user as any).id as string;
-    const userRole = (session.user as any).role as string;
+    const sessionUser = session.user as { id?: string; role?: string | null };
+    const userId = sessionUser.id as string;
+    const userRole = sessionUser.role as string;
     const whereClause =
       userRole === "ADMIN"
         ? {}
@@ -42,7 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userRole = (session.user as any).role as string;
+    const sessionUser = session.user as { role?: string | null };
+    const userRole = sessionUser.role as string;
     if (userRole !== "ADMIN") {
       return NextResponse.json({ error: "Only system admin can create projects" }, { status: 403 });
     }
@@ -83,21 +86,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "System admin cannot be project owner or member" }, { status: 400 });
     }
 
-    const project = await prisma.project.create({
-      data: {
-        name,
-        key,
-        description,
-        ownerId,
-      },
-    });
+    const project = await prisma.$transaction(async (tx) => {
+      const createdProject = await tx.project.create({
+        data: {
+          name,
+          key,
+          description,
+          ownerId,
+        },
+      });
 
-    await prisma.projectMember.createMany({
-      data: memberIds.map((memberId) => ({
-        userId: memberId,
-        projectId: project.id,
-        role: memberId === ownerId ? "ADMIN" : "MEMBER",
-      })),
+      await tx.projectMember.createMany({
+        data: memberIds.map((memberId) => ({
+          userId: memberId,
+          projectId: createdProject.id,
+          role: memberId === ownerId ? "ADMIN" : "MEMBER",
+        })),
+      });
+
+      const createdStatuses = [];
+      for (const status of DEFAULT_WORKFLOW_TEMPLATE.statuses) {
+        createdStatuses.push(
+          await tx.projectWorkflowStatus.create({
+            data: {
+              projectId: createdProject.id,
+              key: status.key,
+              name: status.name,
+              category: status.category,
+              position: status.position,
+              isInitial: status.isInitial,
+            },
+          })
+        );
+      }
+
+      const statusIdByKey = new Map(createdStatuses.map((status) => [status.key, status.id]));
+      await tx.projectWorkflowTransition.createMany({
+        data: DEFAULT_WORKFLOW_TEMPLATE.transitions.map((transition) => ({
+          projectId: createdProject.id,
+          fromStatusId: statusIdByKey.get(transition.fromKey)!,
+          toStatusId: statusIdByKey.get(transition.toKey)!,
+        })),
+      });
+
+      return createdProject;
     });
 
     return NextResponse.json(project, { status: 201 });

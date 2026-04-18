@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
+import { getWorkflowStatusCategory } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,15 @@ export default async function IterationsPage() {
   let iterations = await prisma.iteration.findMany({
     where: isGlobalAdmin ? {} : { projectId: activeProjectId! },
     include: {
-      project: { select: { name: true, key: true } },
+      project: {
+        select: {
+          name: true,
+          key: true,
+          workflowStatuses: {
+            orderBy: { position: "asc" },
+          },
+        },
+      },
       _count: {
         select: { issues: true },
       },
@@ -97,7 +106,9 @@ export default async function IterationsPage() {
       <div className="grid gap-4">
         {iterations.map((iteration) => {
           const totalIssues = iteration._count.issues;
-          const completedIssues = iteration.issues.filter(i => i.status === "DONE").length;
+          const completedIssues = iteration.issues.filter(
+            (issue) => getWorkflowStatusCategory(issue.status, iteration.project.workflowStatuses) === "DONE"
+          ).length;
           const progress = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
 
           return (

@@ -3,10 +3,16 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
-import { getPriorityLabel, getStatusLabel, getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
+import { getPriorityLabel, getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
+import {
+  getWorkflowStatusBadgeClass,
+  getWorkflowStatusName,
+  type WorkflowStatusRecord,
+} from "@/lib/workflows";
 
 type DashboardIssue = {
   id: string;
+  projectId: string;
   key: string;
   title: string;
   status: string;
@@ -28,12 +34,21 @@ type IssueTab = {
 export default function DashboardIssueTabsCard({
   tabs,
   locale,
+  workflowProjects,
 }: {
   tabs: IssueTab[];
   locale: Locale;
+  workflowProjects: Array<{
+    id: string;
+    workflowStatuses: WorkflowStatusRecord[];
+  }>;
 }) {
   const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? "");
   const translations = getTranslations(locale);
+  const workflowStatusByProject = useMemo(
+    () => new Map(workflowProjects.map((project) => [project.id, project.workflowStatuses])),
+    [workflowProjects]
+  );
 
   const currentTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTab) ?? tabs[0],
@@ -97,7 +112,9 @@ export default function DashboardIssueTabsCard({
             >
               <div className="flex items-start justify-between gap-3">
                 <span className="text-xs font-semibold text-slate-500">{issue.key}</span>
-                <span className={getIssueMetaBadge(currentTab.meta, issue)}>{getIssueMetaText(currentTab.meta, issue, locale)}</span>
+                <span className={getIssueMetaBadge(currentTab.meta, issue, workflowStatusByProject)}>
+                  {getIssueMetaText(currentTab.meta, issue, locale, workflowStatusByProject)}
+                </span>
               </div>
               <h4 className="mt-2 text-sm font-medium text-slate-800 line-clamp-2">{issue.title}</h4>
             </Link>
@@ -110,7 +127,12 @@ export default function DashboardIssueTabsCard({
   );
 }
 
-function getIssueMetaText(meta: "status" | "priority" | "dueDate", issue: DashboardIssue, locale: Locale) {
+function getIssueMetaText(
+  meta: "status" | "priority" | "dueDate",
+  issue: DashboardIssue,
+  locale: Locale,
+  workflowStatusByProject: Map<string, WorkflowStatusRecord[]>
+) {
   if (meta === "dueDate") {
     const dueDate = issue.dueDate ? new Date(issue.dueDate) : null;
     return dueDate ? dueDate.toLocaleDateString(localeDateMap[locale]) : "--";
@@ -120,10 +142,14 @@ function getIssueMetaText(meta: "status" | "priority" | "dueDate", issue: Dashbo
     return getPriorityLabel(issue.priority, locale);
   }
 
-  return getStatusLabel(issue.status, locale);
+  return getWorkflowStatusName(issue.status, workflowStatusByProject.get(issue.projectId) || [], locale);
 }
 
-function getIssueMetaBadge(meta: "status" | "priority" | "dueDate", issue: DashboardIssue) {
+function getIssueMetaBadge(
+  meta: "status" | "priority" | "dueDate",
+  issue: DashboardIssue,
+  workflowStatusByProject: Map<string, WorkflowStatusRecord[]>
+) {
   if (meta === "dueDate") {
     return "text-[11px] font-bold text-rose-600";
   }
@@ -132,19 +158,10 @@ function getIssueMetaBadge(meta: "status" | "priority" | "dueDate", issue: Dashb
     return getPriorityBadgeClass(issue.priority);
   }
 
-  return getStatusBadgeClass(issue.status);
-}
-
-function getStatusBadgeClass(status: string) {
-  if (status === "DONE") {
-    return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700";
-  }
-
-  if (status === "IN_PROGRESS" || status === "IN_TESTING") {
-    return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700";
-  }
-
-  return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600";
+  return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getWorkflowStatusBadgeClass(
+    issue.status,
+    workflowStatusByProject.get(issue.projectId) || []
+  )}`;
 }
 
 function getPriorityBadgeClass(priority: string) {

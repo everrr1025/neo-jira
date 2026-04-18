@@ -58,7 +58,18 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
 
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    include: { owner: true },
+    include: {
+      owner: true,
+      workflowStatuses: {
+        orderBy: { position: "asc" },
+      },
+      workflowTransitions: {
+        select: {
+          fromStatusId: true,
+          toStatusId: true,
+        },
+      },
+    },
   });
 
   if (!project) notFound();

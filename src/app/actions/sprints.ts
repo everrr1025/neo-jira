@@ -3,6 +3,7 @@
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { checkProjectAdmin } from "@/lib/permissions";
+import { isDoneWorkflowStatus, type WorkflowStatusRecord } from "@/lib/workflows";
 
 function activeSprintExistsMessage(sprintName: string, locale?: string) {
   if (locale === "zh") {
@@ -93,6 +94,15 @@ export async function completeSprint(sprintId: string, options: CompleteSprintOp
   try {
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
+      include: {
+        project: {
+          select: {
+            workflowStatuses: {
+              orderBy: { position: "asc" },
+            },
+          },
+        },
+      },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
 
@@ -101,6 +111,10 @@ export async function completeSprint(sprintId: string, options: CompleteSprintOp
     if (sprint.status !== "ACTIVE") {
       return { success: false, error: "Only ACTIVE sprints can be completed" };
     }
+
+    const doneStatuses = sprint.project.workflowStatuses
+      .filter((status) => isDoneWorkflowStatus(status.key, sprint.project.workflowStatuses as WorkflowStatusRecord[]))
+      .map((status) => status.key);
 
     const updated = await prisma.$transaction(async (tx) => {
       let nextIterationId: string | null = null;
@@ -134,7 +148,7 @@ export async function completeSprint(sprintId: string, options: CompleteSprintOp
       await tx.issue.updateMany({
         where: {
           iterationId: sprintId,
-          status: { not: "DONE" },
+          ...(doneStatuses.length > 0 ? { status: { notIn: doneStatuses } } : {}),
         },
         data: { iterationId: nextIterationId },
       });

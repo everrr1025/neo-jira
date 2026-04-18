@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { Prisma } from "@prisma/client";
+import { getInitialWorkflowStatusKey, type WorkflowStatusRecord } from "@/lib/workflows";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -7,7 +9,7 @@ export async function GET(request: Request) {
   const iterationId = searchParams.get('iterationId');
 
   try {
-    const whereClause: any = {};
+    const whereClause: Prisma.IssueWhereInput = {};
     if (projectId) whereClause.projectId = projectId;
     if (iterationId) whereClause.iterationId = iterationId;
 
@@ -30,26 +32,61 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    type CreateIssueBody = {
+      title?: string;
+      description?: string;
+      status?: string;
+      priority?: string;
+      type?: string;
+      projectId?: string;
+      iterationId?: string | null;
+      assigneeId?: string | null;
+      reporterId?: string;
+    };
     const body = await request.json();
-    const { title, description, status, priority, type, projectId, iterationId, assigneeId, reporterId } = body;
+    const { title, description, status, priority, type, projectId, iterationId, assigneeId, reporterId } =
+      body as CreateIssueBody;
     
     if (!title || !projectId || !reporterId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     
     // Generate Issue Key based on Project Key
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        key: true,
+        workflowStatuses: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            category: true,
+            position: true,
+            isInitial: true,
+          },
+          orderBy: { position: "asc" },
+        },
+      },
+    });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
     
     const count = await prisma.issue.count({ where: { projectId } });
     const issueKey = `${project.key}-${count + 1}`;
     
+    const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
+    const resolvedStatus = status || initialStatus;
+    if (!project.workflowStatuses.some((workflowStatus) => workflowStatus.key === resolvedStatus)) {
+      return NextResponse.json({ error: "Invalid workflow status" }, { status: 400 });
+    }
+
     const issue = await prisma.issue.create({
       data: {
         key: issueKey,
         title,
         description,
-        status: status || 'TODO',
+        status: resolvedStatus,
         priority: priority || 'MEDIUM',
         type: type || 'TASK',
         projectId,

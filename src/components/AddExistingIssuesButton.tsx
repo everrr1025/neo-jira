@@ -5,7 +5,6 @@ import { Loader2, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { addBacklogIssuesToSprint } from "@/app/actions/issues";
 import {
-  getIssueStatusLabel,
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
@@ -14,6 +13,12 @@ import {
 import AlertPopup from "./AlertPopup";
 import CreateIssueButton from "./CreateIssueButton";
 import { type CreateIssueIteration, type CreateIssueUser } from "./CreateIssueModal";
+import {
+  getWorkflowStatusBadgeClass,
+  getWorkflowStatusName,
+  sortWorkflowStatuses,
+  type WorkflowStatusRecord,
+} from "@/lib/workflows";
 
 export type BacklogIssueOption = {
   id: string;
@@ -30,18 +35,11 @@ type AddExistingIssuesButtonProps = {
   sprintName: string;
   issues: BacklogIssueOption[];
   locale: Locale;
+  workflowStatuses: WorkflowStatusRecord[];
   users: CreateIssueUser[];
   iterations: CreateIssueIteration[];
   currentUserId?: string;
   defaultDueDate?: string;
-};
-
-const STATUS_FILTERS = ["ALL", "TODO", "IN_PROGRESS", "IN_TESTING", "DONE"] as const;
-const STATUS_ORDER: Record<string, number> = {
-  TODO: 0,
-  IN_PROGRESS: 1,
-  IN_TESTING: 2,
-  DONE: 3,
 };
 
 export default function AddExistingIssuesButton({
@@ -49,6 +47,7 @@ export default function AddExistingIssuesButton({
   sprintName,
   issues,
   locale,
+  workflowStatuses,
   users,
   iterations,
   currentUserId,
@@ -56,7 +55,7 @@ export default function AddExistingIssuesButton({
 }: AddExistingIssuesButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -64,14 +63,24 @@ export default function AddExistingIssuesButton({
   const translations = getTranslations(locale);
   const text = translations.addExistingIssues;
 
+  const statusFilters = useMemo(
+    () => ["ALL", ...sortWorkflowStatuses(workflowStatuses).map((status) => status.key)],
+    [workflowStatuses]
+  );
+  const statusOrder = useMemo(
+    () =>
+      Object.fromEntries(sortWorkflowStatuses(workflowStatuses).map((status, index) => [status.key, index])),
+    [workflowStatuses]
+  );
+
   const sortedIssues = useMemo(
     () =>
       [...issues].sort((a, b) => {
-        const statusDiff = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+        const statusDiff = ((statusOrder[a.status] as number | undefined) ?? 99) - ((statusOrder[b.status] as number | undefined) ?? 99);
         if (statusDiff !== 0) return statusDiff;
         return a.key.localeCompare(b.key);
       }),
-    [issues]
+    [issues, statusOrder]
   );
 
   const filteredIssues = useMemo(() => {
@@ -165,7 +174,7 @@ export default function AddExistingIssuesButton({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {STATUS_FILTERS.map((status) => (
+                {statusFilters.map((status) => (
                   <button
                     key={status}
                     type="button"
@@ -176,7 +185,7 @@ export default function AddExistingIssuesButton({
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     }`}
                   >
-                    {status === "ALL" ? text.allUnfinished : getIssueStatusLabel(status, locale)}
+                    {status === "ALL" ? text.allUnfinished : getWorkflowStatusName(status, workflowStatuses, locale)}
                   </button>
                 ))}
               </div>
@@ -206,8 +215,8 @@ export default function AddExistingIssuesButton({
                             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600">
                               {getIssueTypeLabel(issue.type, locale)}
                             </span>
-                            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                              {getIssueStatusLabel(issue.status, locale)}
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${getWorkflowStatusBadgeClass(issue.status, workflowStatuses)}`}>
+                              {getWorkflowStatusName(issue.status, workflowStatuses, locale)}
                             </span>
                             <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
                               {getPriorityLabel(issue.priority, locale)}

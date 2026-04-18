@@ -44,7 +44,21 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
       ? { id: resolvedParams.id }
       : { id: resolvedParams.id, projectId: activeProjectId! },
     include: {
-      project: { select: { id: true, name: true } },
+      project: {
+        select: {
+          id: true,
+          name: true,
+          workflowStatuses: {
+            orderBy: { position: "asc" },
+          },
+          workflowTransitions: {
+            select: {
+              fromStatusId: true,
+              toStatusId: true,
+            },
+          },
+        },
+      },
       issues: {
         include: { assignee: true, reporter: true },
         orderBy: { createdAt: "desc" },
@@ -61,6 +75,9 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   }
 
   const issues = iteration.issues;
+  const doneStatusKeys = iteration.project.workflowStatuses
+    .filter((status) => status.category === "DONE")
+    .map((status) => status.key);
   const [users, iterations, backlogIssues] = await Promise.all([
     prisma.user.findMany({
       where: {
@@ -80,6 +97,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
           where: {
             projectId: iteration.project.id,
             iterationId: null,
+            ...(doneStatusKeys.length > 0 ? { status: { notIn: doneStatusKeys } } : {}),
           },
           select: {
             id: true,
@@ -95,7 +113,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
       : Promise.resolve([]),
   ]);
   const defaultDueDate = iteration.endDate.toISOString().slice(0, 10);
-  const unfinishedIssueCount = issues.filter((issue) => issue.status !== "DONE").length;
+  const unfinishedIssueCount = issues.filter((issue) => !doneStatusKeys.includes(issue.status)).length;
   const plannedSprintOptions = iterations
     .filter((item) => item.id !== iteration.id && item.status === "PLANNED")
     .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
@@ -135,6 +153,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   sprintName={iteration.name}
                   issues={backlogIssues}
                   locale={locale}
+                  workflowStatuses={iteration.project.workflowStatuses}
                   users={users}
                   iterations={iterations}
                   currentUserId={userId}
@@ -172,7 +191,13 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </div>
       </div>
 
-      <KanbanBoard initialIssues={issues} currentUserId={userId} locale={locale} />
+      <KanbanBoard
+        initialIssues={issues}
+        workflowStatuses={iteration.project.workflowStatuses}
+        workflowTransitions={iteration.project.workflowTransitions}
+        currentUserId={userId}
+        locale={locale}
+      />
     </div>
   );
 }

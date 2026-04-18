@@ -10,7 +10,6 @@ import AlertPopup from "./AlertPopup";
 import ActivityLogSection from "./ActivityLogSection";
 import { useRouter } from "next/navigation";
 import {
-  getIssueStatusLabel,
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
@@ -19,6 +18,12 @@ import {
 } from "@/lib/i18n";
 import { DropdownField } from "./DropdownField";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
+import {
+  buildWorkflowStatusOptions,
+  buildWorkflowTransitionMap,
+  type WorkflowStatusRecord,
+  type WorkflowTransitionRecord,
+} from "@/lib/workflows";
 
 type IssueUser = {
   id: string;
@@ -49,10 +54,15 @@ type IssueRecord = {
   } | null;
 };
 
+type IssueWorkflowStatus = WorkflowStatusRecord;
+type IssueWorkflowTransition = WorkflowTransitionRecord;
+
 export default function IssueDetailClient({
   initialIssue,
   users,
   iterations = [],
+  workflowStatuses,
+  workflowTransitions,
   currentUserId,
   locale,
   canDeleteIssue,
@@ -60,6 +70,8 @@ export default function IssueDetailClient({
   initialIssue: IssueRecord;
   users: IssueUser[];
   iterations?: IssueIteration[];
+  workflowStatuses: IssueWorkflowStatus[];
+  workflowTransitions: IssueWorkflowTransition[];
   currentUserId: string;
   locale: Locale;
   canDeleteIssue: boolean;
@@ -74,6 +86,14 @@ export default function IssueDetailClient({
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
+  const statusOptions = (() => {
+    const transitionMap = buildWorkflowTransitionMap(workflowTransitions, workflowStatuses);
+    const allowedTargets = transitionMap.get(issue.status);
+    const visibleStatuses = workflowStatuses.filter(
+      (status) => status.key === issue.status || allowedTargets?.has(status.key)
+    );
+    return buildWorkflowStatusOptions(visibleStatuses.length > 0 ? visibleStatuses : workflowStatuses, locale);
+  })();
 
   const handleChange = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
     setIssue((prev) => ({ ...prev, [field]: value }));
@@ -268,12 +288,7 @@ export default function IssueDetailClient({
             label={translations.issueDetail.status}
             value={issue.status}
             onChange={(val) => handleAutoSave("status", val)}
-            options={[
-              { value: "TODO", label: getIssueStatusLabel("TODO", locale) },
-              { value: "IN_PROGRESS", label: getIssueStatusLabel("IN_PROGRESS", locale) },
-              { value: "IN_TESTING", label: getIssueStatusLabel("IN_TESTING", locale) },
-              { value: "DONE", label: getIssueStatusLabel("DONE", locale) },
-            ]}
+            options={statusOptions}
           />
 
           {/* Sprint */}

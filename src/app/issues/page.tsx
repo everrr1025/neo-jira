@@ -60,6 +60,21 @@ export default async function IssuesPage() {
     where: isGlobalAdmin ? {} : { projectId: activeProjectId! },
     orderBy: { startDate: "desc" },
   });
+  const workflowProjects = await prisma.project.findMany({
+    where: isGlobalAdmin ? {} : { id: activeProjectId! },
+    select: {
+      id: true,
+      workflowStatuses: {
+        orderBy: { position: "asc" },
+      },
+      workflowTransitions: {
+        select: {
+          fromStatusId: true,
+          toStatusId: true,
+        },
+      },
+    },
+  });
 
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
 
@@ -77,7 +92,14 @@ export default async function IssuesPage() {
         </div>
       </div>
 
-      <IssueList initialIssues={issues} users={users} iterations={iterations} currentUser={currentUser} locale={locale} />
+      <IssueList
+        initialIssues={issues}
+        users={users}
+        iterations={iterations}
+        workflowProjects={workflowProjects}
+        currentUser={currentUser}
+        locale={locale}
+      />
     </div>
   );
 }

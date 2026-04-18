@@ -8,6 +8,13 @@ import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { checkProjectAdmin } from "@/lib/permissions";
 import { notifyIssueMentions } from "@/lib/notifications";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
+import {
+  canTransitionWorkflowStatus,
+  getInitialWorkflowStatusKey,
+  isDoneWorkflowStatus,
+  type WorkflowStatusRecord,
+  type WorkflowTransitionRecord,
+} from "@/lib/workflows";
 
 const issueAuditSelect = {
   id: true,
@@ -23,6 +30,26 @@ const issueAuditSelect = {
   description: true,
 } as const;
 
+const workflowSelect = {
+  workflowStatuses: {
+    select: {
+      id: true,
+      key: true,
+      name: true,
+      category: true,
+      position: true,
+      isInitial: true,
+    },
+    orderBy: { position: "asc" as const },
+  },
+  workflowTransitions: {
+    select: {
+      fromStatusId: true,
+      toStatusId: true,
+    },
+  },
+} as const;
+
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
     const session = await getServerSession(authOptions);
@@ -33,9 +60,31 @@ export async function updateIssueStatus(issueId: string, status: string) {
     const issue = await prisma.$transaction(async (tx) => {
       const existingIssue = await tx.issue.findUnique({
         where: { id: issueId },
-        select: issueAuditSelect,
+        select: {
+          ...issueAuditSelect,
+          project: {
+            select: workflowSelect,
+          },
+        },
       });
       if (!existingIssue) throw new Error("Issue not found");
+
+      const workflowStatuses = existingIssue.project.workflowStatuses as WorkflowStatusRecord[];
+      const workflowTransitions = existingIssue.project.workflowTransitions as WorkflowTransitionRecord[];
+      if (!workflowStatuses.some((workflowStatus) => workflowStatus.key === status)) {
+        throw new Error("Invalid workflow status");
+      }
+
+      if (
+        !canTransitionWorkflowStatus({
+          currentStatus: existingIssue.status,
+          nextStatus: status,
+          workflowStatuses,
+          workflowTransitions,
+        })
+      ) {
+        throw new Error("This status transition is not allowed");
+      }
 
       const updatedIssue = await tx.issue.update({
         where: { id: issueId },
@@ -110,7 +159,24 @@ export async function createIssue(data: {
     }
     if (!targetProjectId) throw new Error("Project not found or no access");
 
-    const project = await prisma.project.findUnique({ where: { id: targetProjectId } });
+    const project = await prisma.project.findUnique({
+      where: { id: targetProjectId },
+      select: {
+        id: true,
+        key: true,
+        workflowStatuses: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            category: true,
+            position: true,
+            isInitial: true,
+          },
+          orderBy: { position: "asc" },
+        },
+      },
+    });
     if (!project) throw new Error("Project not found or no access");
 
     const count = await prisma.issue.count({ where: { projectId: project.id } });
@@ -127,13 +193,15 @@ export async function createIssue(data: {
         })()
       : null;
 
+    const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
+
     const newIssue = await prisma.$transaction(async (tx) => {
       const createdIssue = await tx.issue.create({
         data: {
           key: issueKey,
           title: data.title,
           description: data.description,
-          status: "TODO",
+          status: initialStatus,
           priority: data.priority,
           type: data.type,
           projectId: project.id,
@@ -210,7 +278,14 @@ export async function addBacklogIssuesToSprint(sprintId: string, issueIds: strin
 
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
-      select: { id: true, projectId: true, status: true },
+      select: {
+        id: true,
+        projectId: true,
+        status: true,
+        project: {
+          select: workflowSelect,
+        },
+      },
     });
     if (!sprint) throw new Error("Sprint not found");
 
@@ -220,11 +295,15 @@ export async function addBacklogIssuesToSprint(sprintId: string, issueIds: strin
       throw new Error("Cannot add issues to a completed sprint");
     }
 
+    const doneStatuses = sprint.project.workflowStatuses
+      .filter((status) => isDoneWorkflowStatus(status.key, sprint.project.workflowStatuses as WorkflowStatusRecord[]))
+      .map((status) => status.key);
+
     const eligibleIssueFilter = {
       id: { in: uniqueIssueIds },
       projectId: sprint.projectId,
       iterationId: null,
-      status: { not: "DONE" },
+      ...(doneStatuses.length > 0 ? { status: { notIn: doneStatuses } } : {}),
     };
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -268,9 +347,34 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const { existingIssue, updatedIssue } = await prisma.$transaction(async (tx) => {
       const previousIssue = await tx.issue.findUnique({
         where: { id: issueId },
-        select: issueAuditSelect,
+        select: {
+          ...issueAuditSelect,
+          project: {
+            select: workflowSelect,
+          },
+        },
       });
       if (!previousIssue) throw new Error("Issue not found");
+
+      if (typeof data.status === "string" && data.status !== previousIssue.status) {
+        const workflowStatuses = previousIssue.project.workflowStatuses as WorkflowStatusRecord[];
+        const workflowTransitions = previousIssue.project.workflowTransitions as WorkflowTransitionRecord[];
+
+        if (!workflowStatuses.some((status) => status.key === data.status)) {
+          throw new Error("Invalid workflow status");
+        }
+
+        if (
+          !canTransitionWorkflowStatus({
+            currentStatus: previousIssue.status,
+            nextStatus: data.status,
+            workflowStatuses,
+            workflowTransitions,
+          })
+        ) {
+          throw new Error("This status transition is not allowed");
+        }
+      }
 
       const nextIssue = await tx.issue.update({
         where: { id: issueId },

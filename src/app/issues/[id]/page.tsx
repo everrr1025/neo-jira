@@ -17,8 +17,9 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as { id?: string; role?: string | null };
+  const userId = sessionUser.id as string;
+  const userRole = sessionUser.role as string;
   const isGlobalAdmin = userRole === "ADMIN";
 
   let activeProjectId: string | null = null;
@@ -32,7 +33,23 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     where: isGlobalAdmin
       ? { id: resolvedParams.id }
       : { id: resolvedParams.id, projectId: activeProjectId! },
-    include: { assignee: true, reporter: true },
+    include: {
+      assignee: true,
+      reporter: true,
+      project: {
+        select: {
+          workflowStatuses: {
+            orderBy: { position: "asc" },
+          },
+          workflowTransitions: {
+            select: {
+              fromStatusId: true,
+              toStatusId: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!issue) return notFound();
@@ -65,6 +82,8 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         initialIssue={issue}
         users={users}
         iterations={iterations}
+        workflowStatuses={issue.project.workflowStatuses}
+        workflowTransitions={issue.project.workflowTransitions}
         currentUserId={userId}
         locale={locale}
         canDeleteIssue={canDeleteIssue}

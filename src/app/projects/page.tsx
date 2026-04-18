@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
+import { getWorkflowStatusCategory } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,9 @@ export default async function ProjectsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
-  const userId = (session.user as any).id as string;
-  const userRole = (session.user as any).role as string;
+  const sessionUser = session.user as { id?: string; role?: string | null };
+  const userId = sessionUser.id as string;
+  const userRole = sessionUser.role as string;
   const isGlobalAdmin = userRole === "ADMIN";
   const activeProjectId = await getActiveProjectIdForUser(userId, userRole);
 
@@ -31,11 +33,12 @@ export default async function ProjectsPage() {
         where: { user: { role: { not: "ADMIN" } } },
         include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
       },
-      _count: {
+      workflowStatuses: {
+        orderBy: { position: "asc" },
+      },
+      issues: {
         select: {
-          issues: {
-            where: { status: { not: "DONE" } },
-          },
+          status: true,
         },
       },
     },
@@ -174,7 +177,9 @@ export default async function ProjectsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{project._count.issues}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    {project.issues.filter((issue) => getWorkflowStatusCategory(issue.status, project.workflowStatuses) !== "DONE").length}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-3">
                       <a

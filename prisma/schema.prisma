@@ -49,6 +49,8 @@ model Project {
   members     ProjectMember[]
   iterations  Iteration[]
   issues      Issue[]
+  workflowStatuses    ProjectWorkflowStatus[]
+  workflowTransitions ProjectWorkflowTransition[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -152,4 +154,38 @@ model AuditLog {
   @@index([projectId, createdAt])
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
+}
+
+model ProjectWorkflowStatus {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  category  String
+  position  Int
+  isInitial Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outgoingTransitions ProjectWorkflowTransition[] @relation("WorkflowTransitionFrom")
+  incomingTransitions ProjectWorkflowTransition[] @relation("WorkflowTransitionTo")
+
+  @@unique([projectId, key])
+  @@unique([projectId, position])
+  @@index([projectId, category, position])
+}
+
+model ProjectWorkflowTransition {
+  id           String                @id @default(cuid())
+  projectId    String
+  project      Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromStatusId String
+  toStatusId   String
+  fromStatus   ProjectWorkflowStatus @relation("WorkflowTransitionFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatus     ProjectWorkflowStatus @relation("WorkflowTransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, fromStatusId, toStatusId])
+  @@index([projectId, fromStatusId])
+  @@index([projectId, toStatusId])
 }

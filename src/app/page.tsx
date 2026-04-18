@@ -7,7 +7,6 @@ import { redirect } from "next/navigation";
 import { getActiveProjectIdForUser } from "@/lib/activeProject";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
-  getStatusLabel,
   getTranslations,
   localeDateMap,
   type Locale,
@@ -15,6 +14,12 @@ import {
 import { formatActivityEntry, type ActivityLogEntry } from "@/lib/activityLogFormatter";
 import { getDefaultAvatar } from "@/lib/avatar";
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
+import {
+  getWorkflowStatusBadgeClass,
+  getWorkflowStatusCategory,
+  getWorkflowStatusName,
+  type WorkflowStatusRecord,
+} from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +31,7 @@ type ActiveIterationSummary = {
   project: {
     name: string;
     key: string;
+    workflowStatuses: WorkflowStatusRecord[];
   };
   issues: {
     status: string;
@@ -101,7 +107,6 @@ export default async function Dashboard({
   }
 
   const projectFilter = isGlobalAdmin ? {} : { projectId: activeProjectId! };
-  const openIssueFilter = { ...projectFilter, status: { not: "DONE" as const } };
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -115,53 +120,29 @@ export default async function Dashboard({
   const query = typeof params?.search === "string" ? params.search.trim() : "";
 
   const [
-    totalIssues,
-    todoCount,
-    inProgressCount,
-    inTestingCount,
-    doneCount,
-    myIssuesTotal,
-    highPriorityIssuesTotal,
-    overdueIssuesTotal,
-    dueSoonIssuesTotal,
-    myIssues,
-    highPriorityIssues,
-    overdueIssues,
-    dueSoonIssues,
+    statusSummaryIssues,
+    myAssignedIssuesRaw,
+    highPriorityIssuesRaw,
+    overdueIssuesRaw,
+    dueSoonIssuesRaw,
     activeIteration,
     searchResults,
     recentActivity,
+    workflowProjects,
   ] = await Promise.all([
-    prisma.issue.count({ where: projectFilter }),
-    prisma.issue.count({ where: { ...projectFilter, status: "TODO" } }),
-    prisma.issue.count({ where: { ...projectFilter, status: "IN_PROGRESS" } }),
-    prisma.issue.count({ where: { ...projectFilter, status: "IN_TESTING" } }),
-    prisma.issue.count({ where: { ...projectFilter, status: "DONE" } }),
-    prisma.issue.count({ where: { ...projectFilter, assigneeId: userId } }),
-    prisma.issue.count({
-      where: {
-        ...projectFilter,
-        priority: { in: ["HIGH", "URGENT"] },
-      },
-    }),
-    prisma.issue.count({
-      where: {
-        ...projectFilter,
-        dueDate: { not: null, lt: startOfToday },
-      },
-    }),
-    prisma.issue.count({
-      where: {
-        ...projectFilter,
-        dueDate: { not: null, gte: startOfToday, lte: nextThreeDays },
+    prisma.issue.findMany({
+      where: projectFilter,
+      select: {
+        projectId: true,
+        status: true,
       },
     }),
     prisma.issue.findMany({
-      where: { ...openIssueFilter, assigneeId: userId },
+      where: { ...projectFilter, assigneeId: userId },
       orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
-      take: 5,
       select: {
         id: true,
+        projectId: true,
         key: true,
         title: true,
         status: true,
@@ -171,13 +152,13 @@ export default async function Dashboard({
     }),
     prisma.issue.findMany({
       where: {
-        ...openIssueFilter,
+        ...projectFilter,
         priority: { in: ["HIGH", "URGENT"] },
       },
       orderBy: [{ updatedAt: "desc" }],
-      take: 5,
       select: {
         id: true,
+        projectId: true,
         key: true,
         title: true,
         status: true,
@@ -187,13 +168,13 @@ export default async function Dashboard({
     }),
     prisma.issue.findMany({
       where: {
-        ...openIssueFilter,
+        ...projectFilter,
         dueDate: { not: null, lt: startOfToday },
       },
       orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
-      take: 5,
       select: {
         id: true,
+        projectId: true,
         key: true,
         title: true,
         status: true,
@@ -203,13 +184,13 @@ export default async function Dashboard({
     }),
     prisma.issue.findMany({
       where: {
-        ...openIssueFilter,
+        ...projectFilter,
         dueDate: { not: null, gte: startOfToday, lte: nextThreeDays },
       },
       orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
-      take: 5,
       select: {
         id: true,
+        projectId: true,
         key: true,
         title: true,
         status: true,
@@ -220,7 +201,15 @@ export default async function Dashboard({
     prisma.iteration.findFirst({
       where: isGlobalAdmin ? { status: "ACTIVE" } : { projectId: activeProjectId!, status: "ACTIVE" },
       include: {
-        project: { select: { name: true, key: true } },
+        project: {
+          select: {
+            name: true,
+            key: true,
+            workflowStatuses: {
+              orderBy: { position: "asc" },
+            },
+          },
+        },
         issues: { select: { status: true } },
       },
       orderBy: { endDate: "asc" },
@@ -234,6 +223,7 @@ export default async function Dashboard({
           orderBy: { updatedAt: "desc" },
           select: {
             id: true,
+            projectId: true,
             key: true,
             title: true,
             status: true,
@@ -250,7 +240,42 @@ export default async function Dashboard({
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
+    prisma.project.findMany({
+      where: isGlobalAdmin ? {} : { id: activeProjectId! },
+      select: {
+        id: true,
+        workflowStatuses: {
+          orderBy: { position: "asc" },
+        },
+      },
+    }),
   ]);
+
+  const workflowStatusByProjectId = new Map(
+    workflowProjects.map((project) => [project.id, project.workflowStatuses as WorkflowStatusRecord[]]),
+  );
+  const isDoneIssue = (projectId: string, status: string) =>
+    getWorkflowStatusCategory(status, workflowStatusByProjectId.get(projectId) || []) === "DONE";
+
+  const totalIssues = statusSummaryIssues.length;
+  const todoCount = statusSummaryIssues.filter(
+    (issue) => getWorkflowStatusCategory(issue.status, workflowStatusByProjectId.get(issue.projectId) || []) === "TODO"
+  ).length;
+  const inProgressCount = statusSummaryIssues.filter(
+    (issue) =>
+      getWorkflowStatusCategory(issue.status, workflowStatusByProjectId.get(issue.projectId) || []) === "IN_PROGRESS"
+  ).length;
+  const doneCount = statusSummaryIssues.filter((issue) => isDoneIssue(issue.projectId, issue.status)).length;
+
+  const myIssues = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+  const highPriorityIssues = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+  const overdueIssues = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+  const dueSoonIssues = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+
+  const myIssuesTotal = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
+  const highPriorityIssuesTotal = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
+  const overdueIssuesTotal = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
+  const dueSoonIssuesTotal = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
 
   const typedRecentActivity = recentActivity as DashboardActivityLog[];
   const recentActivityIssueIds = [...new Set(typedRecentActivity.map((entry) => entry.issueId).filter(Boolean))] as string[];
@@ -306,7 +331,9 @@ export default async function Dashboard({
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
   const sprintIssueCount = typedActiveIteration?.issues.length ?? 0;
   const sprintCompletedCount =
-    typedActiveIteration?.issues.filter((issue) => issue.status === "DONE").length ?? 0;
+    typedActiveIteration?.issues.filter((issue) =>
+      getWorkflowStatusCategory(issue.status, typedActiveIteration.project.workflowStatuses) === "DONE"
+    ).length ?? 0;
   const sprintProgress =
     sprintIssueCount > 0 ? Math.round((sprintCompletedCount / sprintIssueCount) * 100) : 0;
   const sprintDaysLeft = typedActiveIteration
@@ -337,14 +364,6 @@ export default async function Dashboard({
       tone: "text-blue-700",
       rail: "bg-blue-100",
       fill: "bg-blue-500",
-    },
-    {
-      id: "in-testing",
-      label: translations.dashboard.inTesting,
-      value: inTestingCount,
-      tone: "text-violet-700",
-      rail: "bg-violet-100",
-      fill: "bg-violet-500",
     },
     {
       id: "done",
@@ -386,8 +405,8 @@ export default async function Dashboard({
                     <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">
                       {issue.key}
                     </span>
-                    <span className={getStatusBadgeClass(issue.status)}>
-                      {getStatusLabel(issue.status, locale)}
+                    <span className={getStatusBadgeClass(issue.status, workflowStatusByProjectId.get(issue.projectId) || [])}>
+                      {getWorkflowStatusName(issue.status, workflowStatusByProjectId.get(issue.projectId) || [], locale)}
                     </span>
                   </div>
                   <h4 className="text-sm font-medium text-slate-800 mt-2">{issue.title}</h4>
@@ -520,6 +539,10 @@ export default async function Dashboard({
             />
             <DashboardIssueTabsCard
               locale={locale}
+              workflowProjects={workflowProjects.map((project) => ({
+                id: project.id,
+                workflowStatuses: project.workflowStatuses as WorkflowStatusRecord[],
+              }))}
               tabs={[
                 {
                   id: "assigned",
@@ -702,14 +725,9 @@ function RecentActivityCard({
   );
 }
 
-function getStatusBadgeClass(status: string) {
-  if (status === "DONE") {
-    return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700";
-  }
-
-  if (status === "IN_PROGRESS" || status === "IN_TESTING") {
-    return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700";
-  }
-
-  return "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600";
+function getStatusBadgeClass(status: string, workflowStatuses: WorkflowStatusRecord[] = []) {
+  return `text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getWorkflowStatusBadgeClass(
+    status,
+    workflowStatuses
+  )}`;
 }

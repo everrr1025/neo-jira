@@ -1,16 +1,24 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
-import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { DragDropContext, Droppable, Draggable, type DragStart, type DropResult } from "@hello-pangea/dnd";
 import { updateIssueStatus } from "@/app/actions/issues";
 import { useRouter } from "next/navigation";
 import {
-  getIssueStatusLabel,
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
   Locale,
 } from "@/lib/i18n";
+import {
+  buildWorkflowTransitionMap,
+  getWorkflowCategoryLabel,
+  getWorkflowStatusCategory,
+  getWorkflowStatusName,
+  sortWorkflowStatuses,
+  type WorkflowStatusRecord,
+  type WorkflowTransitionRecord,
+} from "@/lib/workflows";
 
 type Issue = {
   id: string;
@@ -23,33 +31,60 @@ type Issue = {
   reporter?: { name: string | null } | null;
 };
 
-const COLUMNS = [
-  { id: "TODO", bg: "bg-slate-100", border: "border-slate-200" },
-  { id: "IN_PROGRESS", bg: "bg-blue-50", border: "border-blue-100" },
-  { id: "IN_TESTING", bg: "bg-purple-50", border: "border-purple-100" },
-  { id: "DONE", bg: "bg-emerald-50", border: "border-emerald-100" },
-];
-
 export default function KanbanBoard({
   initialIssues,
-  currentUserId: _currentUserId,
+  workflowStatuses,
+  workflowTransitions,
+  currentUserId,
   locale,
 }: {
   initialIssues: Issue[];
+  workflowStatuses: WorkflowStatusRecord[];
+  workflowTransitions: WorkflowTransitionRecord[];
   currentUserId?: string;
   locale: Locale;
 }) {
   const [issues, setIssues] = useState(initialIssues);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const router = useRouter();
   const translations = getTranslations(locale);
+  void currentUserId;
+  const transitionMap = useMemo(
+    () => buildWorkflowTransitionMap(workflowTransitions, workflowStatuses),
+    [workflowTransitions, workflowStatuses]
+  );
+  const columns = sortWorkflowStatuses(workflowStatuses).map((status) => {
+    const category = getWorkflowStatusCategory(status.key, workflowStatuses);
+    if (category === "DONE") {
+      return { id: status.key, bg: "bg-emerald-50", border: "border-emerald-100" };
+    }
+    if (category === "IN_PROGRESS") {
+      return { id: status.key, bg: "bg-blue-50", border: "border-blue-100" };
+    }
+    return { id: status.key, bg: "bg-slate-100", border: "border-slate-200" };
+  });
 
   // Sync state if initialIssues change from the server
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
 
+  const canDropIntoStatus = (issueId: string | null, nextStatus: string) => {
+    if (!issueId) return false;
+    const draggedIssue = issues.find((issue) => issue.id === issueId);
+    if (!draggedIssue) return false;
+    if (draggedIssue.status === nextStatus) return true;
+
+    return transitionMap.get(draggedIssue.status)?.has(nextStatus) ?? false;
+  };
+
+  const onDragStart = (start: DragStart) => {
+    setActiveDragIssueId(start.draggableId);
+  };
+
   const onDragEnd = (result: DropResult) => {
+    setActiveDragIssueId(null);
     const { destination, source, draggableId } = result;
 
     if (!destination) return;
@@ -60,6 +95,11 @@ export default function KanbanBoard({
     if (!draggedIssue) return;
 
     const newStatus = destination.droppableId;
+    if (!canDropIntoStatus(draggableId, newStatus)) {
+      return;
+    }
+
+    const previousIssues = issues;
     
     // Create new array with updated status
     const newIssues = issues.map(issue => 
@@ -70,31 +110,41 @@ export default function KanbanBoard({
 
     // Persist to server via Server Action
     startTransition(() => {
-      updateIssueStatus(draggableId, newStatus);
+      updateIssueStatus(draggableId, newStatus).then((result) => {
+        if (!result.success) {
+          setIssues(previousIssues);
+        }
+      });
     });
   };
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
+    <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-stretch h-full w-full">
-        {COLUMNS.map((col) => {
+        {columns.map((col) => {
           const colIssues = issues.filter(i => i.status === col.id);
+          const label = getWorkflowStatusName(col.id, workflowStatuses, locale);
+          const categoryLabel = getWorkflowCategoryLabel(getWorkflowStatusCategory(col.id, workflowStatuses), locale);
+          const isDropDisabled =
+            activeDragIssueId !== null && !canDropIntoStatus(activeDragIssueId, col.id);
           
           return (
             <div key={col.id} className={`flex-1 min-w-[200px] rounded-xl border flex flex-col max-h-full ${col.bg} ${col.border}`}>
               <div className="p-3 font-semibold text-slate-700 flex items-center justify-between text-sm uppercase tracking-wide">
-                {getIssueStatusLabel(col.id, locale)}
+                <span title={categoryLabel}>{label}</span>
                 <span className="bg-white px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm">
                   {colIssues.length}
                 </span>
               </div>
               
-              <Droppable droppableId={col.id}>
+              <Droppable droppableId={col.id} isDropDisabled={isDropDisabled}>
                 {(provided, snapshot) => (
                   <div 
                     {...provided.droppableProps} 
                     ref={provided.innerRef}
-                    className={`flex-1 overflow-y-auto p-2 space-y-3 min-h-[150px] transition-colors rounded-b-xl ${snapshot.isDraggingOver ? 'bg-black/5' : ''}`}
+                    className={`flex-1 overflow-y-auto p-2 space-y-3 min-h-[150px] transition-colors rounded-b-xl ${
+                      snapshot.isDraggingOver ? "bg-black/5" : isDropDisabled ? "opacity-60" : ""
+                    }`}
                   >
                     {colIssues.map((ticket, index) => (
                       <Draggable key={ticket.id} draggableId={ticket.id} index={index}>
