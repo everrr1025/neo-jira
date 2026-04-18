@@ -78,13 +78,13 @@ jobs:
             npm ci
             npx prisma generate
 
-            NEED_BASELINE=$(python3 - <<'PY'
+            BASELINE_MIGRATIONS=$(python3 - <<'PY'
             import os
             import sqlite3
 
             db_url = os.environ.get("DATABASE_URL", "")
             if not db_url.startswith("file:"):
-                print("0")
+                print("")
                 raise SystemExit(0)
 
             db_path = db_url[len("file:"):]
@@ -92,7 +92,7 @@ jobs:
                 db_path = os.path.abspath(db_path)
 
             if not os.path.exists(db_path):
-                print("0")
+                print("")
                 raise SystemExit(0)
 
             conn = sqlite3.connect(db_path)
@@ -102,14 +102,30 @@ jobs:
             conn.close()
 
             user_tables = tables - {"_prisma_migrations"}
-            needs_baseline = bool(user_tables) and "_prisma_migrations" not in tables
-            print("1" if needs_baseline else "0")
+            if not user_tables or "_prisma_migrations" in tables:
+                print("")
+                raise SystemExit(0)
+
+            migrations = []
+            if {"User", "Project", "Issue"}.issubset(tables):
+                migrations.append("20260417000000_init")
+            if "AuditLog" in tables:
+                migrations.append("20260417072536_add_audit_logs")
+            if {"ProjectWorkflowStatus", "ProjectWorkflowTransition"}.issubset(tables):
+                migrations.append("20260418022713_add_project_workflows")
+
+            print("\n".join(migrations))
             PY
             )
 
-            if [ "$NEED_BASELINE" = "1" ]; then
+            if [ -n "$BASELINE_MIGRATIONS" ]; then
               echo "🧭 Existing SQLite data detected without Prisma migration history. Recording baseline..."
-              npx prisma migrate resolve --applied "$INITIAL_MIGRATION"
+              echo "$BASELINE_MIGRATIONS" | while IFS= read -r migration; do
+                if [ -n "$migration" ]; then
+                  echo "Marking migration as applied: $migration"
+                  npx prisma migrate resolve --applied "$migration"
+                fi
+              done
             fi
 
             npx prisma migrate deploy
