@@ -4,7 +4,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { CreateSprintButton } from "@/components/CreateSprintButton";
 import { redirect } from "next/navigation";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
@@ -28,28 +29,15 @@ export default async function IterationsPage() {
   if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
-  let activeProjectId: string | null = null;
-  let activeProject: { id: string; name: string; key: string } | null = null;
-
-  if (!isGlobalAdmin) {
-    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-    if (!activeProjectId) redirect("/projects");
-
-    activeProject = await prisma.project.findUnique({
-      where: { id: activeProjectId },
-      select: { id: true, name: true, key: true },
-    });
-    if (!activeProject) redirect("/projects");
-  }
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject) redirect("/projects");
 
   let adminProjects: { id: string; name: string; key: string }[] = [];
   if (isGlobalAdmin) {
-    adminProjects = await prisma.project.findMany({
-      select: { id: true, name: true, key: true },
-    });
+    adminProjects = [activeProject];
   } else {
     const membership = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId, projectId: activeProjectId! } },
+      where: { userId_projectId: { userId, projectId: activeProject.id } },
       include: { project: { select: { id: true, name: true, key: true } } },
     });
 
@@ -61,7 +49,7 @@ export default async function IterationsPage() {
   const canManageSprints = adminProjects.length > 0;
 
   let iterations = await prisma.iteration.findMany({
-    where: isGlobalAdmin ? {} : { projectId: activeProjectId! },
+    where: buildProjectItemsWhere(activeProject.id),
     include: {
       project: {
         select: {
@@ -96,6 +84,7 @@ export default async function IterationsPage() {
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.iterationsPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
             {translations.iterationsPage.subtitle}
+            {isGlobalAdmin ? ` | ${activeProject.name} (${activeProject.key})` : ""}
           </p>
         </div>
         {canManageSprints && (

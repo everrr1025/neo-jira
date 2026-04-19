@@ -4,7 +4,8 @@ import CreateIssueButton from "@/components/CreateIssueButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 
@@ -27,20 +28,10 @@ export default async function IssuesPage() {
   if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
-  let activeProjectId: string | null = null;
-  let activeProject: { name: string; key: string } | null = null;
-  if (!isGlobalAdmin) {
-    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-    if (!activeProjectId) redirect("/projects");
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject) redirect("/projects");
 
-    activeProject = await prisma.project.findUnique({
-      where: { id: activeProjectId },
-      select: { name: true, key: true },
-    });
-    if (!activeProject) redirect("/projects");
-  }
-
-  const whereClause = isGlobalAdmin ? {} : { projectId: activeProjectId! };
+  const whereClause = buildProjectItemsWhere(activeProject.id);
   const issues = await prisma.issue.findMany({
     where: whereClause,
     include: { assignee: true, reporter: true, iteration: true },
@@ -48,20 +39,16 @@ export default async function IssuesPage() {
   });
 
   const users = await prisma.user.findMany({
-    where: isGlobalAdmin
-      ? {}
-      : {
-          projectMemberships: { some: { projectId: activeProjectId! } },
-        },
+    where: buildProjectUsersWhere(activeProject.id),
     orderBy: { name: "asc" },
   });
 
   const iterations = await prisma.iteration.findMany({
-    where: isGlobalAdmin ? {} : { projectId: activeProjectId! },
+    where: buildProjectItemsWhere(activeProject.id),
     orderBy: { startDate: "desc" },
   });
   const workflowProjects = await prisma.project.findMany({
-    where: isGlobalAdmin ? {} : { id: activeProjectId! },
+    where: { id: activeProject.id },
     select: {
       id: true,
       workflowStatuses: {
@@ -85,6 +72,7 @@ export default async function IssuesPage() {
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.issuesPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
             {translations.issuesPage.subtitle}
+            {isGlobalAdmin ? ` | ${activeProject.name} (${activeProject.key})` : ""}
           </p>
         </div>
         <div className="flex items-center gap-3">

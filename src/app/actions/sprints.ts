@@ -2,6 +2,10 @@
 
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
 import { checkProjectAdmin } from "@/lib/permissions";
 import { isDoneWorkflowStatus, type WorkflowStatusRecord } from "@/lib/workflows";
 
@@ -13,6 +17,18 @@ function activeSprintExistsMessage(sprintName: string, locale?: string) {
   return `Sprint "${sprintName}" is already active. Complete or move it back to planned first.`;
 }
 
+async function getActiveProjectIdFromSession() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const sessionUser = session.user as { id?: string; role?: string };
+  const userId = sessionUser.id;
+  if (!userId) throw new Error("Unauthorized");
+
+  const activeProject = await getActiveProjectForUser(userId, sessionUser.role ?? "USER");
+  return activeProject?.id || null;
+}
+
 export async function createSprint(data: {
   name: string;
   startDate: string;
@@ -20,6 +36,11 @@ export async function createSprint(data: {
   projectId: string;
 }) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
+    if (!isProjectInActiveContext({ activeProjectId, projectId: data.projectId })) {
+      throw new Error("Unauthorized");
+    }
+
     await checkProjectAdmin(data.projectId);
 
     const sprint = await prisma.iteration.create({
@@ -41,10 +62,14 @@ export async function createSprint(data: {
 
 export async function startSprint(sprintId: string, locale?: string) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
+    if (!isProjectInActiveContext({ activeProjectId, projectId: sprint.projectId })) {
+      return { success: false, error: "Unauthorized" };
+    }
 
     await checkProjectAdmin(sprint.projectId);
 
@@ -92,6 +117,7 @@ type CompleteSprintOptions = {
 
 export async function completeSprint(sprintId: string, options: CompleteSprintOptions = { moveUnfinishedTo: "BACKLOG" }) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
       include: {
@@ -105,6 +131,9 @@ export async function completeSprint(sprintId: string, options: CompleteSprintOp
       },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
+    if (!isProjectInActiveContext({ activeProjectId, projectId: sprint.projectId })) {
+      return { success: false, error: "Unauthorized" };
+    }
 
     await checkProjectAdmin(sprint.projectId);
 
@@ -168,10 +197,14 @@ export async function completeSprint(sprintId: string, options: CompleteSprintOp
 
 export async function reopenSprint(sprintId: string) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
+    if (!isProjectInActiveContext({ activeProjectId, projectId: sprint.projectId })) {
+      return { success: false, error: "Unauthorized" };
+    }
 
     await checkProjectAdmin(sprint.projectId);
 
@@ -194,11 +227,15 @@ export async function reopenSprint(sprintId: string) {
 
 export async function deleteSprint(sprintId: string) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
       select: { id: true, projectId: true, status: true },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
+    if (!isProjectInActiveContext({ activeProjectId, projectId: sprint.projectId })) {
+      return { success: false, error: "Unauthorized" };
+    }
 
     await checkProjectAdmin(sprint.projectId);
 
@@ -227,11 +264,15 @@ export async function deleteSprint(sprintId: string) {
 
 export async function updateSprint(sprintId: string, data: { name: string; startDate: string; endDate: string }) {
   try {
+    const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
       select: { id: true, projectId: true },
     });
     if (!sprint) return { success: false, error: "Sprint not found" };
+    if (!isProjectInActiveContext({ activeProjectId, projectId: sprint.projectId })) {
+      return { success: false, error: "Unauthorized" };
+    }
 
     await checkProjectAdmin(sprint.projectId);
 

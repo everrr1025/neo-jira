@@ -9,7 +9,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { getProjectRole } from "@/lib/permissions";
 import { SprintActionButton } from "@/components/SprintActionButton";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 
@@ -32,17 +33,12 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   if (!userId) redirect("/login");
   const isGlobalAdmin = userRole === "ADMIN";
 
-  let activeProjectId: string | null = null;
-  if (!isGlobalAdmin) {
-    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-    if (!activeProjectId) redirect("/projects");
-  }
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject) redirect("/projects");
 
   const resolvedParams = await params;
   const iteration = await prisma.iteration.findFirst({
-    where: isGlobalAdmin
-      ? { id: resolvedParams.id }
-      : { id: resolvedParams.id, projectId: activeProjectId! },
+    where: buildProjectEntityWhere(resolvedParams.id, activeProject.id),
     include: {
       project: {
         select: {
@@ -80,16 +76,11 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
     .map((status) => status.key);
   const [users, iterations, backlogIssues] = await Promise.all([
     prisma.user.findMany({
-      where: {
-        OR: [
-          { role: "ADMIN" },
-          { projectMemberships: { some: { projectId: iteration.project.id } } },
-        ],
-      },
+      where: buildProjectUsersWhere(iteration.project.id),
       orderBy: { name: "asc" },
     }),
     prisma.iteration.findMany({
-      where: { projectId: iteration.project.id },
+      where: buildProjectItemsWhere(iteration.project.id),
       orderBy: { startDate: "desc" },
     }),
     canManage

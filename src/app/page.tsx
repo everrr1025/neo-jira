@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
   getTranslations,
@@ -89,24 +90,12 @@ export default async function Dashboard({
   if (!userId) redirect("/login");
 
   const isGlobalAdmin = userRole === "ADMIN";
-  let activeProjectId: string | null = null;
-  if (!isGlobalAdmin) {
-    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-    if (!activeProjectId) {
-      redirect("/projects");
-    }
-
-    const activeProject = await prisma.project.findUnique({
-      where: { id: activeProjectId },
-      select: { id: true },
-    });
-
-    if (!activeProject) {
-      redirect("/projects");
-    }
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject) {
+    redirect("/projects");
   }
 
-  const projectFilter = isGlobalAdmin ? {} : { projectId: activeProjectId! };
+  const projectFilter = buildProjectItemsWhere(activeProject.id);
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -199,7 +188,7 @@ export default async function Dashboard({
       },
     }),
     prisma.iteration.findFirst({
-      where: isGlobalAdmin ? { status: "ACTIVE" } : { projectId: activeProjectId!, status: "ACTIVE" },
+      where: { projectId: activeProject.id, status: "ACTIVE" },
       include: {
         project: {
           select: {
@@ -241,7 +230,7 @@ export default async function Dashboard({
       take: 10,
     }),
     prisma.project.findMany({
-      where: isGlobalAdmin ? {} : { id: activeProjectId! },
+      where: { id: activeProject.id },
       select: {
         id: true,
         workflowStatuses: {

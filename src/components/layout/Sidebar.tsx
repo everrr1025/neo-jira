@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
-import { getActiveProjectIdForUser, getVisibleProjectsForUser } from "@/lib/activeProject";
+import { getActiveProjectContextForUser } from "@/lib/activeProject";
 import { SidebarClient } from "./SidebarClient";
 import { Locale } from "@/lib/i18n";
 
@@ -18,10 +18,8 @@ export async function Sidebar({ locale }: { locale: Locale }) {
     select: { id: true, name: true, email: true, role: true, avatar: true }
   }) : null;
 
-  const projects = await getVisibleProjectsForUser(userId, userRole);
-  const activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-  const activeProject = projects.find((p) => p.id === activeProjectId) || null;
-  const lockProjectScopedLinks = !isAdmin && !activeProject;
+  const { activeProject } = await getActiveProjectContextForUser(userId, userRole);
+  const lockProjectScopedLinks = !activeProject;
 
   return (
     <SidebarClient 

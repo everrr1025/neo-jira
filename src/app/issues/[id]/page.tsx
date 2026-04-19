@@ -4,7 +4,8 @@ import IssueDetailClient from "@/components/IssueDetailClient";
 import BackButton from "@/components/BackButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { getProjectRole } from "@/lib/permissions";
@@ -22,17 +23,12 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const userRole = sessionUser.role as string;
   const isGlobalAdmin = userRole === "ADMIN";
 
-  let activeProjectId: string | null = null;
-  if (!isGlobalAdmin) {
-    activeProjectId = await getActiveProjectIdForUser(userId, userRole);
-    if (!activeProjectId) redirect("/projects");
-  }
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject) redirect("/projects");
 
   const resolvedParams = await params;
   const issue = await prisma.issue.findFirst({
-    where: isGlobalAdmin
-      ? { id: resolvedParams.id }
-      : { id: resolvedParams.id, projectId: activeProjectId! },
+    where: buildProjectEntityWhere(resolvedParams.id, activeProject.id),
     include: {
       assignee: true,
       reporter: true,
@@ -55,14 +51,12 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   if (!issue) return notFound();
 
   const users = await prisma.user.findMany({
-    where: {
-      projectMemberships: { some: { projectId: issue.projectId } },
-    },
+    where: buildProjectUsersWhere(issue.projectId),
     orderBy: { name: "asc" },
   });
 
   const iterations = await prisma.iteration.findMany({
-    where: isGlobalAdmin ? {} : { projectId: issue.projectId },
+    where: buildProjectItemsWhere(issue.projectId),
     orderBy: { startDate: "desc" },
   });
 

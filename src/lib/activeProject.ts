@@ -1,13 +1,9 @@
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
+import { buildActiveProjectWhere, findProjectById, type BasicProject } from "@/lib/activeProjectUtils";
 
 export const ACTIVE_PROJECT_COOKIE = "activeProjectId";
-
-type BasicProject = {
-  id: string;
-  name: string;
-  key: string;
-};
+const basicProjectSelect = { id: true, name: true, key: true } as const;
 
 export async function getVisibleProjectsForUser(
   userId?: string,
@@ -17,7 +13,7 @@ export async function getVisibleProjectsForUser(
 
   if (userRole === "ADMIN") {
     return prisma.project.findMany({
-      select: { id: true, name: true, key: true },
+      select: basicProjectSelect,
       orderBy: { name: "asc" },
     });
   }
@@ -26,7 +22,7 @@ export async function getVisibleProjectsForUser(
     where: { userId },
     select: {
       project: {
-        select: { id: true, name: true, key: true },
+        select: basicProjectSelect,
       },
     },
   });
@@ -36,28 +32,43 @@ export async function getVisibleProjectsForUser(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function getRequestedActiveProjectId() {
+  const cookieStore = await cookies();
+  return cookieStore.get(ACTIVE_PROJECT_COOKIE)?.value || null;
+}
+
+export async function getActiveProjectForUser(
+  userId?: string,
+  userRole?: string
+): Promise<BasicProject | null> {
+  if (!userId) return null;
+
+  const activeProjectId = await getRequestedActiveProjectId();
+  if (!activeProjectId) return null;
+
+  return prisma.project.findFirst({
+    where: buildActiveProjectWhere(userId, userRole, activeProjectId),
+    select: basicProjectSelect,
+  });
+}
+
+export async function getActiveProjectContextForUser(
+  userId?: string,
+  userRole?: string
+): Promise<{ projects: BasicProject[]; activeProject: BasicProject | null }> {
+  const projects = await getVisibleProjectsForUser(userId, userRole);
+  const activeProjectId = await getRequestedActiveProjectId();
+
+  return {
+    projects,
+    activeProject: findProjectById(projects, activeProjectId),
+  };
+}
+
 export async function getActiveProjectIdForUser(
   userId?: string,
   userRole?: string
 ): Promise<string | null> {
-  if (!userId) return null;
-
-  const cookieStore = await cookies();
-  const activeProjectId = cookieStore.get(ACTIVE_PROJECT_COOKIE)?.value;
-  if (!activeProjectId) return null;
-
-  if (userRole === "ADMIN") {
-    const exists = await prisma.project.findUnique({
-      where: { id: activeProjectId },
-      select: { id: true },
-    });
-    return exists ? activeProjectId : null;
-  }
-
-  const membership = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId: activeProjectId } },
-    select: { id: true },
-  });
-
-  return membership ? activeProjectId : null;
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  return activeProject?.id || null;
 }

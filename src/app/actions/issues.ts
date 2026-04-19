@@ -4,8 +4,14 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
-import { getActiveProjectIdForUser } from "@/lib/activeProject";
-import { checkProjectAdmin } from "@/lib/permissions";
+import { getActiveProjectForUser } from "@/lib/activeProject";
+import {
+  canMoveIssueToIteration,
+  canUseIterationForActiveProject,
+  isProjectInActiveContext,
+  resolveIssueCreateProjectId,
+} from "@/lib/activeProjectUtils";
+import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
 import { notifyIssueMentions } from "@/lib/notifications";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import {
@@ -55,8 +61,12 @@ export async function updateIssueStatus(issueId: string, status: string) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
-    const userId = (session.user as { id?: string }).id;
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
 
     const issue = await prisma.$transaction(async (tx) => {
       const existingIssue = await tx.issue.findUnique({
@@ -69,6 +79,11 @@ export async function updateIssueStatus(issueId: string, status: string) {
         },
       });
       if (!existingIssue) throw new Error("Issue not found");
+      if (!isProjectInActiveContext({ activeProjectId, projectId: existingIssue.projectId })) {
+        throw new Error("Unauthorized");
+      }
+
+      await checkProjectMember(existingIssue.projectId);
 
       const workflowStatuses = existingIssue.project.workflowStatuses as WorkflowStatusRecord[];
       const workflowTransitions = existingIssue.project.workflowTransitions as WorkflowTransitionRecord[];
@@ -133,7 +148,8 @@ export async function createIssue(data: {
     if (!userId) throw new Error("Unauthorized");
     const userRole = sessionUser.role ?? "USER";
     const isGlobalAdmin = userRole === "ADMIN";
-    const activeProjectId = await getActiveProjectIdForUser(userId, userRole);
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
 
     const selectedIteration = data.iterationId
       ? await prisma.iteration.findUnique({
@@ -146,7 +162,10 @@ export async function createIssue(data: {
       throw new Error("Sprint not found");
     }
 
-    if (!isGlobalAdmin && selectedIteration && selectedIteration.projectId !== activeProjectId) {
+    if (!canUseIterationForActiveProject({
+      activeProjectId,
+      selectedIterationProjectId: selectedIteration?.projectId,
+    })) {
       throw new Error("Unauthorized");
     }
 
@@ -154,9 +173,16 @@ export async function createIssue(data: {
       throw new Error("Cannot add issues to a completed sprint");
     }
 
-    let targetProjectId = selectedIteration?.projectId || activeProjectId;
+    let targetProjectId = resolveIssueCreateProjectId({
+      activeProjectId,
+      selectedIterationProjectId: selectedIteration?.projectId,
+    });
     if (!targetProjectId && isGlobalAdmin) {
-      targetProjectId = (await prisma.project.findFirst({ select: { id: true } }))?.id || null;
+      targetProjectId = resolveIssueCreateProjectId({
+        activeProjectId,
+        selectedIterationProjectId: selectedIteration?.projectId,
+        fallbackProjectId: (await prisma.project.findFirst({ select: { id: true } }))?.id || null,
+      });
     }
     if (!targetProjectId) throw new Error("Project not found or no access");
 
@@ -361,8 +387,12 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
-    const userId = (session.user as { id?: string }).id;
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
 
     const { existingIssue, updatedIssue } = await prisma.$transaction(async (tx) => {
       const previousIssue = await tx.issue.findUnique({
@@ -375,6 +405,35 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         },
       });
       if (!previousIssue) throw new Error("Issue not found");
+      if (!isProjectInActiveContext({ activeProjectId, projectId: previousIssue.projectId })) {
+        throw new Error("Unauthorized");
+      }
+
+      await checkProjectMember(previousIssue.projectId);
+
+      if (typeof data.iterationId === "string" && data.iterationId) {
+        const targetIteration = await tx.iteration.findUnique({
+          where: { id: data.iterationId },
+          select: { id: true, projectId: true, status: true },
+        });
+
+        if (!targetIteration) {
+          throw new Error("Sprint not found");
+        }
+
+        if (
+          !canMoveIssueToIteration({
+            issueProjectId: previousIssue.projectId,
+            targetIterationProjectId: targetIteration.projectId,
+          })
+        ) {
+          throw new Error("Unauthorized");
+        }
+
+        if (targetIteration.status === "COMPLETED") {
+          throw new Error("Cannot move an issue to a completed sprint");
+        }
+      }
 
       if (typeof data.status === "string" && data.status !== previousIssue.status) {
         const workflowStatuses = previousIssue.project.workflowStatuses as WorkflowStatusRecord[];
@@ -445,8 +504,12 @@ export async function deleteIssue(issueId: string) {
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
-    const userId = (session.user as { id?: string }).id;
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
 
     const issue = await prisma.issue.findUnique({
       where: { id: issueId },
@@ -455,6 +518,9 @@ export async function deleteIssue(issueId: string) {
 
     if (!issue) {
       return { success: false, error: "Issue not found" };
+    }
+    if (!isProjectInActiveContext({ activeProjectId, projectId: issue.projectId })) {
+      return { success: false, error: "Unauthorized" };
     }
 
     await checkProjectAdmin(issue.projectId);

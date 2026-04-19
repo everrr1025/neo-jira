@@ -1,10 +1,13 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { LogOut, MessageSquare, Check } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { LogOut, MessageSquare, Check, KeyRound, X, Eye, EyeOff } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useTransition } from "react";
 import { getTranslations, Locale } from "@/lib/i18n";
 import { AvatarPicker } from "./AvatarPicker";
+import AlertPopup from "@/components/AlertPopup";
+import { changeUserPassword } from "@/app/actions/user";
+import { isValidPassword } from "@/lib/validation";
 
 type NotificationItem = {
   id: string;
@@ -18,6 +21,44 @@ type NotificationItem = {
 
 function getDisplayName(notification: NotificationItem) {
   return notification.actor?.name || "System";
+}
+
+function getPasswordText(locale: Locale) {
+  if (locale === "zh") {
+    return {
+      changePassword: "修改密码",
+      title: "修改密码",
+      currentPassword: "当前密码",
+      newPassword: "新密码",
+      confirmPassword: "确认新密码",
+      passwordRule: "至少 8 位，并包含大写/小写/数字/特殊符号中的至少 3 项。",
+      cancel: "取消",
+      submit: "更新密码",
+      submitting: "更新中...",
+      passwordChanged: "密码修改成功。",
+      passwordMismatch: "两次输入的新密码不一致。",
+      incorrectCurrentPassword: "当前密码不正确。",
+      newPasswordMustDiffer: "新密码不能与当前密码相同。",
+      changePasswordFailed: "修改密码失败。",
+    };
+  }
+
+  return {
+    changePassword: "Change password",
+    title: "Change Password",
+    currentPassword: "Current password",
+    newPassword: "New password",
+    confirmPassword: "Confirm password",
+    passwordRule: "At least 8 chars, and include at least 3 of uppercase/lowercase/number/special.",
+    cancel: "Cancel",
+    submit: "Update Password",
+    submitting: "Updating...",
+    passwordChanged: "Password updated successfully.",
+    passwordMismatch: "The new passwords do not match.",
+    incorrectCurrentPassword: "The current password is incorrect.",
+    newPasswordMustDiffer: "The new password must be different from the current password.",
+    changePasswordFailed: "Failed to update password.",
+  };
 }
 
 export function SidebarUserMenu({
@@ -35,8 +76,19 @@ export function SidebarUserMenu({
 }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackType, setFeedbackType] = useState<"error" | "success">("error");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const popoverRef = useRef<HTMLDivElement>(null);
   const translations = getTranslations(locale);
+  const passwordText = getPasswordText(locale);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -86,6 +138,71 @@ export function SidebarUserMenu({
     if (nextOpen && unreadCount > 0) {
       void markAllAsRead();
     }
+  };
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const closePasswordModal = () => {
+    setIsPasswordModalOpen(false);
+    resetPasswordForm();
+  };
+
+  const mapPasswordError = (error?: string) => {
+    switch (error) {
+      case "INVALID_CURRENT_PASSWORD":
+        return passwordText.incorrectCurrentPassword;
+      case "PASSWORD_POLICY_FAILED":
+        return passwordText.passwordRule;
+      case "PASSWORD_SAME_AS_CURRENT":
+        return passwordText.newPasswordMustDiffer;
+      case "PASSWORD_NOT_SET":
+      case "UNAUTHORIZED":
+      default:
+        return passwordText.changePasswordFailed;
+    }
+  };
+
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (newPassword !== confirmPassword) {
+      setFeedbackType("error");
+      setFeedbackMessage(passwordText.passwordMismatch);
+      return;
+    }
+
+    if (!isValidPassword(newPassword)) {
+      setFeedbackType("error");
+      setFeedbackMessage(passwordText.passwordRule);
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setFeedbackType("error");
+      setFeedbackMessage(passwordText.newPasswordMustDiffer);
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await changeUserPassword(currentPassword, newPassword);
+
+      if (result.success) {
+        setFeedbackType("success");
+        setFeedbackMessage(passwordText.passwordChanged);
+        closePasswordModal();
+        return;
+      }
+
+      setFeedbackType("error");
+      setFeedbackMessage(mapPasswordError(result.error));
+    });
   };
 
   return (
@@ -167,6 +284,17 @@ export function SidebarUserMenu({
         )}
 
         <button
+          onClick={() => {
+            setIsOpen(false);
+            setIsPasswordModalOpen(true);
+          }}
+          className="p-2 rounded-md hover:bg-slate-800 text-slate-500 hover:text-amber-400 transition-colors"
+          title={passwordText.changePassword}
+        >
+          <KeyRound size={16} />
+        </button>
+
+        <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           className="p-2 rounded-md hover:bg-slate-800 text-slate-500 hover:text-red-400 transition-colors"
           title={translations.sidebar.signOut}
@@ -174,6 +302,122 @@ export function SidebarUserMenu({
           <LogOut size={16} />
         </button>
       </div>
+
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-slate-800">{passwordText.title}</h2>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                aria-label={translations.sidebar.close}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4 px-6 py-5">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700">
+                  {passwordText.currentPassword}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword((value) => !value)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-slate-600"
+                    aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                  >
+                    {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700">
+                  {passwordText.newPassword}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((value) => !value)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-slate-600"
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700">
+                  {passwordText.confirmPassword}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((value) => !value)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-slate-600"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500">{passwordText.passwordRule}</p>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closePasswordModal}
+                  disabled={isPending}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {passwordText.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isPending ? passwordText.submitting : passwordText.submit}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <AlertPopup
+        message={feedbackMessage}
+        type={feedbackType}
+        onClose={() => setFeedbackMessage("")}
+        autoCloseMs={4000}
+      />
     </div>
   );
 }
