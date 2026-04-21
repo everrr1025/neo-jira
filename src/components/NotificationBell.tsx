@@ -1,95 +1,145 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Bell } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Bell, Check } from "lucide-react";
 
-interface Notification {
+import { getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
+
+type NotificationItem = {
   id: string;
   type: string;
   message: string;
-  link?: string;
+  link?: string | null;
   read: boolean;
   createdAt: string;
-  actor?: { name: string };
-}
+  actor?: { name: string | null } | null;
+};
 
-export default function NotificationBell() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+export default function NotificationBell({ locale }: { locale: Locale }) {
+  const translations = getTranslations(locale);
+  const text = translations.notificationsMenu;
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
+    const fetchNotifications = async () => {
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as NotificationItem[];
+        setNotifications(data);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    void fetchNotifications();
+    const interval = window.setInterval(fetchNotifications, 60000);
+    return () => window.clearInterval(interval);
   }, []);
 
-  async function fetchNotifications() {
-    try {
-      const res = await fetch("/api/notifications");
-      if (res.ok) {
-        setNotifications(await res.json());
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
       }
-    } catch (e) {
-      console.error(e);
-    }
-  }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
 
   const markAllAsRead = async () => {
+    if (unreadCount === 0) return;
+
     try {
-      await fetch("/api/notifications", { method: "PATCH" });
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    } catch (e) {
-      console.error(e);
+      const response = await fetch("/api/notifications", { method: "PATCH" });
+      if (!response.ok) return;
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+    } catch (error) {
+      console.error(error);
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
   return (
-    <div className="relative">
-      <button 
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
         onClick={() => {
-          setOpen(!open);
-          if (!open && unreadCount > 0) markAllAsRead();
+          const nextOpen = !open;
+          setOpen(nextOpen);
+          if (nextOpen) {
+            void markAllAsRead();
+          }
         }}
-        className="p-2 rounded-full hover:bg-slate-100 relative transition-colors text-slate-500"
+        className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+        title={text.title}
       >
-        <Bell size={20} />
+        <Bell size={18} />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
         )}
       </button>
 
       {open && (
-        <div 
-          className="absolute bottom-full mb-3 w-[320px] bg-white border border-slate-300 shadow-2xl rounded-lg overflow-hidden z-[100] origin-bottom animate-in fade-in zoom-in-95 duration-100"
-          style={{ left: '50%', transform: 'translateX(-50%)' }}
-        >
-          <div className="p-3 border-b bg-slate-50 font-semibold text-slate-700 text-sm flex justify-between items-center">
-            Notifications
-            {unreadCount > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{unreadCount} New</span>}
-          </div>
-          <div className="max-h-[400px] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-4 text-center text-slate-500 text-sm">No notifications</div>
-            ) : (
-              notifications.map((n) => (
-                <Link 
-                  href={n.link || "#"} 
-                  key={n.id}
-                  onClick={() => setOpen(false)}
-                  className={`block p-4 border-b last:border-0 hover:bg-slate-50 transition-colors ${n.read ? 'opacity-70' : 'bg-blue-50/30'}`}
+        <div className="absolute right-0 top-full z-50 mt-3 w-[340px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <span className="text-sm font-semibold text-slate-900">{text.title}</span>
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                  {locale === "zh" ? `${unreadCount}${text.unreadSuffix}` : `${unreadCount} ${text.unreadSuffix}`}
+                </span>
+              )}
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void markAllAsRead()}
+                  className="text-xs font-medium text-blue-600 hover:underline"
                 >
-                  <div className="text-sm text-slate-800">
-                    <span className="font-semibold">{n.actor?.name || 'System'}</span> {n.message}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {formatDistanceToNow(new Date(n.createdAt))} ago
-                  </div>
-                </Link>
-              ))
+                  {text.markAllRead}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-[420px] overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-slate-500">{text.noNotifications}</div>
+            ) : (
+              notifications.map((notification) => {
+                const actorName = notification.actor?.name || text.systemActor;
+                return (
+                  <Link
+                    key={notification.id}
+                    href={notification.link || "#"}
+                    onClick={() => setOpen(false)}
+                    className={`flex gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 ${
+                      notification.read ? "bg-white" : "bg-blue-50/40"
+                    }`}
+                  >
+                    <div className="pt-1">
+                      {notification.read ? (
+                        <Check size={14} className="text-slate-300" />
+                      ) : (
+                        <span className="mt-1 block h-2.5 w-2.5 rounded-full bg-blue-500" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm ${notification.read ? "text-slate-600" : "font-medium text-slate-800"}`}>
+                        <span className="font-semibold">{actorName}</span> {notification.message}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {new Date(notification.createdAt).toLocaleString(localeDateMap[locale])}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })
             )}
           </div>
         </div>

@@ -9,6 +9,13 @@ type MentionNotificationParams = {
   previousContent?: string | null;
 };
 
+type NotificationPayload = {
+  type: string;
+  message: string;
+  issueId: string;
+  actorId: string;
+};
+
 function stripRichText(content: string) {
   return content
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -30,8 +37,8 @@ function escapeRegex(value: string) {
 
 function buildMentionPattern(name: string) {
   return new RegExp(
-    `(?:^|\\s)@${escapeRegex(name)}(?=$|[\\s.,!?;:，。！？；：()\\[\\]{}])`,
-    "i",
+    `(?:^|\\s)@${escapeRegex(name)}(?=$|[\\s.,!?;:，。！；（）()\\[\\]{}])`,
+    "i"
   );
 }
 
@@ -72,9 +79,12 @@ async function resolveMentionedUserIds(content: string, projectId: string, actor
   return mentionedUserIds;
 }
 
-async function createNotifications(userIds: Iterable<string>, actorId: string, message: string, issueId: string) {
-  const notificationPayload = Array.from(userIds).map((userId) => ({
-    type: "MENTION",
+async function createNotifications(
+  userIds: Iterable<string>,
+  { type, message, issueId, actorId }: NotificationPayload
+) {
+  const notificationPayload = Array.from(new Set(userIds)).map((userId) => ({
+    type,
     message,
     link: `/issues/${issueId}`,
     userId,
@@ -96,15 +106,25 @@ export async function notifyCommentMentions({
   issueKey,
   projectId,
   content,
+  previousContent,
 }: MentionNotificationParams) {
   const mentionedUserIds = await resolveMentionedUserIds(content, projectId, actorId);
 
-  await createNotifications(
-    mentionedUserIds,
-    actorId,
-    `mentioned you in a comment on ${issueKey}`,
+  if (previousContent) {
+    const previousMentionedUserIds = await resolveMentionedUserIds(previousContent, projectId, actorId);
+    for (const userId of previousMentionedUserIds) {
+      mentionedUserIds.delete(userId);
+    }
+  }
+
+  await createNotifications(mentionedUserIds, {
+    type: "MENTION",
+    message: `mentioned you in a comment on ${issueKey}`,
     issueId,
-  );
+    actorId,
+  });
+
+  return mentionedUserIds;
 }
 
 export async function notifyIssueMentions({
@@ -119,11 +139,75 @@ export async function notifyIssueMentions({
 
   if (previousContent) {
     const previousMentionedUserIds = await resolveMentionedUserIds(previousContent, projectId, actorId);
-
     for (const userId of previousMentionedUserIds) {
       mentionedUserIds.delete(userId);
     }
   }
 
-  await createNotifications(mentionedUserIds, actorId, `mentioned you in ${issueKey}`, issueId);
+  await createNotifications(mentionedUserIds, {
+    type: "MENTION",
+    message: `mentioned you in ${issueKey}`,
+    issueId,
+    actorId,
+  });
+
+  return mentionedUserIds;
+}
+
+export async function notifyIssueWatchers({
+  actorId,
+  issueId,
+  message,
+  excludeUserIds = [],
+}: {
+  actorId: string;
+  issueId: string;
+  message: string;
+  excludeUserIds?: string[];
+}) {
+  const issue = await prisma.issue.findUnique({
+    where: { id: issueId },
+    select: {
+      watchers: {
+        select: { id: true },
+      },
+    },
+  });
+
+  if (!issue) {
+    return;
+  }
+
+  const excluded = new Set<string>([actorId, ...excludeUserIds]);
+  const watcherIds = issue.watchers.map((watcher) => watcher.id).filter((userId) => !excluded.has(userId));
+
+  await createNotifications(watcherIds, {
+    type: "WATCHER",
+    message,
+    issueId,
+    actorId,
+  });
+}
+
+export async function notifyAssignedUser({
+  actorId,
+  assigneeId,
+  issueId,
+  issueKey,
+}: {
+  actorId: string;
+  assigneeId: string | null | undefined;
+  issueId: string;
+  issueKey: string;
+}) {
+  if (!assigneeId || assigneeId === actorId) {
+    return;
+  }
+
+  await createNotifications([assigneeId], {
+    type: "ASSIGNMENT",
+    message: `assigned you to ${issueKey}`,
+    issueId,
+    actorId,
+  });
 }

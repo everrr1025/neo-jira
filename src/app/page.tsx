@@ -111,6 +111,7 @@ export default async function Dashboard({
   const [
     statusSummaryIssues,
     myAssignedIssuesRaw,
+    watchedIssuesRaw,
     highPriorityIssuesRaw,
     overdueIssuesRaw,
     dueSoonIssuesRaw,
@@ -129,6 +130,24 @@ export default async function Dashboard({
     prisma.issue.findMany({
       where: { ...projectFilter, assigneeId: userId },
       orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+      select: {
+        id: true,
+        projectId: true,
+        key: true,
+        title: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+      },
+    }),
+    prisma.issue.findMany({
+      where: {
+        ...projectFilter,
+        watchers: {
+          some: { id: userId },
+        },
+      },
+      orderBy: [{ updatedAt: "desc" }],
       select: {
         id: true,
         projectId: true,
@@ -257,11 +276,13 @@ export default async function Dashboard({
   const doneCount = statusSummaryIssues.filter((issue) => isDoneIssue(issue.projectId, issue.status)).length;
 
   const myIssues = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+  const watchedIssues = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const highPriorityIssues = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const overdueIssues = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const dueSoonIssues = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
 
   const myIssuesTotal = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
+  const watchedIssuesTotal = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const highPriorityIssuesTotal = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const overdueIssuesTotal = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const dueSoonIssuesTotal = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
@@ -365,6 +386,7 @@ export default async function Dashboard({
   ];
 
   const assignedToMeHref = `/issues?assignee=ME`;
+  const watchedIssuesHref = `/issues?watcher=ME`;
   const highPriorityHref = `/issues?priority=HIGH,URGENT`;
   const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
   const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
@@ -542,6 +564,16 @@ export default async function Dashboard({
                   accent: "blue",
                   href: assignedToMeHref,
                   count: myIssuesTotal,
+                },
+                {
+                  id: "watched",
+                  title: translations.dashboard.watchedIssues,
+                  issues: watchedIssues,
+                  emptyText: translations.dashboard.notWatchingAnyActiveIssues,
+                  meta: "status",
+                  accent: "blue",
+                  href: watchedIssuesHref,
+                  count: watchedIssuesTotal,
                 },
                 {
                   id: "priority",

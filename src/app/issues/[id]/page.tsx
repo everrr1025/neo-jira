@@ -1,14 +1,15 @@
-import prisma from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
+
 import IssueDetailClient from "@/components/IssueDetailClient";
 import BackButton from "@/components/BackButton";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
-import { getCurrentLocale } from "@/lib/serverLocale";
+import { authOptions } from "@/lib/authOptions";
 import { getTranslations } from "@/lib/i18n";
 import { getProjectRole } from "@/lib/permissions";
+import prisma from "@/lib/prisma";
+import { getCurrentLocale } from "@/lib/serverLocale";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,25 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     where: buildProjectEntityWhere(resolvedParams.id, activeProject.id),
     include: {
       assignee: true,
-      reporter: true,
+      reporter: {
+        select: {
+          id: true,
+          name: true,
+          avatar: true,
+          email: true,
+        },
+      },
+      watchers: {
+        select: {
+          id: true,
+          name: true,
+          avatar: true,
+          email: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      },
       project: {
         select: {
           workflowStatuses: {
@@ -67,7 +86,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <div className="flex flex-col h-full max-w-5xl mx-auto w-full pb-10">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col pb-10">
       <div className="mb-6">
         <BackButton label={translations.issueDetail.back} />
       </div>

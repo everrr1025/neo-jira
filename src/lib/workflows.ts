@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+
 import { getIssueStatusLabel, type Locale } from "@/lib/i18n";
 
 export const WORKFLOW_STATUS_CATEGORIES = ["TODO", "IN_PROGRESS", "DONE"] as const;
@@ -113,10 +114,7 @@ export function getWorkflowCategoryLabel(category: WorkflowStatusCategory, local
   return "Done";
 }
 
-export function getWorkflowStatusBadgeClass(
-  statusKey: string,
-  workflowStatuses: WorkflowStatusRecord[] = []
-) {
+export function getWorkflowStatusBadgeClass(statusKey: string, workflowStatuses: WorkflowStatusRecord[] = []) {
   const category = getWorkflowStatusCategory(statusKey, workflowStatuses);
   if (category === "DONE") return "bg-emerald-100 text-emerald-700";
   if (category === "IN_PROGRESS") return "bg-blue-100 text-blue-700";
@@ -162,10 +160,7 @@ export function canTransitionWorkflowStatus({
   return allowedTargets?.has(nextStatus) ?? false;
 }
 
-export function buildWorkflowStatusOptions(
-  workflowStatuses: WorkflowStatusRecord[],
-  locale: Locale
-) {
+export function buildWorkflowStatusOptions(workflowStatuses: WorkflowStatusRecord[], locale: Locale) {
   return sortWorkflowStatuses(workflowStatuses).map((status) => ({
     value: status.key,
     label: getWorkflowStatusName(status.key, workflowStatuses, locale),
@@ -199,10 +194,7 @@ export function buildUniqueWorkflowStatusKey(name: string, existingKeys: Set<str
   return nextKey;
 }
 
-export function validateWorkflowDraft(
-  statuses: WorkflowStatusInput[],
-  transitions: WorkflowTransitionInput[]
-) {
+export function validateWorkflowDraft(statuses: WorkflowStatusInput[], transitions: WorkflowTransitionInput[]) {
   if (statuses.length < 2) {
     throw new Error("Workflow must contain at least two statuses");
   }
@@ -229,10 +221,7 @@ export function validateWorkflowDraft(
   }
 }
 
-export async function createDefaultWorkflowForProject(
-  db: WorkflowPersistenceClient,
-  projectId: string
-) {
+export async function createDefaultWorkflowForProject(db: WorkflowPersistenceClient, projectId: string) {
   const createdStatuses = [];
 
   for (const status of DEFAULT_WORKFLOW_TEMPLATE.statuses) {

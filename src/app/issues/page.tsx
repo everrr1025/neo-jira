@@ -34,7 +34,14 @@ export default async function IssuesPage() {
   const whereClause = buildProjectItemsWhere(activeProject.id);
   const issues = await prisma.issue.findMany({
     where: whereClause,
-    include: { assignee: true, reporter: true, iteration: true },
+    include: {
+      assignee: true,
+      reporter: true,
+      iteration: true,
+      watchers: {
+        select: { id: true },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
 

@@ -5,10 +5,15 @@ import prisma from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+type SessionUser = {
+  id?: string;
+};
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = (session.user as any).id as string;
+  const userId = (session.user as SessionUser).id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const notifications = await prisma.notification.findMany({
     where: { userId },
@@ -26,7 +31,8 @@ export async function GET() {
 export async function PATCH() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = (session.user as any).id as string;
+  const userId = (session.user as SessionUser).id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await prisma.notification.updateMany({
     where: { userId, read: false },

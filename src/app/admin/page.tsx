@@ -1,18 +1,19 @@
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
-import prisma from "@/lib/prisma";
+
 import AdminPanelClient from "@/components/AdminPanelClient";
+import { authOptions } from "@/lib/authOptions";
+import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 async function normalizeProjectAdminOwnership() {
   const normalUsers = await prisma.user.findMany({
     where: { role: { not: "ADMIN" } },
     select: { id: true },
   });
-  const normalUserIds = normalUsers.map((u) => u.id);
+  const normalUserIds = normalUsers.map((user) => user.id);
 
   const projects = await prisma.project.findMany({
     select: {
@@ -26,8 +27,10 @@ async function normalizeProjectAdminOwnership() {
   });
 
   for (const project of projects) {
-    const nonAdminMembers = project.members.filter((m) => m.user.role !== "ADMIN");
-    const adminMemberIds = project.members.filter((m) => m.user.role === "ADMIN").map((m) => m.userId);
+    const nonAdminMembers = project.members.filter((member) => member.user.role !== "ADMIN");
+    const adminMemberIds = project.members
+      .filter((member) => member.user.role === "ADMIN")
+      .map((member) => member.userId);
 
     let targetOwnerId = project.owner?.role === "ADMIN" ? "" : project.ownerId;
     if (!targetOwnerId) {
@@ -35,14 +38,15 @@ async function normalizeProjectAdminOwnership() {
     }
 
     const targetMembership = targetOwnerId
-      ? project.members.find((m) => m.userId === targetOwnerId)
+      ? project.members.find((member) => member.userId === targetOwnerId)
       : null;
     const needsDeleteSystemAdmins = adminMemberIds.length > 0;
     const needsOwnerUpdate = !!targetOwnerId && project.ownerId !== targetOwnerId;
     const needsCreateTargetMembership = !!targetOwnerId && !targetMembership;
-    const needsPromoteTargetMembership = !!targetOwnerId && !!targetMembership && targetMembership.role !== "ADMIN";
+    const needsPromoteTargetMembership =
+      !!targetOwnerId && !!targetMembership && targetMembership.role !== "ADMIN";
     const needsDemoteOtherAdmins =
-      !!targetOwnerId && project.members.some((m) => m.role === "ADMIN" && m.userId !== targetOwnerId);
+      !!targetOwnerId && project.members.some((member) => member.role === "ADMIN" && member.userId !== targetOwnerId);
 
     if (
       !needsDeleteSystemAdmins &&
@@ -109,9 +113,10 @@ export default async function AdminPage() {
           title: "Administration",
           subtitle: "Manage workspace users, projects, and access control.",
         };
+
   const session = await getServerSession(authOptions);
   const currentUser = session?.user as { id?: string; role?: string } | undefined;
-  
+
   if (!session || currentUser?.role !== "ADMIN") {
     redirect("/");
   }
@@ -124,56 +129,55 @@ export default async function AdminPage() {
         select: { ownedProjects: true },
       },
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: "desc" },
   });
-  
+
   const projects = await prisma.project.findMany({
     include: {
       owner: true,
       members: {
-        include: { user: true }
+        include: { user: true },
       },
-      _count: { select: { issues: true } }
+      _count: { select: { issues: true } },
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: "desc" },
   });
 
-  // Extract safe structures to pass to client component bypassing TS constraints
-  const safeUsers = users.map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    createdAt: u.createdAt.toISOString(),
-    ownedProjectsCount: u._count.ownedProjects,
+  const safeUsers = users.map((user) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt.toISOString(),
+    ownedProjectsCount: user._count.ownedProjects,
   }));
 
-  const safeProjects = projects.map(p => ({
-    id: p.id,
-    name: p.name,
-    key: p.key,
-    description: p.description,
-    ownerId: p.ownerId,
+  const safeProjects = projects.map((project) => ({
+    id: project.id,
+    name: project.name,
+    key: project.key,
+    description: project.description,
+    ownerId: project.ownerId,
     owner: {
-      id: p.owner.id,
-      name: p.owner.name,
-      email: p.owner.email,
+      id: project.owner.id,
+      name: project.owner.name,
+      email: project.owner.email,
     },
-    members: p.members.map(m => ({
-      userId: m.userId,
-      role: m.role,
-      userName: m.user.name,
-      userEmail: m.user.email,
+    members: project.members.map((member) => ({
+      userId: member.userId,
+      role: member.role,
+      userName: member.user.name,
+      userEmail: member.user.email,
     })),
-    issuesCount: p._count.issues,
-    createdAt: p.createdAt.toISOString()
+    issuesCount: project._count.issues,
+    createdAt: project.createdAt.toISOString(),
   }));
 
   return (
-    <div className="flex flex-col h-full space-y-6 max-w-6xl mx-auto w-full">
+    <div className="mx-auto flex h-full w-full max-w-6xl flex-col space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{text.title}</h2>
-        <p className="text-sm text-slate-500 mt-1">{text.subtitle}</p>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-800">{text.title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{text.subtitle}</p>
       </div>
 
       <AdminPanelClient

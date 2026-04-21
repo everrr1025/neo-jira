@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
-import { getTranslations, Locale } from "@/lib/i18n";
+import { useCallback, useEffect, useState } from "react";
+import { FileText, Loader2, Paperclip, Trash2 } from "lucide-react";
+
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
+import { getTranslations, type Locale } from "@/lib/i18n";
 
 interface Attachment {
   id: string;
@@ -20,16 +21,16 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
   const [errorMsg, setErrorMsg] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const translations = getTranslations(locale);
+  const text = translations.attachmentSection;
 
   const fetchAttachments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/issues/${issueId}/attachments`);
-      if (res.ok) {
-        const data = await res.json();
-        setAttachments(data);
-      }
-    } catch (e) {
-      console.error(e);
+      const response = await fetch(`/api/issues/${issueId}/attachments`);
+      if (!response.ok) return;
+      const data = (await response.json()) as Attachment[];
+      setAttachments(data);
+    } catch (error) {
+      console.error(error);
     }
   }, [issueId]);
 
@@ -37,16 +38,14 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
     void fetchAttachments();
   }, [fetchAttachments]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+
     setErrorMsg("");
-    const file = e.target.files[0];
-    
-    // 50MB Size Limit Check
+    const file = event.target.files[0];
     if (file.size > 50 * 1024 * 1024) {
-      setErrorMsg("文件大小不能超过 50MB");
-      e.target.value = '';
+      setErrorMsg(text.fileTooLarge);
+      event.target.value = "";
       return;
     }
 
@@ -56,94 +55,93 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
     formData.append("issueId", issueId);
 
     try {
-      const res = await fetch("/api/upload", {
+      const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
-      
-      if (res.ok) {
-        const newAttachment = await res.json();
-        setAttachments([newAttachment, ...attachments]);
+
+      if (response.ok) {
+        const newAttachment = (await response.json()) as Attachment;
+        setAttachments((current) => [newAttachment, ...current]);
         emitIssueActivityUpdated(issueId);
       } else {
-        const errorData = await res.json().catch(() => null);
-        setErrorMsg(`上传失败: ${errorData?.error || res.statusText || '未知错误'}`);
+        const errorData = await response.json().catch(() => null);
+        setErrorMsg(`${text.uploadFailed}: ${errorData?.error || response.statusText || "Unknown error"}`);
       }
     } catch (error) {
       console.error(error);
-      setErrorMsg("上传失败，请检查网络连接");
+      setErrorMsg(text.uploadFailed);
     } finally {
       setUploading(false);
-      e.target.value = ''; // reset
+      event.target.value = "";
     }
   };
 
   const executeDelete = async (id: string) => {
     setErrorMsg("");
     setConfirmDeleteId(null);
+
     try {
-      const res = await fetch(`/api/attachments/${id}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setAttachments(attachments.filter(a => a.id !== id));
+      const response = await fetch(`/api/attachments/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        setAttachments((current) => current.filter((attachment) => attachment.id !== id));
         emitIssueActivityUpdated(issueId);
       } else {
-        const errorData = await res.json().catch(() => null);
-        setErrorMsg(`删除失败: ${errorData?.error || res.statusText}`);
+        const errorData = await response.json().catch(() => null);
+        setErrorMsg(`${text.deleteFailed}: ${errorData?.error || response.statusText}`);
       }
     } catch (error) {
       console.error("Delete error:", error);
-      setErrorMsg("删除失败，请检查网络");
+      setErrorMsg(text.deleteFailed);
     }
   };
 
   const getFileIcon = (fileName: string) => {
-    const isImage = fileName.match(/\.(jpeg|jpg|gif|png|webp)$/i);
-    if (isImage) return "IMAGE";
-    
-    const isPdf = fileName.match(/\.(pdf)$/i);
-    if (isPdf) return "PDF";
-
-    const isExcel = fileName.match(/\.(xls|xlsx|csv)$/i);
-    if (isExcel) return "EXCEL";
-
-    const isWord = fileName.match(/\.(doc|docx)$/i);
-    if (isWord) return "WORD";
-
+    if (fileName.match(/\.(jpeg|jpg|gif|png|webp)$/i)) return "IMAGE";
+    if (fileName.match(/\.(pdf)$/i)) return "PDF";
+    if (fileName.match(/\.(xls|xlsx|csv)$/i)) return "EXCEL";
+    if (fileName.match(/\.(doc|docx)$/i)) return "WORD";
     return "OTHER";
   };
 
   return (
     <div className="mt-8">
-      <div className="flex flex-col mb-4 gap-2">
+      <div className="mb-4 flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-lg text-slate-800">{translations.attachmentSection.title} ({attachments.length})</h3>
-          <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border border-slate-200">
+          <h3 className="text-lg font-bold text-slate-800">
+            {text.title} ({attachments.length})
+          </h3>
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200">
             {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
-            {uploading ? translations.attachmentSection.uploading : translations.attachmentSection.addFile}
+            {uploading ? text.uploading : text.addFile}
             <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading} />
           </label>
         </div>
+
         {errorMsg && (
-          <div className="text-sm font-medium text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded-md transition-all flex justify-between items-center">
+          <div className="flex items-center justify-between rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
             <span>{errorMsg}</span>
-            <button type="button" onClick={() => setErrorMsg("")} className="hover:text-red-800 font-bold ml-4">✕</button>
+            <button type="button" onClick={() => setErrorMsg("")} className="ml-4 font-bold hover:text-red-800">
+              ×
+            </button>
           </div>
         )}
       </div>
 
       {attachments.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {attachments.map((file) => {
             const fileType = getFileIcon(file.fileName);
-            
+
             return (
-              <div key={file.id} className="relative border border-slate-200 rounded-lg p-2 flex flex-col gap-2 hover:border-blue-400 hover:shadow-sm transition-all group bg-white">
+              <div
+                key={file.id}
+                className="group relative flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 transition-all hover:border-blue-400 hover:shadow-sm"
+              >
                 <a href={file.fileUrl} target="_blank" rel="noopener noreferrer" className="block focus:outline-none">
-                  <div className="h-24 w-full bg-slate-50 flex flex-col items-center justify-center rounded-md overflow-hidden relative border border-slate-100 hover:bg-slate-100 transition-colors">
+                  <div className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50 transition-colors hover:bg-slate-100">
                     {fileType === "IMAGE" && (
-                      <img src={file.fileUrl} alt={file.fileName} className="object-cover w-full h-full" />
+                      <img src={file.fileUrl} alt={file.fileName} className="h-full w-full object-cover" />
                     )}
                     {fileType === "PDF" && <FileText size={32} className="text-red-500" />}
                     {fileType === "EXCEL" && <FileText size={32} className="text-green-600" />}
@@ -151,38 +149,57 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
                     {fileType === "OTHER" && <FileText size={32} className="text-slate-400" />}
                   </div>
                 </a>
-                <div className="flex justify-between items-center px-1">
-                  <a href={file.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs truncate font-medium text-slate-700 hover:text-blue-600 pr-2 block w-full outline-none">
+
+                <div className="flex items-center justify-between px-1">
+                  <a
+                    href={file.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full truncate pr-2 text-xs font-medium text-slate-700 outline-none hover:text-blue-600"
+                  >
                     {file.fileName}
                   </a>
                   <button
                     type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDeleteId(file.id); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity rounded-md hover:bg-slate-100 z-10 shrink-0"
-                    title="删除"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setConfirmDeleteId(file.id);
+                    }}
+                    className="z-10 shrink-0 rounded-md p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-red-500 group-hover:opacity-100"
+                    title={text.delete}
                   >
                     <Trash2 size={14} />
                   </button>
                 </div>
 
-                {/* Inline Delete Confirmation Layer */}
                 {confirmDeleteId === file.id && (
-                  <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 rounded-lg flex flex-col items-center justify-center p-2 border border-red-200 shadow-sm animate-in fade-in duration-150">
-                    <span className="text-xs font-bold text-slate-700 mb-2 truncate max-w-full text-center">确定删除?</span>
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-lg border border-red-200 bg-white/95 p-2 shadow-sm backdrop-blur-sm">
+                    <span className="mb-2 max-w-full truncate text-center text-xs font-bold text-slate-700">
+                      {text.confirmDelete}
+                    </span>
                     <div className="flex gap-2">
-                      <button 
-                        type="button" 
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); executeDelete(file.id); }}
-                        className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded shadow-sm focus:outline-none"
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void executeDelete(file.id);
+                        }}
+                        className="rounded bg-red-500 px-3 py-1 text-xs text-white shadow-sm hover:bg-red-600"
                       >
-                        确认
+                        {text.confirm}
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmDeleteId(null); }}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs px-3 py-1 rounded shadow-sm focus:outline-none"
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setConfirmDeleteId(null);
+                        }}
+                        className="rounded bg-slate-100 px-3 py-1 text-xs text-slate-600 shadow-sm hover:bg-slate-200"
                       >
-                        取消
+                        {text.cancel}
                       </button>
                     </div>
                   </div>

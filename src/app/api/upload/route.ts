@@ -6,6 +6,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { createAuditLogs } from "@/lib/audit";
+import { notifyIssueWatchers } from "@/lib/notifications";
 
 export async function POST(request: Request) {
   try {
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
           },
           include: {
             uploader: { select: { id: true, name: true } },
-            issue: { select: { projectId: true } },
+            issue: { select: { projectId: true, key: true } },
           },
         });
 
@@ -63,6 +64,12 @@ export async function POST(request: Request) {
         ]);
 
         return createdAttachment;
+      });
+
+      await notifyIssueWatchers({
+        actorId: userId,
+        issueId: attachment.issueId,
+        message: `uploaded an attachment to ${attachment.issue.key}`,
       });
 
       return NextResponse.json(

@@ -54,12 +54,7 @@ function getFieldLabel(field: string | null, locale: Locale) {
   return field || "";
 }
 
-function getFieldValueLabel(
-  field: string | null,
-  value: string | null,
-  locale: Locale,
-  lookups: LookupMaps,
-) {
+function getFieldValueLabel(field: string | null, value: string | null, locale: Locale, lookups: LookupMaps) {
   const translations = getTranslations(locale);
   if (!value) return translations.activitySection.emptyValue;
 
@@ -84,11 +79,7 @@ function getFieldValueLabel(
   return value;
 }
 
-export function formatActivityEntry(
-  entry: ActivityLogEntry,
-  locale: Locale,
-  lookups: LookupMaps = {},
-) {
+export function formatActivityEntry(entry: ActivityLogEntry, locale: Locale, lookups: LookupMaps = {}) {
   const translations = getTranslations(locale);
   const actorName = entry.actor?.name || translations.activitySection.unknownUser;
   const metadata = parseActivityMetadata(entry.metadata);

@@ -1,10 +1,12 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { getServerSession } from "next-auth";
 import prisma from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/authOptions";
+import { normalizeLocale } from "@/lib/i18n";
 import { isValidPassword } from "@/lib/validation";
 
 type ChangePasswordError =
@@ -28,6 +30,7 @@ export async function updateUserAvatar(userId: string, avatarUrl: string) {
     });
 
     revalidatePath("/", "layout");
+    revalidatePath("/settings");
 
     return { success: true };
   } catch (error) {
@@ -72,9 +75,25 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
       data: { password: hashedPassword },
     });
 
+    revalidatePath("/settings");
+
     return { success: true };
   } catch (error) {
     console.error("Failed to change password:", error);
     return { success: false, error: "UNAUTHORIZED" as ChangePasswordError };
   }
+}
+
+export async function updateUserLocale(locale: string) {
+  const cookieStore = await cookies();
+  cookieStore.set("lang", normalizeLocale(locale), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: "lax",
+  });
+
+  revalidatePath("/", "layout");
+  revalidatePath("/settings");
+
+  return { success: true };
 }

@@ -1,11 +1,12 @@
-import prisma from "@/lib/prisma";
-import { notFound, redirect } from "next/navigation";
-import { getProjectRole } from "@/lib/permissions";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
-import ProjectSettingsForm from "@/components/ProjectSettingsForm";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
+import { getServerSession } from "next-auth/next";
+import { notFound, redirect } from "next/navigation";
+
+import ProjectSettingsForm from "@/components/ProjectSettingsForm";
+import { authOptions } from "@/lib/authOptions";
+import { getProjectRole } from "@/lib/permissions";
+import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     locale === "zh"
       ? {
           accessDeniedTitle: "访问被拒绝",
-          accessDeniedDesc: "你没有权限管理该项目的设置。",
+          accessDeniedDesc: "你没有权限管理这个项目的设置。",
           backToProjects: "返回项目列表",
           projects: "项目",
           settingsSuffix: "设置",
@@ -34,14 +35,18 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         };
 
   const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login");
+  if (!session?.user) {
+    redirect("/login");
+  }
 
   const resolvedParams = await params;
   const currentUser = session.user as { id?: string };
   const userId = currentUser.id;
   const projectId = resolvedParams.id;
 
-  if (!userId) redirect("/login");
+  if (!userId) {
+    redirect("/login");
+  }
 
   const role = await getProjectRole(userId, projectId);
   if (role !== "ADMIN") {
@@ -72,7 +77,9 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     },
   });
 
-  if (!project) notFound();
+  if (!project) {
+    notFound();
+  }
 
   return (
     <div className="space-y-6">

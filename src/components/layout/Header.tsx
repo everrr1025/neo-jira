@@ -3,7 +3,9 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
-import { getTranslations, LANGUAGE_COOKIE, Locale } from "@/lib/i18n";
+
+import NotificationBell from "@/components/NotificationBell";
+import { getTranslations, type Locale } from "@/lib/i18n";
 
 export function Header({ initialLocale }: { initialLocale: Locale }) {
   const pathname = usePathname();
@@ -11,10 +13,9 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [locale, setLocale] = useState<Locale>(initialLocale);
+  const [query, setQuery] = useState(searchParams.get("search") || "");
   const translations = getTranslations(locale);
   const userName = session?.user?.name || translations.sidebar.userFallback;
-
-  const [query, setQuery] = useState(searchParams.get("search") || "");
 
   useEffect(() => {
     setQuery(searchParams.get("search") || "");
@@ -25,8 +26,8 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   }, [initialLocale]);
 
   const handleSearch = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
+    (event: React.FormEvent) => {
+      event.preventDefault();
       if (query.trim()) {
         router.push(`/?search=${encodeURIComponent(query.trim())}`);
       } else {
@@ -39,48 +40,38 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const hideHeader =
     pathname.startsWith("/issues") ||
     pathname.startsWith("/iterations") ||
-    pathname.startsWith("/projects");
-  const showLanguageSwitcher = pathname === "/";
-
-  const handleLocaleSwitch = useCallback(
-    (nextLocale: Locale) => {
-      if (nextLocale === locale) return;
-      setLocale(nextLocale);
-      document.cookie = `${LANGUAGE_COOKIE}=${nextLocale}; path=/; max-age=31536000; samesite=lax`;
-      router.refresh();
-    },
-    [locale, router]
-  );
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/settings");
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
-    if (pathname.startsWith("/issues")) return translations.header.issues;
-    if (pathname.startsWith("/projects")) return translations.header.projects;
-    if (pathname.startsWith("/iterations")) return translations.header.iterations;
     if (pathname.startsWith("/admin")) return translations.header.adminSettings;
+    if (pathname.startsWith("/settings")) return translations.settingsPage.title;
     if (pathname.startsWith("/login")) return translations.header.login;
     return translations.header.appName;
   };
 
-  if (hideHeader) return null;
+  if (hideHeader) {
+    return null;
+  }
 
   return (
-    <header className="h-16 border-b bg-white flex items-center justify-between px-6 shadow-sm sticky top-0 z-10 w-full">
+    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b bg-white px-6 shadow-sm">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-slate-800 truncate">{getTitle()}</h1>
+        <h1 className="truncate text-lg font-semibold text-slate-800">{getTitle()}</h1>
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-5">
         <form onSubmit={handleSearch} className="relative">
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder={translations.header.searchPlaceholder}
-            className="pl-9 pr-4 py-2 border rounded-full text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 transition-all focus:w-80"
+            className="w-64 rounded-full border bg-slate-50 py-2 pl-9 pr-4 text-sm transition-all focus:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <svg
-            className="w-4 h-4 text-slate-400 absolute left-3 top-2.5"
+            className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -93,25 +84,13 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
             />
           </svg>
         </form>
-        <div className="text-sm text-slate-500 font-medium">
-          {translations.header.welcomeBack}, {userName}
-        </div>
-        {showLanguageSwitcher && (
-          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1">
-            {(["en", "zh"] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => handleLocaleSwitch(option)}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                  locale === option ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {option === "en" ? "EN" : "中文"}
-              </button>
-            ))}
+
+        <div className="flex items-center gap-3">
+          <div className="text-sm font-medium text-slate-500">
+            {translations.header.welcomeBack}, <span className="text-slate-700">{userName}</span>
           </div>
-        )}
+          <NotificationBell locale={locale} />
+        </div>
       </div>
     </header>
   );

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useRef, useState, useTransition } from "react";
+import { FileText, Loader2, Paperclip, Trash2, X } from "lucide-react";
+
 import { createIssue } from "@/app/actions/issues";
-import { X, Paperclip, Loader2, FileText, Trash2 } from "lucide-react";
-import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
+import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
-import { getIssueTypeLabel, getPriorityLabel, getTranslations, Locale } from "@/lib/i18n";
 import { DropdownField } from "./DropdownField";
+import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 
 type CreateIssueModalProps = {
   isOpen: boolean;
@@ -65,6 +66,7 @@ export default function CreateIssueModal({
 }: CreateIssueModalProps) {
   const [isPending, startTransition] = useTransition();
   const translations = getTranslations(locale);
+  const text = translations.createIssue;
 
   const getInitialFormData = (): FormDataState => {
     const fallbackIteration = iterations.find((item) => item.id === defaultIterationId);
@@ -98,15 +100,14 @@ export default function CreateIssueModal({
     });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+
     setErrorMessage("");
-    const file = e.target.files[0];
-    
+    const file = event.target.files[0];
     if (file.size > 50 * 1024 * 1024) {
-      setErrorMessage("文件大小不能超过 50MB");
-      e.target.value = '';
+      setErrorMessage(text.attachmentTooLarge);
+      event.target.value = "";
       return;
     }
 
@@ -115,38 +116,39 @@ export default function CreateIssueModal({
     data.append("file", file);
 
     try {
-      const res = await fetch("/api/upload", {
+      const response = await fetch("/api/upload", {
         method: "POST",
         body: data,
       });
-      
-      if (res.ok) {
-        const result = await res.json();
-        setFormData(prev => ({
+
+      if (response.ok) {
+        const result = await response.json();
+        setFormData((prev) => ({
           ...prev,
-          attachments: [...prev.attachments, { fileName: result.fileName, fileUrl: result.fileUrl, id: Date.now().toString() }]
+          attachments: [
+            ...prev.attachments,
+            { fileName: result.fileName, fileUrl: result.fileUrl, id: Date.now().toString() },
+          ],
         }));
       } else {
-        const errorData = await res.json().catch(() => null);
-        setErrorMessage(`上传失败: ${errorData?.error || res.statusText || '未知错误'}`);
+        const errorData = await response.json().catch(() => null);
+        setErrorMessage(`${text.uploadFailed}: ${errorData?.error || response.statusText || "Unknown error"}`);
       }
     } catch (error) {
       console.error(error);
-      setErrorMessage("上传失败，请检查网络连接");
+      setErrorMessage(text.uploadFailed);
     } finally {
       setUploading(false);
-      e.target.value = '';
+      event.target.value = "";
     }
   };
 
   const removeAttachment = async (id: string, fileUrl: string) => {
-    // Optimistically update UI
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      attachments: prev.attachments.filter(a => a.id !== id)
+      attachments: prev.attachments.filter((attachment) => attachment.id !== id),
     }));
 
-    // Delete from server
     try {
       await fetch("/api/upload", {
         method: "DELETE",
@@ -164,10 +166,10 @@ export default function CreateIssueModal({
     if (formData.attachments.length > 0) {
       try {
         await Promise.all(
-          formData.attachments.map(a => 
+          formData.attachments.map((attachment) =>
             fetch("/api/upload", {
               method: "DELETE",
-              body: JSON.stringify({ fileUrl: a.fileUrl }),
+              body: JSON.stringify({ fileUrl: attachment.fileUrl }),
               headers: { "Content-Type": "application/json" },
             })
           )
@@ -183,14 +185,10 @@ export default function CreateIssueModal({
   };
 
   const getFileIcon = (fileName: string) => {
-    const isImage = fileName.match(/\.(jpeg|jpg|gif|png|webp)$/i);
-    if (isImage) return "IMAGE";
-    const isPdf = fileName.match(/\.(pdf)$/i);
-    if (isPdf) return "PDF";
-    const isExcel = fileName.match(/\.(xls|xlsx|csv)$/i);
-    if (isExcel) return "EXCEL";
-    const isWord = fileName.match(/\.(doc|docx)$/i);
-    if (isWord) return "WORD";
+    if (fileName.match(/\.(jpeg|jpg|gif|png|webp)$/i)) return "IMAGE";
+    if (fileName.match(/\.(pdf)$/i)) return "PDF";
+    if (fileName.match(/\.(xls|xlsx|csv)$/i)) return "EXCEL";
+    if (fileName.match(/\.(doc|docx)$/i)) return "WORD";
     return "OTHER";
   };
 
@@ -217,8 +215,8 @@ export default function CreateIssueModal({
     { value: "URGENT", label: getPriorityLabel("URGENT", locale) },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (!formData.title.trim()) return;
 
     setErrorMessage("");
@@ -231,7 +229,10 @@ export default function CreateIssueModal({
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
         dueDate: formData.dueDate || null,
-        attachments: formData.attachments.map(a => ({ fileName: a.fileName, fileUrl: a.fileUrl })),
+        attachments: formData.attachments.map((attachment) => ({
+          fileName: attachment.fileName,
+          fileUrl: attachment.fileUrl,
+        })),
       };
 
       const result = await createIssue(payload);
@@ -241,45 +242,45 @@ export default function CreateIssueModal({
         setIsDueDateManuallyEdited(false);
         onClose();
       } else {
-        setErrorMessage(`${translations.createIssue.failedCreateIssue}: ${result.error}`);
+        setErrorMessage(`${text.failedCreateIssue}: ${result.error}`);
       }
     });
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-xl font-bold text-slate-800">{translations.createIssue.modalTitle}</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <h2 className="text-xl font-bold text-slate-800">{text.modalTitle}</h2>
           <button
             onClick={handleCancelAndClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           >
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 space-y-5 flex-1 overflow-y-auto min-h-0">
+        <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="title" className="text-sm font-medium text-slate-700">
-                {translations.createIssue.summary} <span className="text-red-500">*</span>
+                {text.summary} <span className="text-red-500">*</span>
               </label>
               <input
                 id="title"
                 required
                 autoFocus
                 value={formData.title}
-                onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
-                placeholder={translations.createIssue.summaryPlaceholder}
+                onChange={(event) => setFormData((prev) => ({ ...prev, title: event.target.value }))}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                placeholder={text.summaryPlaceholder}
               />
             </div>
 
             <div className="flex gap-4">
               <DropdownField
                 id="type"
-                label={translations.createIssue.issueType}
+                label={text.issueType}
                 value={formData.type}
                 onChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}
                 options={typeOptions}
@@ -287,7 +288,7 @@ export default function CreateIssueModal({
               />
               <DropdownField
                 id="priority"
-                label={translations.createIssue.priority}
+                label={text.priority}
                 value={formData.priority}
                 onChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}
                 options={priorityOptions}
@@ -298,7 +299,7 @@ export default function CreateIssueModal({
             <div className="flex gap-4">
               <DropdownField
                 id="iteration"
-                label={translations.createIssue.sprint}
+                label={text.sprint}
                 value={formData.iterationId}
                 onChange={handleSprintChange}
                 options={iterationOptions}
@@ -306,32 +307,32 @@ export default function CreateIssueModal({
               />
               <DropdownField
                 id="assignee"
-                label={translations.createIssue.assignee}
+                label={text.assignee}
                 value={formData.assigneeId}
                 onChange={(value) => setFormData((prev) => ({ ...prev, assigneeId: value }))}
                 options={assigneeOptions}
                 className="flex-1"
               />
-              <div className="flex flex-col gap-1.5 flex-1">
+              <div className="flex flex-1 flex-col gap-1.5">
                 <label htmlFor="dueDate" className="text-sm font-medium text-slate-700">
-                  {translations.createIssue.dueDate}
+                  {text.dueDate}
                 </label>
                 <input
                   type="date"
                   id="dueDate"
                   value={formData.dueDate}
-                  onChange={(e) => {
+                  onChange={(event) => {
                     setIsDueDateManuallyEdited(true);
-                    setFormData((prev) => ({ ...prev, dueDate: e.target.value }));
+                    setFormData((prev) => ({ ...prev, dueDate: event.target.value }));
                   }}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5 mb-2 relative">
+            <div className="relative mb-2 flex flex-col gap-1.5">
               <label htmlFor="description" className="text-sm font-medium text-slate-700">
-                {translations.createIssue.description}
+                {text.description}
               </label>
               <div className="rounded-lg">
                 <RichTextEditor
@@ -340,81 +341,84 @@ export default function CreateIssueModal({
                   onChange={(value) => setFormData((prev) => ({ ...prev, description: value || "" }))}
                   height={180}
                   mentionUsers={users}
-                  mentionLabel={translations.createIssue.mentionSomeone}
+                  mentionLabel={text.mentionSomeone}
                   currentUserId={currentUserId}
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 relative z-0 pb-2">
-               <div className="flex items-center justify-between">
-                 <label className="text-sm font-medium text-slate-700">
-                   附件 ({formData.attachments.length})
-                 </label>
-                 <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border border-slate-200">
-                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
-                   {uploading ? '上传中...' : '添加附件'}
-                   <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || isPending} />
-                 </label>
-               </div>
-               
-               {formData.attachments.length > 0 && (
-                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
-                   {formData.attachments.map((file) => {
-                     const fileType = getFileIcon(file.fileName);
-                     return (
-                       <div key={file.id} className="relative border border-slate-200 rounded-lg p-2 flex flex-col gap-2 hover:border-blue-400 hover:shadow-sm transition-all group bg-white">
-                         <div className="h-24 w-full bg-slate-50 flex flex-col items-center justify-center rounded-md overflow-hidden relative border border-slate-100 hover:bg-slate-100 transition-colors">
-                           {fileType === "IMAGE" && (
-                             <img src={file.fileUrl} alt={file.fileName} className="object-cover w-full h-full" />
-                           )}
-                           {fileType === "PDF" && <FileText size={24} className="text-red-500" />}
-                           {fileType === "EXCEL" && <FileText size={24} className="text-green-600" />}
-                           {fileType === "WORD" && <FileText size={24} className="text-blue-600" />}
-                           {fileType === "OTHER" && <FileText size={24} className="text-slate-400" />}
-                         </div>
-                         <div className="flex justify-between items-center px-1">
-                           <span className="text-xs truncate font-medium text-slate-700 pr-2 block w-full">
-                             {file.fileName}
-                           </span>
-                           <button
-                             type="button"
-                             onClick={() => removeAttachment(file.id, file.fileUrl)}
-                             className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-opacity rounded-md hover:bg-slate-100 z-10 shrink-0"
-                             title="删除"
-                           >
-                             <Trash2 size={14} />
-                           </button>
-                         </div>
-                       </div>
-                     );
-                   })}
-                 </div>
-               )}
+            <div className="relative z-0 flex flex-col gap-2 pb-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-slate-700">
+                  {text.attachments} ({formData.attachments.length})
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200">
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                  {uploading ? translations.attachmentSection.uploading : text.addAttachment}
+                  <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || isPending} />
+                </label>
+              </div>
+
+              {formData.attachments.length > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+                  {formData.attachments.map((file) => {
+                    const fileType = getFileIcon(file.fileName);
+                    return (
+                      <div
+                        key={file.id}
+                        className="group relative flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 transition-all hover:border-blue-400 hover:shadow-sm"
+                      >
+                        <div className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50 transition-colors hover:bg-slate-100">
+                          {fileType === "IMAGE" && (
+                            <img src={file.fileUrl} alt={file.fileName} className="h-full w-full object-cover" />
+                          )}
+                          {fileType === "PDF" && <FileText size={24} className="text-red-500" />}
+                          {fileType === "EXCEL" && <FileText size={24} className="text-green-600" />}
+                          {fileType === "WORD" && <FileText size={24} className="text-blue-600" />}
+                          {fileType === "OTHER" && <FileText size={24} className="text-slate-400" />}
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                          <span className="block w-full truncate pr-2 text-xs font-medium text-slate-700">
+                            {file.fileName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeAttachment(file.id, file.fileUrl)}
+                            className="z-10 shrink-0 rounded-md p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-red-500 group-hover:opacity-100"
+                            title={text.removeAttachment}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 shrink-0">
+          <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
             <button
               type="button"
               onClick={handleCancelAndClose}
               disabled={isPending}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50"
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
-              {translations.createIssue.cancel}
+              {text.cancel}
             </button>
             <button
               type="submit"
               disabled={isPending || !formData.title.trim()}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPending ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  {translations.createIssue.creating}
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  {text.creating}
                 </>
               ) : (
-                translations.createIssue.create
+                text.create
               )}
             </button>
           </div>

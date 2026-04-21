@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { promises as fs } from "fs";
 import path from "path";
 import { createAuditLogs } from "@/lib/audit";
+import { notifyIssueWatchers } from "@/lib/notifications";
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -23,7 +24,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
         fileName: true,
         fileUrl: true,
         uploaderId: true,
-        issue: { select: { projectId: true } },
+        issue: { select: { projectId: true, key: true } },
       },
     });
 
@@ -63,6 +64,12 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       await tx.attachment.delete({
         where: { id },
       });
+    });
+
+    await notifyIssueWatchers({
+      actorId: userId,
+      issueId: attachment.issueId,
+      message: `removed an attachment from ${attachment.issue.key}`,
     });
 
     return NextResponse.json({ success: true }, { status: 200 });

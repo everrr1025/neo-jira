@@ -42,6 +42,7 @@ type Issue = {
   assigneeId?: string | null;
   assignee?: { name: string | null } | null;
   reporter?: { name: string | null } | null;
+  watchers?: { id: string }[];
   createdAt: Date | string;
   dueDate?: Date | string | null;
 };
@@ -406,6 +407,7 @@ export default function IssueList({
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [sprintFilter, setSprintFilter] = useState<string[]>([]);
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
+  const [watcherFilter, setWatcherFilter] = useState<string[]>([]);
   const [dueFilter, setDueFilter] = useState<DueFilterValue>("ALL");
   const [dueDateValue, setDueDateValue] = useState("");
   const [duePreset, setDuePreset] = useState<"NONE" | "NEXT_3_DAYS">("NONE");
@@ -530,6 +532,7 @@ export default function IssueList({
         : [];
 
     const assignee = searchParams.get("assignee");
+    const watcher = searchParams.get("watcher");
     const duePresetParam = searchParams.get("duePreset");
     const dueOp = searchParams.get("dueOp");
     const dueDate = searchParams.get("dueDate") ?? "";
@@ -554,8 +557,13 @@ export default function IssueList({
     const validAssigneeValues = assigneeValues.filter(
       (value) => value === "ME" || value === "UNASSIGNED" || users.some((user) => user.id === value)
     );
+    const watcherValues = csv(watcher);
+    const validWatcherValues = watcherValues.filter(
+      (value) => value === "ME" || users.some((user) => user.id === value)
+    );
 
     setAssigneeFilter(validAssigneeValues);
+    setWatcherFilter(validWatcherValues);
     setDueFilter(nextDueFilter);
     setDueDateValue(nextDueDateValue);
     setDuePreset(nextDuePreset);
@@ -718,6 +726,19 @@ export default function IssueList({
         if (!matchesAssignee) return false;
       }
 
+      if (watcherFilter.length > 0) {
+        const issueWatcherIds = issue.watchers?.map((watcher) => watcher.id) || [];
+        const matchesWatcher = watcherFilter.some((selectedWatcher) => {
+          if (selectedWatcher === "ME") {
+            return currentUser?.id ? issueWatcherIds.includes(currentUser.id) : false;
+          }
+
+          return issueWatcherIds.includes(selectedWatcher);
+        });
+
+        if (!matchesWatcher) return false;
+      }
+
       if (dueFilter !== "ALL") {
         if (!issue.dueDate) return false;
 
@@ -767,6 +788,7 @@ export default function IssueList({
     sprintFilter,
     statusFilter,
     typeFilter,
+    watcherFilter,
   ]);
 
   const sortedIssues = useMemo(() => {
@@ -1243,8 +1265,9 @@ export default function IssueList({
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
               <span>{locale === "zh" ? "每页" : "Per page"}</span>
+              <span>{translations.issueList.perPage}</span>
               <InlineSelect
                 value={String(itemsPerPage)}
                 options={perPageOptions}

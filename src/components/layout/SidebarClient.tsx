@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { SidebarUserMenu } from "./SidebarUserMenu";
-import { AvatarPicker } from "./AvatarPicker";
 import { usePathname } from "next/navigation";
-import { getTranslations, Locale } from "@/lib/i18n";
+import { useState } from "react";
+import { Shield } from "lucide-react";
 
-export function SidebarClient({ 
-  isAdmin, 
-  activeProject, 
-  lockProjectScopedLinks, 
+import { getTranslations, type Locale } from "@/lib/i18n";
+import { AvatarPicker } from "./AvatarPicker";
+import { SidebarUserMenu } from "./SidebarUserMenu";
+
+export function SidebarClient({
+  isAdmin,
+  activeProject,
+  lockProjectScopedLinks,
   user,
   locale,
 }: {
@@ -26,84 +28,112 @@ export function SidebarClient({
 
   const getNavClass = (href: string) => {
     const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-    return `flex items-center ${collapsed ? 'justify-center mx-3' : 'gap-3 px-3'} py-2 rounded-md transition-colors ${
-      isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-800 hover:text-white'
-    } group whitespace-nowrap`;
+    return `group flex items-center whitespace-nowrap rounded-md py-2 transition-colors ${
+      collapsed ? "mx-3 justify-center" : "gap-3 px-3"
+    } ${isActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`;
   };
 
   return (
-    <aside className={`transition-all duration-300 ease-in-out bg-slate-900 text-slate-300 flex flex-col items-start h-screen sticky top-0 relative overflow-visible z-30 shrink-0 shadow-xl ${collapsed ? 'w-20' : 'w-64'}`}>
-      
-      <button 
+    <aside
+      className={`relative sticky top-0 z-30 flex h-screen shrink-0 flex-col items-start overflow-visible bg-slate-900 text-slate-300 shadow-xl transition-all duration-300 ease-in-out ${
+        collapsed ? "w-20" : "w-64"
+      }`}
+    >
+      <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute right-0 translate-x-1/2 top-8 bg-slate-800 text-slate-400 hover:text-white border border-slate-700 w-6 h-6 rounded-full flex items-center justify-center z-40 shadow-sm"
+        className="absolute right-0 top-8 z-40 flex h-6 w-6 translate-x-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 shadow-sm hover:text-white"
       >
-        <svg className={`w-3.5 h-3.5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg
+          className={`h-3.5 w-3.5 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
 
-      <div className={`p-6 w-full flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3'} h-20`}>
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow shadow-blue-500/50">
-          {activeProject ? activeProject.name.charAt(0).toUpperCase() : 'N'}
+      <div className={`h-20 w-full p-6 ${collapsed ? "justify-center px-0" : "flex items-center gap-3"}`}>
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 font-bold text-white shadow shadow-blue-500/50">
+          {activeProject ? activeProject.name.charAt(0).toUpperCase() : "N"}
         </div>
-        <span className={`font-bold text-lg text-white tracking-wide truncate transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
+        <span
+          className={`truncate text-lg font-bold tracking-wide text-white transition-opacity duration-200 ${
+            collapsed ? "hidden w-0 opacity-0" : "opacity-100"
+          }`}
+        >
           {activeProject ? activeProject.name : "Neo-Jira"}
         </span>
       </div>
 
-      <nav className="flex-1 w-full px-2 space-y-2 mt-4 overflow-hidden">
+      <nav className="mt-4 w-full flex-1 space-y-2 overflow-hidden px-2">
         <Link
           href={lockProjectScopedLinks ? "/projects" : "/"}
           className={`${getNavClass(lockProjectScopedLinks ? "/projects" : "/")} ${lockProjectScopedLinks ? "opacity-50" : ""}`}
           title={translations.sidebar.dashboard}
         >
-          <svg className="flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-blue-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-          <span className={`transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>{translations.sidebar.dashboard}</span>
+          <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+          <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+            {translations.sidebar.dashboard}
+          </span>
         </Link>
+
         <Link
           href={lockProjectScopedLinks ? "/projects" : "/issues"}
           className={`${getNavClass(lockProjectScopedLinks ? "/projects" : "/issues")} ${lockProjectScopedLinks ? "opacity-50" : ""}`}
           title={translations.sidebar.issues}
         >
-          <svg className="flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-amber-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          <span className={`transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>{translations.sidebar.issues}</span>
+          <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+            {translations.sidebar.issues}
+          </span>
         </Link>
+
         <Link
           href={lockProjectScopedLinks ? "/projects" : "/iterations"}
           className={`${getNavClass(lockProjectScopedLinks ? "/projects" : "/iterations")} ${lockProjectScopedLinks ? "opacity-50" : ""}`}
           title={translations.sidebar.iterations}
         >
-          <svg className="flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          <span className={`transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>{translations.sidebar.iterations}</span>
+          <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+            {translations.sidebar.iterations}
+          </span>
         </Link>
+
         <Link href="/projects" className={getNavClass("/projects")} title={translations.sidebar.projects}>
-          <svg className="flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-purple-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-          <span className={`transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>{translations.sidebar.projects}</span>
+          <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+          <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+            {translations.sidebar.projects}
+          </span>
         </Link>
 
         {isAdmin && (
           <>
-            <div className={`pt-4 pb-1 ${collapsed ? 'px-0 text-center' : 'px-3'}`}>
-              <div className="w-full h-px bg-slate-800" />
+            <div className={`pb-1 pt-4 ${collapsed ? "px-0 text-center" : "px-3"}`}>
+              <div className="h-px w-full bg-slate-800" />
             </div>
-            <Link href="/admin" className={getNavClass("/admin")} title={translations.sidebar.settings}>
-              <svg className="flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-red-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-              <span className={`transition-opacity duration-200 ${collapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>{translations.sidebar.settings}</span>
+            <Link href="/admin" className={getNavClass("/admin")} title={translations.sidebar.admin}>
+              <Shield className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-red-400" />
+              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {translations.sidebar.admin}
+              </span>
             </Link>
           </>
         )}
       </nav>
 
-      <div className={`p-4 border-t border-slate-800 w-full text-sm flex ${collapsed ? 'justify-center px-0' : ''}`}>
+      <div className={`flex w-full border-t border-slate-800 p-4 text-sm ${collapsed ? "justify-center px-0" : ""}`}>
         {collapsed ? (
-          <AvatarPicker
-            userKey={user?.id || user?.email || user?.name || "anonymous"}
-            userName={user?.name || translations.sidebar.userFallback}
-            locale={locale}
-            initialAvatar={user?.avatar}
-            size="sm"
-          />
+          <Link href="/settings">
+            <AvatarPicker
+              userKey={user?.id || user?.email || user?.name || "anonymous"}
+              userName={user?.name || translations.sidebar.userFallback}
+              locale={locale}
+              initialAvatar={user?.avatar}
+              size="sm"
+              editable={false}
+            />
+          </Link>
         ) : (
           <SidebarUserMenu
             userId={user?.id || user?.email || user?.name || "anonymous"}

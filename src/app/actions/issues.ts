@@ -1,9 +1,8 @@
 "use server";
 
-import prisma from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/authOptions";
+import { revalidatePath } from "next/cache";
+
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import {
   canMoveIssueToIteration,
@@ -11,9 +10,11 @@ import {
   isProjectInActiveContext,
   resolveIssueCreateProjectId,
 } from "@/lib/activeProjectUtils";
-import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
-import { notifyIssueMentions } from "@/lib/notifications";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
+import { authOptions } from "@/lib/authOptions";
+import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
+import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
+import prisma from "@/lib/prisma";
 import {
   canTransitionWorkflowStatus,
   createDefaultWorkflowForProject,
@@ -57,13 +58,66 @@ const workflowSelect = {
   },
 } as const;
 
+type IssueWatcherSnapshot = IssueAuditSnapshot & { key: string };
+
+function getIssueWatcherMessage(before: IssueWatcherSnapshot, after: IssueWatcherSnapshot) {
+  if (before.status !== after.status) {
+    return `updated the status of ${after.key}`;
+  }
+
+  if (before.assigneeId !== after.assigneeId) {
+    return `reassigned ${after.key}`;
+  }
+
+  if (before.iterationId !== after.iterationId) {
+    return `moved ${after.key} to a different sprint`;
+  }
+
+  if (before.priority !== after.priority) {
+    return `updated the priority of ${after.key}`;
+  }
+
+  if (before.type !== after.type) {
+    return `updated the issue type of ${after.key}`;
+  }
+
+  if (before.dueDate?.toString() !== after.dueDate?.toString()) {
+    return `updated the due date of ${after.key}`;
+  }
+
+  if (before.description !== after.description) {
+    return `updated the description of ${after.key}`;
+  }
+
+  if (before.title !== after.title) {
+    return `updated the summary of ${after.key}`;
+  }
+
+  return `updated ${after.key}`;
+}
+
+function hasWatcherRelevantChange(before: IssueAuditSnapshot, after: IssueAuditSnapshot) {
+  return (
+    before.title !== after.title ||
+    before.description !== after.description ||
+    before.status !== after.status ||
+    before.priority !== after.priority ||
+    before.type !== after.type ||
+    before.assigneeId !== after.assigneeId ||
+    before.iterationId !== after.iterationId ||
+    before.dueDate?.toString() !== after.dueDate?.toString()
+  );
+}
+
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
+
     const sessionUser = session.user as { id?: string; role?: string };
     const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+
     const userRole = sessionUser.role ?? "USER";
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
@@ -78,6 +132,7 @@ export async function updateIssueStatus(issueId: string, status: string) {
           },
         },
       });
+
       if (!existingIssue) throw new Error("Issue not found");
       if (!isProjectInActiveContext({ activeProjectId, projectId: existingIssue.projectId })) {
         throw new Error("Unauthorized");
@@ -117,15 +172,21 @@ export async function updateIssueStatus(issueId: string, status: string) {
 
       return updatedIssue;
     });
-    
-    revalidatePath('/issues');
-    revalidatePath('/iterations');
+
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
     revalidatePath(`/issues/${issueId}`);
-    
+
+    await notifyIssueWatchers({
+      actorId: userId,
+      issueId,
+      message: `updated the status of ${issue.key}`,
+    });
+
     return { success: true, issue };
   } catch (error) {
-    console.error('Failed to update issue status:', error);
-    return { success: false, error: 'Failed to update issue status' };
+    console.error("Failed to update issue status:", error);
+    return { success: false, error: "Failed to update issue status" };
   }
 }
 
@@ -146,6 +207,7 @@ export async function createIssue(data: {
     const sessionUser = session.user as { id?: string; role?: string };
     const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+
     const userRole = sessionUser.role ?? "USER";
     const isGlobalAdmin = userRole === "ADMIN";
     const activeProject = await getActiveProjectForUser(userId, userRole);
@@ -162,10 +224,12 @@ export async function createIssue(data: {
       throw new Error("Sprint not found");
     }
 
-    if (!canUseIterationForActiveProject({
-      activeProjectId,
-      selectedIterationProjectId: selectedIteration?.projectId,
-    })) {
+    if (
+      !canUseIterationForActiveProject({
+        activeProjectId,
+        selectedIterationProjectId: selectedIteration?.projectId,
+      })
+    ) {
       throw new Error("Unauthorized");
     }
 
@@ -177,6 +241,7 @@ export async function createIssue(data: {
       activeProjectId,
       selectedIterationProjectId: selectedIteration?.projectId,
     });
+
     if (!targetProjectId && isGlobalAdmin) {
       targetProjectId = resolveIssueCreateProjectId({
         activeProjectId,
@@ -184,6 +249,7 @@ export async function createIssue(data: {
         fallbackProjectId: (await prisma.project.findFirst({ select: { id: true } }))?.id || null,
       });
     }
+
     if (!targetProjectId) throw new Error("Project not found or no access");
 
     const project = await prisma.$transaction(async (tx) => {
@@ -223,6 +289,7 @@ export async function createIssue(data: {
         },
       });
     });
+
     if (!project) throw new Error("Project not found or no access");
 
     const count = await prisma.issue.count({ where: { projectId: project.id } });
@@ -240,6 +307,7 @@ export async function createIssue(data: {
       : null;
 
     const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
+    const watcherIds = Array.from(new Set([userId, data.assigneeId].filter((value): value is string => Boolean(value))));
 
     const newIssue = await prisma.$transaction(async (tx) => {
       const createdIssue = await tx.issue.create({
@@ -255,13 +323,22 @@ export async function createIssue(data: {
           assigneeId: data.assigneeId,
           reporterId: userId,
           dueDate: dueDateValue,
-          attachments: data.attachments && data.attachments.length > 0 ? {
-            create: data.attachments.map(att => ({
-              fileName: att.fileName,
-              fileUrl: att.fileUrl,
-              uploaderId: userId,
-            }))
-          } : undefined,
+          watchers:
+            watcherIds.length > 0
+              ? {
+                  connect: watcherIds.map((watcherId) => ({ id: watcherId })),
+                }
+              : undefined,
+          attachments:
+            data.attachments && data.attachments.length > 0
+              ? {
+                  create: data.attachments.map((attachment) => ({
+                    fileName: attachment.fileName,
+                    fileUrl: attachment.fileUrl,
+                    uploaderId: userId,
+                  })),
+                }
+              : undefined,
         },
         include: {
           attachments: {
@@ -305,6 +382,13 @@ export async function createIssue(data: {
       });
     }
 
+    await notifyAssignedUser({
+      actorId: userId,
+      assigneeId: data.assigneeId,
+      issueId: newIssue.id,
+      issueKey: newIssue.key,
+    });
+
     revalidatePath("/issues");
     revalidatePath("/iterations");
 
@@ -333,6 +417,7 @@ export async function addBacklogIssuesToSprint(sprintId: string, issueIds: strin
         },
       },
     });
+
     if (!sprint) throw new Error("Sprint not found");
 
     await checkProjectAdmin(sprint.projectId);
@@ -390,6 +475,7 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const sessionUser = session.user as { id?: string; role?: string };
     const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+
     const userRole = sessionUser.role ?? "USER";
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
@@ -404,6 +490,7 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
           },
         },
       });
+
       if (!previousIssue) throw new Error("Issue not found");
       if (!isProjectInActiveContext({ activeProjectId, projectId: previousIssue.projectId })) {
         throw new Error("Unauthorized");
@@ -477,8 +564,9 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const nextDescription =
       typeof data.description === "string" ? data.description : data.description === null ? "" : null;
 
+    let mentionedUserIds = new Set<string>();
     if (nextDescription !== null && nextDescription !== (existingIssue.description || "")) {
-      await notifyIssueMentions({
+      mentionedUserIds = await notifyIssueMentions({
         actorId: userId,
         issueId: existingIssue.id,
         issueKey: existingIssue.key,
@@ -487,15 +575,33 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         previousContent: existingIssue.description,
       });
     }
-    
+
+    if (updatedIssue.assigneeId !== existingIssue.assigneeId) {
+      await notifyAssignedUser({
+        actorId: userId,
+        assigneeId: updatedIssue.assigneeId,
+        issueId: existingIssue.id,
+        issueKey: existingIssue.key,
+      });
+    }
+
+    if (hasWatcherRelevantChange(existingIssue as IssueAuditSnapshot, updatedIssue as IssueAuditSnapshot)) {
+      await notifyIssueWatchers({
+        actorId: userId,
+        issueId: existingIssue.id,
+        message: getIssueWatcherMessage(existingIssue as IssueWatcherSnapshot, updatedIssue as IssueWatcherSnapshot),
+        excludeUserIds: [...mentionedUserIds],
+      });
+    }
+
     revalidatePath(`/issues/${issueId}`);
-    revalidatePath('/issues');
-    revalidatePath('/iterations');
-    
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
+
     return { success: true, issue: updatedIssue };
   } catch (error: unknown) {
-    console.error('Failed to update issue:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Failed to update issue' };
+    console.error("Failed to update issue:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update issue" };
   }
 }
 
@@ -507,6 +613,7 @@ export async function deleteIssue(issueId: string) {
     const sessionUser = session.user as { id?: string; role?: string };
     const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
+
     const userRole = sessionUser.role ?? "USER";
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
@@ -519,6 +626,7 @@ export async function deleteIssue(issueId: string) {
     if (!issue) {
       return { success: false, error: "Issue not found" };
     }
+
     if (!isProjectInActiveContext({ activeProjectId, projectId: issue.projectId })) {
       return { success: false, error: "Unauthorized" };
     }
@@ -555,5 +663,65 @@ export async function deleteIssue(issueId: string) {
   } catch (error: unknown) {
     console.error("Failed to delete issue:", error);
     return { success: false, error: error instanceof Error ? error.message : "Failed to delete issue" };
+  }
+}
+
+export async function toggleIssueWatcher(issueId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const userId = (session.user as { id?: string }).id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const issue = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: {
+        id: true,
+        projectId: true,
+        watchers: {
+          where: { id: userId },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!issue) {
+      throw new Error("Issue not found");
+    }
+
+    await checkProjectMember(issue.projectId);
+
+    const isWatching = issue.watchers.length > 0;
+    const updatedIssue = await prisma.issue.update({
+      where: { id: issueId },
+      data: {
+        watchers: isWatching ? { disconnect: { id: userId } } : { connect: { id: userId } },
+      },
+      select: {
+        watchers: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+            email: true,
+          },
+          orderBy: {
+            name: "asc",
+          },
+        },
+      },
+    });
+
+    revalidatePath(`/issues/${issueId}`);
+    revalidatePath("/");
+
+    return { success: true, watching: !isWatching, watchers: updatedIssue.watchers };
+  } catch (error: unknown) {
+    console.error("Failed to toggle issue watcher:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update watcher",
+    };
   }
 }

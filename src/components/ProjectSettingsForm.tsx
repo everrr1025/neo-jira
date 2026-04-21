@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { updateProject } from "@/app/actions/projects";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
-import { Locale } from "@/lib/i18n";
+
+import { updateProject } from "@/app/actions/projects";
+import { type Locale } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
 import {
   DEFAULT_WORKFLOW_TEMPLATE,
@@ -25,13 +26,6 @@ type WorkflowDraftState = {
   statuses: WorkflowStatusDraft[];
   transitions: Set<string>;
 };
-
-function cloneWorkflowDraftState(draft: WorkflowDraftState): WorkflowDraftState {
-  return {
-    statuses: draft.statuses.map((status) => ({ ...status })),
-    transitions: new Set(draft.transitions),
-  };
-}
 
 type ProjectSettingsFormProps = {
   project: {
@@ -59,20 +53,29 @@ type ProjectSettingsFormProps = {
   locale: Locale;
 };
 
+function cloneWorkflowDraftState(draft: WorkflowDraftState): WorkflowDraftState {
+  return {
+    statuses: draft.statuses.map((status) => ({ ...status })),
+    transitions: new Set(draft.transitions),
+  };
+}
+
 function buildInitialWorkflowDraft(
   project: ProjectSettingsFormProps["project"],
   locale: Locale
 ): WorkflowDraftState {
   const baseStatuses =
     project.workflowStatuses.length > 0
-      ? [...project.workflowStatuses].sort((a, b) => a.position - b.position).map((status) => ({
-          clientId: status.id,
-          id: status.id,
-          name: getWorkflowStatusName(status.key, [status], locale),
-          category: status.category as WorkflowStatusCategory,
-          isInitial: status.isInitial,
-        }))
-      : DEFAULT_WORKFLOW_TEMPLATE.statuses.map((status) => ({
+      ? [...project.workflowStatuses]
+          .sort((a, b) => a.position - b.position)
+          .map((status) => ({
+            clientId: status.id,
+            id: status.id,
+            name: getWorkflowStatusName(status.key, [status], locale),
+            category: status.category as WorkflowStatusCategory,
+            isInitial: status.isInitial,
+          }))
+      : (DEFAULT_WORKFLOW_TEMPLATE.statuses.map((status) => ({
           clientId: status.key,
           name: getWorkflowStatusName(
             status.key,
@@ -90,17 +93,23 @@ function buildInitialWorkflowDraft(
           ),
           category: status.category,
           isInitial: status.isInitial,
-        })) as WorkflowStatusDraft[];
+        })) as WorkflowStatusDraft[]);
 
   const baseTransitions =
     project.workflowTransitions.length > 0
-      ? new Set(project.workflowTransitions.map((transition) => `${transition.fromStatusId}->${transition.toStatusId}`))
+      ? new Set(
+          project.workflowTransitions.map(
+            (transition) => `${transition.fromStatusId}->${transition.toStatusId}`
+          )
+        )
       : new Set(
-          DEFAULT_WORKFLOW_TEMPLATE.transitions.map((transition) => {
-            const fromStatus = baseStatuses.find((status) => status.clientId === transition.fromKey);
-            const toStatus = baseStatuses.find((status) => status.clientId === transition.toKey);
-            return fromStatus && toStatus ? `${fromStatus.clientId}->${toStatus.clientId}` : "";
-          }).filter(Boolean)
+          DEFAULT_WORKFLOW_TEMPLATE.transitions
+            .map((transition) => {
+              const fromStatus = baseStatuses.find((status) => status.clientId === transition.fromKey);
+              const toStatus = baseStatuses.find((status) => status.clientId === transition.toKey);
+              return fromStatus && toStatus ? `${fromStatus.clientId}->${toStatus.clientId}` : "";
+            })
+            .filter(Boolean)
         );
 
   return { statuses: baseStatuses, transitions: baseTransitions };
@@ -117,7 +126,7 @@ function formatWorkflowSaveError(rawError: string, locale: Locale) {
       .filter(Boolean);
 
     if (locale === "zh") {
-      return `保存失败：还有 Issue 正在使用这些状态，不能直接删除：${statusKeys.join("、")}。请先把这些 Issue 迁移到其他状态后再保存。`;
+      return `保存失败：仍有 Issue 正在使用这些状态，不能直接删除：${statusKeys.join("、")}。请先将这些 Issue 移到其他状态后再保存。`;
     }
 
     return `Save failed: some issues are still using these statuses, so they cannot be deleted directly: ${statusKeys.join(
@@ -127,7 +136,7 @@ function formatWorkflowSaveError(rawError: string, locale: Locale) {
 
   if (rawError === "Workflow must contain at least two statuses") {
     return locale === "zh"
-      ? "保存失败：工作流至少要保留 2 个状态。"
+      ? "保存失败：工作流至少需要保留 2 个状态。"
       : "Save failed: a workflow must keep at least 2 statuses.";
   }
 
@@ -139,14 +148,12 @@ function formatWorkflowSaveError(rawError: string, locale: Locale) {
 
   if (rawError === "Workflow must include at least one done status") {
     return locale === "zh"
-      ? "保存失败：工作流至少要有 1 个已完成类状态。"
+      ? "保存失败：工作流至少需要有 1 个已完成状态。"
       : "Save failed: a workflow must include at least 1 done status.";
   }
 
   if (rawError === "Workflow status name is required") {
-    return locale === "zh"
-      ? "保存失败：状态名称不能为空。"
-      : "Save failed: status name is required.";
+    return locale === "zh" ? "保存失败：状态名称不能为空。" : "Save failed: status name is required.";
   }
 
   return rawError;
@@ -161,15 +168,15 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
           updateSuccess: "项目更新成功",
           projectName: "项目名称",
           projectKey: "项目标识",
-          projectKeyHint: "用于 issue 编号的短标识，例如 NJ、WEB。",
+          projectKeyHint: "用于 Issue 编号的短标识，例如 NJ、WEB。",
           projectOwner: "项目负责人",
-          ownerLockedHint: "项目负责人创建后不可修改。",
+          ownerLockedHint: "项目负责人在创建后不可修改。",
           description: "项目描述",
           cancel: "取消",
           saveChanges: "保存更改",
           saving: "保存中...",
           workflowTitle: "工作流模板",
-          workflowDesc: "按项目维护状态列表、状态分类和允许的流转关系。",
+          workflowDesc: "按项目维护状态列表、状态分类以及允许的流转路径。",
           statusName: "状态名称",
           statusCategory: "状态分类",
           initialStatus: "初始状态",
@@ -178,9 +185,9 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
           removeStatus: "删除状态",
           moveUp: "上移",
           moveDown: "下移",
-          transitionsHint: "勾选允许从行状态流转到列状态的路径。",
+          transitionsHint: "勾选从行状态流转到列状态时允许的路径。",
           workflowValidationHint: "至少保留 2 个状态，并确保只有 1 个初始状态。",
-          cannotRemoveLastStatuses: "工作流至少需要两个状态。",
+          cannotRemoveLastStatuses: "工作流至少需要保留 2 个状态。",
         }
       : {
           updateFailed: "Failed to update project",
@@ -216,21 +223,15 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     key: project.key || "",
     description: project.description || "",
   });
-  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftState>(() => cloneWorkflowDraftState(initialWorkflowDraft));
-  const [savedWorkflowDraft, setSavedWorkflowDraft] = useState<WorkflowDraftState>(() => cloneWorkflowDraftState(initialWorkflowDraft));
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftState>(() =>
+    cloneWorkflowDraftState(initialWorkflowDraft)
+  );
+  const [savedWorkflowDraft, setSavedWorkflowDraft] = useState<WorkflowDraftState>(() =>
+    cloneWorkflowDraftState(initialWorkflowDraft)
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
-
-  useEffect(() => {
-    setFormData({
-      name: project.name || "",
-      key: project.key || "",
-      description: project.description || "",
-    });
-    setWorkflowDraft(cloneWorkflowDraftState(initialWorkflowDraft));
-    setSavedWorkflowDraft(cloneWorkflowDraftState(initialWorkflowDraft));
-  }, [initialWorkflowDraft, project.description, project.key, project.name]);
 
   const categoryOptions = useMemo(
     () =>
@@ -251,7 +252,11 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     }));
   };
 
-  const updateStatus = <K extends keyof WorkflowStatusDraft>(clientId: string, field: K, value: WorkflowStatusDraft[K]) => {
+  const updateStatus = <K extends keyof WorkflowStatusDraft>(
+    clientId: string,
+    field: K,
+    value: WorkflowStatusDraft[K]
+  ) => {
     setWorkflowDraft((prev) => ({
       ...prev,
       statuses: prev.statuses.map((status) =>
@@ -264,7 +269,9 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     setWorkflowDraft((prev) => {
       const index = prev.statuses.findIndex((status) => status.clientId === clientId);
       const targetIndex = index + direction;
-      if (index < 0 || targetIndex < 0 || targetIndex >= prev.statuses.length) return prev;
+      if (index < 0 || targetIndex < 0 || targetIndex >= prev.statuses.length) {
+        return prev;
+      }
 
       const nextStatuses = [...prev.statuses];
       const [movedStatus] = nextStatuses.splice(index, 1);
@@ -294,6 +301,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     setError(null);
     setSuccess(false);
     setAlertMessage("");
+
     setWorkflowDraft((prev) => {
       if (prev.statuses.length <= 2) {
         setError(text.cannotRemoveLastStatuses);
@@ -303,7 +311,10 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
 
       const nextStatuses = prev.statuses.filter((status) => status.clientId !== clientId);
       const nextTransitions = new Set(
-        [...prev.transitions].filter((transitionKey) => !transitionKey.startsWith(`${clientId}->`) && !transitionKey.endsWith(`->${clientId}`))
+        [...prev.transitions].filter(
+          (transitionKey) =>
+            !transitionKey.startsWith(`${clientId}->`) && !transitionKey.endsWith(`->${clientId}`)
+        )
       );
 
       if (!nextStatuses.some((status) => status.isInitial)) {
@@ -319,6 +330,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
 
   const toggleTransition = (fromClientId: string, toClientId: string) => {
     const transitionKey = `${fromClientId}->${toClientId}`;
+
     setWorkflowDraft((prev) => {
       const nextTransitions = new Set(prev.transitions);
       if (nextTransitions.has(transitionKey)) {
@@ -330,8 +342,8 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     setError(null);
     setSuccess(false);
     setAlertMessage("");
@@ -374,13 +386,15 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
     <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
       <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={6000} />
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
+      ) : null}
 
-      {success && (
+      {success ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-600">
           {text.updateSuccess}
         </div>
-      )}
+      ) : null}
 
       <div className="grid grid-cols-1 gap-6">
         <div className="flex flex-col gap-1.5">
@@ -391,7 +405,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
             id="name"
             required
             value={formData.name}
-            onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+            onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           />
         </div>
@@ -404,7 +418,9 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
             id="key"
             required
             value={formData.key}
-            onChange={(e) => setFormData((prev) => ({ ...prev, key: e.target.value.toUpperCase() }))}
+            onChange={(event) =>
+              setFormData((prev) => ({ ...prev, key: event.target.value.toUpperCase() }))
+            }
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             maxLength={10}
           />
@@ -432,7 +448,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
             id="description"
             rows={4}
             value={formData.description}
-            onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+            onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
             className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           />
         </div>
@@ -462,7 +478,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
                   <label className="text-xs font-semibold text-slate-500">{text.statusName}</label>
                   <input
                     value={status.name}
-                    onChange={(e) => updateStatus(status.clientId, "name", e.target.value)}
+                    onChange={(event) => updateStatus(status.clientId, "name", event.target.value)}
                     className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
                 </div>
@@ -472,7 +488,9 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
                   <div className="relative">
                     <select
                       value={status.category}
-                      onChange={(e) => updateStatus(status.clientId, "category", e.target.value as WorkflowStatusCategory)}
+                      onChange={(event) =>
+                        updateStatus(status.clientId, "category", event.target.value as WorkflowStatusCategory)
+                      }
                       className="w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     >
                       {categoryOptions.map((option) => (
@@ -481,7 +499,10 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
                         </option>
                       ))}
                     </select>
-                    <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <ChevronDown
+                      size={14}
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
                   </div>
                 </div>
 
@@ -562,6 +583,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
                     {workflowDraft.statuses.map((toStatus) => {
                       const transitionKey = `${fromStatus.clientId}->${toStatus.clientId}`;
                       const isSelf = fromStatus.clientId === toStatus.clientId;
+
                       return (
                         <td key={transitionKey} className="px-3 py-2 text-center">
                           <input

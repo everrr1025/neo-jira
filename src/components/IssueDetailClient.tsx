@@ -1,33 +1,36 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { deleteIssue, updateIssue } from "@/app/actions/issues";
-import { Check, Loader2, Trash2 } from "lucide-react";
-import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
-import CommentSection from "./CommentSection";
-import AttachmentUpload from "./AttachmentUpload";
-import AlertPopup from "./AlertPopup";
-import ActivityLogSection from "./ActivityLogSection";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+
+import { deleteIssue, toggleIssueWatcher, updateIssue } from "@/app/actions/issues";
+import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
   getTranslations,
-  Locale,
+  type Locale,
   localeDateMap,
 } from "@/lib/i18n";
-import { DropdownField } from "./DropdownField";
-import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
+import ActivityLogSection from "./ActivityLogSection";
+import AlertPopup from "./AlertPopup";
+import AttachmentUpload from "./AttachmentUpload";
+import CommentSection from "./CommentSection";
+import { DropdownField } from "./DropdownField";
+import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 
 type IssueUser = {
   id: string;
   name: string | null;
+  email?: string | null;
+  avatar?: string | null;
   role?: string | null;
 };
 
@@ -50,8 +53,12 @@ type IssueRecord = {
   createdAt: string | Date;
   updatedAt: string | Date;
   reporter: {
+    id?: string;
     name: string | null;
+    email?: string | null;
+    avatar?: string | null;
   } | null;
+  watchers: IssueUser[];
 };
 
 type IssueWorkflowStatus = WorkflowStatusRecord;
@@ -78,26 +85,30 @@ export default function IssueDetailClient({
 }) {
   const router = useRouter();
   const [issue, setIssue] = useState(initialIssue);
+  const [watchers, setWatchers] = useState(initialIssue.watchers);
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [successMsg, setSuccessMsg] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(initialIssue.title);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
-  const statusOptions = (() => {
+
+  const isWatching = useMemo(
+    () => watchers.some((watcher) => watcher.id === currentUserId),
+    [currentUserId, watchers]
+  );
+
+  const statusOptions = useMemo(() => {
     const transitionMap = buildWorkflowTransitionMap(workflowTransitions, workflowStatuses);
     const allowedTargets = transitionMap.get(issue.status);
     const visibleStatuses = workflowStatuses.filter(
       (status) => status.key === issue.status || allowedTargets?.has(status.key)
     );
     return buildWorkflowStatusOptions(visibleStatuses.length > 0 ? visibleStatuses : workflowStatuses, locale);
-  })();
-
-  const handleChange = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
-    setIssue((prev) => ({ ...prev, [field]: value }));
-  };
+  }, [issue.status, locale, workflowStatuses, workflowTransitions]);
 
   const handleAutoSave = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
     setIssue((prev) => ({ ...prev, [field]: value }));
@@ -105,10 +116,61 @@ export default function IssueDetailClient({
       const result = await updateIssue(issue.id, { [field]: value });
       if (result.success) {
         emitIssueActivityUpdated(issue.id);
-        setSuccessMsg(true);
-        setTimeout(() => setSuccessMsg(false), 3000);
       } else {
         setAlertMessage(translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
+  const normalizeTitle = (value: string) => value.replace(/\s*\n+\s*/g, " ").trim();
+
+  const handleStartEditingTitle = () => {
+    setDraftTitle(issue.title);
+    setIsEditingTitle(true);
+  };
+
+  const handleCancelEditingTitle = () => {
+    setDraftTitle(issue.title);
+    setIsEditingTitle(false);
+  };
+
+  const handleSaveTitle = () => {
+    const nextTitle = normalizeTitle(draftTitle);
+
+    if (!nextTitle) {
+      handleCancelEditingTitle();
+      return;
+    }
+
+    if (nextTitle === issue.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+
+    const previousTitle = issue.title;
+    setIssue((prev) => ({ ...prev, title: nextTitle }));
+    setDraftTitle(nextTitle);
+    setIsEditingTitle(false);
+
+    startTransition(async () => {
+      const result = await updateIssue(issue.id, { title: nextTitle });
+      if (result.success) {
+        emitIssueActivityUpdated(issue.id);
+      } else {
+        setIssue((prev) => ({ ...prev, title: previousTitle }));
+        setDraftTitle(previousTitle);
+        setAlertMessage(translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
+  const handleToggleWatcher = () => {
+    startTransition(async () => {
+      const result = await toggleIssueWatcher(issue.id);
+      if (result.success) {
+        setWatchers(result.watchers || []);
+      } else {
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
       }
     });
   };
@@ -116,7 +178,7 @@ export default function IssueDetailClient({
   const handleDelete = async () => {
     if (!canDeleteIssue || isDeleting) return;
 
-    const confirmed = window.confirm("Are you sure you want to delete this issue? This cannot be undone.");
+    const confirmed = window.confirm(translations.issueDetail.deleteIssueConfirm);
     if (!confirmed) return;
 
     setAlertMessage("");
@@ -124,7 +186,7 @@ export default function IssueDetailClient({
     try {
       const result = await deleteIssue(issue.id);
       if (!result.success) {
-        setAlertMessage(result.error || "Failed to delete issue");
+        setAlertMessage(result.error || translations.issueDetail.deleteIssue);
         setIsDeleting(false);
         return;
       }
@@ -134,7 +196,7 @@ export default function IssueDetailClient({
       setIsDeleting(false);
     } catch (error) {
       console.error(error);
-      setAlertMessage("Failed to delete issue");
+      setAlertMessage(translations.issueDetail.deleteIssue);
       setIsDeleting(false);
     }
   };
@@ -158,8 +220,6 @@ export default function IssueDetailClient({
         setIssue((prev) => ({ ...prev, description: draftDescription }));
         setIsEditingDescription(false);
         emitIssueActivityUpdated(issue.id);
-        setSuccessMsg(true);
-        setTimeout(() => setSuccessMsg(false), 3000);
       } else {
         setAlertMessage(translations.issueDetail.failedToSave);
       }
@@ -167,80 +227,133 @@ export default function IssueDetailClient({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 bg-white p-6 md:p-8 rounded-xl border shadow-sm">
-      {/* Main Content Area */}
+    <div className="flex flex-col gap-8 rounded-xl border bg-white p-6 shadow-sm md:p-8 lg:flex-row">
       <div className="flex-1 space-y-6">
-        <div className="mb-2 flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <input
-              type="text"
-              value={issue.title}
-              onChange={(e) => handleChange("title", e.target.value)}
-              onBlur={(e) => handleAutoSave("title", e.target.value)}
-              className="w-full min-w-0 rounded-md border-2 border-transparent px-2 py-1 -ml-2 text-2xl font-bold text-slate-900 outline-none transition-all hover:border-slate-200 focus:border-blue-500 focus:bg-white"
-              placeholder={translations.issueDetail.issueSummaryPlaceholder}
-            />
-            {successMsg && (
-              <span className="text-emerald-600 text-xs font-medium flex items-center gap-1 animate-in fade-in duration-300 normal-case tracking-normal">
-                <Check size={14} /> {translations.issueDetail.saved}
-              </span>
-            )}
-            {isPending && !successMsg && (
-              <span className="text-blue-600 text-xs font-medium flex items-center gap-1 animate-in fade-in duration-300 normal-case tracking-normal">
-                <Loader2 size={14} className="animate-spin" /> Saving...
-              </span>
+        <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+          <div className="min-w-0">
+            {isEditingTitle ? (
+              <textarea
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onBlur={handleSaveTitle}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    handleCancelEditingTitle();
+                  }
+
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSaveTitle();
+                  }
+                }}
+                autoFocus
+                rows={2}
+                className="-ml-2 block w-full min-w-0 resize-none rounded-md border-2 border-blue-500 bg-white px-2 py-1 text-2xl font-bold leading-snug text-slate-900 outline-none transition-all"
+                placeholder={translations.issueDetail.issueSummaryPlaceholder}
+              />
+            ) : (
+              <div
+                className="group relative -ml-2 block w-full min-w-0"
+              >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleStartEditingTitle}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleStartEditingTitle();
+                    }
+                  }}
+                  className="block w-full min-w-0 cursor-text rounded-md border-2 border-transparent px-2 py-1 text-left text-2xl font-bold leading-snug text-slate-900 outline-none transition-all hover:border-slate-200 focus:border-blue-500 focus:bg-white"
+                >
+                  <span
+                    className="block w-full max-w-full overflow-hidden whitespace-normal break-words [overflow-wrap:anywhere]"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 2,
+                    }}
+                  >
+                    {issue.title || translations.issueDetail.issueSummaryPlaceholder}
+                  </span>
+                </div>
+
+                <div className="pointer-events-none absolute left-2 top-full z-20 mt-2 hidden max-w-md rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-sm font-medium leading-6 text-slate-700 shadow-xl backdrop-blur-sm group-hover:block group-focus-within:block">
+                  <div className="max-h-40 overflow-auto break-words [overflow-wrap:anywhere]">{issue.title}</div>
+                </div>
+              </div>
             )}
           </div>
 
-          {canDeleteIssue && (
+          <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors flex items-center disabled:opacity-50"
-              title={locale === "zh" ? "删除 Issue" : "Delete Issue"}
+              type="button"
+              onClick={handleToggleWatcher}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                isWatching
+                  ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              title={isWatching ? translations.issueDetail.unwatch : translations.issueDetail.watch}
             >
-              {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {isWatching ? <EyeOff size={16} /> : <Eye size={16} />}
+              {isWatching ? translations.issueDetail.watching : translations.issueDetail.watch}
+              <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                {watchers.length}
+              </span>
             </button>
-          )}
+
+            {canDeleteIssue && (
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex items-center rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                title={translations.issueDetail.deleteIssue}
+              >
+                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Description */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-bold text-slate-700">{translations.issueDetail.description}</label>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-800">{translations.issueDetail.description}</h3>
             {!isEditingDescription ? (
               <button
                 onClick={handleStartEditingDescription}
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors"
-                title={locale === "zh" ? "编辑描述" : "Edit description"}
+                className="flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-800"
+                title={translations.issueDetail.edit}
               >
-                {locale === "zh" ? "编辑" : "Edit"}
+                {translations.issueDetail.edit}
               </button>
             ) : (
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleSaveDescription}
-                  className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1 shadow-sm"
+                  className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
                 >
                   {isPending && <Loader2 size={12} className="animate-spin" />}
-                  {locale === "zh" ? "保存" : "Save"}
+                  {translations.issueDetail.save}
                 </button>
                 <button
                   onClick={() => void handleCancelEditingDescription()}
-                  className="text-xs text-slate-500 hover:text-slate-700 font-medium"
+                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
                 >
-                  {locale === "zh" ? "取消" : "Cancel"}
+                  {translations.issueDetail.cancel}
                 </button>
               </div>
             )}
           </div>
-          <div className={isEditingDescription ? "" : "rounded-lg border bg-white p-3"}>
+          <div className={isEditingDescription ? "" : "min-h-[200px] rounded-lg border bg-white p-3"}>
             {isEditingDescription ? (
               <RichTextEditor
                 ref={descriptionEditorRef}
                 value={draftDescription}
-                onChange={(val) => setDraftDescription(val || "")}
-                height={340}
+                onChange={(value) => setDraftDescription(value || "")}
+                height={150}
                 mentionUsers={users}
                 mentionLabel={translations.issueDetail.mentionSomeone}
                 currentUserId={currentUserId}
@@ -249,7 +362,7 @@ export default function IssueDetailClient({
               <RichTextEditor
                 value={issue.description || ""}
                 onChange={() => {}}
-                height={340}
+                height={150}
                 mentionUsers={users}
                 mentionLabel={translations.issueDetail.mentionSomeone}
                 currentUserId={currentUserId}
@@ -258,57 +371,47 @@ export default function IssueDetailClient({
             )}
           </div>
         </div>
-        
-
 
         <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={5000} />
 
-        {/* Attachment Section */}
         <AttachmentUpload issueId={issue.id} locale={locale} />
-
-        {/* Comment Section */}
         <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} locale={locale} />
-
         <ActivityLogSection issueId={issue.id} users={users} iterations={iterations} locale={locale} />
       </div>
 
-      {/* Sidebar Area */}
-      <div className="w-full shrink-0 flex flex-col gap-6 lg:w-56 xl:w-52">
-        <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 flex flex-col gap-4">
+      <div className="flex w-full shrink-0 flex-col gap-6 lg:w-56 xl:w-52">
+        <div className="flex flex-col gap-4 rounded-lg border border-slate-100 bg-slate-50 p-5">
           <div className="flex items-center gap-2 border-b pb-2">
             <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
               {translations.issueDetail.properties}
             </h3>
             <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">{issue.key}</span>
           </div>
-          
-          {/* Status */}
+
           <DropdownField
             id="status"
             label={translations.issueDetail.status}
             value={issue.status}
-            onChange={(val) => handleAutoSave("status", val)}
+            onChange={(value) => handleAutoSave("status", value)}
             options={statusOptions}
           />
 
-          {/* Sprint */}
           <DropdownField
             id="iteration"
             label={translations.issueDetail.sprint}
             value={issue.iterationId || ""}
-            onChange={(val) => handleAutoSave("iterationId", val || null)}
+            onChange={(value) => handleAutoSave("iterationId", value || null)}
             options={[
               { value: "", label: translations.issueList.backlog },
-              ...iterations.map((it) => ({ value: it.id, label: it.name })),
+              ...iterations.map((iteration) => ({ value: iteration.id, label: iteration.name })),
             ]}
           />
 
-          {/* Type */}
           <DropdownField
             id="type"
             label={translations.issueDetail.type}
             value={issue.type}
-            onChange={(val) => handleAutoSave("type", val)}
+            onChange={(value) => handleAutoSave("type", value)}
             options={[
               { value: "TASK", label: getIssueTypeLabel("TASK", locale) },
               { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
@@ -317,12 +420,11 @@ export default function IssueDetailClient({
             ]}
           />
 
-          {/* Priority */}
           <DropdownField
             id="priority"
             label={translations.issueDetail.priority}
             value={issue.priority}
-            onChange={(val) => handleAutoSave("priority", val)}
+            onChange={(value) => handleAutoSave("priority", value)}
             options={[
               { value: "LOW", label: getPriorityLabel("LOW", locale) },
               { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
@@ -331,43 +433,81 @@ export default function IssueDetailClient({
             ]}
           />
 
-          {/* Assignee */}
           <DropdownField
             id="assignee"
             label={translations.issueDetail.assignee}
             value={issue.assigneeId || ""}
-            onChange={(val) => handleAutoSave("assigneeId", val || null)}
+            onChange={(value) => handleAutoSave("assigneeId", value || null)}
             options={[
               { value: "", label: translations.issueList.unassigned },
-              ...users.map((u) => ({ value: u.id, label: u.name || u.id })),
+              ...users.map((user) => ({ value: user.id, label: user.name || user.id })),
             ]}
           />
 
-          {/* Due Date */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.dueDate}</label>
             <input
               type="date"
-              value={issue.dueDate ? new Date(issue.dueDate).toISOString().split('T')[0] : ''}
-              onChange={(e) => handleAutoSave("dueDate", e.target.value ? new Date(e.target.value).toISOString() : null)}
-              className="w-full border border-slate-200 rounded-md p-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+              value={issue.dueDate ? new Date(issue.dueDate).toISOString().split("T")[0] : ""}
+              onChange={(event) =>
+                handleAutoSave("dueDate", event.target.value ? new Date(event.target.value).toISOString() : null)
+              }
+              className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
-          {/* Reporter (Read Only) */}
-          <div className="flex flex-col gap-1.5 pt-2 border-t mt-2">
+
+          <div className="mt-2 border-t pt-2">
+            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.watchers}</label>
+            <div className="mt-2 flex flex-col gap-2">
+              {watchers.length > 0 ? (
+                watchers.map((watcher) => (
+                  <div key={watcher.id} className="flex items-center gap-2">
+                    <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                      {watcher.avatar ? (
+                        <img src={watcher.avatar} alt={watcher.name || watcher.email || watcher.id} className="h-full w-full object-cover" />
+                      ) : (
+                        (watcher.name || watcher.email || watcher.id).charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className="truncate text-sm font-medium text-slate-700">
+                      {watcher.name || watcher.email || watcher.id}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">{translations.issueDetail.noWatchers}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2 border-t pt-2">
             <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.reporter}</label>
-            <div className="flex items-center gap-2 p-1.5">
-              <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
-                {issue.reporter?.name?.charAt(0) || 'U'}
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                  {issue.reporter?.avatar ? (
+                    <img
+                      src={issue.reporter.avatar}
+                      alt={issue.reporter.name || issue.reporter.email || issue.reporter.id || translations.issueDetail.unknown}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    (issue.reporter?.name || issue.reporter?.email || issue.reporter?.id || translations.issueDetail.unknown)
+                      .charAt(0)
+                      .toUpperCase()
+                  )}
+                </div>
+                <span className="truncate text-sm font-medium text-slate-700">
+                  {issue.reporter?.name || issue.reporter?.email || translations.issueDetail.unknown}
+                </span>
               </div>
-              <span className="text-sm font-medium text-slate-700">{issue.reporter?.name || translations.issueDetail.unknown}</span>
             </div>
           </div>
         </div>
-        
-        <div className="text-xs text-slate-400 font-medium px-1">
-          {translations.issueDetail.created}: {new Date(issue.createdAt).toLocaleString(localeDateMap[locale])}<br/>
+
+        <div className="px-1 text-xs font-medium text-slate-400">
+          {translations.issueDetail.created}: {new Date(issue.createdAt).toLocaleString(localeDateMap[locale])}
+          <br />
           {translations.issueDetail.updated}: {new Date(issue.updatedAt).toLocaleString(localeDateMap[locale])}
         </div>
       </div>
