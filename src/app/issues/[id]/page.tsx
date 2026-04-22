@@ -105,6 +105,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         currentUserId={userId}
         locale={locale}
         canDeleteIssue={canDeleteIssue}
+        canManagePlans={canDeleteIssue}
       />
     </div>
   );

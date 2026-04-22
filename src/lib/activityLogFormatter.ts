@@ -58,23 +58,26 @@ function getFieldLabel(field: string | null, locale: Locale) {
 
 function getFieldValueLabel(field: string | null, value: string | null, locale: Locale, lookups: LookupMaps) {
   const translations = getTranslations(locale);
-  if (!value) return translations.activitySection.emptyValue;
-
-  if (field === "status") return getIssueStatusLabel(value, locale);
-  if (field === "priority") return getPriorityLabel(value, locale);
-  if (field === "type") return getIssueTypeLabel(value, locale);
+  if (field === "status") return value ? getIssueStatusLabel(value, locale) : translations.activitySection.emptyValue;
+  if (field === "priority") return value ? getPriorityLabel(value, locale) : translations.activitySection.emptyValue;
+  if (field === "type") return value ? getIssueTypeLabel(value, locale) : translations.activitySection.emptyValue;
 
   if (field === "assigneeId") {
-    return lookups.assigneeNameById?.[value] || translations.issueList.unassigned;
+    if (!value) return translations.issueList.unassigned;
+    return lookups.assigneeNameById?.[value] || value;
   }
 
   if (field === "planId") {
-    return lookups.planNameById?.[value] || (locale === "zh" ? "未设置计划" : "No plan");
+    if (!value) return locale === "zh" ? "未设置计划" : "No plan";
+    return lookups.planNameById?.[value] || value;
   }
 
   if (field === "iterationId") {
-    return lookups.iterationNameById?.[value] || translations.issueList.backlog;
+    if (!value) return translations.issueList.backlog;
+    return lookups.iterationNameById?.[value] || value;
   }
+
+  if (!value) return translations.activitySection.emptyValue;
 
   if (field === "dueDate") {
     const date = new Date(value);

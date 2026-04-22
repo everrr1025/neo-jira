@@ -8,6 +8,7 @@ import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
+import { getProjectRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,8 @@ export default async function IssuesPage() {
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
+  const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
+  const canManagePlans = projectRole === "ADMIN";
 
   const whereClause = buildProjectItemsWhere(activeProject.id);
   const issues = await prisma.issue.findMany({
@@ -93,7 +96,14 @@ export default async function IssuesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <CreateIssueButton users={users} plans={plans} iterations={iterations} locale={locale} currentUserId={userId} />
+          <CreateIssueButton
+            users={users}
+            plans={plans}
+            iterations={iterations}
+            locale={locale}
+            currentUserId={userId}
+            canManagePlans={canManagePlans}
+          />
         </div>
       </div>
 
@@ -105,6 +115,7 @@ export default async function IssuesPage() {
         workflowProjects={workflowProjects}
         currentUser={currentUser}
         locale={locale}
+        canManagePlans={canManagePlans}
       />
     </div>
   );

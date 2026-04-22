@@ -257,6 +257,7 @@ export default function AddExistingIssuesButton({
                   iterations={iterations}
                   locale={locale}
                   currentUserId={currentUserId}
+                  canManagePlans
                   defaultIterationId={sprintId}
                   defaultDueDate={defaultDueDate}
                 />

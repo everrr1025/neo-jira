@@ -162,6 +162,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   users={users}
                   plans={plans}
                   iterations={iterations}
+                  canManagePlans={false}
                   defaultIterationId={iteration.id}
                   defaultDueDate={defaultDueDate}
                 />

@@ -80,6 +80,7 @@ export default function IssueDetailClient({
   currentUserId,
   locale,
   canDeleteIssue,
+  canManagePlans,
 }: {
   initialIssue: IssueRecord;
   users: IssueUser[];
@@ -90,6 +91,7 @@ export default function IssueDetailClient({
   currentUserId: string;
   locale: Locale;
   canDeleteIssue: boolean;
+  canManagePlans: boolean;
 }) {
   const router = useRouter();
   const [issue, setIssue] = useState(initialIssue);
@@ -103,6 +105,7 @@ export default function IssueDetailClient({
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
+  const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
 
   const isWatching = useMemo(
     () => watchers.some((watcher) => watcher.id === currentUserId),
@@ -404,8 +407,9 @@ export default function IssueDetailClient({
             options={statusOptions}
           />
 
-          <DropdownField
-            id="plan"
+          {canManagePlans ? (
+            <DropdownField
+              id="plan"
             label={locale === "zh" ? "计划" : "Plan"}
             value={issue.planId || ""}
             onChange={(value) => handleAutoSave("planId", value || null)}
@@ -413,7 +417,15 @@ export default function IssueDetailClient({
               { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
               ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
             ]}
-          />
+            />
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-500">{locale === "zh" ? "计划" : "Plan"}</label>
+              <div className="rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700">
+                {issue.planId ? plans.find((plan) => plan.id === issue.planId)?.name || issue.planId : noPlanLabel}
+              </div>
+            </div>
+          )}
 
           <DropdownField
             id="iteration"

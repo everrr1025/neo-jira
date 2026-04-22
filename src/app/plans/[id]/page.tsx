@@ -1,7 +1,6 @@
 import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
-import CreateIssueButton from "@/components/CreateIssueButton";
 import DeletePlanButton from "@/components/DeletePlanButton";
 import EditPlanButton from "@/components/EditPlanButton";
 import IssueList from "@/components/IssueList";
@@ -200,14 +199,6 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
         <div className="flex flex-wrap items-center gap-3">
           {canManagePlans ? <EditPlanButton plan={plan} locale={locale} /> : null}
           {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} /> : null}
-          <CreateIssueButton
-            users={users}
-            plans={plans}
-            iterations={iterations}
-            locale={locale}
-            currentUserId={userId}
-            defaultPlanId={plan.id}
-          />
         </div>
       </div>
 
@@ -230,6 +221,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           currentUser={currentUser}
           locale={locale}
           lockedPlanId={plan.id}
+          canManagePlans={canManagePlans}
         />
       </div>
     </div>

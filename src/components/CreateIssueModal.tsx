@@ -17,6 +17,7 @@ type CreateIssueModalProps = {
   iterations: CreateIssueIteration[];
   locale: Locale;
   currentUserId?: string;
+  canManagePlans?: boolean;
   defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
@@ -70,6 +71,7 @@ export default function CreateIssueModal({
   iterations,
   locale,
   currentUserId,
+  canManagePlans = false,
   defaultPlanId,
   defaultIterationId,
   defaultDueDate,
@@ -85,7 +87,7 @@ export default function CreateIssueModal({
       description: "",
       type: "TASK",
       priority: "MEDIUM",
-      planId: plans.find((plan) => plan.id === defaultPlanId)?.id || "",
+      planId: canManagePlans ? plans.find((plan) => plan.id === defaultPlanId)?.id || "" : "",
       iterationId: fallbackIteration?.id || "",
       assigneeId: "",
       dueDate: defaultDueDate || toDateInputValue(fallbackIteration?.endDate),
@@ -241,7 +243,7 @@ export default function CreateIssueModal({
         description: formData.description,
         type: formData.type,
         priority: formData.priority,
-        planId: formData.planId || null,
+        planId: canManagePlans ? formData.planId || null : null,
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
         dueDate: formData.dueDate || null,
@@ -313,21 +315,23 @@ export default function CreateIssueModal({
             </div>
 
             <div className="flex gap-4">
-              <DropdownField
-                id="plan"
-                label={locale === "zh" ? "计划" : "Plan"}
-                value={formData.planId}
-                onChange={(value) => setFormData((prev) => ({ ...prev, planId: value }))}
-                options={planOptions}
-                className="flex-1"
-              />
+              {canManagePlans ? (
+                <DropdownField
+                  id="plan"
+                  label={locale === "zh" ? "计划" : "Plan"}
+                  value={formData.planId}
+                  onChange={(value) => setFormData((prev) => ({ ...prev, planId: value }))}
+                  options={planOptions}
+                  className="flex-1"
+                />
+              ) : null}
               <DropdownField
                 id="iteration"
                 label={text.sprint}
                 value={formData.iterationId}
                 onChange={handleSprintChange}
                 options={iterationOptions}
-                className="flex-1"
+                className={canManagePlans ? "flex-1" : "w-full"}
               />
             </div>
 

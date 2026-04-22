@@ -238,6 +238,10 @@ export async function createIssue(data: {
       throw new Error("Plan not found");
     }
 
+    if (selectedPlan) {
+      await checkProjectAdmin(selectedPlan.projectId);
+    }
+
     if (data.iterationId && !selectedIteration) {
       throw new Error("Sprint not found");
     }
@@ -526,6 +530,10 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
 
       await checkProjectMember(previousIssue.projectId);
 
+      if (Object.prototype.hasOwnProperty.call(data, "planId") && data.planId !== previousIssue.planId) {
+        await checkProjectAdmin(previousIssue.projectId);
+      }
+
       if (typeof data.planId === "string" && data.planId) {
         const targetPlan = await tx.plan.findUnique({
           where: { id: data.planId },
@@ -685,7 +693,11 @@ export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueActi
       throw new Error("Some selected issues are unavailable in the active project");
     }
 
-    await checkProjectMember(activeProjectId);
+    if (action.type === "assignPlan" || action.type === "removePlan") {
+      await checkProjectAdmin(activeProjectId);
+    } else {
+      await checkProjectMember(activeProjectId);
+    }
 
     const affectedPlanIds = new Set<string>();
     for (const issue of existingIssues) {

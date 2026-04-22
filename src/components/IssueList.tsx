@@ -469,6 +469,7 @@ export default function IssueList({
   currentUser,
   locale,
   lockedPlanId,
+  canManagePlans,
 }: {
   initialIssues: Issue[];
   users: IssueUser[];
@@ -482,6 +483,7 @@ export default function IssueList({
   currentUser: { id: string } | null;
   locale: Locale;
   lockedPlanId?: string | null;
+  canManagePlans: boolean;
 }) {
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
@@ -1369,7 +1371,7 @@ export default function IssueList({
             <span className="text-sm font-semibold text-blue-900">
               {selectedIssuesLabel} {selectedIssueIds.length}
             </span>
-            {!lockedPlanId ? (
+            {!lockedPlanId && canManagePlans ? (
               <button
                 type="button"
                 onClick={() => openBulkAction("assignPlan")}
@@ -1378,13 +1380,15 @@ export default function IssueList({
                 {bulkAddToPlanLabel}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => openBulkAction("removePlan")}
-              className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              {bulkRemovePlanLabel}
-            </button>
+            {canManagePlans ? (
+              <button
+                type="button"
+                onClick={() => openBulkAction("removePlan")}
+                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                {bulkRemovePlanLabel}
+              </button>
+            ) : null}
             {!lockedPlanId ? (
               <button
                 type="button"
@@ -1526,17 +1530,23 @@ export default function IssueList({
                     if (col.id === "plan") {
                       return (
                         <td key={col.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={issue.planId || ""}
-                            options={planInlineOptions}
-                            className="relative block w-full"
-                            onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
-                            renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
-                                {label}
-                              </span>
-                            )}
-                          />
+                          {canManagePlans ? (
+                            <InlineSelect
+                              value={issue.planId || ""}
+                              options={planInlineOptions}
+                              className="relative block w-full"
+                              onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
+                              renderSummary={(label) => (
+                                <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                  {label}
+                                </span>
+                              )}
+                            />
+                          ) : (
+                            <span className="block w-full truncate text-sm font-medium text-slate-700">
+                              {issue.plan?.name || noPlanLabel}
+                            </span>
+                          )}
                         </td>
                       );
                     }

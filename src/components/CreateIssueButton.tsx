@@ -14,6 +14,7 @@ type CreateIssueButtonProps = {
   iterations?: CreateIssueIteration[];
   locale: Locale;
   currentUserId?: string;
+  canManagePlans?: boolean;
   defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
@@ -25,6 +26,7 @@ export default function CreateIssueButton({
   iterations = [],
   locale,
   currentUserId,
+  canManagePlans = false,
   defaultPlanId,
   defaultIterationId,
   defaultDueDate,
@@ -54,6 +56,7 @@ export default function CreateIssueButton({
         iterations={iterations}
         locale={locale}
         currentUserId={currentUserId}
+        canManagePlans={canManagePlans}
         defaultPlanId={defaultPlanId}
         defaultIterationId={defaultIterationId}
         defaultDueDate={defaultDueDate}

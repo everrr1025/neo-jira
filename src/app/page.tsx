@@ -303,8 +303,15 @@ export default async function Dashboard({
       ),
     ),
   ] as string[];
+  const planIds = [
+    ...new Set(
+      typedRecentActivity.flatMap((entry) =>
+        entry.field === "planId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
+      ),
+    ),
+  ] as string[];
 
-  const [activityIssues, activityUsers, activityIterations] = await Promise.all([
+  const [activityIssues, activityUsers, activityIterations, activityPlans] = await Promise.all([
     recentActivityIssueIds.length > 0
       ? prisma.issue.findMany({
           where: { id: { in: recentActivityIssueIds } },
@@ -328,6 +335,12 @@ export default async function Dashboard({
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
+    planIds.length > 0
+      ? prisma.plan.findMany({
+          where: { id: { in: planIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const activityIssueMap = new Map(activityIssues.map((issue) => [issue.id, issue as DashboardActivityIssue]));
@@ -336,6 +349,9 @@ export default async function Dashboard({
   );
   const activityIterationNameById = Object.fromEntries(
     activityIterations.map((iteration) => [iteration.id, iteration.name]),
+  );
+  const activityPlanNameById = Object.fromEntries(
+    activityPlans.map((plan) => [plan.id, plan.name]),
   );
 
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
@@ -544,6 +560,7 @@ export default async function Dashboard({
               activity={typedRecentActivity}
               issuesById={activityIssueMap}
               assigneeNameById={activityAssigneeNameById}
+              planNameById={activityPlanNameById}
               iterationNameById={activityIterationNameById}
               locale={locale}
               isGlobalAdmin={isGlobalAdmin}
@@ -661,6 +678,7 @@ function RecentActivityCard({
   activity,
   issuesById,
   assigneeNameById,
+  planNameById,
   iterationNameById,
   locale,
   isGlobalAdmin,
@@ -668,6 +686,7 @@ function RecentActivityCard({
   activity: DashboardActivityLog[];
   issuesById: Map<string, DashboardActivityIssue>;
   assigneeNameById: Record<string, string>;
+  planNameById: Record<string, string>;
   iterationNameById: Record<string, string>;
   locale: Locale;
   isGlobalAdmin: boolean;
@@ -695,6 +714,7 @@ function RecentActivityCard({
             const issue = entry.issueId ? issuesById.get(entry.issueId) : undefined;
             const message = formatActivityEntry(entry, locale, {
               assigneeNameById,
+              planNameById,
               iterationNameById,
             });
             const avatarUrl = entry.actor?.avatar || getDefaultAvatar(entry.actor?.id || entry.id);
