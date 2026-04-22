@@ -39,6 +39,11 @@ type IssueIteration = {
   name: string;
 };
 
+type IssuePlan = {
+  id: string;
+  name: string;
+};
+
 type IssueRecord = {
   id: string;
   key: string;
@@ -48,6 +53,7 @@ type IssueRecord = {
   type: string;
   priority: string;
   assigneeId: string | null;
+  planId: string | null;
   iterationId: string | null;
   dueDate: string | Date | null;
   createdAt: string | Date;
@@ -67,6 +73,7 @@ type IssueWorkflowTransition = WorkflowTransitionRecord;
 export default function IssueDetailClient({
   initialIssue,
   users,
+  plans = [],
   iterations = [],
   workflowStatuses,
   workflowTransitions,
@@ -76,6 +83,7 @@ export default function IssueDetailClient({
 }: {
   initialIssue: IssueRecord;
   users: IssueUser[];
+  plans?: IssuePlan[];
   iterations?: IssueIteration[];
   workflowStatuses: IssueWorkflowStatus[];
   workflowTransitions: IssueWorkflowTransition[];
@@ -376,7 +384,7 @@ export default function IssueDetailClient({
 
         <AttachmentUpload issueId={issue.id} locale={locale} />
         <CommentSection issueId={issue.id} currentUserId={currentUserId} users={users} locale={locale} />
-        <ActivityLogSection issueId={issue.id} users={users} iterations={iterations} locale={locale} />
+        <ActivityLogSection issueId={issue.id} users={users} plans={plans} iterations={iterations} locale={locale} />
       </div>
 
       <div className="flex w-full shrink-0 flex-col gap-6 lg:w-56 xl:w-52">
@@ -394,6 +402,17 @@ export default function IssueDetailClient({
             value={issue.status}
             onChange={(value) => handleAutoSave("status", value)}
             options={statusOptions}
+          />
+
+          <DropdownField
+            id="plan"
+            label={locale === "zh" ? "计划" : "Plan"}
+            value={issue.planId || ""}
+            onChange={(value) => handleAutoSave("planId", value || null)}
+            options={[
+              { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
+              ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+            ]}
           />
 
           <DropdownField

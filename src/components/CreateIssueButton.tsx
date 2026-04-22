@@ -1,23 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import CreateIssueModal, { type CreateIssueIteration, type CreateIssueUser } from "./CreateIssueModal";
+import CreateIssueModal, {
+  type CreateIssueIteration,
+  type CreateIssuePlan,
+  type CreateIssueUser,
+} from "./CreateIssueModal";
 import { getTranslations, Locale } from "@/lib/i18n";
 
 type CreateIssueButtonProps = {
   users?: CreateIssueUser[];
+  plans?: CreateIssuePlan[];
   iterations?: CreateIssueIteration[];
   locale: Locale;
   currentUserId?: string;
+  defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
 };
 
 export default function CreateIssueButton({
   users = [],
+  plans = [],
   iterations = [],
   locale,
   currentUserId,
+  defaultPlanId,
   defaultIterationId,
   defaultDueDate,
 }: CreateIssueButtonProps) {
@@ -42,9 +50,11 @@ export default function CreateIssueButton({
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         users={users} 
+        plans={plans}
         iterations={iterations}
         locale={locale}
         currentUserId={currentUserId}
+        defaultPlanId={defaultPlanId}
         defaultIterationId={defaultIterationId}
         defaultDueDate={defaultDueDate}
       />

@@ -13,9 +13,11 @@ type CreateIssueModalProps = {
   isOpen: boolean;
   onClose: () => void;
   users: CreateIssueUser[];
+  plans: CreateIssuePlan[];
   iterations: CreateIssueIteration[];
   locale: Locale;
   currentUserId?: string;
+  defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
 };
@@ -23,6 +25,11 @@ type CreateIssueModalProps = {
 export type CreateIssueUser = {
   id: string;
   name: string | null;
+};
+
+export type CreateIssuePlan = {
+  id: string;
+  name: string;
 };
 
 export type CreateIssueIteration = {
@@ -36,6 +43,7 @@ type FormDataState = {
   description: string;
   type: string;
   priority: string;
+  planId: string;
   iterationId: string;
   assigneeId: string;
   dueDate: string;
@@ -58,9 +66,11 @@ export default function CreateIssueModal({
   isOpen,
   onClose,
   users,
+  plans,
   iterations,
   locale,
   currentUserId,
+  defaultPlanId,
   defaultIterationId,
   defaultDueDate,
 }: CreateIssueModalProps) {
@@ -75,6 +85,7 @@ export default function CreateIssueModal({
       description: "",
       type: "TASK",
       priority: "MEDIUM",
+      planId: plans.find((plan) => plan.id === defaultPlanId)?.id || "",
       iterationId: fallbackIteration?.id || "",
       assigneeId: "",
       dueDate: defaultDueDate || toDateInputValue(fallbackIteration?.endDate),
@@ -208,6 +219,10 @@ export default function CreateIssueModal({
     { value: "BUG", label: getIssueTypeLabel("BUG", locale) },
     { value: "EPIC", label: getIssueTypeLabel("EPIC", locale) },
   ];
+  const planOptions: DropdownOption[] = [
+    { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
+    ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+  ];
   const priorityOptions: DropdownOption[] = [
     { value: "LOW", label: getPriorityLabel("LOW", locale) },
     { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
@@ -226,6 +241,7 @@ export default function CreateIssueModal({
         description: formData.description,
         type: formData.type,
         priority: formData.priority,
+        planId: formData.planId || null,
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
         dueDate: formData.dueDate || null,
@@ -298,6 +314,14 @@ export default function CreateIssueModal({
 
             <div className="flex gap-4">
               <DropdownField
+                id="plan"
+                label={locale === "zh" ? "计划" : "Plan"}
+                value={formData.planId}
+                onChange={(value) => setFormData((prev) => ({ ...prev, planId: value }))}
+                options={planOptions}
+                className="flex-1"
+              />
+              <DropdownField
                 id="iteration"
                 label={text.sprint}
                 value={formData.iterationId}
@@ -305,6 +329,9 @@ export default function CreateIssueModal({
                 options={iterationOptions}
                 className="flex-1"
               />
+            </div>
+
+            <div className="flex gap-4">
               <DropdownField
                 id="assignee"
                 label={text.assignee}

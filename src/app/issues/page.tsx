@@ -36,6 +36,12 @@ export default async function IssuesPage() {
     where: whereClause,
     include: {
       assignee: true,
+      plan: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       reporter: true,
       iteration: true,
       watchers: {
@@ -53,6 +59,10 @@ export default async function IssuesPage() {
   const iterations = await prisma.iteration.findMany({
     where: buildProjectItemsWhere(activeProject.id),
     orderBy: { startDate: "desc" },
+  });
+  const plans = await prisma.plan.findMany({
+    where: buildProjectItemsWhere(activeProject.id),
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
   const workflowProjects = await prisma.project.findMany({
     where: { id: activeProject.id },
@@ -83,13 +93,14 @@ export default async function IssuesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <CreateIssueButton users={users} iterations={iterations} locale={locale} currentUserId={userId} />
+          <CreateIssueButton users={users} plans={plans} iterations={iterations} locale={locale} currentUserId={userId} />
         </div>
       </div>
 
       <IssueList
         initialIssues={issues}
         users={users}
+        plans={plans}
         iterations={iterations}
         workflowProjects={workflowProjects}
         currentUser={currentUser}

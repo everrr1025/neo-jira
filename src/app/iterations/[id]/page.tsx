@@ -74,10 +74,14 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   const doneStatusKeys = iteration.project.workflowStatuses
     .filter((status) => status.category === "DONE")
     .map((status) => status.key);
-  const [users, iterations, backlogIssues] = await Promise.all([
+  const [users, plans, iterations, backlogIssues] = await Promise.all([
     prisma.user.findMany({
       where: buildProjectUsersWhere(iteration.project.id),
       orderBy: { name: "asc" },
+    }),
+    prisma.plan.findMany({
+      where: buildProjectItemsWhere(iteration.project.id),
+      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
     }),
     prisma.iteration.findMany({
       where: buildProjectItemsWhere(iteration.project.id),
@@ -146,6 +150,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   locale={locale}
                   workflowStatuses={iteration.project.workflowStatuses}
                   users={users}
+                  plans={plans}
                   iterations={iterations}
                   currentUserId={userId}
                   defaultDueDate={defaultDueDate}
@@ -155,6 +160,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                 <CreateIssueButton
                   locale={locale}
                   users={users}
+                  plans={plans}
                   iterations={iterations}
                   defaultIterationId={iteration.id}
                   defaultDueDate={defaultDueDate}

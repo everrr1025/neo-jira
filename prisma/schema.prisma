@@ -15,6 +15,7 @@ model User {
   role          String    @default("USER")
   avatar        String?
   ownedProjects Project[] @relation("ProjectOwner")
+  ownedPlans    Plan[]    @relation("PlanOwner")
   projectMemberships ProjectMember[]
   issues        Issue[]   @relation("Assignee")
   reported      Issue[]   @relation("Reporter")
@@ -48,11 +49,32 @@ model Project {
   owner       User        @relation("ProjectOwner", fields: [ownerId], references: [id])
   members     ProjectMember[]
   iterations  Iteration[]
+  plans       Plan[]
   issues      Issue[]
   workflowStatuses    ProjectWorkflowStatus[]
   workflowTransitions ProjectWorkflowTransition[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  targetCount Int?
+  status      String   @default("ACTIVE")
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation("PlanOwner", fields: [ownerId], references: [id])
+  issues      Issue[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, status])
+  @@index([ownerId])
 }
 
 model Iteration {
@@ -81,6 +103,9 @@ model Issue {
   
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id])
+
+  planId      String?
+  plan        Plan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
   
   iterationId String?
   iteration   Iteration? @relation(fields: [iterationId], references: [id])
@@ -98,6 +123,8 @@ model Issue {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([planId])
 }
 
 model Comment {

@@ -12,7 +12,7 @@ import {
 } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
 import CreateIssueButton from "./CreateIssueButton";
-import { type CreateIssueIteration, type CreateIssueUser } from "./CreateIssueModal";
+import { type CreateIssueIteration, type CreateIssuePlan, type CreateIssueUser } from "./CreateIssueModal";
 import {
   getWorkflowStatusBadgeClass,
   getWorkflowStatusName,
@@ -37,6 +37,7 @@ type AddExistingIssuesButtonProps = {
   locale: Locale;
   workflowStatuses: WorkflowStatusRecord[];
   users: CreateIssueUser[];
+  plans: CreateIssuePlan[];
   iterations: CreateIssueIteration[];
   currentUserId?: string;
   defaultDueDate?: string;
@@ -49,6 +50,7 @@ export default function AddExistingIssuesButton({
   locale,
   workflowStatuses,
   users,
+  plans,
   iterations,
   currentUserId,
   defaultDueDate,
@@ -251,6 +253,7 @@ export default function AddExistingIssuesButton({
                 </button>
                 <CreateIssueButton
                   users={users}
+                  plans={plans}
                   iterations={iterations}
                   locale={locale}
                   currentUserId={currentUserId}

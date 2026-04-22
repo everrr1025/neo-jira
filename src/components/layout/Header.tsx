@@ -40,6 +40,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const hideHeader =
     pathname.startsWith("/issues") ||
     pathname.startsWith("/iterations") ||
+    pathname.startsWith("/plans") ||
     pathname.startsWith("/projects") ||
     pathname.startsWith("/settings");
 

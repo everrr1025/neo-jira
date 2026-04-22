@@ -25,6 +25,7 @@ export function SidebarClient({
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const translations = getTranslations(locale);
+  const plansLabel = locale === "zh" ? "计划" : "Plans";
 
   const getNavClass = (href: string) => {
     const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -97,6 +98,19 @@ export function SidebarClient({
           <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
             {translations.sidebar.iterations}
+          </span>
+        </Link>
+
+        <Link
+          href={lockProjectScopedLinks ? "/projects" : "/plans"}
+          className={`${getNavClass(lockProjectScopedLinks ? "/projects" : "/plans")} ${lockProjectScopedLinks ? "opacity-50" : ""}`}
+          title={plansLabel}
+        >
+          <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+          <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+            {plansLabel}
           </span>
         </Link>
 

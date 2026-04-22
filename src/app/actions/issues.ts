@@ -33,6 +33,7 @@ const issueAuditSelect = {
   priority: true,
   type: true,
   assigneeId: true,
+  planId: true,
   iterationId: true,
   dueDate: true,
   description: true,
@@ -67,6 +68,10 @@ function getIssueWatcherMessage(before: IssueWatcherSnapshot, after: IssueWatche
 
   if (before.assigneeId !== after.assigneeId) {
     return `reassigned ${after.key}`;
+  }
+
+  if (before.planId !== after.planId) {
+    return `updated the plan of ${after.key}`;
   }
 
   if (before.iterationId !== after.iterationId) {
@@ -104,6 +109,7 @@ function hasWatcherRelevantChange(before: IssueAuditSnapshot, after: IssueAuditS
     before.priority !== after.priority ||
     before.type !== after.type ||
     before.assigneeId !== after.assigneeId ||
+    before.planId !== after.planId ||
     before.iterationId !== after.iterationId ||
     before.dueDate?.toString() !== after.dueDate?.toString()
   );
@@ -195,6 +201,7 @@ export async function createIssue(data: {
   description?: string;
   priority: string;
   type: string;
+  planId?: string | null;
   iterationId?: string | null;
   assigneeId?: string | null;
   dueDate?: string | null;
@@ -213,6 +220,13 @@ export async function createIssue(data: {
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
 
+    const selectedPlan = data.planId
+      ? await prisma.plan.findUnique({
+          where: { id: data.planId },
+          select: { id: true, projectId: true },
+        })
+      : null;
+
     const selectedIteration = data.iterationId
       ? await prisma.iteration.findUnique({
           where: { id: data.iterationId },
@@ -220,8 +234,16 @@ export async function createIssue(data: {
         })
       : null;
 
+    if (data.planId && !selectedPlan) {
+      throw new Error("Plan not found");
+    }
+
     if (data.iterationId && !selectedIteration) {
       throw new Error("Sprint not found");
+    }
+
+    if (selectedPlan?.projectId && activeProjectId !== selectedPlan.projectId) {
+      throw new Error("Unauthorized");
     }
 
     if (
@@ -233,14 +255,19 @@ export async function createIssue(data: {
       throw new Error("Unauthorized");
     }
 
+    if (
+      selectedPlan?.projectId &&
+      selectedIteration?.projectId &&
+      selectedPlan.projectId !== selectedIteration.projectId
+    ) {
+      throw new Error("Plan and sprint must belong to the same project");
+    }
+
     if (selectedIteration?.status === "COMPLETED") {
       throw new Error("Cannot add issues to a completed sprint");
     }
 
-    let targetProjectId = resolveIssueCreateProjectId({
-      activeProjectId,
-      selectedIterationProjectId: selectedIteration?.projectId,
-    });
+    let targetProjectId = selectedIteration?.projectId || selectedPlan?.projectId || activeProjectId || null;
 
     if (!targetProjectId && isGlobalAdmin) {
       targetProjectId = resolveIssueCreateProjectId({
@@ -319,6 +346,7 @@ export async function createIssue(data: {
           priority: data.priority,
           type: data.type,
           projectId: project.id,
+          planId: data.planId ?? null,
           iterationId: data.iterationId ?? null,
           assigneeId: data.assigneeId,
           reporterId: userId,
@@ -498,6 +526,21 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
 
       await checkProjectMember(previousIssue.projectId);
 
+      if (typeof data.planId === "string" && data.planId) {
+        const targetPlan = await tx.plan.findUnique({
+          where: { id: data.planId },
+          select: { id: true, projectId: true },
+        });
+
+        if (!targetPlan) {
+          throw new Error("Plan not found");
+        }
+
+        if (targetPlan.projectId !== previousIssue.projectId) {
+          throw new Error("Unauthorized");
+        }
+      }
+
       if (typeof data.iterationId === "string" && data.iterationId) {
         const targetIteration = await tx.iteration.findUnique({
           where: { id: data.iterationId },
@@ -602,6 +645,173 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
   } catch (error: unknown) {
     console.error("Failed to update issue:", error);
     return { success: false, error: error instanceof Error ? error.message : "Failed to update issue" };
+  }
+}
+
+type BulkIssueAction =
+  | { type: "assignPlan"; targetId: string }
+  | { type: "removePlan" }
+  | { type: "assignIteration"; targetId: string }
+  | { type: "assignAssignee"; targetId: string | null };
+
+export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueAction) {
+  try {
+    const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
+    if (uniqueIssueIds.length === 0) {
+      throw new Error("Please select at least one issue");
+    }
+
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
+    if (!activeProjectId) throw new Error("Unauthorized");
+
+    const existingIssues = await prisma.issue.findMany({
+      where: {
+        id: { in: uniqueIssueIds },
+        projectId: activeProjectId,
+      },
+      select: issueAuditSelect,
+    });
+
+    if (existingIssues.length !== uniqueIssueIds.length) {
+      throw new Error("Some selected issues are unavailable in the active project");
+    }
+
+    await checkProjectMember(activeProjectId);
+
+    const affectedPlanIds = new Set<string>();
+    for (const issue of existingIssues) {
+      if (issue.planId) affectedPlanIds.add(issue.planId);
+    }
+
+    if (action.type === "assignPlan") {
+      const plan = await prisma.plan.findUnique({
+        where: { id: action.targetId },
+        select: { id: true, projectId: true },
+      });
+
+      if (!plan || plan.projectId !== activeProjectId) {
+        throw new Error("Plan not found in the active project");
+      }
+      affectedPlanIds.add(plan.id);
+    }
+
+    if (action.type === "assignIteration") {
+      const iteration = await prisma.iteration.findUnique({
+        where: { id: action.targetId },
+        select: { id: true, projectId: true, status: true },
+      });
+
+      if (!iteration || iteration.projectId !== activeProjectId) {
+        throw new Error("Sprint not found in the active project");
+      }
+
+      if (iteration.status === "COMPLETED") {
+        throw new Error("Cannot move issues to a completed sprint");
+      }
+    }
+
+    if (action.type === "assignAssignee" && action.targetId) {
+      const assignee = await prisma.user.findFirst({
+        where: {
+          id: action.targetId,
+          OR: [
+            { role: "ADMIN" },
+            {
+              projectMemberships: {
+                some: {
+                  projectId: activeProjectId,
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (!assignee) {
+        throw new Error("Assignee is not available in the active project");
+      }
+    }
+
+    const updateData =
+      action.type === "assignPlan"
+        ? { planId: action.targetId }
+        : action.type === "removePlan"
+          ? { planId: null }
+          : action.type === "assignIteration"
+            ? { iterationId: action.targetId }
+            : { assigneeId: action.targetId };
+
+    const { updatedIssues } = await prisma.$transaction(async (tx) => {
+      await tx.issue.updateMany({
+        where: {
+          id: { in: uniqueIssueIds },
+          projectId: activeProjectId,
+        },
+        data: updateData,
+      });
+
+      const nextIssues = await tx.issue.findMany({
+        where: {
+          id: { in: uniqueIssueIds },
+          projectId: activeProjectId,
+        },
+        select: issueAuditSelect,
+      });
+
+      const beforeById = new Map(existingIssues.map((issue) => [issue.id, issue]));
+      const auditLogs = nextIssues.flatMap((issue) =>
+        buildIssueUpdateAuditLogs({
+          before: beforeById.get(issue.id)! as IssueAuditSnapshot,
+          after: issue as IssueAuditSnapshot,
+          actorId: userId,
+        })
+      );
+
+      await createAuditLogs(tx, auditLogs);
+
+      return { updatedIssues: nextIssues };
+    });
+
+    if (action.type === "assignAssignee" && action.targetId) {
+      const previousIssueById = new Map(existingIssues.map((issue) => [issue.id, issue]));
+      await Promise.all(
+        updatedIssues
+          .filter((issue) => issue.assigneeId === action.targetId && previousIssueById.get(issue.id)?.assigneeId !== action.targetId)
+          .map((issue) =>
+            notifyAssignedUser({
+              actorId: userId,
+              assigneeId: action.targetId,
+              issueId: issue.id,
+              issueKey: issue.key,
+            })
+          )
+      );
+    }
+
+    revalidatePath("/issues");
+    revalidatePath("/iterations");
+    revalidatePath("/plans");
+    for (const planId of affectedPlanIds) {
+      revalidatePath(`/plans/${planId}`);
+    }
+
+    return { success: true, count: updatedIssues.length };
+  } catch (error: unknown) {
+    console.error("Failed to bulk update issues:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update selected issues",
+    };
   }
 }
 

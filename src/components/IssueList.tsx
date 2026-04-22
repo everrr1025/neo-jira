@@ -12,7 +12,8 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
-import { updateIssue } from "@/app/actions/issues";
+import { bulkUpdateIssues, updateIssue } from "@/app/actions/issues";
+import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -37,6 +38,8 @@ type Issue = {
   status: string;
   priority: string;
   type: string;
+  planId?: string | null;
+  plan?: { id: string; name: string } | null;
   iterationId?: string | null;
   iteration?: { name: string } | null;
   assigneeId?: string | null;
@@ -62,14 +65,24 @@ type IssueIteration = {
   name: string;
 };
 
-type ColumnId = "key" | "title" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
+type IssuePlan = {
+  id: string;
+  name: string;
+};
+
+type ColumnId = "key" | "title" | "plan" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
 type ColumnConfig = {
   id: ColumnId;
   label: string;
   width: number;
 };
 
-type SortField = "createdAt" | "key" | "title" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
+type StoredIssueListColumnPreferences = {
+  visibleColumnIds?: ColumnId[];
+  columnWidths?: Partial<Record<ColumnId, number>>;
+};
+
+type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
 type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
@@ -91,6 +104,7 @@ const PRIORITY_ORDER: Record<string, number> = {
 const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   key: "key",
   title: "title",
+  plan: "plan",
   iteration: "sprint",
   status: "status",
   type: "type",
@@ -98,6 +112,25 @@ const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   dueDate: "dueDate",
   assignee: "assignee",
 };
+
+const ISSUE_LIST_COLUMN_STORAGE_KEYS = {
+  default: "neo-jira:issue-list-columns:default:v1",
+  plan: "neo-jira:issue-list-columns:plan:v1",
+} as const;
+
+function readStoredIssueListColumnPreferences(storageKey: string): StoredIssueListColumnPreferences | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as StoredIssueListColumnPreferences;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function parseDateInputValue(value: string) {
   const [year, month, day] = value.split("-").map(Number);
@@ -176,6 +209,76 @@ function MultiFilter({
             {clearText}
           </button>
         )}
+      </div>
+    </details>
+  );
+}
+
+function ColumnVisibilityMenu({
+  buttonLabel,
+  resetLabel,
+  columns,
+  visibleColumnIds,
+  onToggle,
+  onReset,
+}: {
+  buttonLabel: string;
+  resetLabel: string;
+  columns: ColumnConfig[];
+  visibleColumnIds: ColumnId[];
+  onToggle: (columnId: ColumnId) => void;
+  onReset: () => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const visibleCount = visibleColumnIds.length;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <details ref={detailsRef} className="relative">
+      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+        <span>{buttonLabel}</span>
+        <ChevronDown size={14} className="text-slate-400" />
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+        {columns.map((column) => {
+          const isChecked = visibleColumnIds.includes(column.id);
+          const isDisabled = isChecked && visibleCount === 1;
+
+          return (
+            <label
+              key={column.id}
+              className={`flex items-center gap-2 px-2 py-1.5 text-sm rounded-md ${
+                isDisabled ? "cursor-not-allowed text-slate-400" : "hover:bg-slate-50 cursor-pointer"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={isChecked}
+                disabled={isDisabled}
+                onChange={() => onToggle(column.id)}
+                className="h-4 w-4"
+              />
+              <span>{column.label}</span>
+            </label>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onReset}
+          className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+        >
+          {resetLabel}
+        </button>
       </div>
     </details>
   );
@@ -360,13 +463,16 @@ function InlineSelect({
 export default function IssueList({
   initialIssues,
   users,
+  plans,
   iterations,
   workflowProjects,
   currentUser,
   locale,
+  lockedPlanId,
 }: {
   initialIssues: Issue[];
   users: IssueUser[];
+  plans: IssuePlan[];
   iterations: IssueIteration[];
   workflowProjects: Array<{
     id: string;
@@ -375,11 +481,21 @@ export default function IssueList({
   }>;
   currentUser: { id: string } | null;
   locale: Locale;
+  lockedPlanId?: string | null;
 }) {
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
   const [search, setSearch] = useState("");
   const translations = getTranslations(locale);
+  const planLabel = locale === "zh" ? "计划" : "Plan";
+  const columnsButtonLabel = locale === "zh" ? "显示列" : "Columns";
+  const resetColumnsLabel = locale === "zh" ? "重置列" : "Reset columns";
+  const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
+  const selectedIssuesLabel = locale === "zh" ? "已选" : "Selected";
+  const bulkAddToPlanLabel = locale === "zh" ? "加入计划" : "Add to plan";
+  const bulkRemovePlanLabel = locale === "zh" ? "移出计划" : "Remove plan";
+  const bulkAddToSprintLabel = locale === "zh" ? "加入迭代" : "Add to sprint";
+  const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const workflowByProject = useMemo(
     () =>
       new Map(
@@ -405,6 +521,7 @@ export default function IssueList({
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [planFilter, setPlanFilter] = useState<string[]>([]);
   const [sprintFilter, setSprintFilter] = useState<string[]>([]);
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>([]);
   const [watcherFilter, setWatcherFilter] = useState<string[]>([]);
@@ -416,19 +533,78 @@ export default function IssueList({
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
+  const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
+  const [bulkActionNonce, setBulkActionNonce] = useState(0);
 
   const [, startTransition] = useTransition();
+  const columnStorageKey = useMemo(
+    () => (lockedPlanId ? ISSUE_LIST_COLUMN_STORAGE_KEYS.plan : ISSUE_LIST_COLUMN_STORAGE_KEYS.default),
+    [lockedPlanId]
+  );
 
-  const [columns, setColumns] = useState<ColumnConfig[]>([
-    { id: "key", label: translations.issueList.key, width: 80 },
-    { id: "title", label: translations.issueList.summary, width: 0 },
-    { id: "iteration", label: translations.issueList.sprint, width: 160 },
-    { id: "status", label: translations.issueList.status, width: 140 },
-    { id: "type", label: translations.issueList.type, width: 120 },
-    { id: "priority", label: translations.issueList.priority, width: 140 },
-    { id: "dueDate", label: translations.issueList.due, width: 140 },
-    { id: "assignee", label: translations.issueList.assignee, width: 190 },
-  ]);
+  const defaultColumns = useMemo<ColumnConfig[]>(
+    () => [
+      { id: "key", label: translations.issueList.key, width: 80 },
+      { id: "title", label: translations.issueList.summary, width: 0 },
+      ...(lockedPlanId ? [] : [{ id: "plan" as const, label: planLabel, width: 180 }]),
+      { id: "iteration", label: translations.issueList.sprint, width: 160 },
+      { id: "status", label: translations.issueList.status, width: 140 },
+      { id: "type", label: translations.issueList.type, width: 120 },
+      { id: "priority", label: translations.issueList.priority, width: 140 },
+      { id: "dueDate", label: translations.issueList.due, width: 140 },
+      { id: "assignee", label: translations.issueList.assignee, width: 190 },
+    ],
+    [
+      lockedPlanId,
+      planLabel,
+      translations.issueList.assignee,
+      translations.issueList.due,
+      translations.issueList.key,
+      translations.issueList.priority,
+      translations.issueList.sprint,
+      translations.issueList.status,
+      translations.issueList.summary,
+      translations.issueList.type,
+    ]
+  );
+  const defaultVisibleColumnIds = useMemo(() => defaultColumns.map((column) => column.id), [defaultColumns]);
+  const defaultColumnWidths = useMemo(
+    () =>
+      defaultColumns.reduce(
+        (acc, column) => {
+          acc[column.id] = column.width;
+          return acc;
+        },
+        {} as Record<ColumnId, number>
+      ),
+    [defaultColumns]
+  );
+  const defaultColumnsById = useMemo(
+    () =>
+      new Map(
+        defaultColumns.map((column) => [column.id, column] as const)
+      ),
+    [defaultColumns]
+  );
+
+  const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(defaultVisibleColumnIds);
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
+  const [hasLoadedColumnPreferences, setHasLoadedColumnPreferences] = useState(false);
+  const columns = useMemo(
+    () =>
+      visibleColumnIds
+        .map((columnId) => {
+          const column = defaultColumnsById.get(columnId);
+          if (!column) return null;
+          return {
+            ...column,
+            width: columnWidths[columnId] ?? column.width,
+          };
+        })
+        .filter((column): column is ColumnConfig => Boolean(column)),
+    [columnWidths, defaultColumnsById, visibleColumnIds]
+  );
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData("colIndex", index.toString());
@@ -446,8 +622,8 @@ export default function IssueList({
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
       if (sourceIndex !== targetIndex) {
-        const newCols = [...columns];
-        const [removed] = newCols.splice(sourceIndex, 1);
+        const nextVisibleColumnIds = [...visibleColumnIds];
+        const [removed] = nextVisibleColumnIds.splice(sourceIndex, 1);
         const adjustedTarget =
           dragOverSide === "right"
             ? sourceIndex < targetIndex
@@ -456,8 +632,8 @@ export default function IssueList({
             : sourceIndex < targetIndex
               ? targetIndex - 1
               : targetIndex;
-        newCols.splice(Math.max(0, adjustedTarget), 0, removed);
-        setColumns(newCols);
+        nextVisibleColumnIds.splice(Math.max(0, adjustedTarget), 0, removed);
+        setVisibleColumnIds(nextVisibleColumnIds);
       }
     }
     setDragSourceIndex(null);
@@ -498,8 +674,11 @@ export default function IssueList({
         const delta = ev.clientX - resizeState.startX;
         const newWidth = Math.max(60, resizeState.startWidth + delta);
         const resizeColIndex = resizeState.colIndex;
+        const resizeColumnId = columns[resizeColIndex]?.id;
 
-        setColumns((prev) => prev.map((c, i) => (i === resizeColIndex ? { ...c, width: newWidth } : c)));
+        if (!resizeColumnId) return;
+
+        setColumnWidths((prev) => ({ ...prev, [resizeColumnId]: newWidth }));
       };
 
       const onMouseUp = () => {
@@ -521,6 +700,43 @@ export default function IssueList({
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
+
+  useEffect(() => {
+    const storedPreferences = readStoredIssueListColumnPreferences(columnStorageKey);
+    const validVisibleColumnIds = storedPreferences?.visibleColumnIds?.filter((columnId) =>
+      defaultColumnsById.has(columnId)
+    );
+    const validColumnWidths = Object.entries(storedPreferences?.columnWidths || {}).reduce(
+      (acc, [columnId, width]) => {
+        if (defaultColumnsById.has(columnId as ColumnId) && typeof width === "number" && width >= 60) {
+          acc[columnId as ColumnId] = width;
+        }
+        return acc;
+      },
+      {} as Record<ColumnId, number>
+    );
+
+    setVisibleColumnIds(validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds);
+    setColumnWidths({ ...defaultColumnWidths, ...validColumnWidths });
+    setHasLoadedColumnPreferences(true);
+  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds]);
+
+  useEffect(() => {
+    if (!hasLoadedColumnPreferences || typeof window === "undefined") return;
+
+    window.localStorage.setItem(
+      columnStorageKey,
+      JSON.stringify({
+        visibleColumnIds,
+        columnWidths,
+      } satisfies StoredIssueListColumnPreferences)
+    );
+  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, visibleColumnIds]);
+
+  useEffect(() => {
+    const availableIssueIds = new Set(issues.map((issue) => issue.id));
+    setSelectedIssueIds((current) => current.filter((issueId) => availableIssueIds.has(issueId)));
+  }, [issues]);
 
   useEffect(() => {
     const csv = (value: string | null) =>
@@ -552,6 +768,7 @@ export default function IssueList({
     setStatusFilter(csv(searchParams.get("status")));
     setTypeFilter(csv(searchParams.get("type")));
     setPriorityFilter(csv(searchParams.get("priority")));
+    setPlanFilter(lockedPlanId ? [lockedPlanId] : csv(searchParams.get("plan")));
     setSprintFilter(csv(searchParams.get("sprint")));
     const assigneeValues = csv(assignee);
     const validAssigneeValues = assigneeValues.filter(
@@ -568,7 +785,7 @@ export default function IssueList({
     setDueDateValue(nextDueDateValue);
     setDuePreset(nextDuePreset);
     setCurrentPage(1);
-  }, [searchParams, users]);
+  }, [lockedPlanId, searchParams, users]);
 
   const statusOptions = useMemo<FilterOption[]>(
     () => {
@@ -679,6 +896,19 @@ export default function IssueList({
     []
   );
 
+  const planOptions = useMemo<FilterOption[]>(
+    () => plans.map((plan) => ({ value: plan.id, label: plan.name })),
+    [plans]
+  );
+
+  const planInlineOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "", label: noPlanLabel },
+      ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+    ],
+    [noPlanLabel, plans]
+  );
+
   const toggleFilterValue = (value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
     setter((prev) => (prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]));
     setCurrentPage(1);
@@ -704,6 +934,13 @@ export default function IssueList({
       if (statusFilter.length > 0 && !statusFilter.includes(issue.status)) return false;
       if (typeFilter.length > 0 && !typeFilter.includes(issue.type)) return false;
       if (priorityFilter.length > 0 && !priorityFilter.includes(issue.priority)) return false;
+
+      if (lockedPlanId && issue.planId !== lockedPlanId) return false;
+
+      if (planFilter.length > 0) {
+        const planValue = issue.planId ?? "";
+        if (!planFilter.includes(planValue)) return false;
+      }
 
       if (sprintFilter.length > 0) {
         const sprintValue = issue.iterationId ?? BACKLOG_FILTER_VALUE;
@@ -783,6 +1020,8 @@ export default function IssueList({
     dueFilter,
     duePreset,
     issues,
+    lockedPlanId,
+    planFilter,
     search,
     priorityFilter,
     sprintFilter,
@@ -805,6 +1044,11 @@ export default function IssueList({
         const aRank = aStatuses.findIndex((status) => status.key === a.status);
         const bRank = bStatuses.findIndex((status) => status.key === b.status);
         return (((aRank >= 0 ? aRank : 99) - (bRank >= 0 ? bRank : 99)) || a.status.localeCompare(b.status)) * factor;
+      }
+      if (sortBy === "plan") {
+        const aPlan = a.plan?.name || noPlanLabel;
+        const bPlan = b.plan?.name || noPlanLabel;
+        return aPlan.localeCompare(bPlan) * factor;
       }
       if (sortBy === "type") {
         return ((TYPE_ORDER[a.type] || 99) - (TYPE_ORDER[b.type] || 99)) * factor;
@@ -834,7 +1078,7 @@ export default function IssueList({
     });
 
     return sorted;
-  }, [filteredIssues, getWorkflowForProject, sortBy, sortDirection, translations.issueList.backlog, translations.issueList.unassigned]);
+  }, [filteredIssues, getWorkflowForProject, noPlanLabel, sortBy, sortDirection, translations.issueList.backlog, translations.issueList.unassigned]);
 
   const totalPages = Math.ceil(sortedIssues.length / itemsPerPage);
   const paginatedIssues = sortedIssues.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -854,6 +1098,10 @@ export default function IssueList({
     setIssues((prev) =>
       prev.map((i) => {
         if (i.id === issueId) {
+          if (field === "planId") {
+            const plan = plans.find((item) => item.id === value);
+            return { ...i, planId: value, plan: plan ? { id: plan.id, name: plan.name } : null };
+          }
           if (field === "iterationId") {
             const iter = iterations.find((it) => it.id === value);
             return { ...i, iterationId: value, iteration: iter ? { name: iter.name } : null };
@@ -871,6 +1119,109 @@ export default function IssueList({
     startTransition(() => {
       updateIssue(issueId, { [field]: value });
     });
+  };
+
+  const paginatedIssueIds = paginatedIssues.map((issue) => issue.id);
+  const allCurrentPageSelected =
+    paginatedIssueIds.length > 0 && paginatedIssueIds.every((issueId) => selectedIssueIds.includes(issueId));
+
+  const toggleIssueSelection = (issueId: string) => {
+    setSelectedIssueIds((current) =>
+      current.includes(issueId) ? current.filter((id) => id !== issueId) : [...current, issueId]
+    );
+  };
+
+  const toggleCurrentPageSelection = () => {
+    setSelectedIssueIds((current) => {
+      if (allCurrentPageSelected) {
+        return current.filter((issueId) => !paginatedIssueIds.includes(issueId));
+      }
+
+      return Array.from(new Set([...current, ...paginatedIssueIds]));
+    });
+  };
+
+  const handleBulkSubmit = async (action: { type: BulkIssueActionType; targetId?: string | null }) => {
+    const normalizedAction =
+      action.type === "assignPlan" && action.targetId
+        ? { type: "assignPlan" as const, targetId: action.targetId }
+        : action.type === "removePlan"
+          ? { type: "removePlan" as const }
+          : action.type === "assignIteration" && action.targetId
+            ? { type: "assignIteration" as const, targetId: action.targetId }
+            : { type: "assignAssignee" as const, targetId: action.targetId ?? null };
+
+    const result = await bulkUpdateIssues(selectedIssueIds, normalizedAction);
+    if (!result.success) {
+      return result.error || (locale === "zh" ? "批量更新失败" : "Bulk update failed");
+    }
+
+    setIssues((current) => {
+      if (action.type === "removePlan" && lockedPlanId) {
+        return current.filter((issue) => !selectedIssueIds.includes(issue.id));
+      }
+
+      return current.map((issue) => {
+        if (!selectedIssueIds.includes(issue.id)) return issue;
+
+        if (action.type === "assignPlan") {
+          const targetPlan = plans.find((plan) => plan.id === action.targetId);
+          return {
+            ...issue,
+            planId: action.targetId || null,
+            plan: targetPlan ? { id: targetPlan.id, name: targetPlan.name } : null,
+          };
+        }
+
+        if (action.type === "removePlan") {
+          return {
+            ...issue,
+            planId: null,
+            plan: null,
+          };
+        }
+
+        if (action.type === "assignIteration") {
+          const targetIteration = iterations.find((iteration) => iteration.id === action.targetId);
+          return {
+            ...issue,
+            iterationId: action.targetId || null,
+            iteration: targetIteration ? { name: targetIteration.name } : null,
+          };
+        }
+
+        const targetUser = users.find((user) => user.id === action.targetId);
+        return {
+          ...issue,
+          assigneeId: action.targetId || null,
+          assignee: targetUser ? { name: targetUser.name } : null,
+        };
+      });
+    });
+
+    setSelectedIssueIds([]);
+    setBulkAction(null);
+    return null;
+  };
+
+  const openBulkAction = (action: BulkIssueActionType) => {
+    setBulkActionNonce((current) => current + 1);
+    setBulkAction(action);
+  };
+
+  const handleToggleColumnVisibility = (columnId: ColumnId) => {
+    setVisibleColumnIds((current) => {
+      if (current.includes(columnId)) {
+        return current.length > 1 ? current.filter((id) => id !== columnId) : current;
+      }
+
+      return [...current, columnId];
+    });
+  };
+
+  const handleResetColumns = () => {
+    setVisibleColumnIds(defaultVisibleColumnIds);
+    setColumnWidths(defaultColumnWidths);
   };
 
   return (
@@ -943,6 +1294,20 @@ export default function IssueList({
             clearText={translations.issueList.clearSelection}
           />
 
+          {!lockedPlanId ? (
+            <MultiFilter
+              label={planLabel}
+              options={planOptions}
+              selectedValues={planFilter}
+              onToggle={(value) => toggleFilterValue(value, setPlanFilter)}
+              onClear={() => {
+                setPlanFilter([]);
+                setCurrentPage(1);
+              }}
+              clearText={translations.issueList.clearSelection}
+            />
+          ) : null}
+
           <MultiFilter
             label={translations.issueList.assignee}
             options={assigneeFilterOptions}
@@ -988,7 +1353,56 @@ export default function IssueList({
               className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           ) : null}
+
+          <ColumnVisibilityMenu
+            buttonLabel={columnsButtonLabel}
+            resetLabel={resetColumnsLabel}
+            columns={defaultColumns}
+            visibleColumnIds={visibleColumnIds}
+            onToggle={handleToggleColumnVisibility}
+            onReset={handleResetColumns}
+          />
         </div>
+
+        {selectedIssueIds.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+            <span className="text-sm font-semibold text-blue-900">
+              {selectedIssuesLabel} {selectedIssueIds.length}
+            </span>
+            {!lockedPlanId ? (
+              <button
+                type="button"
+                onClick={() => openBulkAction("assignPlan")}
+                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                {bulkAddToPlanLabel}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => openBulkAction("removePlan")}
+              className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              {bulkRemovePlanLabel}
+            </button>
+            {!lockedPlanId ? (
+              <button
+                type="button"
+                onClick={() => openBulkAction("assignIteration")}
+                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                {bulkAddToSprintLabel}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setSelectedIssueIds([])}
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-white hover:text-slate-700"
+            >
+              {bulkClearLabel}
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex-1 flex flex-col">
@@ -996,6 +1410,15 @@ export default function IssueList({
           <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
               <tr>
+                <th className="w-12 px-4 py-4">
+                  <input
+                    type="checkbox"
+                    checked={allCurrentPageSelected}
+                    onChange={toggleCurrentPageSelection}
+                    aria-label={locale === "zh" ? "选择当前页全部问题" : "Select all issues on this page"}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
                 {columns.map((col, index) => {
                   const columnSortField = COLUMN_SORT_FIELD_MAP[col.id];
                   const isSortedColumn = !!columnSortField && sortBy === columnSortField;
@@ -1064,6 +1487,15 @@ export default function IssueList({
             <tbody className="divide-y divide-slate-100">
               {paginatedIssues.map((issue) => (
                 <tr key={issue.id} className="hover:bg-slate-50/70 transition-colors group">
+                  <td className="px-4 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedIssueIds.includes(issue.id)}
+                      onChange={() => toggleIssueSelection(issue.id)}
+                      aria-label={locale === "zh" ? `选择问题 ${issue.key}` : `Select issue ${issue.key}`}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </td>
                   {columns.map((col) => {
                     if (col.id === "key") {
                       return (
@@ -1087,6 +1519,24 @@ export default function IssueList({
                           >
                             {issue.title}
                           </Link>
+                        </td>
+                      );
+                    }
+
+                    if (col.id === "plan") {
+                      return (
+                        <td key={col.id} className="px-5 py-3.5">
+                          <InlineSelect
+                            value={issue.planId || ""}
+                            options={planInlineOptions}
+                            className="relative block w-full"
+                            onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
                         </td>
                       );
                     }
@@ -1220,7 +1670,7 @@ export default function IssueList({
 
               {sortedIssues.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length} className="px-5 py-16 text-center text-slate-500">
+                  <td colSpan={columns.length + 1} className="px-5 py-16 text-center text-slate-500">
                     <p className="font-medium text-base mb-1">{translations.issueList.noMatchTitle}</p>
                     <p className="text-sm">{translations.issueList.noMatchDesc}</p>
                   </td>
@@ -1230,7 +1680,7 @@ export default function IssueList({
           </table>
         </div>
 
-        <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
           <div className="text-slate-500 font-medium">
             {locale === "zh" ? (
               <>
@@ -1309,6 +1759,19 @@ export default function IssueList({
           </div>
         </div>
       </div>
+
+      <BulkIssueActionModal
+        key={`${bulkAction ?? "closed"}-${bulkActionNonce}`}
+        isOpen={bulkAction !== null}
+        actionType={bulkAction}
+        selectedCount={selectedIssueIds.length}
+        plans={plans}
+        iterations={iterations}
+        users={users}
+        locale={locale}
+        onClose={() => setBulkAction(null)}
+        onSubmit={handleBulkSubmit}
+      />
     </div>
   );
 }

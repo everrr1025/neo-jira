@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Loader2, MoreHorizontal, RotateCcw, Trash2, Pencil } from "lucide-react";
+import { AlertTriangle, Loader2, MoreHorizontal, RotateCcw, Trash2, Pencil } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
@@ -41,6 +41,7 @@ export function SprintActionButton({
 }: SprintActionButtonProps) {
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isCompleteOpen, setIsCompleteOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -94,13 +95,6 @@ export function SprintActionButton({
     if (isDeleting) return;
     setIsMenuOpen(false);
 
-    const dialogMsg = locale === "zh" 
-      ? "确定删除此迭代吗？操作不可撤销，删除迭代不会删除迭代内的issue。"
-      : "Are you sure you want to delete this sprint? This operation is irreversible, deleting the sprint will not delete the issues within it.";
-      
-    const confirmed = window.confirm(dialogMsg);
-    if (!confirmed) return;
-
     setError("");
     setIsDeleting(true);
     try {
@@ -110,6 +104,7 @@ export function SprintActionButton({
         setIsDeleting(false);
         return;
       }
+      setIsDeleteOpen(false);
       window.location.assign("/iterations");
     } catch (err) {
       console.error(err);
@@ -161,7 +156,7 @@ export function SprintActionButton({
         <button
           type="button"
           disabled={isDeleting}
-          onClick={handleDelete}
+          onClick={() => setIsDeleteOpen(true)}
           className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
         >
           {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -293,6 +288,45 @@ export function SprintActionButton({
           </div>
         </div>
       )}
+
+      {isDeleteOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-rose-600">
+                <AlertTriangle size={24} />
+                {locale === "zh" ? "删除迭代" : text.deleteSprint}
+              </h2>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              <p className="text-sm font-medium text-slate-700">
+                {locale === "zh"
+                  ? "确定删除此迭代吗？操作不可撤销，删除迭代不会删除迭代内的 issue，只会取消关联。"
+                  : "Are you sure you want to delete this sprint? This cannot be undone. Issues will be kept and unlinked."}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setIsDeleteOpen(false)}
+                disabled={isDeleting}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {locale === "zh" ? "取消" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+                className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : null}
+                {locale === "zh" ? "删除迭代" : text.deleteSprint}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <EditSprintModal 
         isOpen={isEditOpen} 

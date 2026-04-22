@@ -24,14 +24,21 @@ type ActivityIteration = {
   name: string;
 };
 
+type ActivityPlan = {
+  id: string;
+  name: string;
+};
+
 export default function ActivityLogSection({
   issueId,
   users,
+  plans,
   iterations,
   locale,
 }: {
   issueId: string;
   users: ActivityUser[];
+  plans: ActivityPlan[];
   iterations: ActivityIteration[];
   locale: Locale;
 }) {
@@ -76,6 +83,7 @@ export default function ActivityLogSection({
       .filter((user) => user.name)
       .map((user) => [user.id, user.name as string]),
   );
+  const planNameById = Object.fromEntries(plans.map((plan) => [plan.id, plan.name]));
   const iterationNameById = Object.fromEntries(iterations.map((iteration) => [iteration.id, iteration.name]));
 
   return (
@@ -99,6 +107,7 @@ export default function ActivityLogSection({
             const avatarUrl = entry.actor?.avatar || getDefaultAvatar(entry.actor?.id || entry.id);
             const message = formatActivityEntry(entry, locale, {
               assigneeNameById,
+              planNameById,
               iterationNameById,
             });
 

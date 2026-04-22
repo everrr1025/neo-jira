@@ -10,17 +10,20 @@ import {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get('projectId');
+  const planId = searchParams.get('planId');
   const iterationId = searchParams.get('iterationId');
 
   try {
     const whereClause: Prisma.IssueWhereInput = {};
     if (projectId) whereClause.projectId = projectId;
+    if (planId) whereClause.planId = planId;
     if (iterationId) whereClause.iterationId = iterationId;
 
     const issues = await prisma.issue.findMany({
       where: whereClause,
       include: {
         assignee: { select: { name: true, email: true } },
+        plan: { select: { id: true, name: true } },
         reporter: { select: { name: true, email: true } },
         project: { select: { key: true, name: true } },
       },
@@ -43,12 +46,13 @@ export async function POST(request: Request) {
       priority?: string;
       type?: string;
       projectId?: string;
+      planId?: string | null;
       iterationId?: string | null;
       assigneeId?: string | null;
       reporterId?: string;
     };
     const body = await request.json();
-    const { title, description, status, priority, type, projectId, iterationId, assigneeId, reporterId } =
+    const { title, description, status, priority, type, projectId, planId, iterationId, assigneeId, reporterId } =
       body as CreateIssueBody;
     
     if (!title || !projectId || !reporterId) {
@@ -113,6 +117,7 @@ export async function POST(request: Request) {
         priority: priority || 'MEDIUM',
         type: type || 'TASK',
         projectId,
+        planId,
         iterationId,
         assigneeId,
         reporterId,

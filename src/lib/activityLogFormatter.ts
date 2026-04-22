@@ -27,6 +27,7 @@ export type ActivityLogEntry = {
 
 type LookupMaps = {
   assigneeNameById?: Record<string, string>;
+  planNameById?: Record<string, string>;
   iterationNameById?: Record<string, string>;
 };
 
@@ -48,6 +49,7 @@ function getFieldLabel(field: string | null, locale: Locale) {
   if (field === "priority") return translations.issueDetail.priority;
   if (field === "type") return translations.issueDetail.type;
   if (field === "assigneeId") return translations.issueDetail.assignee;
+  if (field === "planId") return locale === "zh" ? "计划" : "Plan";
   if (field === "iterationId") return translations.issueDetail.sprint;
   if (field === "dueDate") return translations.issueDetail.dueDate;
   if (field === "description") return translations.issueDetail.description;
@@ -64,6 +66,10 @@ function getFieldValueLabel(field: string | null, value: string | null, locale: 
 
   if (field === "assigneeId") {
     return lookups.assigneeNameById?.[value] || translations.issueList.unassigned;
+  }
+
+  if (field === "planId") {
+    return lookups.planNameById?.[value] || (locale === "zh" ? "未设置计划" : "No plan");
   }
 
   if (field === "iterationId") {

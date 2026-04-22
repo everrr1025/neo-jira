@@ -78,6 +78,10 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     where: buildProjectItemsWhere(issue.projectId),
     orderBy: { startDate: "desc" },
   });
+  const plans = await prisma.plan.findMany({
+    where: buildProjectItemsWhere(issue.projectId),
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+  });
 
   let canDeleteIssue = isGlobalAdmin;
   if (!canDeleteIssue) {
@@ -94,6 +98,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       <IssueDetailClient
         initialIssue={issue}
         users={users}
+        plans={plans}
         iterations={iterations}
         workflowStatuses={issue.project.workflowStatuses}
         workflowTransitions={issue.project.workflowTransitions}

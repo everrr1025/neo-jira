@@ -68,7 +68,7 @@ export function DropdownField({ id, label, value, onChange, options, className =
           <ChevronDown size={14} className="text-slate-500" />
         </summary>
         <div
-          className={`absolute left-0 z-40 min-w-full w-max max-w-[280px] space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
+          className={`absolute left-0 z-40 max-h-64 min-w-full w-full max-w-full space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
             openUpward ? "bottom-full mb-1" : "top-full mt-1"
           }`}
         >
@@ -77,11 +77,11 @@ export function DropdownField({ id, label, value, onChange, options, className =
               type="button"
               key={option.value || "__empty"}
               onClick={() => handleSelect(option.value)}
-              className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors flex items-center justify-between gap-3 ${
+              className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors flex items-start justify-between gap-3 ${
                 option.value === value ? "bg-white text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
               }`}
             >
-              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{option.label}</span>
+              <span className="min-w-0 break-words whitespace-normal">{option.label}</span>
               {option.value === value && <Check size={14} className="text-blue-600 shrink-0" />}
             </button>
           ))}
