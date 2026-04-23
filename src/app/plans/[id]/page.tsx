@@ -154,26 +154,22 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
     (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "IN_PROGRESS"
   ).length;
   const todoIssues = issues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "TODO").length;
-  const summaryCards = [
+  const summaryItems = [
     {
       label: text.total,
       value: totalIssues,
-      valueClassName: "text-slate-800",
     },
     {
       label: text.done,
       value: doneIssues,
-      valueClassName: "text-emerald-700",
     },
     {
       label: text.inProgress,
       value: inProgressIssues,
-      valueClassName: "text-blue-700",
     },
     {
       label: text.todo,
       value: todoIssues,
-      valueClassName: "text-slate-800",
     },
   ];
 
@@ -187,28 +183,27 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
               {status.label}
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
-            <span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+            <span className="whitespace-nowrap">
               {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
               {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
             </span>
+            {summaryItems.map((item) => (
+              <span key={item.label} className="whitespace-nowrap">
+                <span aria-hidden="true" className="mr-2 text-slate-300">
+                  ·
+                </span>
+                <span>{item.label}</span>{" "}
+                <span className="font-semibold text-slate-700">{item.value}</span>
+              </span>
+            ))}
           </div>
-          {plan.description ? <p className="max-w-3xl text-sm text-slate-600">{plan.description}</p> : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {canManagePlans ? <EditPlanButton plan={plan} locale={locale} /> : null}
           {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} /> : null}
         </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => (
-          <div key={card.label} className="rounded-xl border bg-white px-5 py-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
-            <div className={`mt-2 text-2xl font-bold ${card.valueClassName}`}>{card.value}</div>
-          </div>
-        ))}
       </div>
 
       <div className="rounded-xl border bg-white p-5 shadow-sm">
