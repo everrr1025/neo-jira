@@ -133,7 +133,9 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
 
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{iteration.name} {translations.iterationDetail.board}</h2>
+          <h2 className="break-words text-2xl font-bold text-slate-800 tracking-tight" title={iteration.name}>
+            {iteration.name} {translations.iterationDetail.board}
+          </h2>
           <p className="text-sm text-slate-500 mt-1">
             {getIterationStatusLabel(iteration.status, locale)} | {translations.iterationDetail.ends} {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
           </p>

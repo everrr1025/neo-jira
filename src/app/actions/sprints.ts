@@ -7,6 +7,13 @@ import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
 import { checkProjectAdmin } from "@/lib/permissions";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import {
+  getEndBeforeStartMessage,
+  getInvalidDateRangeMessage,
+  ITERATION_NAME_MAX_LENGTH,
+  normalizeNameOrThrow,
+} from "@/lib/validation";
 import { isDoneWorkflowStatus, type WorkflowStatusRecord } from "@/lib/workflows";
 
 function activeSprintExistsMessage(sprintName: string, locale?: string) {
@@ -36,18 +43,30 @@ export async function createSprint(data: {
   projectId: string;
 }) {
   try {
+    const locale = await getCurrentLocale();
     const activeProjectId = await getActiveProjectIdFromSession();
     if (!isProjectInActiveContext({ activeProjectId, projectId: data.projectId })) {
       throw new Error("Unauthorized");
     }
 
     await checkProjectAdmin(data.projectId);
+    const name = normalizeNameOrThrow(data.name, "sprintName", ITERATION_NAME_MAX_LENGTH, locale);
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new Error(getInvalidDateRangeMessage(locale));
+    }
+
+    if (endDate < startDate) {
+      throw new Error(getEndBeforeStartMessage("sprint", locale));
+    }
 
     const sprint = await prisma.iteration.create({
       data: {
-        name: data.name,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
+        name,
+        startDate,
+        endDate,
         projectId: data.projectId,
         status: "PLANNED",
       },
@@ -264,6 +283,7 @@ export async function deleteSprint(sprintId: string) {
 
 export async function updateSprint(sprintId: string, data: { name: string; startDate: string; endDate: string }) {
   try {
+    const locale = await getCurrentLocale();
     const activeProjectId = await getActiveProjectIdFromSession();
     const sprint = await prisma.iteration.findUnique({
       where: { id: sprintId },
@@ -275,13 +295,24 @@ export async function updateSprint(sprintId: string, data: { name: string; start
     }
 
     await checkProjectAdmin(sprint.projectId);
+    const name = normalizeNameOrThrow(data.name, "sprintName", ITERATION_NAME_MAX_LENGTH, locale);
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new Error(getInvalidDateRangeMessage(locale));
+    }
+
+    if (endDate < startDate) {
+      throw new Error(getEndBeforeStartMessage("sprint", locale));
+    }
 
     const updated = await prisma.iteration.update({
       where: { id: sprintId },
       data: {
-        name: data.name,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
+        name,
+        startDate,
+        endDate,
       },
     });
 

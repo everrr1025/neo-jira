@@ -15,6 +15,8 @@ import { authOptions } from "@/lib/authOptions";
 import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
 import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import { ISSUE_TITLE_MAX_LENGTH, normalizeNameOrThrow } from "@/lib/validation";
 import {
   canTransitionWorkflowStatus,
   createDefaultWorkflowForProject,
@@ -208,6 +210,7 @@ export async function createIssue(data: {
   attachments?: { fileName: string; fileUrl: string }[];
 }) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -282,6 +285,7 @@ export async function createIssue(data: {
     }
 
     if (!targetProjectId) throw new Error("Project not found or no access");
+    const title = normalizeNameOrThrow(data.title, "issueTitle", ISSUE_TITLE_MAX_LENGTH, locale);
 
     const project = await prisma.$transaction(async (tx) => {
       const existingProject = await tx.project.findUnique({
@@ -344,7 +348,7 @@ export async function createIssue(data: {
       const createdIssue = await tx.issue.create({
         data: {
           key: issueKey,
-          title: data.title,
+          title,
           description: data.description,
           status: initialStatus,
           priority: data.priority,
@@ -501,6 +505,7 @@ export async function addBacklogIssuesToSprint(sprintId: string, issueIds: strin
 
 export async function updateIssue(issueId: string, data: Record<string, unknown>) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -591,6 +596,14 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         ) {
           throw new Error("This status transition is not allowed");
         }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(data, "title")) {
+        if (typeof data.title !== "string") {
+          throw new Error(locale === "zh" ? "请输入问题标题" : "Issue title is required");
+        }
+
+        data.title = normalizeNameOrThrow(data.title, "issueTitle", ISSUE_TITLE_MAX_LENGTH, locale);
       }
 
       const nextIssue = await tx.issue.update({

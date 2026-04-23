@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/authOptions";
 import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
@@ -65,8 +66,9 @@ function getPlanPageText(locale: "en" | "zh") {
       empty: "当前项目下还没有计划。",
       total: "问题数",
       done: "已完成",
-      inProgress: "进行中",
       backlog: "未进迭代",
+      progress: "进度",
+      target: "目标数",
     };
   }
 
@@ -76,8 +78,9 @@ function getPlanPageText(locale: "en" | "zh") {
     empty: "No plans have been created for the active project yet.",
     total: "Issue Count",
     done: "Done",
-    inProgress: "In progress",
     backlog: "Not in sprint",
+    progress: "Progress",
+    target: "Target",
   };
 }
 
@@ -159,68 +162,77 @@ export default async function PlansPage() {
           {text.empty}
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3">
           {sortedPlans.map((plan) => {
             const totalIssues = plan.issues.length;
             const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
             const doneIssues = plan.issues.filter(
               (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
             ).length;
-            const inProgressIssues = plan.issues.filter(
-              (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "IN_PROGRESS"
-            ).length;
             const backlogIssues = plan.issues.filter((issue) => issue.iterationId == null).length;
-            const summaryCards = [
-              {
-                label: text.total,
-                value: totalIssues,
-                valueClassName: "text-slate-800",
-              },
-              {
-                label: text.done,
-                value: doneIssues,
-                valueClassName: "text-emerald-700",
-              },
-              {
-                label: text.inProgress,
-                value: inProgressIssues,
-                valueClassName: "text-blue-700",
-              },
-              {
-                label: text.backlog,
-                value: backlogIssues,
-                valueClassName: "text-amber-700",
-              },
-            ];
+            const progress = totalIssues > 0 ? Math.round((doneIssues / totalIssues) * 100) : 0;
 
             return (
               <Link href={`/plans/${plan.id}`} key={plan.id} className="block">
                 <div className="rounded-xl border bg-white p-5 shadow-sm transition-all hover:border-slate-300 hover:shadow-md">
-                  <div className="flex flex-col gap-4">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-slate-800">{plan.name}</h3>
-                          <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${status.className}`}>
-                            {status.label}
+                  <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <h3 className="truncate text-lg font-semibold text-slate-800" title={plan.name}>
+                          {plan.name}
+                        </h3>
+                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${status.className}`}>
+                          {status.label}
+                        </span>
+                        {typeof plan.targetCount === "number" && plan.targetCount > 0 ? (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            {text.target} {plan.targetCount}
                           </span>
-                        </div>
-                        <p className="text-sm text-slate-500">
-                          {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
-                          {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
-                        </p>
+                        ) : null}
                       </div>
-                      {plan.description ? <p className="text-sm text-slate-600">{plan.description}</p> : null}
+                      {plan.description ? (
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-500">{plan.description}</p>
+                      ) : null}
+                    </div>
+
+                    <div className="text-sm font-medium text-slate-500">
+                      {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+                      {plan.endDate.toLocaleDateString(localeDateMap[locale])}
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {summaryCards.map((card) => (
-                      <div key={card.label} className="rounded-lg bg-slate-50 px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
-                        <div className={`mt-1 text-lg font-bold ${card.valueClassName}`}>{card.value}</div>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between text-sm">
+                    <div className="flex flex-wrap items-center gap-6">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500">{text.total}</span>
+                        <span className="font-semibold text-slate-800">{totalIssues}</span>
                       </div>
-                    ))}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500">{text.done}</span>
+                        <span className="font-semibold text-emerald-700">{doneIssues}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500">{text.backlog}</span>
+                        <span className="font-semibold text-amber-700">{backlogIssues}</span>
+                      </div>
+                    </div>
+
+                    <div className="w-full min-w-[220px] sm:w-1/3">
+                      <div className="mb-1 flex justify-between text-xs">
+                        <span className="font-medium text-slate-500">{text.progress}</span>
+                        <span className="font-bold text-slate-700">{progress}%</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-slate-100">
+                        <div
+                          className={`h-2 rounded-full ${
+                            getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate }) === "COMPLETED"
+                              ? "bg-emerald-500"
+                              : "bg-blue-500"
+                          }`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </Link>

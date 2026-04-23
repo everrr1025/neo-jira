@@ -60,12 +60,12 @@ export function DropdownField({ id, label, value, onChange, options, className =
       >
         <summary
           id={id}
-          className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
+          className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
         >
-          <span className={selectedOption ? "text-slate-700" : "text-slate-400"}>
+          <span className={`min-w-0 flex-1 truncate ${selectedOption ? "text-slate-700" : "text-slate-400"}`}>
             {selectedOption?.label || ""}
           </span>
-          <ChevronDown size={14} className="text-slate-500" />
+          <ChevronDown size={14} className="shrink-0 text-slate-500" />
         </summary>
         <div
           className={`absolute left-0 z-40 max-h-64 min-w-full w-full max-w-full space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg ${

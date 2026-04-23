@@ -182,7 +182,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-800">{plan.name}</h2>
+            <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>{plan.name}</h2>
             <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${status.className}`}>
               {status.label}
             </span>

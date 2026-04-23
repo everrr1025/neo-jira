@@ -13,6 +13,7 @@ import {
   type Locale,
   localeDateMap,
 } from "@/lib/i18n";
+import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
@@ -24,6 +25,7 @@ import AlertPopup from "./AlertPopup";
 import AttachmentUpload from "./AttachmentUpload";
 import CommentSection from "./CommentSection";
 import { DropdownField } from "./DropdownField";
+import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 
 type IssueUser = {
@@ -247,6 +249,7 @@ export default function IssueDetailClient({
                 value={draftTitle}
                 onChange={(event) => setDraftTitle(event.target.value)}
                 onBlur={handleSaveTitle}
+                maxLength={ISSUE_TITLE_MAX_LENGTH}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
                     event.preventDefault();
@@ -421,7 +424,10 @@ export default function IssueDetailClient({
           ) : (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-500">{locale === "zh" ? "计划" : "Plan"}</label>
-              <div className="rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700">
+              <div
+                className="rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 break-words"
+                title={issue.planId ? plans.find((plan) => plan.id === issue.planId)?.name || issue.planId : noPlanLabel}
+              >
                 {issue.planId ? plans.find((plan) => plan.id === issue.planId)?.name || issue.planId : noPlanLabel}
               </div>
             </div>
@@ -477,8 +483,8 @@ export default function IssueDetailClient({
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.dueDate}</label>
-            <input
-              type="date"
+            <LocalizedDateInput
+              locale={locale}
               value={issue.dueDate ? new Date(issue.dueDate).toISOString().split("T")[0] : ""}
               onChange={(event) =>
                 handleAutoSave("dueDate", event.target.value ? new Date(event.target.value).toISOString() : null)

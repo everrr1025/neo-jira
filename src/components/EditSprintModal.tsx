@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition } from "react";
 import { updateSprint } from "@/app/actions/sprints";
 import { Loader2, X } from "lucide-react";
 import { getTranslations, Locale } from "@/lib/i18n";
+import { ITERATION_NAME_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
+import LocalizedDateInput from "./LocalizedDateInput";
 
 type SprintData = {
   id: string;
@@ -29,20 +31,9 @@ export function EditSprintModal({
   const translations = getTranslations(locale);
   const [formData, setFormData] = useState({
     name: sprint.name,
-    startDate: sprint.startDate.slice(0, 10),
-    endDate: sprint.endDate.slice(0, 10),
+    startDate: sprint.startDate.split("T")[0],
+    endDate: sprint.endDate.split("T")[0],
   });
-
-  useEffect(() => {
-    if (isOpen) {
-      setFormData({
-        name: sprint.name,
-        startDate: sprint.startDate.split("T")[0],
-        endDate: sprint.endDate.split("T")[0],
-      });
-      setError("");
-    }
-  }, [isOpen, sprint]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +72,7 @@ export function EditSprintModal({
                 type="text"
                 value={formData.name}
                 onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                maxLength={ITERATION_NAME_MAX_LENGTH}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
                 placeholder={translations.createSprint.sprintNamePlaceholder}
               />
@@ -89,9 +81,9 @@ export function EditSprintModal({
             <div className="flex gap-4">
               <div className="flex flex-col gap-1.5 flex-1">
                 <label className="text-sm font-medium text-slate-700">{translations.createSprint.startDate}</label>
-                <input
+                <LocalizedDateInput
                   required
-                  type="date"
+                  locale={locale}
                   value={formData.startDate}
                   onChange={e => setFormData(p => ({ ...p, startDate: e.target.value }))}
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
@@ -99,9 +91,9 @@ export function EditSprintModal({
               </div>
               <div className="flex flex-col gap-1.5 flex-1">
                 <label className="text-sm font-medium text-slate-700">{translations.createSprint.endDate}</label>
-                <input
+                <LocalizedDateInput
                   required
-                  type="date"
+                  locale={locale}
                   value={formData.endDate}
                   onChange={e => setFormData(p => ({ ...p, endDate: e.target.value }))}
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"

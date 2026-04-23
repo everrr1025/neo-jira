@@ -104,8 +104,8 @@ export default async function IterationsPage() {
             <Link href={`/iterations/${iteration.id}`} key={iteration.id} className="block">
               <div className="bg-white rounded-xl border shadow-sm p-5 hover:border-slate-300 hover:shadow-md transition-all">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold text-slate-800">{iteration.name}</h3>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <h3 className="truncate text-lg font-semibold text-slate-800" title={iteration.name}>{iteration.name}</h3>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
                       iteration.status === "ACTIVE" ? "bg-blue-50 text-blue-700 border-blue-200" :
                       iteration.status === "PLANNED" ? "bg-slate-50 text-slate-600 border-slate-200" :

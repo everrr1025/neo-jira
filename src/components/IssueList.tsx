@@ -29,6 +29,7 @@ import {
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
+import LocalizedDateInput from "./LocalizedDateInput";
 
 type Issue = {
   id: string;
@@ -1343,8 +1344,8 @@ export default function IssueList({
           />
 
           {dueFilter !== "ALL" ? (
-            <input
-              type="date"
+            <LocalizedDateInput
+              locale={locale}
               aria-label={translations.issueList.due}
               value={dueDateValue}
               onChange={(e) => {

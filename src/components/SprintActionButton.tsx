@@ -329,6 +329,7 @@ export function SprintActionButton({
       ) : null}
 
       <EditSprintModal 
+        key={`${sprintData.id}-${isEditOpen ? "open" : "closed"}`}
         isOpen={isEditOpen} 
         onClose={() => setIsEditOpen(false)} 
         sprint={sprintData} 

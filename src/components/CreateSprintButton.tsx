@@ -4,7 +4,9 @@ import { useState, useTransition } from "react";
 import { createSprint } from "@/app/actions/sprints";
 import { Check, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { getTranslations, Locale } from "@/lib/i18n";
+import { ITERATION_NAME_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
+import LocalizedDateInput from "./LocalizedDateInput";
 
 type ProjectOption = { id: string; name: string; key: string };
 
@@ -133,6 +135,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                   type="text"
                   value={formData.name}
                   onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                  maxLength={ITERATION_NAME_MAX_LENGTH}
                   className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
                   placeholder={translations.createSprint.sprintNamePlaceholder}
                 />
@@ -141,9 +144,9 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
               <div className="flex gap-4">
                 <div className="flex flex-col gap-1.5 flex-1">
                   <label className="text-sm font-medium text-slate-700">{translations.createSprint.startDate}</label>
-                  <input
+                  <LocalizedDateInput
                     required
-                    type="date"
+                    locale={locale}
                     value={formData.startDate}
                     onChange={(e) => {
                       const startDate = e.target.value;
@@ -158,9 +161,9 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                 </div>
                 <div className="flex flex-col gap-1.5 flex-1">
                   <label className="text-sm font-medium text-slate-700">{translations.createSprint.endDate}</label>
-                  <input
+                  <LocalizedDateInput
                     required
-                    type="date"
+                    locale={locale}
                     value={formData.endDate}
                     onChange={(e) => {
                       setIsEndDateManuallyEdited(true);

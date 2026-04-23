@@ -8,6 +8,13 @@ import { authOptions } from "@/lib/authOptions";
 import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
 import { checkProjectAdmin } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
+import { getCurrentLocale } from "@/lib/serverLocale";
+import {
+  getEndBeforeStartMessage,
+  getInvalidDateRangeMessage,
+  normalizeNameOrThrow,
+  PLAN_NAME_MAX_LENGTH,
+} from "@/lib/validation";
 
 export async function createPlan(data: {
   name: string;
@@ -18,6 +25,7 @@ export async function createPlan(data: {
   targetCount?: number | null;
 }) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -35,19 +43,16 @@ export async function createPlan(data: {
 
     await checkProjectAdmin(data.projectId);
 
-    const name = data.name.trim();
-    if (!name) {
-      throw new Error("Plan name is required");
-    }
+    const name = normalizeNameOrThrow(data.name, "planName", PLAN_NAME_MAX_LENGTH, locale);
 
     const startDate = new Date(data.startDate);
     const endDate = new Date(data.endDate);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      throw new Error("Please provide a valid date range");
+      throw new Error(getInvalidDateRangeMessage(locale));
     }
 
     if (endDate < startDate) {
-      throw new Error("Plan end date cannot be earlier than the start date");
+      throw new Error(getEndBeforeStartMessage("plan", locale));
     }
 
     const project = await prisma.project.findFirst({
@@ -93,6 +98,7 @@ export async function updatePlan(data: {
   endDate: string;
 }) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -110,19 +116,16 @@ export async function updatePlan(data: {
 
     await checkProjectAdmin(data.projectId);
 
-    const name = data.name.trim();
-    if (!name) {
-      throw new Error("Plan name is required");
-    }
+    const name = normalizeNameOrThrow(data.name, "planName", PLAN_NAME_MAX_LENGTH, locale);
 
     const startDate = new Date(data.startDate);
     const endDate = new Date(data.endDate);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      throw new Error("Please provide a valid date range");
+      throw new Error(getInvalidDateRangeMessage(locale));
     }
 
     if (endDate < startDate) {
-      throw new Error("Plan end date cannot be earlier than the start date");
+      throw new Error(getEndBeforeStartMessage("plan", locale));
     }
 
     const existingPlan = await prisma.plan.findFirst({

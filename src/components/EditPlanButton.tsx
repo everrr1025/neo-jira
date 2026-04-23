@@ -4,8 +4,10 @@ import { useMemo, useState, useTransition } from "react";
 import { Loader2, Pencil, X } from "lucide-react";
 
 import { updatePlan } from "@/app/actions/plans";
+import { PLAN_NAME_MAX_LENGTH } from "@/lib/validation";
 
 import AlertPopup from "./AlertPopup";
+import LocalizedDateInput from "./LocalizedDateInput";
 
 type EditPlanButtonProps = {
   plan: {
@@ -144,6 +146,7 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
                   value={formData.name}
                   onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))}
                   placeholder={text.namePlaceholder}
+                  maxLength={PLAN_NAME_MAX_LENGTH}
                   required
                   className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
@@ -167,9 +170,9 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
                   <label htmlFor="edit-plan-start-date" className="text-sm font-medium text-slate-700">
                     {text.startDate}
                   </label>
-                  <input
+                  <LocalizedDateInput
                     id="edit-plan-start-date"
-                    type="date"
+                    locale={locale}
                     value={formData.startDate}
                     onChange={(event) => setFormData((current) => ({ ...current, startDate: event.target.value }))}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
@@ -180,9 +183,9 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
                   <label htmlFor="edit-plan-end-date" className="text-sm font-medium text-slate-700">
                     {text.endDate}
                   </label>
-                  <input
+                  <LocalizedDateInput
                     id="edit-plan-end-date"
-                    type="date"
+                    locale={locale}
                     value={formData.endDate}
                     onChange={(event) => setFormData((current) => ({ ...current, endDate: event.target.value }))}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"

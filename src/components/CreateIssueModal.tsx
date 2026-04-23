@@ -5,8 +5,10 @@ import { FileText, Loader2, Paperclip, Trash2, X } from "lucide-react";
 
 import { createIssue } from "@/app/actions/issues";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
+import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
 import { DropdownField } from "./DropdownField";
+import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 
 type CreateIssueModalProps = {
@@ -290,6 +292,7 @@ export default function CreateIssueModal({
                 autoFocus
                 value={formData.title}
                 onChange={(event) => setFormData((prev) => ({ ...prev, title: event.target.value }))}
+                maxLength={ISSUE_TITLE_MAX_LENGTH}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 placeholder={text.summaryPlaceholder}
               />
@@ -348,9 +351,9 @@ export default function CreateIssueModal({
                 <label htmlFor="dueDate" className="text-sm font-medium text-slate-700">
                   {text.dueDate}
                 </label>
-                <input
-                  type="date"
+                <LocalizedDateInput
                   id="dueDate"
+                  locale={locale}
                   value={formData.dueDate}
                   onChange={(event) => {
                     setIsDueDateManuallyEdited(true);
