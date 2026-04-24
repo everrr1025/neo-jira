@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
@@ -86,10 +86,40 @@ export default function ActivityLogSection({
   const planNameById = Object.fromEntries(plans.map((plan) => [plan.id, plan.name]));
   const iterationNameById = Object.fromEntries(iterations.map((iteration) => [iteration.id, iteration.name]));
 
+  const groupedActivity = useMemo(() => {
+    const withoutComments = activity.filter((log) => log.entityType !== "COMMENT");
+    return withoutComments.reduce((groups: any[], currentLog) => {
+      const lastGroup = groups[groups.length - 1];
+
+      if (
+        lastGroup &&
+        lastGroup.type === "UPDATE_GROUP" &&
+        lastGroup.actor?.id === currentLog.actor?.id &&
+        currentLog.action === "UPDATE" &&
+        currentLog.entityType === "ISSUE" &&
+        Math.abs(new Date(lastGroup.createdAt).getTime() - new Date(currentLog.createdAt).getTime()) < 5 * 60 * 1000
+      ) {
+        lastGroup.children.push(currentLog);
+        return groups;
+      }
+
+      groups.push({
+        type: currentLog.action === "UPDATE" && currentLog.entityType === "ISSUE" ? "UPDATE_GROUP" : "SINGLE_EVENT",
+        id: currentLog.id,
+        actor: currentLog.actor,
+        createdAt: currentLog.createdAt,
+        log: currentLog,
+        children: [currentLog],
+      });
+
+      return groups;
+    }, []);
+  }, [activity]);
+
   return (
     <div className="mt-8 border-t pt-8">
       <h3 className="mb-6 text-lg font-bold text-slate-800">
-        {translations.activitySection.title} ({activity.length})
+        {translations.activitySection.title} ({groupedActivity.length})
       </h3>
 
       {loading ? (
@@ -103,33 +133,67 @@ export default function ActivityLogSection({
         </div>
       ) : (
         <div className="space-y-4">
-          {activity.map((entry) => {
-            const avatarUrl = entry.actor?.avatar || getDefaultAvatar(entry.actor?.id || entry.id);
-            const message = formatActivityEntry(entry, locale, {
-              assigneeNameById,
-              planNameById,
-              iterationNameById,
-            });
+          {groupedActivity.map((group) => {
+            const avatarUrl = group.actor?.avatar || getDefaultAvatar(group.actor?.id || group.id);
+            const actorName = group.actor?.name || translations.activitySection.unknownUser;
 
             return (
-              <div key={entry.id} className="flex gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+              <div key={group.id} className="flex gap-3 rounded-lg border border-slate-200 bg-white p-4">
+                <div className="h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-100 shrink-0">
                   <Image
                     src={avatarUrl}
-                    alt={entry.actor?.name || translations.activitySection.unknownUser}
+                    alt={actorName}
                     width={36}
                     height={36}
                     className="h-full w-full object-cover"
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium leading-6 text-slate-800">{message.primary}</div>
-                  {message.secondary ? (
-                    <div className="mt-1 line-clamp-2 text-sm text-slate-500">{message.secondary}</div>
-                  ) : null}
-                  <div className="mt-1 text-xs text-slate-400">
-                    {new Date(entry.createdAt).toLocaleString(localeDateMap[locale])}
-                  </div>
+                  {group.type === "UPDATE_GROUP" && group.children.length > 1 ? (
+                    <>
+                      <div className="text-sm font-medium leading-6 text-slate-800">
+                        {actorName} {locale === "zh" ? `批量更新了 ${group.children.length} 个字段` : `updated ${group.children.length} fields`}
+                      </div>
+                      <div className="mt-2 space-y-2 border-l-2 border-slate-100 pl-3">
+                        {group.children.map((child: ActivityLogEntry) => {
+                          const msg = formatActivityEntry(child, locale, {
+                            assigneeNameById,
+                            planNameById,
+                            iterationNameById,
+                          });
+                          const strippedMsg = msg.primary.replace(actorName, "").replace(/^\s*(changed|修改了)\s*/, "").trim();
+                          
+                          return (
+                            <div key={child.id} className="text-sm text-slate-600">
+                              <span className="capitalize">{strippedMsg}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">
+                        {new Date(group.createdAt).toLocaleString(localeDateMap[locale])}
+                      </div>
+                    </>
+                  ) : (
+                    group.children.map((child: ActivityLogEntry) => {
+                      const msg = formatActivityEntry(child, locale, {
+                        assigneeNameById,
+                        planNameById,
+                        iterationNameById,
+                      });
+                      return (
+                        <div key={child.id}>
+                          <div className="text-sm font-medium leading-6 text-slate-800">{msg.primary}</div>
+                          {msg.secondary ? (
+                            <div className="mt-1 line-clamp-2 text-sm text-slate-500">{msg.secondary}</div>
+                          ) : null}
+                          <div className="mt-1 text-xs text-slate-400">
+                            {new Date(child.createdAt).toLocaleString(localeDateMap[locale])}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             );

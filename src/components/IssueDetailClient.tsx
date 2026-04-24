@@ -305,7 +305,7 @@ export default function IssueDetailClient({
             <button
               type="button"
               onClick={handleToggleWatcher}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-md border p-1.5 text-sm font-medium transition-colors ${
                 isWatching
                   ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -313,8 +313,7 @@ export default function IssueDetailClient({
               title={isWatching ? translations.issueDetail.unwatch : translations.issueDetail.watch}
             >
               {isWatching ? <EyeOff size={16} /> : <Eye size={16} />}
-              {isWatching ? translations.issueDetail.watching : translations.issueDetail.watch}
-              <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
+              <span className="text-xs font-semibold">
                 {watchers.length}
               </span>
             </button>

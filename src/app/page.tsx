@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getVisibleProjectsForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
@@ -91,11 +91,11 @@ export default async function Dashboard({
 
   const isGlobalAdmin = userRole === "ADMIN";
   const activeProject = await getActiveProjectForUser(userId, userRole);
-  if (!activeProject) {
-    redirect("/projects");
-  }
+  const visibleProjects = !activeProject ? await getVisibleProjectsForUser(userId, userRole) : [];
 
-  const projectFilter = buildProjectItemsWhere(activeProject.id);
+  const projectFilter = activeProject
+    ? buildProjectItemsWhere(activeProject.id)
+    : { projectId: { in: visibleProjects.map((p) => p.id) } };
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -206,22 +206,24 @@ export default async function Dashboard({
         dueDate: true,
       },
     }),
-    prisma.iteration.findFirst({
-      where: { projectId: activeProject.id, status: "ACTIVE" },
-      include: {
-        project: {
-          select: {
-            name: true,
-            key: true,
-            workflowStatuses: {
-              orderBy: { position: "asc" },
+    activeProject
+      ? prisma.iteration.findFirst({
+          where: { projectId: activeProject.id, status: "ACTIVE" },
+          include: {
+            project: {
+              select: {
+                name: true,
+                key: true,
+                workflowStatuses: {
+                  orderBy: { position: "asc" },
+                },
+              },
             },
+            issues: { select: { status: true } },
           },
-        },
-        issues: { select: { status: true } },
-      },
-      orderBy: { endDate: "asc" },
-    }),
+          orderBy: { endDate: "asc" },
+        })
+      : Promise.resolve(null),
     query
       ? prisma.issue.findMany({
           where: {
@@ -249,7 +251,7 @@ export default async function Dashboard({
       take: 10,
     }),
     prisma.project.findMany({
-      where: { id: activeProject.id },
+      where: activeProject ? { id: activeProject.id } : { id: { in: visibleProjects.map((p) => p.id) } },
       select: {
         id: true,
         workflowStatuses: {
@@ -406,6 +408,94 @@ export default async function Dashboard({
   const highPriorityHref = `/issues?priority=HIGH,URGENT`;
   const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
   const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
+
+  if (!activeProject) {
+    return (
+      <div className="space-y-8">
+        <section>
+          <div className="mb-6 flex flex-col gap-1">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              Department Portal
+            </h1>
+            <p className="text-sm text-slate-500">Cross-project overview & activity</p>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {visibleProjects.length === 0 ? (
+              <div className="col-span-full p-6 text-center text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                You do not have access to any projects.
+              </div>
+            ) : (
+              visibleProjects.map((p) => (
+                <Link key={p.id} href={`/projects/${p.key}`} className="group flex flex-col p-5 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-blue-300 hover:shadow-md transition-all">
+                  <div className="flex items-center gap-4 mb-1">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-xl shadow-sm">
+                      {p.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="overflow-hidden">
+                      <h3 className="font-semibold text-slate-900 truncate group-hover:text-blue-600 transition-colors">{p.name}</h3>
+                      <p className="text-xs text-slate-500">{p.key}</p>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <DashboardIssueTabsCard
+            locale={locale}
+            workflowProjects={workflowProjects.map((project) => ({
+              id: project.id,
+              workflowStatuses: project.workflowStatuses as WorkflowStatusRecord[],
+            }))}
+            tabs={[
+              {
+                id: "assigned",
+                title: translations.dashboard.assignedToMe || "Assigned to Me",
+                issues: myIssues,
+                emptyText: translations.dashboard.noTasksAssigned || "No tasks assigned",
+                meta: "status",
+                accent: "blue",
+                href: assignedToMeHref,
+                count: myIssuesTotal,
+              },
+              {
+                id: "priority",
+                title: translations.dashboard.highPriority || "High Priority",
+                issues: highPriorityIssues,
+                emptyText: translations.dashboard.noHighPriorityIssues || "No high priority tasks",
+                meta: "priority",
+                accent: "rose",
+                href: highPriorityHref,
+                count: highPriorityIssuesTotal,
+              },
+              {
+                id: "watched",
+                title: translations.dashboard.watchedIssues || "Watched",
+                issues: watchedIssues,
+                emptyText: translations.dashboard.notWatchingAnyActiveIssues || "Not watching any issues",
+                meta: "status",
+                accent: "blue",
+                href: watchedIssuesHref,
+                count: watchedIssuesTotal,
+              },
+            ]}
+          />
+          <RecentActivityCard
+            activity={typedRecentActivity}
+            issuesById={activityIssueMap}
+            assigneeNameById={activityAssigneeNameById}
+            planNameById={activityPlanNameById}
+            iterationNameById={activityIterationNameById}
+            locale={locale}
+            isGlobalAdmin={isGlobalAdmin}
+          />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

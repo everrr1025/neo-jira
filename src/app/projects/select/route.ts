@@ -36,6 +36,17 @@ export async function GET(request: NextRequest) {
     return redirectTo("/projects");
   }
 
+  if (projectId === "clear") {
+    const response = redirectTo("/");
+    response.cookies.set(ACTIVE_PROJECT_COOKIE, "", {
+      path: "/",
+      sameSite: "lax",
+      httpOnly: true,
+      maxAge: 0,
+    });
+    return response;
+  }
+
   let hasAccess = false;
 
   if (userRole === "ADMIN") {

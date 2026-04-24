@@ -10,6 +10,8 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { getProjectRole } from "@/lib/permissions";
 
+import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
+
 export const dynamic = "force-dynamic";
 
 type SessionUser = {
@@ -17,7 +19,7 @@ type SessionUser = {
   role?: string | null;
 };
 
-export default async function IssuesPage() {
+export default async function IssuesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const locale = await getCurrentLocale();
   const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
@@ -34,9 +36,14 @@ export default async function IssuesPage() {
   const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
   const canManagePlans = projectRole === "ADMIN";
 
-  const whereClause = buildProjectItemsWhere(activeProject.id);
+  const searchParamsData = await searchParams;
+  const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
+    searchParamsData,
+    activeProject.id
+  );
+
   const issues = await prisma.issue.findMany({
-    where: whereClause,
+    where: parsedWhere,
     include: {
       assignee: true,
       plan: {
@@ -51,8 +58,12 @@ export default async function IssuesPage() {
         select: { id: true },
       },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy,
+    skip,
+    take,
   });
+
+  const totalIssues = await prisma.issue.count({ where: parsedWhere });
 
   const users = await prisma.user.findMany({
     where: buildProjectUsersWhere(activeProject.id),
@@ -109,6 +120,9 @@ export default async function IssuesPage() {
 
       <IssueList
         initialIssues={issues}
+        totalIssues={totalIssues}
+        page={page}
+        pageSize={pageSize}
         users={users}
         plans={plans}
         iterations={iterations}

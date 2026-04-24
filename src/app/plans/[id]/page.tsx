@@ -11,6 +11,7 @@ import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
+import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +68,7 @@ function getPlanDetailText(locale: "en" | "zh") {
   };
 }
 
-export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PlanDetailPage({ params, searchParams }: { params: Promise<{ id: string }>, searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const locale = await getCurrentLocale();
   const text = getPlanDetailText(locale);
   const session = await getServerSession(authOptions);
@@ -92,12 +93,16 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
   if (!plan) return notFound();
 
-  const [issues, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
+  const searchParamsData = await searchParams;
+  const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
+    searchParamsData,
+    activeProject.id,
+    plan.id
+  );
+
+  const [issues, totalIssues, basicPlanIssues, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
     prisma.issue.findMany({
-      where: {
-        projectId: activeProject.id,
-        planId: plan.id,
-      },
+      where: parsedWhere,
       include: {
         assignee: true,
         plan: {
@@ -112,7 +117,18 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
           select: { id: true },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy,
+      skip,
+      take,
+    }),
+    prisma.issue.count({ where: parsedWhere }),
+    // For progress bar calculation, we need ALL issues in the plan, unconditionally
+    prisma.issue.findMany({
+      where: {
+        projectId: activeProject.id,
+        planId: plan.id,
+      },
+      select: { status: true },
     }),
     prisma.user.findMany({
       where: buildProjectUsersWhere(activeProject.id),
@@ -148,16 +164,16 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
   const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
 
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
-  const totalIssues = issues.length;
-  const doneIssues = issues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE").length;
-  const inProgressIssues = issues.filter(
+  const planTotalIssues = basicPlanIssues.length;
+  const doneIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE").length;
+  const inProgressIssues = basicPlanIssues.filter(
     (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "IN_PROGRESS"
   ).length;
-  const todoIssues = issues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "TODO").length;
+  const todoIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "TODO").length;
   const summaryItems = [
     {
       label: text.total,
-      value: totalIssues,
+      value: planTotalIssues,
     },
     {
       label: text.done,
@@ -209,6 +225,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
       <div className="rounded-xl border bg-white p-5 shadow-sm">
         <IssueList
           initialIssues={issues}
+          totalIssues={totalIssues}
+          page={page}
+          pageSize={pageSize}
           users={users}
           plans={plans}
           iterations={iterations}
