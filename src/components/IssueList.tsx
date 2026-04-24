@@ -883,14 +883,16 @@ export default function IssueList({
 
   useEffect(() => {
     if (totalPages === 0) {
-      if (currentPage !== 1) setCurrentPage(1);
+      if (currentPage !== 1) {
+        updateQueryParams({ page: "1" });
+      }
       return;
     }
 
     if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
+      updateQueryParams({ page: String(totalPages) });
     }
-  }, [currentPage, totalPages]);
+  }, [currentPage, totalPages, updateQueryParams]);
 
   const handleInlineUpdate = (issueId: string, field: string, value: string | null) => {
     setIssues((prev) =>
@@ -1526,7 +1528,7 @@ export default function IssueList({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => updateQueryParams({ page: String(Math.max(1, currentPage - 1)) })}
                 disabled={currentPage === 1}
                 className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
@@ -1540,7 +1542,7 @@ export default function IssueList({
               </span>
 
               <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages || 1, p + 1))}
+                onClick={() => updateQueryParams({ page: String(Math.min(totalPages || 1, currentPage + 1)) })}
                 disabled={currentPage === totalPages || totalPages === 0}
                 className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
