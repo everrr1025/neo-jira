@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState, useMemo } from "react";
-import { Shield, ChevronLeft } from "lucide-react";
+import { Shield, ChevronLeft, Building2 } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
 import { AvatarPicker } from "./AvatarPicker";
@@ -15,20 +15,29 @@ export function SidebarClient({
   lockProjectScopedLinks,
   user,
   locale,
+  headDepartment,
 }: {
   isAdmin: boolean;
   activeProject: { id: string; name: string; key: string } | null;
   lockProjectScopedLinks: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
+  headDepartment?: { id: string; name: string } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const translations = getTranslations(locale);
   const plansLabel = locale === "zh" ? "计划" : "Plans";
 
   const getNavClass = (href: string) => {
-    const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+    let isActive = false;
+    if (href.includes("?")) {
+      const [hrefPath, hrefQuery] = href.split("?");
+      isActive = pathname === hrefPath && href.includes(`tab=${searchParams.get("tab")}`);
+    } else {
+      isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+    }
     return `group flex items-center whitespace-nowrap rounded-md py-2 transition-colors ${
       collapsed ? "mx-3 justify-center" : "gap-3 px-3"
     } ${isActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`;
@@ -63,7 +72,7 @@ export function SidebarClient({
             collapsed ? "hidden w-0 opacity-0" : "opacity-100"
           }`}
         >
-          {activeProject ? activeProject.name : "Department Portal"}
+          {activeProject ? activeProject.name : isAdmin ? (locale === "zh" ? "系统管理" : "Neo-Jira Admin") : (locale === "zh" ? "工作台" : "Workspace")}
         </span>
       </div>
 
@@ -134,7 +143,10 @@ export function SidebarClient({
             icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>,
             label: translations.sidebar.projects
           }
-        ]).map((item) => (
+        ]).filter((item) => {
+          if (isAdmin && item.id !== "dashboard") return false;
+          return true;
+        }).map((item) => (
           <Link
             key={item.id}
             href={item.href}
@@ -150,13 +162,30 @@ export function SidebarClient({
 
         {isAdmin && (
           <>
+            <Link href="/admin?tab=users" className={getNavClass("/admin?tab=users")} title={locale === "zh" ? "用户" : "Users"}>
+              <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {locale === "zh" ? "用户" : "Users"}
+              </span>
+            </Link>
+            <Link href="/admin?tab=departments" className={getNavClass("/admin?tab=departments")} title={locale === "zh" ? "部门" : "Departments"}>
+              <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-400" />
+              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {locale === "zh" ? "部门" : "Departments"}
+              </span>
+            </Link>
+          </>
+        )}
+
+        {headDepartment && (
+          <>
             <div className={`pb-1 pt-4 ${collapsed ? "px-0 text-center" : "px-3"}`}>
               <div className="h-px w-full bg-slate-800" />
             </div>
-            <Link href="/admin" className={getNavClass("/admin")} title={translations.sidebar.admin}>
-              <Shield className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-red-400" />
+            <Link href={`/departments/${headDepartment.id}`} className={getNavClass(`/departments/${headDepartment.id}`)} title={locale === "zh" ? "部门管理" : "Department"}>
+              <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-400" />
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {translations.sidebar.admin}
+                {locale === "zh" ? "部门管理" : "Department"}
               </span>
             </Link>
           </>

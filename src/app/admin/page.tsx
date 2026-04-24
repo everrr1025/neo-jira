@@ -101,7 +101,13 @@ async function normalizeProjectAdminOwnership() {
   }
 }
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const params = await searchParams;
+  const initialTab = params.tab === "departments" ? "DEPARTMENTS" : "USERS";
   const locale = await getCurrentLocale();
   const text =
     locale === "zh"
@@ -143,6 +149,16 @@ export default async function AdminPage() {
     orderBy: { createdAt: "desc" },
   });
 
+  const departments = await prisma.department.findMany({
+    include: {
+      members: {
+        include: { user: true },
+      },
+      _count: { select: { projects: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
   const safeUsers = users.map((user) => ({
     id: user.id,
     name: user.name,
@@ -173,6 +189,21 @@ export default async function AdminPage() {
     createdAt: project.createdAt.toISOString(),
   }));
 
+  const safeDepartments = departments.map((dept) => ({
+    id: dept.id,
+    name: dept.name,
+    key: dept.key,
+    description: dept.description,
+    members: dept.members.map((m) => ({
+      userId: m.userId,
+      role: m.role,
+      userEmail: m.user.email,
+      userName: m.user.name,
+    })),
+    projectsCount: dept._count.projects,
+    createdAt: dept.createdAt.toISOString(),
+  }));
+
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col space-y-6">
       <div>
@@ -183,8 +214,10 @@ export default async function AdminPage() {
       <AdminPanelClient
         initialUsers={safeUsers}
         initialProjects={safeProjects}
+        initialDepartments={safeDepartments}
         locale={locale}
         currentUserId={currentUser?.id || ""}
+        initialTab={initialTab}
       />
     </div>
   );

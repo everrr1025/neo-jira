@@ -3,7 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser, deleteProject } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle } from "lucide-react";
+import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle, Building2 } from "lucide-react";
+import AdminDepartmentsView, { DepartmentRecord } from "./AdminDepartmentsView";
 import { Locale } from "@/lib/i18n";
 
 type UserRecord = {
@@ -97,6 +98,7 @@ const TEXT = {
     tabs: {
       users: "Users Management",
       projects: "Projects & Access",
+      departments: "Departments",
     },
     errors: {
       createUser: "Failed to create user",
@@ -164,6 +166,7 @@ const TEXT = {
     tabs: {
       users: "用户管理",
       projects: "项目与权限",
+      departments: "部门管理",
     },
     errors: {
       createUser: "创建用户失败",
@@ -240,17 +243,26 @@ function getMemberDisplayName(member: ProjectMemberRecord) {
 export default function AdminPanelClient({
   initialUsers,
   initialProjects,
+  initialDepartments = [],
   locale,
   currentUserId,
+  initialTab = "USERS",
 }: {
   initialUsers: UserRecord[];
   initialProjects: ProjectRecord[];
+  initialDepartments?: DepartmentRecord[];
   locale: Locale;
   currentUserId: string;
+  initialTab?: "USERS" | "PROJECTS" | "DEPARTMENTS";
 }) {
-  const [activeTab, setActiveTab] = useState<"USERS" | "PROJECTS">("USERS");
+  const [activeTab, setActiveTab] = useState<"USERS" | "PROJECTS" | "DEPARTMENTS">(initialTab);
   const [errorMsg, setErrorMsg] = useState("");
   const text = TEXT[locale];
+
+  // Sync tab state when URL changes via sidebar
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   return (
     <div className="flex flex-1 flex-col space-y-6">
@@ -268,14 +280,14 @@ export default function AdminPanelClient({
         </button>
         <button
           onClick={() => {
-            setActiveTab("PROJECTS");
+            setActiveTab("DEPARTMENTS");
             setErrorMsg("");
           }}
           className={`flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-all ${
-            activeTab === "PROJECTS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            activeTab === "DEPARTMENTS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <FolderGit2 size={16} /> {text.tabs.projects}
+          <Building2 size={16} /> {text.tabs.departments}
         </button>
       </div>
 
@@ -293,9 +305,16 @@ export default function AdminPanelClient({
             locale={locale}
             currentUserId={currentUserId}
           />
-        ) : (
+        ) : activeTab === "PROJECTS" ? (
           <ProjectsView
             projects={initialProjects}
+            users={initialUsers}
+            setErrorMsg={setErrorMsg}
+            locale={locale}
+          />
+        ) : (
+          <AdminDepartmentsView
+            departments={initialDepartments!}
             users={initialUsers}
             setErrorMsg={setErrorMsg}
             locale={locale}

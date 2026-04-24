@@ -409,6 +409,68 @@ export default async function Dashboard({
   const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
   const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
 
+  if (!activeProject && isGlobalAdmin) {
+    const [adminUserCount, adminDeptCount, adminProjectCount] = await Promise.all([
+      prisma.user.count(),
+      prisma.department.count(),
+      prisma.project.count(),
+    ]);
+
+    const adminDashText = locale === "zh"
+      ? { title: "系统管理仪表盘", subtitle: "全局概览与系统管理", totalUsers: "用户总数", totalDepts: "部门总数", totalProjects: "项目总数", totalIssues: "问题总数", goAdminPanel: "进入管理后台" }
+      : { title: "System Admin Dashboard", subtitle: "Global overview & system management", totalUsers: "Total Users", totalDepts: "Total Departments", totalProjects: "Total Projects", totalIssues: "Total Issues", goAdminPanel: "Go to Admin Panel" };
+
+    return (
+      <div className="space-y-8">
+        <section>
+          <div className="mb-6 flex flex-col gap-1">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{adminDashText.title}</h1>
+            <p className="text-sm text-slate-500">{adminDashText.subtitle}</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm font-medium text-slate-500">{adminDashText.totalUsers}</p>
+              <div className="mt-3 flex items-end justify-between">
+                <span className="text-3xl font-bold text-indigo-700">{adminUserCount}</span>
+                <svg className="h-8 w-8 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm font-medium text-slate-500">{adminDashText.totalDepts}</p>
+              <div className="mt-3 flex items-end justify-between">
+                <span className="text-3xl font-bold text-emerald-700">{adminDeptCount}</span>
+                <svg className="h-8 w-8 text-emerald-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm font-medium text-slate-500">{adminDashText.totalProjects}</p>
+              <div className="mt-3 flex items-end justify-between">
+                <span className="text-3xl font-bold text-blue-700">{adminProjectCount}</span>
+                <svg className="h-8 w-8 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-sm font-medium text-slate-500">{adminDashText.totalIssues}</p>
+              <div className="mt-3 flex items-end justify-between">
+                <span className="text-3xl font-bold text-amber-700">{totalIssues}</span>
+                <svg className="h-8 w-8 text-amber-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section>
+          <Link href="/admin" className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            {adminDashText.goAdminPanel}
+          </Link>
+        </section>
+        <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <RecentActivityCard activity={typedRecentActivity} issuesById={activityIssueMap} assigneeNameById={activityAssigneeNameById} planNameById={activityPlanNameById} iterationNameById={activityIterationNameById} locale={locale} isGlobalAdmin={isGlobalAdmin} />
+        </section>
+      </div>
+    );
+  }
+
   if (!activeProject) {
     return (
       <div className="space-y-8">
