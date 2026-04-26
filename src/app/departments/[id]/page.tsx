@@ -72,7 +72,7 @@ export default async function DepartmentPage({
       id: p.id,
       name: p.name,
       key: p.key,
-      ownerName: p.owner.name || p.owner.email,
+      ownerName: p.owner?.name || p.owner?.email || (locale === "zh" ? "未指派" : "Unassigned"),
       issuesCount: p._count.issues,
     })),
   };

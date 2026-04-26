@@ -49,8 +49,8 @@ model Project {
   name        String
   key         String   @unique
   description String?
-  ownerId     String
-  owner       User        @relation("ProjectOwner", fields: [ownerId], references: [id])
+  ownerId     String?
+  owner       User?       @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   members     ProjectMember[]
   iterations  Iteration[]
   plans       Plan[]
@@ -228,7 +228,7 @@ model ProjectWorkflowTransition {
 
 model Department {
   id          String   @id @default(cuid())
-  name        String
+  name        String   @unique
   key         String   @unique
   description String?
 
@@ -250,6 +250,7 @@ model DepartmentMember {
   role         String     @default("MEMBER")
   
   @@unique([departmentId, userId])
+  @@unique([userId])
 }
 
 model Announcement {

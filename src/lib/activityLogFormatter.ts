@@ -14,7 +14,7 @@ export type ActivityActor = {
 
 export type ActivityLogEntry = {
   id: string;
-  entityType: "ISSUE" | "COMMENT" | "ATTACHMENT";
+  entityType: "ISSUE" | "COMMENT" | "ATTACHMENT" | "USER" | "DEPARTMENT";
   entityId: string;
   action: "CREATE" | "UPDATE" | "DELETE";
   field: string | null;
@@ -94,6 +94,43 @@ export function formatActivityEntry(entry: ActivityLogEntry, locale: Locale, loo
   const metadata = parseActivityMetadata(entry.metadata);
   const preview = metadata.preview;
   const fileName = metadata.fileName;
+  const targetName = metadata.name || metadata.email || entry.newValue || entry.entityId;
+
+  if (entry.entityType === "USER") {
+    if (entry.action === "CREATE") {
+      return {
+        primary: locale === "zh" ? `${actorName} 创建了用户 ${targetName}` : `${actorName} created user ${targetName}`,
+      };
+    }
+
+    if (entry.action === "DELETE") {
+      return {
+        primary: locale === "zh" ? `${actorName} 删除了用户 ${targetName}` : `${actorName} deleted user ${targetName}`,
+      };
+    }
+
+    return {
+      primary: locale === "zh" ? `${actorName} 更新了用户 ${targetName}` : `${actorName} updated user ${targetName}`,
+    };
+  }
+
+  if (entry.entityType === "DEPARTMENT") {
+    if (entry.action === "CREATE") {
+      return {
+        primary: locale === "zh" ? `${actorName} 创建了部门 ${targetName}` : `${actorName} created department ${targetName}`,
+      };
+    }
+
+    if (entry.action === "DELETE") {
+      return {
+        primary: locale === "zh" ? `${actorName} 删除了部门 ${targetName}` : `${actorName} deleted department ${targetName}`,
+      };
+    }
+
+    return {
+      primary: locale === "zh" ? `${actorName} 更新了部门 ${targetName}` : `${actorName} updated department ${targetName}`,
+    };
+  }
 
   if (entry.entityType === "ISSUE" && entry.action === "CREATE") {
     return {

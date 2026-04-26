@@ -2,7 +2,7 @@ import "server-only";
 
 import { Prisma, PrismaClient } from "@prisma/client";
 
-export type AuditEntityType = "ISSUE" | "COMMENT" | "ATTACHMENT";
+export type AuditEntityType = "ISSUE" | "COMMENT" | "ATTACHMENT" | "USER" | "DEPARTMENT";
 export type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 
 type AuditMetadata = Record<string, string | null | undefined>;

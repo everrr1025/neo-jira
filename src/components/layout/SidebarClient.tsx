@@ -162,13 +162,13 @@ export function SidebarClient({
 
         {isAdmin && (
           <>
-            <Link href="/admin?tab=users" className={getNavClass("/admin?tab=users")} title={locale === "zh" ? "用户" : "Users"}>
+            <Link href="/admin/users" className={getNavClass("/admin/users")} title={locale === "zh" ? "用户" : "Users"}>
               <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                 {locale === "zh" ? "用户" : "Users"}
               </span>
             </Link>
-            <Link href="/admin?tab=departments" className={getNavClass("/admin?tab=departments")} title={locale === "zh" ? "部门" : "Departments"}>
+            <Link href="/admin/departments" className={getNavClass("/admin/departments")} title={locale === "zh" ? "部门" : "Departments"}>
               <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-400" />
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                 {locale === "zh" ? "部门" : "Departments"}

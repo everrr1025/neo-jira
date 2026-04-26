@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser, deleteProject } from "@/app/actions/admin";
-import { Users, FolderGit2, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle, Building2 } from "lucide-react";
+import { Users, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle, Building2 } from "lucide-react";
 import AdminDepartmentsView, { DepartmentRecord } from "./AdminDepartmentsView";
 import { Locale } from "@/lib/i18n";
 
@@ -315,7 +315,6 @@ export default function AdminPanelClient({
         ) : (
           <AdminDepartmentsView
             departments={initialDepartments!}
-            users={initialUsers}
             setErrorMsg={setErrorMsg}
             locale={locale}
           />

@@ -38,6 +38,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   );
 
   const hideHeader =
+    pathname.startsWith("/admin") ||
     pathname.startsWith("/issues") ||
     pathname.startsWith("/iterations") ||
     pathname.startsWith("/plans") ||

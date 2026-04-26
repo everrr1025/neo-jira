@@ -6,8 +6,31 @@ import { randomInt } from "crypto";
 import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin } from "@/lib/permissions";
 import { createDefaultWorkflowForProject } from "@/lib/workflows";
+import { createAuditLogs } from "@/lib/audit";
 
 import { isValidPassword } from "@/lib/validation";
+
+type CreateUserInput = {
+  name?: string;
+  email?: string;
+  password?: string;
+};
+
+type CreateProjectInput = {
+  name?: string;
+  key?: string;
+  description?: string;
+  ownerId?: string;
+  memberIds?: unknown;
+};
+
+function getSessionUserId(session: unknown) {
+  return (session as { user?: { id?: string } }).user?.id;
+}
+
+function getErrorMessage(error: unknown, fallback = "Unexpected error") {
+  return error instanceof Error ? error.message : fallback;
+}
 
 function generateSecurePassword(length = 12) {
   const special = "!@#$%^&*()-_=+[]{};:,.?/|";
@@ -31,11 +54,13 @@ function generateSecurePassword(length = 12) {
   return chars.join("");
 }
 
-export async function createUser(data: any) {
+export async function createUser(data: CreateUserInput) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
     const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
     const password = typeof data?.password === "string" ? data.password : "";
+    const name = typeof data?.name === "string" ? data.name.trim() : "";
 
     if (!email || !password) {
       return { success: false, error: "Email and password are required." };
@@ -53,25 +78,44 @@ export async function createUser(data: any) {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        name: data.name,
-        email,
-        password: hashedPassword,
-        role: data.role || "USER",
-      }
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: "USER",
+        },
+      });
+
+      await createAuditLogs(tx, [
+        {
+          entityType: "USER",
+          entityId: created.id,
+          action: "CREATE",
+          metadata: { name: created.name || created.email, email: created.email },
+          actorId,
+        },
+      ]);
+
+      return created;
     });
     revalidatePath("/admin");
+    revalidatePath("/admin/users");
+    revalidatePath("/");
     return { success: true, user };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
 export async function deleteUser(userId: string) {
   try {
     const session = await checkGlobalAdmin();
-    const currentAdminId = (session.user as any).id as string;
+    const currentAdminId = getSessionUserId(session);
+    if (!currentAdminId) {
+      return { success: false, error: "Current admin id is required." };
+    }
     if (!userId) {
       return { success: false, error: "User id is required." };
     }
@@ -81,21 +125,36 @@ export async function deleteUser(userId: string) {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        departmentMembers: {
+          where: { role: "HEAD" },
+          select: { department: { select: { name: true } } },
+        },
+      },
     });
     if (!user) {
       return { success: false, error: "User not found." };
     }
 
-    const ownedProject = await prisma.project.findFirst({
-      where: { ownerId: userId },
-      select: { id: true, name: true },
-    });
-    if (ownedProject) {
-      return { success: false, error: "Cannot delete user who is a project owner." };
+    const headDepartment = user.departmentMembers[0]?.department;
+    if (headDepartment) {
+      return { success: false, error: `Cannot delete department head: ${headDepartment.name}.` };
     }
 
     await prisma.$transaction(async (tx) => {
+      await tx.project.updateMany({
+        where: { ownerId: userId },
+        data: { ownerId: null },
+      });
+
+      await tx.plan.updateMany({
+        where: { ownerId: userId },
+        data: { ownerId: currentAdminId },
+      });
+
       await tx.issue.updateMany({
         where: { assigneeId: userId },
         data: { assigneeId: null },
@@ -125,6 +184,10 @@ export async function deleteUser(userId: string) {
         where: { userId },
       });
 
+      await tx.departmentMember.deleteMany({
+        where: { userId },
+      });
+
       await tx.user.update({
         where: { id: userId },
         data: { watchedIssues: { set: [] } },
@@ -133,15 +196,27 @@ export async function deleteUser(userId: string) {
       await tx.user.delete({
         where: { id: userId },
       });
+
+      await createAuditLogs(tx, [
+        {
+          entityType: "USER",
+          entityId: user.id,
+          action: "DELETE",
+          metadata: { name: user.name || user.email, email: user.email },
+          actorId: currentAdminId,
+        },
+      ]);
     });
 
     revalidatePath("/admin");
+    revalidatePath("/admin/users");
+    revalidatePath("/admin/departments");
     revalidatePath("/projects");
     revalidatePath("/");
     revalidatePath("/issues");
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
@@ -171,12 +246,12 @@ export async function resetUserPassword(userId: string) {
 
     revalidatePath("/admin");
     return { success: true, password: nextPassword };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
-export async function createProject(data: any) {
+export async function createProject(data: CreateProjectInput) {
   try {
     await checkGlobalAdmin();
     const name = typeof data?.name === "string" ? data.name.trim() : "";
@@ -240,8 +315,8 @@ export async function createProject(data: any) {
     revalidatePath("/admin");
     revalidatePath("/projects");
     return { success: true, project };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
@@ -272,9 +347,9 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
       return { success: false, error: "System admin cannot be project member." };
     }
 
-    let ownerId = project.ownerId;
+    let ownerId = project.ownerId || "";
     const ownerIsSystemAdmin = project.owner?.role === "ADMIN";
-    if (ownerIsSystemAdmin) {
+    if (!ownerId || ownerIsSystemAdmin) {
       ownerId = uniqueMemberIds[0];
       await prisma.project.update({
         where: { id: projectId },
@@ -332,8 +407,8 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
     revalidatePath("/");
     revalidatePath("/issues");
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
@@ -398,8 +473,8 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
     revalidatePath("/");
     revalidatePath("/issues");
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
@@ -437,7 +512,7 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
       return { success: false, error: "Project not found." };
     }
 
-    let currentOwnerId = project.ownerId;
+    let currentOwnerId = project.ownerId || "";
     if (project.owner?.role === "ADMIN") {
       currentOwnerId = userId;
       await prisma.project.update({
@@ -494,8 +569,8 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
     revalidatePath("/projects");
     revalidatePath("/");
     return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error) };
   }
 }
 
@@ -556,9 +631,9 @@ export async function deleteProject(projectId: string) {
     revalidatePath("/issues");
     revalidatePath("/iterations");
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to delete project:", error);
-    return { success: false, error: error.message || "Failed to delete project" };
+    return { success: false, error: getErrorMessage(error, "Failed to delete project") };
   }
 }
 

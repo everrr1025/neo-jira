@@ -240,16 +240,27 @@ export default async function Dashboard({
           },
         })
       : Promise.resolve([]),
-    prisma.auditLog.findMany({
-      where: projectFilter,
-      include: {
-        actor: {
-          select: { id: true, name: true, avatar: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
+    isGlobalAdmin && !activeProject
+      ? prisma.auditLog.findMany({
+          where: { entityType: { in: ["USER", "DEPARTMENT"] } },
+          include: {
+            actor: {
+              select: { id: true, name: true, avatar: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+      : prisma.auditLog.findMany({
+          where: projectFilter,
+          include: {
+            actor: {
+              select: { id: true, name: true, avatar: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        }),
     prisma.project.findMany({
       where: activeProject ? { id: activeProject.id } : { id: { in: visibleProjects.map((p) => p.id) } },
       select: {
@@ -417,8 +428,8 @@ export default async function Dashboard({
     ]);
 
     const adminDashText = locale === "zh"
-      ? { title: "系统管理仪表盘", subtitle: "全局概览与系统管理", totalUsers: "用户总数", totalDepts: "部门总数", totalProjects: "项目总数", totalIssues: "问题总数", goAdminPanel: "进入管理后台" }
-      : { title: "System Admin Dashboard", subtitle: "Global overview & system management", totalUsers: "Total Users", totalDepts: "Total Departments", totalProjects: "Total Projects", totalIssues: "Total Issues", goAdminPanel: "Go to Admin Panel" };
+      ? { title: "系统管理仪表盘", subtitle: "全局概览与系统管理", totalUsers: "用户总数", totalDepts: "部门总数", totalProjects: "项目总数", totalIssues: "问题总数" }
+      : { title: "System Admin Dashboard", subtitle: "Global overview & system management", totalUsers: "Total Users", totalDepts: "Total Departments", totalProjects: "Total Projects", totalIssues: "Total Issues" };
 
     return (
       <div className="space-y-8">
@@ -457,12 +468,6 @@ export default async function Dashboard({
               </div>
             </div>
           </div>
-        </section>
-        <section>
-          <Link href="/admin" className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            {adminDashText.goAdminPanel}
-          </Link>
         </section>
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <RecentActivityCard activity={typedRecentActivity} issuesById={activityIssueMap} assigneeNameById={activityAssigneeNameById} planNameById={activityPlanNameById} iterationNameById={activityIterationNameById} locale={locale} isGlobalAdmin={isGlobalAdmin} />

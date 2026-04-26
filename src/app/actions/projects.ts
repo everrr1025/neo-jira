@@ -23,7 +23,7 @@ export async function updateProject(projectId: string, data: {
     statuses: WorkflowStatusInput[];
     transitions: WorkflowTransitionInput[];
   };
-}): Promise<ActionResult<{ id: string; name: string; key: string; description: string | null; ownerId: string; createdAt: Date; updatedAt: Date }>> {
+}): Promise<ActionResult<{ id: string; name: string; key: string; description: string | null; ownerId: string | null; createdAt: Date; updatedAt: Date }>> {
   try {
     await checkProjectAdmin(projectId);
 

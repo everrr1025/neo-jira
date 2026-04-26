@@ -15,9 +15,10 @@ type DropdownFieldProps = {
   onChange: (value: string) => void;
   options: DropdownOption[];
   className?: string;
+  hideLabel?: boolean;
 };
 
-export function DropdownField({ id, label, value, onChange, options, className = "" }: DropdownFieldProps) {
+export function DropdownField({ id, label, value, onChange, options, className = "", hideLabel = false }: DropdownFieldProps) {
   const selectedOption = options.find((item) => item.value === value);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [openUpward, setOpenUpward] = useState(false);
@@ -50,7 +51,7 @@ export function DropdownField({ id, label, value, onChange, options, className =
 
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
-      <label htmlFor={id} className="text-sm font-medium text-slate-700">
+      <label htmlFor={id} className={hideLabel ? "sr-only" : "text-sm font-medium text-slate-700"}>
         {label}
       </label>
       <details

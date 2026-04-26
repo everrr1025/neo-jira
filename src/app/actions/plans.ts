@@ -73,7 +73,7 @@ export async function createPlan(data: {
         startDate,
         endDate,
         projectId: data.projectId,
-        ownerId: project.ownerId,
+        ownerId: project.ownerId || userId,
         targetCount: typeof data.targetCount === "number" && data.targetCount > 0 ? data.targetCount : null,
         status: "ACTIVE",
       },
