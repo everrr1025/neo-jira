@@ -1,90 +1,70 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Crown, Loader2, Plus, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 
-import {
-  addMembersToDepartment,
-  removeMemberFromDepartment,
-  setDepartmentMemberRole,
-} from "@/app/actions/departments";
+import { updateDepartmentProjectMembers } from "@/app/actions/departments";
+import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
-
-type MemberRecord = {
-  userId: string;
-  role: string;
-  userName: string | null;
-  userEmail: string;
-};
-
-type UserOption = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
-type DepartmentRecord = {
-  id: string;
-  name: string;
-  key: string;
-  description: string | null;
-  members: MemberRecord[];
-};
 
 const TEXT = {
   en: {
-    title: "Department people",
-    subtitle: "Manage department members.",
+    title: "Project members",
+    subtitle: "Manage project members and owner assignments.",
     addMembers: "Add members",
     currentMembers: "Current members",
-    head: "Head",
+    owner: "Owner",
     member: "Member",
-    setHead: "Set head",
+    setOwner: "Set as owner",
     remove: "Remove",
-    emptyMembers: "No members in this department yet.",
+    emptyMembers: "No members in this project yet.",
     searchUsers: "Search users",
     selected: "selected",
     addSelected: "Add selected",
     noUsers: "No available users.",
     cancel: "Cancel",
-    assignFailed: "Failed to update department people",
+    assignFailed: "Failed to update project members",
+    ownerRequired: "Project owner must be selected from project members.",
+    unassignedOwner: "Unassigned",
   },
   zh: {
-    title: "部门人员管理",
-    subtitle: "管理部门成员。",
+    title: "项目成员",
+    subtitle: "管理项目成员和项目负责人。",
     addMembers: "添加成员",
     currentMembers: "当前成员",
-    head: "负责人",
+    owner: "负责人",
     member: "成员",
-    setHead: "设为负责人",
-    remove: "移除",
-    emptyMembers: "当前部门还没有成员。",
+    setOwner: "设为负责人",
+    remove: "移出项目",
+    emptyMembers: "当前项目还没有成员。",
     searchUsers: "搜索用户",
     selected: "已选",
-    addSelected: "添加所选",
+    addSelected: "确认添加",
     noUsers: "没有可添加的用户。",
     cancel: "取消",
-    assignFailed: "更新部门人员失败",
+    assignFailed: "更新项目成员失败",
+    ownerRequired: "项目负责人必须从项目成员中选择。",
+    unassignedOwner: "未指派",
   },
 } as const;
 
-function displayPerson(person: Pick<UserOption, "name" | "email">) {
-  return person.name || person.email;
-}
-
-function displayMember(member: MemberRecord) {
+function displayMember(member: Pick<DepartmentWorkspaceMember, "userName" | "userEmail">) {
   return member.userName || member.userEmail;
 }
 
-export default function AdminDepartmentMembersClient({
-  department,
-  availableUsers,
+export default function DepartmentProjectMembersClient({
+  departmentId,
+  project,
+  departmentMembers,
   locale,
+  canManage,
 }: {
-  department: DepartmentRecord;
-  availableUsers: UserOption[];
+  departmentId: string;
+  project: DepartmentWorkspaceProject;
+  departmentMembers: DepartmentWorkspaceMember[];
   locale: Locale;
+  canManage: boolean;
 }) {
   const t = TEXT[locale];
   const router = useRouter();
@@ -93,74 +73,76 @@ export default function AdminDepartmentMembersClient({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
+  const currentMemberIds = new Set(project.members.map((member) => member.userId));
+  const projectMembers = departmentMembers.filter((member) => currentMemberIds.has(member.userId));
+  const availableUsers = departmentMembers.filter((member) => !currentMemberIds.has(member.userId));
   const normalizedSearch = userSearch.trim().toLowerCase();
   const filteredUsers = availableUsers.filter((user) => {
     if (!normalizedSearch) return true;
-    return `${user.name || ""} ${user.email}`.toLowerCase().includes(normalizedSearch);
+    return `${user.userName || ""} ${user.userEmail}`.toLowerCase().includes(normalizedSearch);
   });
-  const head = department.members.find((member) => member.role === "HEAD") || null;
 
-  const handleSetHead = (userId: string) => {
+  const translateError = (message: string | undefined) => {
+    if (!message) return t.assignFailed;
+    if (message.includes("Project owner must be selected from project members")) return t.ownerRequired;
+    return message;
+  };
+
+  const syncProjectMembers = (ownerId: string, memberIds: string[]) => {
     setErrorMsg("");
     startTransition(async () => {
-      const res = await setDepartmentMemberRole(department.id, userId, "HEAD");
+      const res = await updateDepartmentProjectMembers(departmentId, project.id, { ownerId, memberIds });
       if (!res.success) {
-        setErrorMsg(res.error || t.assignFailed);
+        setErrorMsg(translateError(res.error));
         return;
       }
+      setIsAddOpen(false);
+      setSelectedMemberIds([]);
+      setUserSearch("");
       router.refresh();
     });
+  };
+
+  const handleSetOwner = (userId: string) => {
+    const memberIds = project.members.map((member) => member.userId);
+    syncProjectMembers(userId, memberIds);
+  };
+
+  const handleRemoveMember = (userId: string) => {
+    const memberIds = project.members.map((member) => member.userId).filter((id) => id !== userId);
+    const ownerId = project.ownerId === userId ? "" : project.ownerId || "";
+    syncProjectMembers(ownerId, memberIds);
   };
 
   const handleAddSelectedMembers = () => {
     if (selectedMemberIds.length === 0) return;
-    setErrorMsg("");
-    startTransition(async () => {
-      const res = await addMembersToDepartment(department.id, selectedMemberIds);
-      if (!res.success) {
-        setErrorMsg(res.error || t.assignFailed);
-        return;
-      }
-
-      setSelectedMemberIds([]);
-      setUserSearch("");
-      setIsAddOpen(false);
-      router.refresh();
-    });
-  };
-
-  const handleRemoveMember = (userId: string) => {
-    setErrorMsg("");
-    startTransition(async () => {
-      const res = await removeMemberFromDepartment(department.id, userId);
-      if (!res.success) {
-        setErrorMsg(res.error || t.assignFailed);
-        return;
-      }
-      router.refresh();
-    });
+    const mergedMemberIds = Array.from(new Set([...project.members.map((member) => member.userId), ...selectedMemberIds]));
+    syncProjectMembers(project.ownerId || "", mergedMemberIds);
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">{department.name}</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-800">{project.name}</h2>
           <p className="mt-1 text-sm text-slate-500">
-            {department.key} · {t.subtitle}
+            {project.key} · {t.subtitle}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setErrorMsg("");
-            setIsAddOpen(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-        >
-          <Plus size={16} />
-          {t.addMembers}
-        </button>
+        {canManage ? (
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMsg("");
+              setIsAddOpen(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <Plus size={16} />
+            {t.addMembers}
+          </button>
+        ) : null}
       </div>
 
       {errorMsg ? (
@@ -172,7 +154,18 @@ export default function AdminDepartmentMembersClient({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
         <div className="border-b bg-slate-50 px-5 py-4">
           <h3 className="text-sm font-bold text-slate-800">{t.currentMembers}</h3>
-          <p className="mt-1 text-xs text-slate-500">{head ? `${t.head}: ${displayMember(head)}` : t.emptyMembers}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {project.ownerId
+              ? `${t.owner}: ${
+                  displayMember(
+                    departmentMembers.find((member) => member.userId === project.ownerId) || {
+                      userName: null,
+                      userEmail: t.unassignedOwner,
+                    }
+                  )
+                }`
+              : t.unassignedOwner}
+          </p>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
@@ -181,59 +174,59 @@ export default function AdminDepartmentMembersClient({
                 <th className="px-5 py-4">{locale === "zh" ? "姓名" : "Name"}</th>
                 <th className="px-5 py-4">{locale === "zh" ? "邮箱" : "Email"}</th>
                 <th className="px-5 py-4">{locale === "zh" ? "角色" : "Role"}</th>
-                <th className="w-52 px-5 py-4">{locale === "zh" ? "操作" : "Actions"}</th>
+                <th className="w-56 px-5 py-4">{locale === "zh" ? "操作" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {department.members.map((member) => {
-                const isHead = member.role === "HEAD";
+              {projectMembers.map((member) => {
+                const isOwner = member.userId === project.ownerId;
                 return (
                   <tr
                     key={member.userId}
                     onClick={() => {
-                      if (!isPending && !isHead) handleSetHead(member.userId);
+                      if (canManage && !isPending && !isOwner) handleSetOwner(member.userId);
                     }}
-                    className={`transition-colors ${isHead || isPending ? "" : "cursor-pointer hover:bg-slate-50/70"}`}
+                    className={`transition-colors ${canManage && !isOwner && !isPending ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
                   >
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                         <span>{displayMember(member)}</span>
-                        {isHead ? <Crown size={14} className="text-amber-500" /> : null}
+                        {isOwner ? <Crown size={14} className="text-amber-500" /> : null}
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-slate-600">{member.userEmail}</td>
                     <td className="px-5 py-3.5">
                       <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                        {isHead ? t.head : t.member}
+                        {isOwner ? t.owner : t.member}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        {!isHead ? (
-                          <>
+                      {canManage ? (
+                        <div className="flex items-center gap-2">
+                          {!isOwner ? (
                             <span className="rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600">
-                              {t.setHead}
+                              {t.setOwner}
                             </span>
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemoveMember(member.userId);
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                            >
-                              <Trash2 size={12} />
-                              {t.remove}
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveMember(member.userId);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            <Trash2 size={12} />
+                            {t.remove}
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 );
               })}
-              {department.members.length === 0 ? (
+              {projectMembers.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 py-16 text-center text-slate-500">
                     {t.emptyMembers}
@@ -278,24 +271,24 @@ export default function AdminDepartmentMembersClient({
 
             <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-auto">
               {filteredUsers.map((user) => {
-                const checked = selectedMemberIds.includes(user.id);
+                const checked = selectedMemberIds.includes(user.userId);
                 return (
-                  <label key={user.id} className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-slate-50">
+                  <label key={user.userId} className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-slate-50">
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={(event) =>
                         setSelectedMemberIds((current) =>
                           event.target.checked
-                            ? Array.from(new Set([...current, user.id]))
-                            : current.filter((selectedId) => selectedId !== user.id)
+                            ? Array.from(new Set([...current, user.userId]))
+                            : current.filter((selectedId) => selectedId !== user.userId)
                         )
                       }
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-800">{displayPerson(user)}</div>
-                      <div className="truncate text-xs text-slate-500">{user.email}</div>
+                      <div className="truncate text-sm font-medium text-slate-800">{displayMember(user)}</div>
+                      <div className="truncate text-xs text-slate-500">{user.userEmail}</div>
                     </div>
                   </label>
                 );

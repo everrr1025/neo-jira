@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin } from "@/lib/permissions";
 import { createDefaultWorkflowForProject } from "@/lib/workflows";
 import { createAuditLogs } from "@/lib/audit";
+import { deleteProjectData } from "@/lib/projectDataCleanup";
 
 import { isValidPassword } from "@/lib/validation";
 
@@ -591,38 +592,7 @@ export async function deleteProject(projectId: string) {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Cascade delete order to respect foreign keys
-      const issues = await tx.issue.findMany({
-        where: { projectId },
-        select: { id: true },
-      });
-      const issueIds = issues.map((i) => i.id);
-
-      if (issueIds.length > 0) {
-        await tx.attachment.deleteMany({
-          where: { issueId: { in: issueIds } },
-        });
-
-        await tx.comment.deleteMany({
-          where: { issueId: { in: issueIds } },
-        });
-
-        await tx.issue.deleteMany({
-          where: { projectId },
-        });
-      }
-
-      await tx.iteration.deleteMany({
-        where: { projectId },
-      });
-
-      await tx.projectMember.deleteMany({
-        where: { projectId },
-      });
-
-      await tx.project.delete({
-        where: { id: projectId },
-      });
+      await deleteProjectData(tx, [projectId]);
     });
 
     revalidatePath("/admin");

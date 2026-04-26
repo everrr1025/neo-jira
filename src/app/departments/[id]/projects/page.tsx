@@ -1,13 +1,14 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
-import { getCurrentLocale } from "@/lib/serverLocale";
+
 import DepartmentManageClient from "@/components/DepartmentManageClient";
 import { getDepartmentWorkspaceData } from "@/lib/departmentWorkspace";
+import { getCurrentLocale } from "@/lib/serverLocale";
 
 export const dynamic = "force-dynamic";
 
-export default async function DepartmentPage({
+export default async function DepartmentProjectsPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -23,13 +24,12 @@ export default async function DepartmentPage({
   const isGlobalAdmin = userRole === "ADMIN";
 
   const department = await getDepartmentWorkspaceData(departmentId, locale);
-
   if (!department) redirect("/");
 
-  // Check authorization: must be HEAD, ASSISTANT, or global admin
-  const myMembership = department.members.find((m) => m.userId === userId);
+  const myMembership = department.members.find((member) => member.userId === userId);
   const isHead = myMembership?.role === "HEAD";
   const isAssistant = myMembership?.role === "ASSISTANT";
+
   if (!isGlobalAdmin && !isHead && !isAssistant) {
     redirect("/");
   }
@@ -41,7 +41,7 @@ export default async function DepartmentPage({
         locale={locale}
         currentUserId={userId}
         isHead={isHead}
-        mode="dashboard"
+        mode="projects"
       />
     </div>
   );

@@ -315,7 +315,6 @@ export default function AdminPanelClient({
         ) : (
           <AdminDepartmentsView
             departments={initialDepartments!}
-            setErrorMsg={setErrorMsg}
             locale={locale}
           />
         )}

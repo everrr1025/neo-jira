@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useMemo } from "react";
-import { Shield, ChevronLeft, Building2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, Building2 } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
 import { AvatarPicker } from "./AvatarPicker";
@@ -29,11 +29,12 @@ export function SidebarClient({
   const searchParams = useSearchParams();
   const translations = getTranslations(locale);
   const plansLabel = locale === "zh" ? "计划" : "Plans";
+  const membersLabel = locale === "zh" ? "成员" : "Members";
 
   const getNavClass = (href: string) => {
     let isActive = false;
     if (href.includes("?")) {
-      const [hrefPath, hrefQuery] = href.split("?");
+      const [hrefPath] = href.split("?");
       isActive = pathname === hrefPath && href.includes(`tab=${searchParams.get("tab")}`);
     } else {
       isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -42,6 +43,96 @@ export function SidebarClient({
       collapsed ? "mx-3 justify-center" : "gap-3 px-3"
     } ${isActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`;
   };
+
+  const topLevelItems = !activeProject
+    ? [
+        {
+          id: "dashboard",
+          href: headDepartment ? `/departments/${headDepartment.id}` : "/",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          ),
+          label: translations.sidebar.dashboard,
+        },
+        {
+          id: "projects",
+          href: headDepartment ? `/departments/${headDepartment.id}/projects` : "/projects",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+          ),
+          label: translations.sidebar.projects,
+        },
+        ...(headDepartment
+          ? [
+              {
+                id: "department-members",
+                href: `/departments/${headDepartment.id}/members`,
+                icon: (
+                  <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                ),
+                label: membersLabel,
+              },
+            ]
+          : []),
+      ]
+    : [
+        {
+          id: "dashboard",
+          href: "/",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          ),
+          label: translations.sidebar.dashboard,
+        },
+        {
+          id: "kanban",
+          href: "/iterations",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          ),
+          label: translations.sidebar.iterations,
+        },
+        {
+          id: "issues",
+          href: "/issues",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          ),
+          label: translations.sidebar.issues,
+        },
+        {
+          id: "plans",
+          href: "/plans",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          ),
+          label: plansLabel,
+        },
+        {
+          id: "projects",
+          href: "/projects",
+          icon: (
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+          ),
+          label: translations.sidebar.projects,
+        },
+      ];
 
   return (
     <aside
@@ -72,12 +163,20 @@ export function SidebarClient({
             collapsed ? "hidden w-0 opacity-0" : "opacity-100"
           }`}
         >
-          {activeProject ? activeProject.name : isAdmin ? (locale === "zh" ? "系统管理" : "Neo-Jira Admin") : (locale === "zh" ? "工作台" : "Workspace")}
+          {activeProject
+            ? activeProject.name
+            : isAdmin
+              ? locale === "zh"
+                ? "系统管理"
+                : "Neo-Jira Admin"
+              : locale === "zh"
+                ? "工作台"
+                : "Workspace"}
         </span>
       </div>
 
       <nav className="mt-2 w-full flex-1 space-y-2 overflow-hidden px-2">
-        {activeProject && (
+        {activeProject ? (
           <div className="mb-4 space-y-2">
             <a
               href="/projects/select?projectId=clear"
@@ -97,73 +196,28 @@ export function SidebarClient({
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {(!activeProject ? [
-          {
-            id: "dashboard",
-            href: "/",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>,
-            label: translations.sidebar.dashboard
-          },
-          {
-            id: "projects",
-            href: "/projects",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>,
-            label: translations.sidebar.projects
-          }
-        ] : [
-          {
-            id: "dashboard",
-            href: "/",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>,
-            label: translations.sidebar.dashboard
-          },
-          {
-            id: "kanban",
-            href: "/iterations",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
-            label: translations.sidebar.iterations
-          },
-          {
-            id: "issues",
-            href: "/issues",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
-            label: translations.sidebar.issues
-          },
-          {
-            id: "plans",
-            href: "/plans",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>,
-            label: plansLabel
-          },
-          {
-            id: "projects",
-            href: "/projects",
-            icon: <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>,
-            label: translations.sidebar.projects
-          }
-        ]).filter((item) => {
-          if (isAdmin && item.id !== "dashboard") return false;
-          return true;
-        }).map((item) => (
-          <Link
-            key={item.id}
-            href={item.href}
-            className={getNavClass(item.href)}
-            title={item.label}
-          >
-            {item.icon}
-            <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-              {item.label}
-            </span>
-          </Link>
-        ))}
+        {topLevelItems
+          .filter((item) => {
+            if (isAdmin && item.id !== "dashboard") return false;
+            return true;
+          })
+          .map((item) => (
+            <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
+              {item.icon}
+              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {item.label}
+              </span>
+            </Link>
+          ))}
 
-        {isAdmin && (
+        {isAdmin ? (
           <>
             <Link href="/admin/users" className={getNavClass("/admin/users")} title={locale === "zh" ? "用户" : "Users"}>
-              <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                 {locale === "zh" ? "用户" : "Users"}
               </span>
@@ -175,21 +229,7 @@ export function SidebarClient({
               </span>
             </Link>
           </>
-        )}
-
-        {headDepartment && (
-          <>
-            <div className={`pb-1 pt-4 ${collapsed ? "px-0 text-center" : "px-3"}`}>
-              <div className="h-px w-full bg-slate-800" />
-            </div>
-            <Link href={`/departments/${headDepartment.id}`} className={getNavClass(`/departments/${headDepartment.id}`)} title={locale === "zh" ? "部门管理" : "Department"}>
-              <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-400" />
-              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {locale === "zh" ? "部门管理" : "Department"}
-              </span>
-            </Link>
-          </>
-        )}
+        ) : null}
       </nav>
 
       <div className={`flex w-full border-t border-slate-800 p-4 text-sm ${collapsed ? "justify-center px-0" : ""}`}>

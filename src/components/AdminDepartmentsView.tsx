@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Building2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
+import { Building2, Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 
-import { createDepartment, deleteDepartment } from "@/app/actions/departments";
+import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
 import type { Locale } from "@/lib/i18n";
 
 type DepartmentMemberRecord = {
@@ -27,7 +27,6 @@ export type DepartmentRecord = {
 
 type Props = {
   departments: DepartmentRecord[];
-  setErrorMsg?: (msg: string) => void;
   locale: Locale;
 };
 
@@ -37,6 +36,7 @@ const TEXT = {
     subtitle: "Manage departments, heads, members, and related project totals.",
     createDepartment: "Add department",
     createTitle: "Create department",
+    editTitle: "Edit department",
     name: "Department",
     key: "Key",
     description: "Description",
@@ -47,22 +47,31 @@ const TEXT = {
     createdAt: "Created",
     actions: "Actions",
     noHead: "No head assigned",
-    manage: "Manage people",
+    manage: "Members",
+    edit: "Edit",
     delete: "Delete",
     cancel: "Cancel",
     create: "Create department",
+    save: "Save changes",
     empty: "No departments created yet.",
     memberCount: "members",
     projectCount: "projects",
-    deleteConfirm: "Delete this department?",
+    deleteWarning: "Delete this department? Members will be removed and linked projects will be cleared.",
     createFailed: "Failed to create department",
+    updateFailed: "Failed to update department",
     deleteFailed: "Failed to delete department",
+    required: "Department name and key are required.",
+    keyExists: "Department key already exists.",
+    nameExists: "Department name already exists.",
+    notFound: "Department not found.",
+    headConflict: "Selected head already belongs to another department.",
   },
   zh: {
     title: "部门",
     subtitle: "管理部门、负责人、成员和关联项目数量。",
     createDepartment: "新增部门",
     createTitle: "创建部门",
+    editTitle: "编辑部门",
     name: "部门",
     key: "标识",
     description: "描述",
@@ -73,16 +82,24 @@ const TEXT = {
     createdAt: "创建时间",
     actions: "操作",
     noHead: "未指派负责人",
-    manage: "管理人员",
+    manage: "成员",
+    edit: "编辑",
     delete: "删除",
     cancel: "取消",
     create: "创建部门",
+    save: "保存修改",
     empty: "暂无部门。",
     memberCount: "名成员",
     projectCount: "个项目",
-    deleteConfirm: "确定删除该部门吗？",
+    deleteWarning: "确定删除该部门吗？部门成员会被移除，关联项目会取消部门归属。",
     createFailed: "创建部门失败",
+    updateFailed: "更新部门失败",
     deleteFailed: "删除部门失败",
+    required: "部门名称和标识不能为空。",
+    keyExists: "部门标识已存在。",
+    nameExists: "部门名称已存在。",
+    notFound: "部门不存在。",
+    headConflict: "所选负责人已属于其他部门。",
   },
 } as const;
 
@@ -90,44 +107,93 @@ function displayMember(member: DepartmentMemberRecord) {
   return member.userName || member.userEmail;
 }
 
-export default function AdminDepartmentsView({ departments, setErrorMsg, locale }: Props) {
+export default function AdminDepartmentsView({ departments, locale }: Props) {
   const t = TEXT[locale];
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [localErrorMsg, setLocalErrorMsg] = useState("");
-  const [newDept, setNewDept] = useState({ name: "", key: "", description: "" });
+  const [listErrorMsg, setListErrorMsg] = useState("");
+  const [formErrorMsg, setFormErrorMsg] = useState("");
+  const [deleteErrorMsg, setDeleteErrorMsg] = useState("");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<DepartmentRecord | null>(null);
+  const [deletingDepartment, setDeletingDepartment] = useState<DepartmentRecord | null>(null);
+  const [departmentForm, setDepartmentForm] = useState({ name: "", key: "", description: "" });
 
-  const showError = (message: string) => {
-    setLocalErrorMsg(message);
-    setErrorMsg?.(message);
+  const translateDepartmentError = (message: string | undefined, fallback: string) => {
+    if (!message) return fallback;
+    if (message.includes("Department name and key are required")) return t.required;
+    if (message.includes("Department key already exists")) return t.keyExists;
+    if (message.includes("Department name already exists")) return t.nameExists;
+    if (message.includes("Department not found")) return t.notFound;
+    if (message.includes("Selected head already belongs to another department")) return t.headConflict;
+    return message;
   };
-  const clearError = () => showError("");
 
-  const handleCreate = (event: React.FormEvent) => {
+  const clearListError = () => setListErrorMsg("");
+  const clearFormError = () => setFormErrorMsg("");
+  const clearDeleteError = () => setDeleteErrorMsg("");
+
+  const resetForm = () => {
+    setDepartmentForm({ name: "", key: "", description: "" });
+    setEditingDepartment(null);
+  };
+
+  const openCreateDialog = () => {
+    clearFormError();
+    resetForm();
+    setIsFormOpen(true);
+  };
+
+  const openEditDialog = (department: DepartmentRecord) => {
+    clearFormError();
+    setEditingDepartment(department);
+    setDepartmentForm({
+      name: department.name,
+      key: department.key,
+      description: department.description || "",
+    });
+    setIsFormOpen(true);
+  };
+
+  const closeFormDialog = () => {
+    setIsFormOpen(false);
+    clearFormError();
+    resetForm();
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    clearError();
+    clearFormError();
     startTransition(async () => {
-      const res = await createDepartment(newDept);
+      const res = editingDepartment
+        ? await updateDepartment(editingDepartment.id, departmentForm)
+        : await createDepartment(departmentForm);
+
       if (!res.success) {
-        showError(res.error || t.createFailed);
+        setFormErrorMsg(
+          translateDepartmentError(res.error, editingDepartment ? t.updateFailed : t.createFailed)
+        );
         return;
       }
-      setNewDept({ name: "", key: "", description: "" });
-      setIsCreateOpen(false);
+
+      closeFormDialog();
+      clearListError();
       router.refresh();
     });
   };
 
-  const handleDelete = (department: DepartmentRecord) => {
-    if (!confirm(t.deleteConfirm)) return;
-    clearError();
+  const handleDelete = () => {
+    if (!deletingDepartment) return;
+    clearDeleteError();
     startTransition(async () => {
-      const res = await deleteDepartment(department.id);
+      const res = await deleteDepartment(deletingDepartment.id);
       if (!res.success) {
-        showError(res.error || t.deleteFailed);
+        setDeleteErrorMsg(translateDepartmentError(res.error, t.deleteFailed));
         return;
       }
+
+      clearListError();
+      setDeletingDepartment(null);
       router.refresh();
     });
   };
@@ -141,10 +207,7 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
         </div>
         <button
           type="button"
-          onClick={() => {
-            clearError();
-            setIsCreateOpen(true);
-          }}
+          onClick={openCreateDialog}
           className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
         >
           <Plus size={16} />
@@ -152,9 +215,9 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
         </button>
       </div>
 
-      {localErrorMsg ? (
+      {listErrorMsg ? (
         <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
-          {localErrorMsg}
+          {listErrorMsg}
         </div>
       ) : null}
 
@@ -185,9 +248,6 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
                         <div>
                           <div className="font-semibold text-slate-800">{department.name}</div>
                           <div className="font-mono text-xs text-slate-500">{department.key}</div>
-                          {department.description ? (
-                            <div className="mt-1 max-w-xs truncate text-xs text-slate-400">{department.description}</div>
-                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -215,14 +275,27 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
                       <div className="flex items-center gap-2">
                         <Link
                           href={`/admin/departments/${department.id}/members`}
-                          className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
                         >
                           <Users size={12} />
                           {t.manage}
                         </Link>
                         <button
                           type="button"
-                          onClick={() => handleDelete(department)}
+                          onClick={() => openEditDialog(department)}
+                          disabled={isPending}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          <Pencil size={12} />
+                          {t.edit}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearListError();
+                            clearDeleteError();
+                            setDeletingDepartment(department);
+                          }}
                           disabled={isPending}
                           className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
                         >
@@ -246,26 +319,31 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
         </div>
       </div>
 
-      {isCreateOpen ? (
+      {isFormOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <h2 className="text-xl font-bold text-slate-900">{t.createTitle}</h2>
+              <h2 className="text-xl font-bold text-slate-900">{editingDepartment ? t.editTitle : t.createTitle}</h2>
               <button
                 type="button"
-                onClick={() => setIsCreateOpen(false)}
+                onClick={closeFormDialog}
                 className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-4 px-6 py-5">
+            <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+              {formErrorMsg ? (
+                <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                  {formErrorMsg}
+                </div>
+              ) : null}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-700">{t.name}</label>
                 <input
                   required
-                  value={newDept.name}
-                  onChange={(event) => setNewDept((current) => ({ ...current, name: event.target.value }))}
+                  value={departmentForm.name}
+                  onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))}
                   className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                   placeholder={locale === "zh" ? "例如：工程部" : "e.g. Engineering"}
                 />
@@ -275,8 +353,8 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
                 <input
                   required
                   maxLength={10}
-                  value={newDept.key}
-                  onChange={(event) => setNewDept((current) => ({ ...current, key: event.target.value.toUpperCase() }))}
+                  value={departmentForm.key}
+                  onChange={(event) => setDepartmentForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))}
                   className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
                   placeholder={locale === "zh" ? "例如：ENG" : "e.g. ENG"}
                 />
@@ -285,8 +363,8 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
                 <label className="mb-1 block text-xs font-bold text-slate-700">{t.description}</label>
                 <textarea
                   rows={3}
-                  value={newDept.description}
-                  onChange={(event) => setNewDept((current) => ({ ...current, description: event.target.value }))}
+                  value={departmentForm.description}
+                  onChange={(event) => setDepartmentForm((current) => ({ ...current, description: event.target.value }))}
                   className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                   placeholder={t.descPlaceholder}
                 />
@@ -294,7 +372,7 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
               <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
                 <button
                   type="button"
-                  onClick={() => setIsCreateOpen(false)}
+                  onClick={closeFormDialog}
                   disabled={isPending}
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -306,10 +384,53 @@ export default function AdminDepartmentsView({ departments, setErrorMsg, locale 
                   className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                  {t.create}
+                  {editingDepartment ? t.save : t.create}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {deletingDepartment ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
+              <h2 className="text-xl font-bold text-rose-600">{t.delete}</h2>
+            </div>
+            <div className="px-6 py-5">
+              {deleteErrorMsg ? (
+                <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                  {deleteErrorMsg}
+                </div>
+              ) : null}
+              <p className="text-sm font-medium text-slate-700">{t.deleteWarning}</p>
+              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
+                {deletingDepartment.name} ({deletingDepartment.key})
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  clearDeleteError();
+                  setDeletingDepartment(null);
+                }}
+                disabled={isPending}
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={handleDelete}
+                className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
+              >
+                {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                {t.delete}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
