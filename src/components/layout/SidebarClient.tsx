@@ -12,24 +12,29 @@ import { SidebarUserMenu } from "./SidebarUserMenu";
 export function SidebarClient({
   isAdmin,
   activeProject,
-  lockProjectScopedLinks,
   user,
   locale,
-  headDepartment,
+  departmentContext,
 }: {
   isAdmin: boolean;
   activeProject: { id: string; name: string; key: string } | null;
-  lockProjectScopedLinks: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
-  headDepartment?: { id: string; name: string } | null;
+  departmentContext?: { id: string; name: string } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const translations = getTranslations(locale);
+  const isDepartmentRoute = pathname.startsWith("/departments/");
+  const inProjectContext = Boolean(activeProject) && !isDepartmentRoute;
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
+  const returnHref = departmentContext
+    ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
+    : "/projects/select?projectId=clear";
+  const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
+  const projectSectionLabel = locale === "zh" ? "项目" : "Project";
 
   const getNavClass = (href: string) => {
     let isActive = false;
@@ -44,11 +49,11 @@ export function SidebarClient({
     } ${isActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`;
   };
 
-  const topLevelItems = !activeProject
+  const topLevelItems = !inProjectContext
     ? [
         {
           id: "dashboard",
-          href: headDepartment ? `/departments/${headDepartment.id}` : "/",
+          href: departmentContext ? `/departments/${departmentContext.id}` : "/",
           icon: (
             <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -58,7 +63,7 @@ export function SidebarClient({
         },
         {
           id: "projects",
-          href: headDepartment ? `/departments/${headDepartment.id}/projects` : "/projects",
+          href: departmentContext ? `/departments/${departmentContext.id}/projects` : "/projects",
           icon: (
             <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -66,11 +71,11 @@ export function SidebarClient({
           ),
           label: translations.sidebar.projects,
         },
-        ...(headDepartment
+        ...(departmentContext
           ? [
               {
                 id: "department-members",
-                href: `/departments/${headDepartment.id}/members`,
+                href: `/departments/${departmentContext.id}/members`,
                 icon: (
                   <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -122,16 +127,6 @@ export function SidebarClient({
           ),
           label: plansLabel,
         },
-        {
-          id: "projects",
-          href: "/projects",
-          icon: (
-            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-          ),
-          label: translations.sidebar.projects,
-        },
       ];
 
   return (
@@ -156,14 +151,14 @@ export function SidebarClient({
 
       <div className={`h-20 w-full p-6 ${collapsed ? "justify-center px-0" : "flex items-center gap-3"}`}>
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 font-bold text-white shadow shadow-blue-500/50">
-          {activeProject ? activeProject.name.charAt(0).toUpperCase() : "N"}
+          {inProjectContext && activeProject ? activeProject.name.charAt(0).toUpperCase() : "N"}
         </div>
         <span
           className={`truncate text-lg font-bold tracking-wide text-white transition-opacity duration-200 ${
             collapsed ? "hidden w-0 opacity-0" : "opacity-100"
           }`}
         >
-          {activeProject
+          {inProjectContext && activeProject
             ? activeProject.name
             : isAdmin
               ? locale === "zh"
@@ -176,23 +171,23 @@ export function SidebarClient({
       </div>
 
       <nav className="mt-2 w-full flex-1 space-y-2 overflow-hidden px-2">
-        {activeProject ? (
+        {inProjectContext ? (
           <div className="mb-4 space-y-2">
             <a
-              href="/projects/select?projectId=clear"
+              href={returnHref}
               className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 transition-colors hover:bg-slate-800 hover:text-white ${
                 collapsed ? "mx-3 justify-center" : "gap-3 px-3"
               }`}
-              title="Return to Portal"
+              title={returnLabel}
             >
               <ChevronLeft className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-400" />
               <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                Return to Portal
+                {returnLabel}
               </span>
             </a>
             <div className={`pb-1 pt-2 ${collapsed ? "px-0 text-center" : "px-3"}`}>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 transition-all">
-                {collapsed ? "–" : "Project"}
+                {collapsed ? "–" : projectSectionLabel}
               </div>
             </div>
           </div>

@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin, getRequiredSession } from "@/lib/permissions";
@@ -17,6 +18,15 @@ function getSessionUser(session: unknown) {
 
 function getErrorMessage(error: unknown, fallback = "Unexpected error") {
   return error instanceof Error ? error.message : fallback;
+}
+
+function getDepartmentUniqueError(error: unknown, fallback: string) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    const targets = Array.isArray(error.meta?.target) ? error.meta.target : [];
+    if (targets.includes("key")) return "Department key already exists";
+    if (targets.includes("name")) return "Department name already exists";
+  }
+  return getErrorMessage(error, fallback);
 }
 
 function normalizeDepartmentInput(data: {
@@ -52,7 +62,7 @@ export async function createDepartment(data: {
     if (existingKey) {
       return { success: false, error: "Department key already exists" };
     }
-    const existingName = await prisma.department.findUnique({
+    const existingName = await prisma.department.findFirst({
       where: { name },
     });
     if (existingName) {
@@ -69,7 +79,7 @@ export async function createDepartment(data: {
       });
 
       if (data.headUserId) {
-        const existingHeadMembership = await tx.departmentMember.findUnique({
+        const existingHeadMembership = await tx.departmentMember.findFirst({
           where: { userId: data.headUserId },
           select: { departmentId: true },
         });
@@ -106,7 +116,7 @@ export async function createDepartment(data: {
     return { success: true, department: newDept };
   } catch (error: unknown) {
     console.error("Failed to create department:", error);
-    return { success: false, error: getErrorMessage(error, "Failed to create department") };
+    return { success: false, error: getDepartmentUniqueError(error, "Failed to create department") };
   }
 }
 
@@ -143,7 +153,7 @@ export async function updateDepartment(
       return { success: false, error: "Department key already exists" };
     }
 
-    const existingName = await prisma.department.findUnique({
+    const existingName = await prisma.department.findFirst({
       where: { name },
       select: { id: true },
     });
@@ -210,7 +220,7 @@ export async function updateDepartment(
     revalidatePath("/");
     return { success: true, department: updatedDepartment };
   } catch (error: unknown) {
-    return { success: false, error: getErrorMessage(error, "Failed to update department") };
+    return { success: false, error: getDepartmentUniqueError(error, "Failed to update department") };
   }
 }
 
@@ -339,24 +349,6 @@ async function checkDeptHeadOrAdmin(departmentId: string) {
   throw new Error("Unauthorized. Must be Admin, Department Head or Assistant.");
 }
 
-async function checkDeptHeadOnly(departmentId: string) {
-  const session = await getRequiredSession();
-  const currentUser = getSessionUser(session);
-  const currentUserId = currentUser.id;
-  const isGlobalAdmin = currentUser.role === "ADMIN";
-  if (isGlobalAdmin) {
-    return { currentUserId, isGlobalAdmin: true };
-  }
-
-  const membership = await prisma.departmentMember.findUnique({
-    where: { departmentId_userId: { departmentId, userId: currentUserId } },
-  });
-  if (membership?.role === "HEAD") {
-    return { currentUserId, isGlobalAdmin: false };
-  }
-  throw new Error("Unauthorized. Must be Department Head.");
-}
-
 function normalizeProjectMemberIds(memberIds: unknown) {
   const ids = Array.isArray(memberIds) ? memberIds.filter((id): id is string => typeof id === "string") : [];
   return Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
@@ -370,7 +362,7 @@ export async function addMemberToDepartment(departmentId: string, userId: string
     if (!user) return { success: false, error: "User not found" };
     if (user.role === "ADMIN") return { success: false, error: "Cannot add system admin to department" };
 
-    const existingMembership = await prisma.departmentMember.findUnique({
+    const existingMembership = await prisma.departmentMember.findFirst({
       where: { userId },
       select: { departmentId: true },
     });
@@ -486,7 +478,7 @@ export async function createDepartmentProject(
   }
 ) {
   try {
-    await checkDeptHeadOnly(departmentId);
+    await checkDeptHeadOrAdmin(departmentId);
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
     const description = typeof data?.description === "string" ? data.description.trim() : "";
@@ -496,7 +488,7 @@ export async function createDepartmentProject(
     if (!name || !key) {
       return { success: false, error: "Project name and key are required." };
     }
-    if ((memberIds.length > 0 && !ownerId) || (ownerId && !memberIds.includes(ownerId))) {
+    if (ownerId && !memberIds.includes(ownerId)) {
       return { success: false, error: "Project owner must be selected from project members." };
     }
 
@@ -526,14 +518,16 @@ export async function createDepartmentProject(
     }
 
     const project = await prisma.$transaction(async (tx) => {
+      const projectData = {
+        name,
+        key,
+        description: description || null,
+        departmentId,
+        ...(ownerId ? { ownerId } : {}),
+      };
+
       const createdProject = await tx.project.create({
-        data: {
-          name,
-          key,
-          description: description || null,
-          ownerId: ownerId || null,
-          departmentId,
-        },
+        data: projectData,
       });
 
       if (finalMemberIds.length > 0) {
@@ -571,10 +565,10 @@ export async function updateDepartmentProjectMembers(
   }
 ) {
   try {
-    await checkDeptHeadOnly(departmentId);
+    await checkDeptHeadOrAdmin(departmentId);
     const ownerId = typeof data.ownerId === "string" ? data.ownerId.trim() : "";
     const uniqueMemberIds = Array.from(new Set(data.memberIds.map((id) => id.trim()).filter(Boolean)));
-    if ((uniqueMemberIds.length > 0 && !ownerId) || (ownerId && !uniqueMemberIds.includes(ownerId))) {
+    if (ownerId && !uniqueMemberIds.includes(ownerId)) {
       return { success: false, error: "Project owner must be selected from project members." };
     }
 
@@ -629,17 +623,17 @@ export async function updateDepartmentProjectMembers(
         data: { role: "MEMBER" },
       });
 
-      await tx.project.update({
-        where: { id: projectId },
-        data: { ownerId: ownerId || null },
-      });
-
       if (ownerId) {
         await tx.projectMember.update({
           where: { userId_projectId: { userId: ownerId, projectId } },
           data: { role: "ADMIN" },
         });
       }
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: ownerId ? { ownerId } : { ownerId: null },
+      });
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -655,9 +649,69 @@ export async function updateDepartmentProjectMembers(
   }
 }
 
+export async function updateDepartmentProject(
+  departmentId: string,
+  projectId: string,
+  data: {
+    name?: string;
+    key?: string;
+    description?: string;
+  }
+) {
+  try {
+    await checkDeptHeadOrAdmin(departmentId);
+
+    const name = typeof data?.name === "string" ? data.name.trim() : "";
+    const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
+    const description = typeof data?.description === "string" ? data.description.trim() : "";
+
+    if (!name || !key) {
+      return { success: false, error: "Project name and key are required." };
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, departmentId: true },
+    });
+    if (!project || project.departmentId !== departmentId) {
+      return { success: false, error: "Project not found." };
+    }
+
+    const existing = await prisma.project.findFirst({
+      where: {
+        key,
+        id: { not: projectId },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return { success: false, error: "Project key already exists." };
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        name,
+        key,
+        description: description || null,
+      },
+    });
+
+    revalidatePath(`/departments/${departmentId}`);
+    revalidatePath(`/departments/${departmentId}/projects`);
+    revalidatePath(`/departments/${departmentId}/projects/${projectId}/members`);
+    revalidatePath(`/projects/${projectId}/settings`);
+    revalidatePath("/projects");
+    revalidatePath("/");
+    return { success: true, project: updatedProject };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "Failed to update project") };
+  }
+}
+
 export async function deleteDepartmentProject(departmentId: string, projectId: string) {
   try {
-    await checkDeptHeadOnly(departmentId);
+    await checkDeptHeadOrAdmin(departmentId);
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },

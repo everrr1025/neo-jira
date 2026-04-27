@@ -4,10 +4,19 @@ import prisma from "@/lib/prisma";
 import { getActiveProjectContextForUser } from "@/lib/activeProject";
 import { SidebarClient } from "./SidebarClient";
 import { Locale } from "@/lib/i18n";
+import { getUserDepartmentMembership } from "@/lib/departmentAccess";
+
+type SessionUser = {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  avatar?: string | null;
+};
 
 export async function Sidebar({ locale }: { locale: Locale }) {
   const session = await getServerSession(authOptions);
-  const user = session?.user as any;
+  const user = session?.user as SessionUser | undefined;
   const userId = user?.id as string | undefined;
   const userRole = user?.role as string | undefined;
   const isAdmin = userRole === "ADMIN";
@@ -17,29 +26,21 @@ export async function Sidebar({ locale }: { locale: Locale }) {
     select: { id: true, name: true, email: true, role: true, avatar: true }
   }) : null;
 
-  // Fetch department head/assistant info for non-admin users
-  let headDepartment: { id: string; name: string } | null = null;
-  if (userId && !isAdmin) {
-    const deptMembership = await prisma.departmentMember.findFirst({
-      where: { userId, role: { in: ["HEAD", "ASSISTANT"] } },
-      include: { department: { select: { id: true, name: true } } },
-    });
-    if (deptMembership) {
-      headDepartment = deptMembership.department;
-    }
-  }
+  const departmentMembership = userId && !isAdmin ? await getUserDepartmentMembership(userId) : null;
 
   const { activeProject } = await getActiveProjectContextForUser(userId, userRole);
-  const lockProjectScopedLinks = !activeProject;
 
   return (
     <SidebarClient
       isAdmin={isAdmin}
       activeProject={activeProject}
-      lockProjectScopedLinks={lockProjectScopedLinks}
       user={dbUser || user}
       locale={locale}
-      headDepartment={headDepartment}
+      departmentContext={
+        departmentMembership
+          ? { id: departmentMembership.departmentId, name: departmentMembership.departmentName }
+          : null
+      }
     />
   );
 }

@@ -2,6 +2,11 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 
+type SessionUser = {
+  id?: string;
+  role?: string | null;
+};
+
 /**
  * Get the current authenticated session. Throws if not logged in.
  */
@@ -18,7 +23,8 @@ export async function getRequiredSession() {
  */
 export async function checkGlobalAdmin() {
   const session = await getRequiredSession();
-  if ((session.user as any).role !== "ADMIN") {
+  const sessionUser = session.user as SessionUser;
+  if (sessionUser.role !== "ADMIN") {
     throw new Error("Unauthorized. Admin access required.");
   }
   return session;
@@ -36,7 +42,25 @@ export async function getProjectRole(userId: string, projectId: string): Promise
   const membership = await prisma.projectMember.findUnique({
     where: { userId_projectId: { userId, projectId } },
   });
-  return membership?.role ?? null;
+  if (membership?.role) {
+    return membership.role;
+  }
+
+  const canViewAsDepartmentHead = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      department: {
+        members: {
+          some: {
+            userId,
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+
+  return canViewAsDepartmentHead ? "MEMBER" : null;
 }
 
 /**
@@ -45,7 +69,10 @@ export async function getProjectRole(userId: string, projectId: string): Promise
  */
 export async function checkProjectAdmin(projectId: string) {
   const session = await getRequiredSession();
-  const userId = (session.user as any).id;
+  const userId = (session.user as SessionUser).id;
+  if (!userId) {
+    throw new Error("Unauthorized. Please log in.");
+  }
   const role = await getProjectRole(userId, projectId);
 
   if (role !== "ADMIN") {
@@ -60,7 +87,10 @@ export async function checkProjectAdmin(projectId: string) {
  */
 export async function checkProjectMember(projectId: string) {
   const session = await getRequiredSession();
-  const userId = (session.user as any).id;
+  const userId = (session.user as SessionUser).id;
+  if (!userId) {
+    throw new Error("Unauthorized. Please log in.");
+  }
   const role = await getProjectRole(userId, projectId);
 
   if (!role) {

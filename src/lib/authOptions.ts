@@ -2,6 +2,14 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
+import { getUserDepartmentMembership } from "@/lib/departmentAccess";
+
+type SessionCallbackUser = {
+  id?: string;
+  role?: string | null;
+  departmentRole?: string | null;
+  departmentId?: string | null;
+};
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -18,9 +26,9 @@ export const authOptions: NextAuthOptions = {
           where: { email: credentials.email }
         });
         
-        if (!user || !(user as any).password) return null;
+        if (!user || !user.password) return null;
         
-        const isPasswordValid = await bcrypt.compare(credentials.password, (user as any).password);
+        const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
         if (!isPasswordValid) return null;
 
         return {
@@ -35,15 +43,20 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = (user as any).role;
-        token.id = user.id;
+        const authUser = user as SessionCallbackUser;
+        token.role = authUser.role;
+        token.id = authUser.id;
       }
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
-        (session.user as any).role = token.role;
-        (session.user as any).id = token.id;
+        const sessionUser = session.user as SessionCallbackUser;
+        sessionUser.role = typeof token.role === "string" ? token.role : null;
+        sessionUser.id = typeof token.id === "string" ? token.id : undefined;
+        const membership = await getUserDepartmentMembership(typeof token.id === "string" ? token.id : null);
+        sessionUser.departmentRole = membership?.role || null;
+        sessionUser.departmentId = membership?.departmentId || null;
       }
       return session;
     }

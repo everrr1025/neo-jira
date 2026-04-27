@@ -14,8 +14,10 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const { data: session } = useSession();
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [query, setQuery] = useState(searchParams.get("search") || "");
+  const [departmentTitle, setDepartmentTitle] = useState("");
   const translations = getTranslations(locale);
   const userName = session?.user?.name || translations.sidebar.userFallback;
+  const isDepartmentAssistant = (session?.user as { departmentRole?: string } | undefined)?.departmentRole === "ASSISTANT";
 
   useEffect(() => {
     setQuery(searchParams.get("search") || "");
@@ -24,6 +26,24 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   useEffect(() => {
     setLocale(initialLocale);
   }, [initialLocale]);
+
+  useEffect(() => {
+    const handleDepartmentTitle = (event: Event) => {
+      const detail = (event as CustomEvent<{ title?: string | null }>).detail;
+      setDepartmentTitle(detail?.title?.trim() || "");
+    };
+
+    window.addEventListener("department-header-title", handleDepartmentTitle as EventListener);
+    return () => {
+      window.removeEventListener("department-header-title", handleDepartmentTitle as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!/^\/departments\/[^/]+$/.test(pathname)) {
+      setDepartmentTitle("");
+    }
+  }, [pathname]);
 
   const handleSearch = useCallback(
     (event: React.FormEvent) => {
@@ -43,10 +63,12 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     pathname.startsWith("/iterations") ||
     pathname.startsWith("/plans") ||
     pathname.startsWith("/projects") ||
-    pathname.startsWith("/settings");
+    pathname.startsWith("/settings") ||
+    /^\/departments\/[^/]+\/(projects|members)(?:\/|$)/.test(pathname);
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
+    if (/^\/departments\/[^/]+$/.test(pathname) && departmentTitle) return departmentTitle;
     if (pathname.startsWith("/admin")) return translations.header.adminSettings;
     if (pathname.startsWith("/settings")) return translations.settingsPage.title;
     if (pathname.startsWith("/login")) return translations.header.login;
@@ -89,7 +111,13 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
 
         <div className="flex items-center gap-3">
           <div className="text-sm font-medium text-slate-500">
-            {translations.header.welcomeBack}, <span className="text-slate-700">{userName}</span>
+            {translations.header.welcomeBack},{" "}
+            <span className="text-slate-700">{userName}</span>
+            {isDepartmentAssistant ? (
+              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                {locale === "zh" ? "部门助理" : "Assistant"}
+              </span>
+            ) : null}
           </div>
           <NotificationBell locale={locale} />
         </div>

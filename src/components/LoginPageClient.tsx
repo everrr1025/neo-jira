@@ -78,7 +78,7 @@ export default function LoginPageClient({ initialLocale }: { initialLocale: Loca
       setError(text.invalidCredentials);
       setIsLoading(false);
     } else {
-      router.push("/");
+      router.push("/projects/select?projectId=clear&redirectTo=/");
       router.refresh();
     }
   };

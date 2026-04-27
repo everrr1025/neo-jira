@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { ACTIVE_PROJECT_COOKIE } from "@/lib/activeProject";
+import { buildActiveProjectWhere } from "@/lib/activeProjectUtils";
 
 type SessionUser = {
   id?: string;
@@ -18,6 +19,13 @@ function redirectTo(path: string) {
   });
 }
 
+function resolveRedirectPath(candidate: string | null, fallback: string) {
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return fallback;
+  }
+  return candidate;
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -31,13 +39,14 @@ export async function GET(request: NextRequest) {
     return redirectTo("/login");
   }
   const projectId = request.nextUrl.searchParams.get("projectId");
+  const redirectPath = resolveRedirectPath(request.nextUrl.searchParams.get("redirectTo"), "/projects");
 
   if (!projectId) {
     return redirectTo("/projects");
   }
 
   if (projectId === "clear") {
-    const response = redirectTo("/");
+    const response = redirectTo(resolveRedirectPath(request.nextUrl.searchParams.get("redirectTo"), "/"));
     response.cookies.set(ACTIVE_PROJECT_COOKIE, "", {
       path: "/",
       sameSite: "lax",
@@ -49,21 +58,13 @@ export async function GET(request: NextRequest) {
 
   let hasAccess = false;
 
-  if (userRole === "ADMIN") {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true },
-    });
-    hasAccess = !!project;
-  } else {
-    const membership = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId, projectId } },
-      select: { id: true },
-    });
-    hasAccess = !!membership;
-  }
+  const project = await prisma.project.findFirst({
+    where: buildActiveProjectWhere(userId, userRole ?? "USER", projectId),
+    select: { id: true },
+  });
+  hasAccess = !!project;
 
-  const response = redirectTo(hasAccess ? "/" : "/projects");
+  const response = redirectTo(hasAccess ? "/" : redirectPath);
   if (hasAccess) {
     response.cookies.set(ACTIVE_PROJECT_COOKIE, projectId, {
       path: "/",

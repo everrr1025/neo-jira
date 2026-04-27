@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Crown, Loader2, Plus, Search, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
@@ -75,7 +75,11 @@ export default function DepartmentProjectMembersClient({
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
 
   const currentMemberIds = new Set(project.members.map((member) => member.userId));
-  const projectMembers = departmentMembers.filter((member) => currentMemberIds.has(member.userId));
+  const projectMembers = [...project.members].sort((a, b) => {
+    const ownerDiff = Number(b.userId === project.ownerId) - Number(a.userId === project.ownerId);
+    if (ownerDiff !== 0) return ownerDiff;
+    return displayMember(a).localeCompare(displayMember(b));
+  });
   const availableUsers = departmentMembers.filter((member) => !currentMemberIds.has(member.userId));
   const normalizedSearch = userSearch.trim().toLowerCase();
   const filteredUsers = availableUsers.filter((user) => {

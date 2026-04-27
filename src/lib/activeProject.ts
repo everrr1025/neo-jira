@@ -1,6 +1,11 @@
 import { cookies } from "next/headers";
 import prisma from "@/lib/prisma";
-import { buildActiveProjectWhere, findProjectById, type BasicProject } from "@/lib/activeProjectUtils";
+import {
+  buildActiveProjectWhere,
+  buildVisibleProjectsWhere,
+  findProjectById,
+  type BasicProject,
+} from "@/lib/activeProjectUtils";
 
 export const ACTIVE_PROJECT_COOKIE = "activeProjectId";
 const basicProjectSelect = { id: true, name: true, key: true } as const;
@@ -11,25 +16,11 @@ export async function getVisibleProjectsForUser(
 ): Promise<BasicProject[]> {
   if (!userId) return [];
 
-  if (userRole === "ADMIN") {
-    return prisma.project.findMany({
-      select: basicProjectSelect,
-      orderBy: { name: "asc" },
-    });
-  }
-
-  const memberships = await prisma.projectMember.findMany({
-    where: { userId },
-    select: {
-      project: {
-        select: basicProjectSelect,
-      },
-    },
+  return prisma.project.findMany({
+    where: buildVisibleProjectsWhere(userId, userRole),
+    select: basicProjectSelect,
+    orderBy: { name: "asc" },
   });
-
-  return memberships
-    .map((m) => m.project)
-    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function getRequestedActiveProjectId() {

@@ -15,6 +15,7 @@ import {
 import { formatActivityEntry, type ActivityLogEntry } from "@/lib/activityLogFormatter";
 import { getDefaultAvatar } from "@/lib/avatar";
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
+import { getUserDepartmentMembership } from "@/lib/departmentAccess";
 import {
   getWorkflowStatusBadgeClass,
   getWorkflowStatusCategory,
@@ -90,7 +91,14 @@ export default async function Dashboard({
   if (!userId) redirect("/login");
 
   const isGlobalAdmin = userRole === "ADMIN";
+  const query = typeof params?.search === "string" ? params.search.trim() : "";
   const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (!activeProject && !isGlobalAdmin && !query) {
+    const departmentMembership = await getUserDepartmentMembership(userId);
+    if (departmentMembership) {
+      redirect(`/departments/${departmentMembership.departmentId}`);
+    }
+  }
   const visibleProjects = !activeProject ? await getVisibleProjectsForUser(userId, userRole) : [];
 
   const projectFilter = activeProject
@@ -105,8 +113,6 @@ export default async function Dashboard({
 
   const yesterday = new Date(startOfToday);
   yesterday.setDate(yesterday.getDate() - 1);
-
-  const query = typeof params?.search === "string" ? params.search.trim() : "";
 
   const [
     statusSummaryIssues,

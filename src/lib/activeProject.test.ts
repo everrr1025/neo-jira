@@ -4,6 +4,7 @@ const {
   canMoveIssueToIteration,
   buildProjectEntityWhere,
   buildProjectItemsWhere,
+  buildVisibleProjectsWhere,
   buildProjectUsersWhere,
   canUseIterationForActiveProject,
   findProjectById,
@@ -26,9 +27,46 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "ADMIN", "project-a"), {
 
 assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
   id: "project-a",
-  members: {
-    some: { userId: "user-1" },
-  },
+  OR: [
+    {
+      members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      department: {
+        members: {
+          some: {
+            userId: "user-1",
+            role: "HEAD",
+          },
+        },
+      },
+    },
+  ],
+});
+
+assert.deepEqual(buildVisibleProjectsWhere("user-1", "USER"), {
+  OR: [
+    {
+      members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      department: {
+        members: {
+          some: {
+            userId: "user-1",
+            role: "HEAD",
+          },
+        },
+      },
+    },
+  ],
+});
+
+assert.deepEqual(buildVisibleProjectsWhere("user-1", "ADMIN"), {
 });
 
 assert.deepEqual(buildProjectItemsWhere("project-a"), {

@@ -23,14 +23,52 @@ export function buildActiveProjectWhere(
 
   return {
     id: projectId,
-    members: {
-      some: { userId },
-    },
+    OR: [
+      {
+        members: {
+          some: { userId },
+        },
+      },
+      {
+        department: {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
+    ],
   };
 }
 
 export function buildProjectItemsWhere(projectId: string) {
   return { projectId };
+}
+
+export function buildVisibleProjectsWhere(userId: string, userRole: string | undefined) {
+  if (userRole === "ADMIN") {
+    return {};
+  }
+
+  return {
+    OR: [
+      {
+        members: {
+          some: { userId },
+        },
+      },
+      {
+        department: {
+          members: {
+            some: {
+              userId,
+            },
+          },
+        },
+      },
+    ],
+  };
 }
 
 export function buildProjectEntityWhere(entityId: string, projectId: string) {

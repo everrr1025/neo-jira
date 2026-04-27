@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, Crown, FolderGit2, Loader2, PencilRuler, Plus, Shield, Trash2, Users, X } from "lucide-react";
+import { Bell, Building2, Crown, FolderGit2, Loader2, Pencil, PencilRuler, Plus, Shield, Trash2, Users, X } from "lucide-react";
 
 import {
   createDepartmentProject,
   deleteDepartmentProject,
   setDepartmentMemberRole,
+  updateDepartmentProject,
 } from "@/app/actions/departments";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
@@ -62,6 +63,11 @@ const TEXT = {
     createdAt: "Created",
     key: "Key",
     description: "Description",
+    viewProject: "View",
+    page: "Page",
+    previous: "Previous",
+    next: "Next",
+    departmentDescription: "Department description",
     deleteWarning: "Delete this project? All related project data will be removed.",
     unassignedOwner: "Unassigned",
   },
@@ -112,10 +118,17 @@ const TEXT = {
     createdAt: "创建时间",
     key: "标识",
     description: "描述",
+    viewProject: "查看",
+    page: "第",
+    previous: "上一页",
+    next: "下一页",
+    departmentDescription: "部门描述",
     deleteWarning: "确定删除该项目吗？该项目的所有关联数据都会被删除。",
     unassignedOwner: "未指派",
   },
 } as const;
+
+const MEMBER_PAGE_SIZE = 10;
 
 const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
   HEAD: { bg: "bg-amber-100", text: "text-amber-800" },
@@ -132,12 +145,14 @@ export default function DepartmentManageClient({
   locale,
   currentUserId,
   isHead,
+  canManageProjects,
   mode,
 }: {
   department: DepartmentWorkspaceData;
   locale: Locale;
   currentUserId: string;
   isHead: boolean;
+  canManageProjects: boolean;
   mode: "dashboard" | "members" | "projects";
 }) {
   const t = TEXT[locale];
@@ -147,8 +162,16 @@ export default function DepartmentManageClient({
   const [createProjectErrorMsg, setCreateProjectErrorMsg] = useState("");
   const [deleteErrorMsg, setDeleteErrorMsg] = useState("");
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState<DepartmentWorkspaceProject | null>(null);
+  const [editingProject, setEditingProject] = useState<DepartmentWorkspaceProject | null>(null);
+  const [memberPage, setMemberPage] = useState(1);
   const [newProject, setNewProject] = useState({
+    name: "",
+    key: "",
+    description: "",
+  });
+  const [editProjectForm, setEditProjectForm] = useState({
     name: "",
     key: "",
     description: "",
@@ -162,6 +185,12 @@ export default function DepartmentManageClient({
 
   const totalIssues = department.projects.reduce((sum, project) => sum + project.issuesCount, 0);
   const assistantCount = department.members.filter((member) => member.role === "ASSISTANT").length;
+  const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / MEMBER_PAGE_SIZE));
+  const currentMemberPage = Math.min(memberPage, totalMemberPages);
+  const paginatedMembers = sortedMembers.slice(
+    (currentMemberPage - 1) * MEMBER_PAGE_SIZE,
+    currentMemberPage * MEMBER_PAGE_SIZE
+  );
   const summaryCards = useMemo(
     () => [
       { label: t.members, value: department.members.length, icon: Users },
@@ -190,6 +219,15 @@ export default function DepartmentManageClient({
     if (message.includes("Project not found")) return t.projectNotFound;
     return message;
   };
+
+  useEffect(() => {
+    if (mode !== "dashboard") return;
+
+    window.dispatchEvent(new CustomEvent("department-header-title", { detail: { title: department.name } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("department-header-title", { detail: { title: "" } }));
+    };
+  }, [department.name, mode]);
 
   const handleSetRole = (userId: string, role: "ASSISTANT" | "MEMBER") => {
     setPageErrorMsg("");
@@ -233,21 +271,42 @@ export default function DepartmentManageClient({
     });
   };
 
+  const handleEditProject = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingProject) return;
+    setCreateProjectErrorMsg("");
+    startTransition(async () => {
+      const res = await updateDepartmentProject(department.id, editingProject.id, editProjectForm);
+      if (!res.success) {
+        setCreateProjectErrorMsg(translateError(res.error, t.projectCreateFailed));
+        return;
+      }
+      setIsEditProjectOpen(false);
+      setEditingProject(null);
+      setCreateProjectErrorMsg("");
+      router.refresh();
+    });
+  };
+
   return (
     <div className="space-y-6">
-      {mode !== "projects" ? (
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-sm">
-              <Building2 size={26} />
+      {mode === "dashboard" ? (
+        <div className="rounded-2xl border bg-white p-6 shadow-sm">
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.85fr)]">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-sm">
+                <Building2 size={22} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {t.departmentDescription}
+                </p>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">{t.workspace}</p>
-              <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{department.name}</h2>
-              <p className="mt-2 text-sm text-slate-500">
-                {department.key} · {t.head}: {headName}
-              </p>
-              <p className="mt-2 max-w-3xl text-sm text-slate-600">{department.description || t.noDescription}</p>
+            <div className="rounded-xl bg-slate-50 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</p>
+              <p className="mt-2 text-base font-semibold text-slate-900">{headName}</p>
             </div>
           </div>
         </div>
@@ -343,8 +402,10 @@ export default function DepartmentManageClient({
 
       {mode === "members" ? (
         <div className="space-y-4">
-          <div className="rounded-2xl border bg-white p-5 text-sm text-slate-600 shadow-sm">{t.memberListHint}</div>
-
+          <div className="flex items-center gap-2">
+            <Users size={18} className="text-slate-400" />
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.members}</h2>
+          </div>
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
@@ -364,7 +425,7 @@ export default function DepartmentManageClient({
                     </td>
                   </tr>
                 ) : (
-                  sortedMembers.map((member) => {
+                  paginatedMembers.map((member) => {
                     const badge = ROLE_BADGE[member.role] || ROLE_BADGE.MEMBER;
                     const canToggleAssistant = isHead && member.role !== "HEAD" && member.userId !== currentUserId;
                     return (
@@ -388,12 +449,15 @@ export default function DepartmentManageClient({
                               <span className="text-xs text-slate-400">-</span>
                             ) : (
                               member.projects.map((project) => (
-                                <span
+                                <Link
                                   key={project.id}
-                                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
+                                  href={`/projects/select?projectId=${project.id}`}
+                                  className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
                                 >
-                                  {project.name} ({project.key})
-                                </span>
+                                  <FolderGit2 size={12} />
+                                  <span>{project.name}</span>
+                                  <span className="font-mono text-[11px] text-emerald-800/80">{project.key}</span>
+                                </Link>
                               ))
                             )}
                           </div>
@@ -428,13 +492,43 @@ export default function DepartmentManageClient({
               </tbody>
             </table>
           </div>
+
+          {sortedMembers.length > 0 ? (
+            <div className="flex items-center justify-between rounded-xl border bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+              <span>
+                {t.page} {currentMemberPage} / {totalMemberPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
+                  disabled={currentMemberPage === 1}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t.previous}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberPage(Math.min(totalMemberPages, currentMemberPage + 1))}
+                  disabled={currentMemberPage === totalMemberPages}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t.next}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {mode === "projects" ? (
         <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <FolderGit2 size={18} className="text-slate-400" />
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
+          </div>
           <div className="flex items-center justify-end">
-            {isHead ? (
+            {canManageProjects ? (
               <button
                 type="button"
                 onClick={() => {
@@ -473,7 +567,12 @@ export default function DepartmentManageClient({
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
                             <PencilRuler size={18} />
                           </div>
-                          <div className="font-semibold text-slate-800">{project.name}</div>
+                          <Link
+                            href={`/projects/select?projectId=${project.id}`}
+                            className="font-semibold text-slate-800 transition-colors hover:text-emerald-700"
+                          >
+                            {project.name}
+                          </Link>
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
@@ -499,6 +598,13 @@ export default function DepartmentManageClient({
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
+                          <a
+                            href={`/projects/select?projectId=${project.id}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                          >
+                            <Building2 size={12} />
+                            {t.viewProject}
+                          </a>
                           <Link
                             href={`/departments/${department.id}/projects/${project.id}/members`}
                             className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
@@ -506,18 +612,40 @@ export default function DepartmentManageClient({
                             <Users size={12} />
                             {t.memberButton}
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDeleteErrorMsg("");
-                              setDeletingProject(project);
-                            }}
-                            disabled={isPending}
-                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                          >
-                            <Trash2 size={12} />
-                            {t.deleteProject}
-                          </button>
+                          {canManageProjects ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingProject(project);
+                                  setEditProjectForm({
+                                    name: project.name,
+                                    key: project.key,
+                                    description: project.description || "",
+                                  });
+                                  setCreateProjectErrorMsg("");
+                                  setIsEditProjectOpen(true);
+                                }}
+                                disabled={isPending}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                <Pencil size={12} />
+                                {locale === "zh" ? "编辑" : "Edit"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteErrorMsg("");
+                                  setDeletingProject(project);
+                                }}
+                                disabled={isPending}
+                                className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                <Trash2 size={12} />
+                                {t.deleteProject}
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -610,6 +738,88 @@ export default function DepartmentManageClient({
                     >
                       {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
                       {t.create}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ) : null}
+
+          {isEditProjectOpen && editingProject ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                  <h2 className="text-xl font-bold text-slate-900">{locale === "zh" ? "编辑项目" : "Edit project"}</h2>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditProjectOpen(false);
+                      setEditingProject(null);
+                      setCreateProjectErrorMsg("");
+                    }}
+                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <form onSubmit={handleEditProject} className="space-y-4 px-6 py-5">
+                  {createProjectErrorMsg ? (
+                    <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                      {createProjectErrorMsg}
+                    </div>
+                  ) : null}
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectName}</label>
+                    <input
+                      required
+                      value={editProjectForm.name}
+                      onChange={(event) => setEditProjectForm((current) => ({ ...current, name: event.target.value }))}
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectKey}</label>
+                    <input
+                      required
+                      maxLength={10}
+                      value={editProjectForm.key}
+                      onChange={(event) =>
+                        setEditProjectForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))
+                      }
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectDescription}</label>
+                    <textarea
+                      rows={3}
+                      value={editProjectForm.description}
+                      onChange={(event) =>
+                        setEditProjectForm((current) => ({ ...current, description: event.target.value }))
+                      }
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditProjectOpen(false);
+                        setEditingProject(null);
+                        setCreateProjectErrorMsg("");
+                      }}
+                      disabled={isPending}
+                      className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {t.cancel}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {locale === "zh" ? "保存" : "Save"}
                     </button>
                   </div>
                 </form>

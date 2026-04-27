@@ -29,8 +29,9 @@ export default async function DepartmentMembersPage({
   const myMembership = department.members.find((member) => member.userId === userId);
   const isHead = myMembership?.role === "HEAD";
   const isAssistant = myMembership?.role === "ASSISTANT";
+  const isDepartmentMember = Boolean(myMembership);
 
-  if (!isGlobalAdmin && !isHead && !isAssistant) {
+  if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
 
@@ -41,6 +42,7 @@ export default async function DepartmentMembersPage({
         locale={locale}
         currentUserId={userId}
         isHead={isHead}
+        canManageProjects={Boolean(isGlobalAdmin || isHead || isAssistant)}
         mode="members"
       />
     </div>
