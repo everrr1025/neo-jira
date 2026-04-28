@@ -11,10 +11,21 @@ import {
   ChevronDown,
   ArrowUp,
   ArrowDown,
+  Settings2,
+  Trash2,
+  X,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { bulkUpdateIssues, updateIssue } from "@/app/actions/issues";
+import {
+  createPlanFieldDefinition,
+  deletePlanFieldDefinition,
+  updatePlanIssueFieldValue,
+} from "@/app/actions/plans";
 import { useIssueListFilters } from "./issuelist/useIssueListFilters";
 import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
+import { DropdownField } from "./DropdownField";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -48,8 +59,31 @@ type Issue = {
   assignee?: { name: string | null } | null;
   reporter?: { name: string | null } | null;
   watchers?: { id: string }[];
+  planFieldValues?: PlanIssueFieldValue[];
   createdAt: Date | string;
   dueDate?: Date | string | null;
+};
+
+type PlanFieldType = "BOOLEAN" | "NUMBER" | "TEXT" | "LONG_TEXT" | "SELECT";
+
+type PlanFieldDefinition = {
+  id: string;
+  planId: string;
+  key: string;
+  name: string;
+  type: string;
+  required: boolean;
+  position: number;
+  optionsJson: string | null;
+};
+
+type PlanIssueFieldValue = {
+  id: string;
+  fieldDefinitionId: string;
+  valueBoolean: boolean | null;
+  valueNumber: number | null;
+  valueText: string | null;
+  valueOption: string | null;
 };
 
 type FilterOption = {
@@ -82,6 +116,8 @@ type ColumnConfig = {
 type StoredIssueListColumnPreferences = {
   visibleColumnIds?: ColumnId[];
   columnWidths?: Partial<Record<ColumnId, number>>;
+  visiblePlanFieldIds?: string[];
+  planFieldWidths?: Partial<Record<string, number>>;
 };
 
 type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
@@ -223,6 +259,9 @@ function ColumnVisibilityMenu({
   visibleColumnIds,
   onToggle,
   onReset,
+  planFields = [],
+  visiblePlanFieldIds = [],
+  onTogglePlanField,
 }: {
   buttonLabel: string;
   resetLabel: string;
@@ -230,6 +269,9 @@ function ColumnVisibilityMenu({
   visibleColumnIds: ColumnId[];
   onToggle: (columnId: ColumnId) => void;
   onReset: () => void;
+  planFields?: PlanFieldDefinition[];
+  visiblePlanFieldIds?: string[];
+  onTogglePlanField?: (fieldId: string) => void;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const visibleCount = visibleColumnIds.length;
@@ -274,6 +316,24 @@ function ColumnVisibilityMenu({
             </label>
           );
         })}
+        {planFields.length > 0 ? (
+          <div className="mt-1 border-t border-slate-100 pt-1">
+            {planFields.map((field) => (
+              <label
+                key={field.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={visiblePlanFieldIds.includes(field.id)}
+                  onChange={() => onTogglePlanField?.(field.id)}
+                  className="h-4 w-4"
+                />
+                <span className="truncate">{field.name}</span>
+              </label>
+            ))}
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onReset}
@@ -462,6 +522,97 @@ function InlineSelect({
   );
 }
 
+function getPlanFieldOptions(field: PlanFieldDefinition) {
+  if (!field.optionsJson) return [];
+
+  try {
+    const parsed = JSON.parse(field.optionsJson);
+    return Array.isArray(parsed) ? parsed.filter((option): option is string => typeof option === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function getFieldValueForDisplay(field: PlanFieldDefinition, value?: PlanIssueFieldValue) {
+  if (!value) return "";
+  if (field.type === "BOOLEAN") return value.valueBoolean ? "true" : "false";
+  if (field.type === "NUMBER") return value.valueNumber === null || value.valueNumber === undefined ? "" : String(value.valueNumber);
+  if (field.type === "SELECT") return value.valueOption || "";
+  return value.valueText || "";
+}
+
+function getDefaultPlanFieldWidth(field: PlanFieldDefinition) {
+  if (field.type === "TEXT" || field.type === "LONG_TEXT") return 240;
+  return 150;
+}
+
+function PlanFieldDraftInput({
+  field,
+  value,
+  multiline = false,
+  onCommit,
+}: {
+  field: PlanFieldDefinition;
+  value: string;
+  multiline?: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const isFocusedRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setDraft(value);
+    }
+  }, [value]);
+
+  useEffect(() => {
+    if (!multiline || !textareaRef.current) return;
+
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+  }, [draft, multiline]);
+
+  const commitDraft = () => {
+    isFocusedRef.current = false;
+    if (draft !== value) {
+      onCommit(draft);
+    }
+  };
+
+  if (multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onFocus={() => {
+          isFocusedRef.current = true;
+        }}
+        onBlur={commitDraft}
+        onChange={(event) => setDraft(event.target.value)}
+        rows={1}
+        className="block w-full resize-none overflow-hidden rounded-md border border-transparent bg-transparent text-sm font-medium leading-5 text-slate-700 outline-none hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-1 focus:ring-blue-500"
+        aria-label={field.name}
+      />
+    );
+  }
+
+  return (
+    <input
+      type={field.type === "NUMBER" ? "number" : "text"}
+      value={draft}
+      onFocus={() => {
+        isFocusedRef.current = true;
+      }}
+      onBlur={commitDraft}
+      onChange={(event) => setDraft(event.target.value)}
+      className="h-8 w-full rounded-md border border-transparent bg-transparent text-sm font-medium text-slate-700 outline-none hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-1 focus:ring-blue-500"
+      aria-label={field.name}
+    />
+  );
+}
+
 export default function IssueList({
   initialIssues,
   totalIssues = 0,
@@ -474,7 +625,9 @@ export default function IssueList({
   currentUser,
   locale,
   lockedPlanId,
+  planFieldDefinitions = [],
   canManagePlans,
+  unframed = false,
 }: {
   initialIssues: Issue[];
   totalIssues?: number;
@@ -491,7 +644,9 @@ export default function IssueList({
   currentUser: { id: string } | null;
   locale: Locale;
   lockedPlanId?: string | null;
+  planFieldDefinitions?: PlanFieldDefinition[];
   canManagePlans: boolean;
+  unframed?: boolean;
 }) {
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
@@ -506,6 +661,30 @@ export default function IssueList({
   const bulkRemovePlanLabel = locale === "zh" ? "移出计划" : "Remove plan";
   const bulkAddToSprintLabel = locale === "zh" ? "加入迭代" : "Add to sprint";
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
+  const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
+  const configureFieldsLabel = locale === "zh" ? "配置扩展列" : "Configure fields";
+  const addFieldLabel = locale === "zh" ? "新增字段" : "Add field";
+  const fieldNameLabel = locale === "zh" ? "字段名称" : "Field name";
+  const fieldKeyLabel = locale === "zh" ? "字段标识" : "Field key";
+  const fieldTypeLabel = locale === "zh" ? "字段类型" : "Field type";
+  const fieldOptionsLabel = locale === "zh" ? "下拉选项" : "Select options";
+  const fieldOptionsPlaceholder = locale === "zh" ? "用逗号或者空格分隔" : "Separate with commas or spaces";
+  const noFieldsLabel = locale === "zh" ? "还没有配置扩展列" : "No custom fields yet";
+  const saveFailedLabel = locale === "zh" ? "保存失败" : "Save failed";
+  const deleteFieldLabel = locale === "zh" ? "删除字段" : "Delete field";
+  const closeLabel = locale === "zh" ? "关闭" : "Close";
+  const fieldTypeOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "BOOLEAN", label: locale === "zh" ? "是/否" : "Yes / no" },
+      { value: "NUMBER", label: locale === "zh" ? "数字" : "Number" },
+      { value: "TEXT", label: locale === "zh" ? "文本" : "Text" },
+      { value: "LONG_TEXT", label: locale === "zh" ? "多行文本" : "Long text" },
+      { value: "SELECT", label: locale === "zh" ? "下拉选择" : "Select" },
+    ],
+    [locale]
+  );
+  const fullscreenLabel = locale === "zh" ? "全屏显示" : "Fullscreen";
+  const exitFullscreenLabel = locale === "zh" ? "退出全屏" : "Exit fullscreen";
   const workflowByProject = useMemo(
     () =>
       new Map(
@@ -535,6 +714,28 @@ export default function IssueList({
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
+  const [planFields, setPlanFields] = useState(planFieldDefinitions);
+  const [visiblePlanFieldIds, setVisiblePlanFieldIds] = useState<string[]>(() =>
+    planFieldDefinitions.map((field) => field.id)
+  );
+  const [planFieldWidths, setPlanFieldWidths] = useState<Record<string, number>>(() =>
+    planFieldDefinitions.reduce(
+      (acc, field) => {
+        acc[field.id] = getDefaultPlanFieldWidth(field);
+        return acc;
+      },
+      {} as Record<string, number>
+    )
+  );
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false);
+  const [fieldForm, setFieldForm] = useState({
+    name: "",
+    key: "",
+    type: "BOOLEAN" as PlanFieldType,
+    optionsText: "",
+  });
+  const [fieldManagerError, setFieldManagerError] = useState<string | null>(null);
 
   const [, startTransition] = useTransition();
   const columnStorageKey = useMemo(
@@ -657,6 +858,7 @@ export default function IssueList({
   };
 
   const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+  const planFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, colIndex: number) => {
@@ -696,9 +898,58 @@ export default function IssueList({
     [columns]
   );
 
+  const handlePlanFieldResizeStart = useCallback(
+    (e: React.MouseEvent, field: PlanFieldDefinition) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startWidth = planFieldWidths[field.id] || getDefaultPlanFieldWidth(field);
+      planFieldResizingRef.current = { fieldId: field.id, startX: e.clientX, startWidth };
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const resizeState = planFieldResizingRef.current;
+        if (!resizeState) return;
+
+        const delta = ev.clientX - resizeState.startX;
+        const newWidth = Math.max(80, resizeState.startWidth + delta);
+        setPlanFieldWidths((prev) => ({ ...prev, [resizeState.fieldId]: newWidth }));
+      };
+
+      const onMouseUp = () => {
+        planFieldResizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [planFieldWidths]
+  );
+
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
+
+  useEffect(() => {
+    setPlanFields(planFieldDefinitions);
+    setVisiblePlanFieldIds(planFieldDefinitions.map((field) => field.id));
+    setPlanFieldWidths(
+      planFieldDefinitions.reduce(
+        (acc, field) => {
+          acc[field.id] = getDefaultPlanFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
+    // Only reset local field edits when navigating to another plan.
+    // Server props for this array can be referentially new during refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedPlanId]);
 
   useEffect(() => {
     const storedPreferences = readStoredIssueListColumnPreferences(columnStorageKey);
@@ -714,11 +965,40 @@ export default function IssueList({
       },
       {} as Record<ColumnId, number>
     );
+    const currentPlanFieldIds = new Set(planFields.map((field) => field.id));
+    const validVisiblePlanFieldIds = storedPreferences?.visiblePlanFieldIds?.filter((fieldId) =>
+      currentPlanFieldIds.has(fieldId)
+    );
+    const validPlanFieldWidths = Object.entries(storedPreferences?.planFieldWidths || {}).reduce(
+      (acc, [fieldId, width]) => {
+        if (currentPlanFieldIds.has(fieldId) && typeof width === "number" && width >= 80) {
+          acc[fieldId] = width;
+        }
+        return acc;
+      },
+      {} as Record<string, number>
+    );
 
     setVisibleColumnIds(validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds);
     setColumnWidths({ ...defaultColumnWidths, ...validColumnWidths });
+    const allPlanFieldIds = planFields.map((field) => field.id);
+    const mergedVisiblePlanFieldIds =
+      validVisiblePlanFieldIds && validVisiblePlanFieldIds.length > 0
+        ? [...validVisiblePlanFieldIds, ...allPlanFieldIds.filter((fieldId) => !validVisiblePlanFieldIds.includes(fieldId))]
+        : allPlanFieldIds;
+
+    setVisiblePlanFieldIds(mergedVisiblePlanFieldIds);
+    setPlanFieldWidths(
+      planFields.reduce(
+        (acc, field) => {
+          acc[field.id] = validPlanFieldWidths[field.id] ?? getDefaultPlanFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
     setHasLoadedColumnPreferences(true);
-  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds]);
+  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds, planFields]);
 
   useEffect(() => {
     if (!hasLoadedColumnPreferences || typeof window === "undefined") return;
@@ -728,9 +1008,11 @@ export default function IssueList({
       JSON.stringify({
         visibleColumnIds,
         columnWidths,
+        visiblePlanFieldIds,
+        planFieldWidths,
       } satisfies StoredIssueListColumnPreferences)
     );
-  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, visibleColumnIds]);
+  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, planFieldWidths, visibleColumnIds, visiblePlanFieldIds]);
 
   useEffect(() => {
     const availableIssueIds = new Set(issues.map((issue) => issue.id));
@@ -921,6 +1203,121 @@ export default function IssueList({
     });
   };
 
+  const handlePlanFieldValueUpdate = (
+    issueId: string,
+    field: PlanFieldDefinition,
+    value: string | number | boolean | null
+  ) => {
+    setIssues((prev) =>
+      prev.map((issue) => {
+        if (issue.id !== issueId) return issue;
+
+        const valueData: PlanIssueFieldValue = {
+          id: issue.planFieldValues?.find((item) => item.fieldDefinitionId === field.id)?.id || `draft-${field.id}`,
+          fieldDefinitionId: field.id,
+          valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
+          valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
+          valueText: field.type === "TEXT" ? (typeof value === "string" ? value : value === null ? null : String(value)) : null,
+          valueOption: field.type === "SELECT" ? (typeof value === "string" && value ? value : null) : null,
+        };
+
+        const existingValues = issue.planFieldValues || [];
+        const nextValues = existingValues.some((item) => item.fieldDefinitionId === field.id)
+          ? existingValues.map((item) => (item.fieldDefinitionId === field.id ? valueData : item))
+          : [...existingValues, valueData];
+
+        return { ...issue, planFieldValues: nextValues };
+      })
+    );
+
+    if (!lockedPlanId) return;
+
+    startTransition(() => {
+      updatePlanIssueFieldValue({
+        planId: lockedPlanId,
+        issueId,
+        fieldDefinitionId: field.id,
+        value,
+      });
+    });
+  };
+
+  const handleCreatePlanField = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!lockedPlanId) return;
+
+    setFieldManagerError(null);
+    startTransition(async () => {
+      const result = await createPlanFieldDefinition({
+        planId: lockedPlanId,
+        name: fieldForm.name,
+        key: fieldForm.key,
+        type: fieldForm.type,
+        optionsText: fieldForm.optionsText,
+      });
+
+      if (!result.success || !result.field) {
+        setFieldManagerError(result.error || saveFailedLabel);
+        return;
+      }
+
+      setPlanFields((current) => [...current, result.field as PlanFieldDefinition].sort((a, b) => a.position - b.position));
+      setFieldForm({ name: "", key: "", type: "BOOLEAN", optionsText: "" });
+    });
+  };
+
+  const handleDeletePlanField = (field: PlanFieldDefinition) => {
+    if (!lockedPlanId) return;
+    const confirmed = window.confirm(locale === "zh" ? `删除扩展列「${field.name}」？` : `Delete custom field "${field.name}"?`);
+    if (!confirmed) return;
+
+    setFieldManagerError(null);
+    startTransition(async () => {
+      const result = await deletePlanFieldDefinition({ planId: lockedPlanId, id: field.id });
+      if (!result.success) {
+        setFieldManagerError(result.error || saveFailedLabel);
+        return;
+      }
+
+      setPlanFields((current) => current.filter((item) => item.id !== field.id));
+      setIssues((current) =>
+        current.map((issue) => ({
+          ...issue,
+          planFieldValues: issue.planFieldValues?.filter((value) => value.fieldDefinitionId !== field.id) || [],
+        }))
+      );
+    });
+  };
+
+  const planFieldSummary = useMemo(
+    () =>
+      planFields
+        .map((field) => {
+          if (field.type === "BOOLEAN") {
+            const count = issues.filter((issue) =>
+              issue.planFieldValues?.some((value) => value.fieldDefinitionId === field.id && value.valueBoolean)
+            ).length;
+            return { id: field.id, label: field.name, value: count };
+          }
+
+          if (field.type === "NUMBER") {
+            const total = issues.reduce((sum, issue) => {
+              const value = issue.planFieldValues?.find((item) => item.fieldDefinitionId === field.id)?.valueNumber;
+              return sum + (typeof value === "number" ? value : 0);
+            }, 0);
+            return { id: field.id, label: field.name, value: total };
+          }
+
+          return null;
+        })
+        .filter((item): item is { id: string; label: string; value: number } => Boolean(item)),
+    [issues, planFields]
+  );
+  const visiblePlanFields = useMemo(
+    () => planFields.filter((field) => visiblePlanFieldIds.includes(field.id)),
+    [planFields, visiblePlanFieldIds]
+  );
+
   const paginatedIssueIds = paginatedIssues.map((issue) => issue.id);
   const allCurrentPageSelected =
     paginatedIssueIds.length > 0 && paginatedIssueIds.every((issueId) => selectedIssueIds.includes(issueId));
@@ -1019,14 +1416,34 @@ export default function IssueList({
     });
   };
 
+  const handleTogglePlanFieldVisibility = (fieldId: string) => {
+    setVisiblePlanFieldIds((current) =>
+      current.includes(fieldId) ? current.filter((id) => id !== fieldId) : [...current, fieldId]
+    );
+  };
+
   const handleResetColumns = () => {
     setVisibleColumnIds(defaultVisibleColumnIds);
     setColumnWidths(defaultColumnWidths);
+    setVisiblePlanFieldIds(planFields.map((field) => field.id));
+    setPlanFieldWidths(
+      planFields.reduce(
+        (acc, field) => {
+          acc[field.id] = getDefaultPlanFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
   };
 
   return (
-    <div className="flex flex-col flex-1 space-y-4 min-h-0">
-      <div className="bg-white p-3 rounded-lg border shadow-sm sticky top-0 z-20">
+    <div
+      className={`flex flex-col flex-1 space-y-4 min-h-0 ${
+        isFullscreen ? "fixed inset-0 z-40 bg-white p-4" : ""
+      }`}
+    >
+      <div className={`bg-white p-3 sticky top-0 z-20 ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         <div className="flex flex-wrap items-center gap-2 w-full">
           <div className="flex items-center gap-2 w-full lg:w-80 relative">
             <Search size={16} className="absolute left-3 text-slate-400" />
@@ -1147,8 +1564,49 @@ export default function IssueList({
             visibleColumnIds={visibleColumnIds}
             onToggle={handleToggleColumnVisibility}
             onReset={handleResetColumns}
+            planFields={planFields}
+            visiblePlanFieldIds={visiblePlanFieldIds}
+            onTogglePlanField={handleTogglePlanFieldVisibility}
           />
+
+          {lockedPlanId && canManagePlans ? (
+            <button
+              type="button"
+              onClick={() => setIsFieldManagerOpen(true)}
+              className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+            >
+              <Settings2 size={14} className="text-slate-400" />
+              <span>{configureFieldsLabel}</span>
+            </button>
+          ) : null}
+
+          {lockedPlanId ? (
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((current) => !current)}
+              className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+              title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+            >
+              {isFullscreen ? <Minimize2 size={14} className="text-slate-400" /> : <Maximize2 size={14} className="text-slate-400" />}
+              <span>{isFullscreen ? exitFullscreenLabel : fullscreenLabel}</span>
+            </button>
+          ) : null}
         </div>
+
+        {lockedPlanId && planFieldSummary.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase text-slate-400">{planFieldsLabel}</span>
+            {planFieldSummary.map((item) => (
+              <span
+                key={item.id}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600"
+              >
+                <span>{item.label}</span>
+                <span className="font-semibold text-slate-900">{item.value}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {selectedIssueIds.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
@@ -1193,7 +1651,7 @@ export default function IssueList({
         ) : null}
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden flex-1 flex flex-col">
+      <div className={`bg-white overflow-hidden flex-1 flex flex-col ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
@@ -1269,6 +1727,23 @@ export default function IssueList({
                     </th>
                   );
                 })}
+                {visiblePlanFields.map((field) => (
+                  <th
+                    key={field.id}
+                    className="px-5 py-4 overflow-hidden relative select-none"
+                    style={{ width: `${planFieldWidths[field.id] || getDefaultPlanFieldWidth(field)}px` }}
+                  >
+                    <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
+                      <span className="truncate">{field.name}</span>
+                      {field.required ? <span className="text-red-500">*</span> : null}
+                    </span>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                      onMouseDown={(event) => handlePlanFieldResizeStart(event, field)}
+                      draggable={false}
+                    />
+                  </th>
+                ))}
               </tr>
             </thead>
 
@@ -1459,12 +1934,88 @@ export default function IssueList({
 
                     return <td key={col.id}></td>;
                   })}
+                  {visiblePlanFields.map((field) => {
+                    const fieldValue = issue.planFieldValues?.find((value) => value.fieldDefinitionId === field.id);
+                    const displayValue = getFieldValueForDisplay(field, fieldValue);
+
+                    if (field.type === "BOOLEAN") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <input
+                            type="checkbox"
+                            checked={fieldValue?.valueBoolean || false}
+                            onChange={(event) => handlePlanFieldValueUpdate(issue.id, field, event.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            aria-label={field.name}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "NUMBER") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <PlanFieldDraftInput
+                            field={field}
+                            value={displayValue}
+                            onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "SELECT") {
+                      const options = [
+                        { value: "", label: locale === "zh" ? "未选择" : "Not set" },
+                        ...getPlanFieldOptions(field).map((option) => ({ value: option, label: option })),
+                      ];
+
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <InlineSelect
+                            value={displayValue}
+                            options={options}
+                            className="relative block w-full"
+                            onChange={(value) => handlePlanFieldValueUpdate(issue.id, field, value || null)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "LONG_TEXT") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5 align-top">
+                          <PlanFieldDraftInput
+                            field={field}
+                            value={displayValue}
+                            multiline
+                            onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
+                          />
+                        </td>
+                      );
+                    }
+
+                    return (
+                      <td key={field.id} className="px-5 py-3.5">
+                        <PlanFieldDraftInput
+                          field={field}
+                          value={displayValue}
+                          onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
 
               {(totalIssues || issues.length) === 0 && (
                 <tr>
-                  <td colSpan={columns.length + 1} className="px-5 py-16 text-center text-slate-500">
+                  <td colSpan={columns.length + visiblePlanFields.length + 1} className="px-5 py-16 text-center text-slate-500">
                     <p className="font-medium text-base mb-1">{translations.issueList.noMatchTitle}</p>
                     <p className="text-sm">{translations.issueList.noMatchDesc}</p>
                   </td>
@@ -1565,6 +2116,114 @@ export default function IssueList({
         onClose={() => setBulkAction(null)}
         onSubmit={handleBulkSubmit}
       />
+
+      {isFieldManagerOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-900">{configureFieldsLabel}</h3>
+              <button
+                type="button"
+                onClick={() => setIsFieldManagerOpen(false)}
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                aria-label={closeLabel}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto p-5">
+              <div className="space-y-2">
+                {planFields.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    {noFieldsLabel}
+                  </div>
+                ) : (
+                  planFields.map((field) => (
+                    <div
+                      key={field.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-slate-800">{field.name}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
+                            {field.type}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-slate-400">{field.key}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePlanField(field)}
+                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        aria-label={deleteFieldLabel}
+                        title={deleteFieldLabel}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <form onSubmit={handleCreatePlanField} className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium text-slate-600">{fieldNameLabel}</span>
+                    <input
+                      type="text"
+                      value={fieldForm.name}
+                      onChange={(event) => setFieldForm((current) => ({ ...current, name: event.target.value }))}
+                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
+                      required
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium text-slate-600">{fieldKeyLabel}</span>
+                    <input
+                      type="text"
+                      value={fieldForm.key}
+                      onChange={(event) => setFieldForm((current) => ({ ...current, key: event.target.value }))}
+                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
+                      placeholder="api_count"
+                      required
+                    />
+                  </label>
+                  <DropdownField
+                    id="plan-field-type"
+                    label={fieldTypeLabel}
+                    value={fieldForm.type}
+                    onChange={(value) => setFieldForm((current) => ({ ...current, type: value as PlanFieldType }))}
+                    options={fieldTypeOptions}
+                  />
+                  {fieldForm.type === "SELECT" ? (
+                    <label className="space-y-1 text-sm">
+                      <span className="font-medium text-slate-600">{fieldOptionsLabel}</span>
+                      <input
+                        type="text"
+                        value={fieldForm.optionsText}
+                        onChange={(event) => setFieldForm((current) => ({ ...current, optionsText: event.target.value }))}
+                        className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
+                        placeholder={fieldOptionsPlaceholder}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+                {fieldManagerError ? <p className="mt-3 text-sm text-red-600">{fieldManagerError}</p> : null}
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="submit"
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+                  >
+                    <span>{addFieldLabel}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

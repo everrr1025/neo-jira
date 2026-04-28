@@ -100,7 +100,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     plan.id
   );
 
-  const [issues, totalIssues, basicPlanIssues, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
+  const [issues, totalIssues, basicPlanIssues, planFieldDefinitions, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
     prisma.issue.findMany({
       where: parsedWhere,
       include: {
@@ -116,6 +116,17 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         watchers: {
           select: { id: true },
         },
+        planFieldValues: {
+          where: { planId: plan.id },
+          select: {
+            id: true,
+            fieldDefinitionId: true,
+            valueBoolean: true,
+            valueNumber: true,
+            valueText: true,
+            valueOption: true,
+          },
+        },
       },
       orderBy,
       skip,
@@ -129,6 +140,10 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         planId: plan.id,
       },
       select: { status: true },
+    }),
+    prisma.planFieldDefinition.findMany({
+      where: { planId: plan.id },
+      orderBy: { position: "asc" },
     }),
     prisma.user.findMany({
       where: buildProjectUsersWhere(activeProject.id),
@@ -222,22 +237,22 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-5 shadow-sm">
-        <IssueList
-          initialIssues={issues}
-          totalIssues={totalIssues}
-          page={page}
-          pageSize={pageSize}
-          users={users}
-          plans={plans}
-          iterations={iterations}
-          workflowProjects={workflowProjects}
-          currentUser={currentUser}
-          locale={locale}
-          lockedPlanId={plan.id}
-          canManagePlans={canManagePlans}
-        />
-      </div>
+      <IssueList
+        initialIssues={issues}
+        totalIssues={totalIssues}
+        page={page}
+        pageSize={pageSize}
+        users={users}
+        plans={plans}
+        iterations={iterations}
+        workflowProjects={workflowProjects}
+        currentUser={currentUser}
+        locale={locale}
+        lockedPlanId={plan.id}
+        planFieldDefinitions={planFieldDefinitions}
+        canManagePlans={canManagePlans}
+        unframed
+      />
     </div>
   );
 }

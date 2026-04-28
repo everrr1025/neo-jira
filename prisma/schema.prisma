@@ -79,6 +79,8 @@ model Plan {
   ownerId     String
   owner       User     @relation("PlanOwner", fields: [ownerId], references: [id])
   issues      Issue[]
+  fieldDefinitions PlanFieldDefinition[]
+  issueFieldValues PlanIssueFieldValue[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -128,12 +130,52 @@ model Issue {
   comments      Comment[]
   attachments   Attachment[]
   watchers      User[]   @relation("IssueWatchers")
+  planFieldValues PlanIssueFieldValue[]
   dueDate       DateTime?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([planId])
+}
+
+model PlanFieldDefinition {
+  id          String   @id @default(cuid())
+  planId      String
+  plan        Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  type        String
+  required    Boolean  @default(false)
+  position    Int
+  optionsJson String?
+  values      PlanIssueFieldValue[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([planId, key])
+  @@unique([planId, position])
+  @@index([planId, position])
+}
+
+model PlanIssueFieldValue {
+  id                String              @id @default(cuid())
+  planId            String
+  plan              Plan                @relation(fields: [planId], references: [id], onDelete: Cascade)
+  issueId           String
+  issue             Issue               @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  fieldDefinitionId String
+  fieldDefinition   PlanFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+  valueBoolean      Boolean?
+  valueNumber       Float?
+  valueText         String?
+  valueOption       String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([planId, issueId, fieldDefinitionId])
+  @@index([planId, fieldDefinitionId])
+  @@index([issueId])
 }
 
 model Comment {

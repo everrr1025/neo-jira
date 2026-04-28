@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
 
 type DropdownOption = {
@@ -21,12 +21,35 @@ type DropdownFieldProps = {
 export function DropdownField({ id, label, value, onChange, options, className = "", hideLabel = false }: DropdownFieldProps) {
   const selectedOption = options.find((item) => item.value === value);
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
   const [openUpward, setOpenUpward] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+  }>({ left: 0, width: 0 });
+
+  const updateMenuPosition = useCallback(() => {
+    const rect = summaryRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const nextOpenUpward = spaceBelow < 280;
+    setOpenUpward(nextOpenUpward);
+    setMenuPosition(
+      nextOpenUpward
+        ? { bottom: window.innerHeight - rect.top + 4, left: rect.left, width: rect.width }
+        : { top: rect.bottom + 4, left: rect.left, width: rect.width }
+    );
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
         detailsRef.current.open = false;
+        setIsOpen(false);
       }
     };
 
@@ -34,12 +57,21 @@ export function DropdownField({ id, label, value, onChange, options, className =
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
+
   const handleToggle = (e: React.ToggleEvent<HTMLDetailsElement>) => {
-    if (e.currentTarget.open) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 280);
-    }
+    const open = e.currentTarget.open;
+    setIsOpen(open);
+    if (open) updateMenuPosition();
   };
 
   const handleSelect = (nextValue: string) => {
@@ -47,6 +79,7 @@ export function DropdownField({ id, label, value, onChange, options, className =
     if (detailsRef.current) {
       detailsRef.current.open = false;
     }
+    setIsOpen(false);
   };
 
   return (
@@ -61,6 +94,7 @@ export function DropdownField({ id, label, value, onChange, options, className =
       >
         <summary
           id={id}
+          ref={summaryRef}
           className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
         >
           <span className={`min-w-0 flex-1 truncate ${selectedOption ? "text-slate-700" : "text-slate-400"}`}>
@@ -68,25 +102,32 @@ export function DropdownField({ id, label, value, onChange, options, className =
           </span>
           <ChevronDown size={14} className="shrink-0 text-slate-500" />
         </summary>
-        <div
-          className={`absolute left-0 z-40 max-h-64 min-w-full w-full max-w-full space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg ${
-            openUpward ? "bottom-full mb-1" : "top-full mt-1"
-          }`}
-        >
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option.value || "__empty"}
-              onClick={() => handleSelect(option.value)}
-              className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors flex items-start justify-between gap-3 ${
-                option.value === value ? "bg-white text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <span className="min-w-0 break-words whitespace-normal">{option.label}</span>
-              {option.value === value && <Check size={14} className="text-blue-600 shrink-0" />}
-            </button>
-          ))}
-        </div>
+        {isOpen ? (
+          <div
+            className="fixed z-[70] max-h-64 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg"
+            style={{
+              top: menuPosition.top,
+              bottom: menuPosition.bottom,
+              left: menuPosition.left,
+              width: menuPosition.width,
+            }}
+            data-open-upward={openUpward}
+          >
+            {options.map((option) => (
+              <button
+                type="button"
+                key={option.value || "__empty"}
+                onClick={() => handleSelect(option.value)}
+                className={`flex w-full items-start justify-between gap-3 rounded px-2 py-1.5 text-left text-sm transition-colors ${
+                  option.value === value ? "bg-white font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className="min-w-0 break-words whitespace-normal">{option.label}</span>
+                {option.value === value && <Check size={14} className="shrink-0 text-blue-600" />}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </details>
     </div>
   );
