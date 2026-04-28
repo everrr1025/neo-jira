@@ -575,7 +575,7 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
   }
 }
 
-export async function deleteProject(projectId: string) {
+export async function deleteProject(projectId: string, confirmName?: string) {
   try {
     await checkGlobalAdmin();
 
@@ -585,10 +585,13 @@ export async function deleteProject(projectId: string) {
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!project) {
       return { success: false, error: "Project not found." };
+    }
+    if ((confirmName || "").trim() !== project.name) {
+      return { success: false, error: "Project name confirmation does not match." };
     }
 
     await prisma.$transaction(async (tx) => {

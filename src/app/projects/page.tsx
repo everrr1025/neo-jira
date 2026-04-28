@@ -8,6 +8,7 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
+import ProjectNavIcon from "@/components/ProjectNavIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -120,8 +121,8 @@ export default async function ProjectsPage() {
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 font-bold text-white shadow shadow-blue-500/50">
-                        {project.name.charAt(0).toUpperCase()}
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow shadow-blue-500/50">
+                        <ProjectNavIcon className="h-4 w-4" />
                       </div>
                       <div className="ml-4 flex flex-col">
                         <div className="text-sm font-medium text-slate-900 group-hover:text-blue-600 cursor-pointer">

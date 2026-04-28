@@ -57,9 +57,11 @@ const TEXT = {
     memberCount: "members",
     projectCount: "projects",
     deleteWarning: "Delete this department? Members will be removed and linked projects will be cleared.",
+    typeToConfirm: "Please type the exact department name to confirm:",
     createFailed: "Failed to create department",
     updateFailed: "Failed to update department",
     deleteFailed: "Failed to delete department",
+    confirmNameMismatch: "Department name confirmation does not match.",
     required: "Department name and key are required.",
     keyExists: "Department key already exists.",
     nameExists: "Department name already exists.",
@@ -92,9 +94,11 @@ const TEXT = {
     memberCount: "名成员",
     projectCount: "个项目",
     deleteWarning: "确定删除该部门吗？部门成员会被移除，关联项目会取消部门归属。",
+    typeToConfirm: "请输入准确的部门名称以确认删除：",
     createFailed: "创建部门失败",
     updateFailed: "更新部门失败",
     deleteFailed: "删除部门失败",
+    confirmNameMismatch: "输入的部门名称不正确。",
     required: "部门名称和标识不能为空。",
     keyExists: "部门标识已存在。",
     nameExists: "部门名称已存在。",
@@ -117,6 +121,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<DepartmentRecord | null>(null);
   const [deletingDepartment, setDeletingDepartment] = useState<DepartmentRecord | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [departmentForm, setDepartmentForm] = useState({ name: "", key: "", description: "" });
 
   const translateDepartmentError = (message: string | undefined, fallback: string) => {
@@ -125,6 +130,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
     if (message.includes("Department key already exists")) return t.keyExists;
     if (message.includes("Department name already exists")) return t.nameExists;
     if (message.includes("Department not found")) return t.notFound;
+    if (message.includes("Department name confirmation does not match")) return t.confirmNameMismatch;
     if (message.includes("Selected head already belongs to another department")) return t.headConflict;
     return message;
   };
@@ -186,7 +192,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
     if (!deletingDepartment) return;
     clearDeleteError();
     startTransition(async () => {
-      const res = await deleteDepartment(deletingDepartment.id);
+      const res = await deleteDepartment(deletingDepartment.id, deleteConfirmText);
       if (!res.success) {
         setDeleteErrorMsg(translateDepartmentError(res.error, t.deleteFailed));
         return;
@@ -194,6 +200,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
 
       clearListError();
       setDeletingDepartment(null);
+      setDeleteConfirmText("");
       router.refresh();
     });
   };
@@ -294,6 +301,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                           onClick={() => {
                             clearListError();
                             clearDeleteError();
+                            setDeleteConfirmText("");
                             setDeletingDepartment(department);
                           }}
                           disabled={isPending}
@@ -408,6 +416,16 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
               <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
                 {deletingDepartment.name} ({deletingDepartment.key})
               </div>
+              <div className="mt-4">
+                <label className="mb-2 block text-sm font-medium text-slate-700">{t.typeToConfirm}</label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(event) => setDeleteConfirmText(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
+                  placeholder={deletingDepartment.name}
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
               <button
@@ -415,6 +433,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 onClick={() => {
                   clearDeleteError();
                   setDeletingDepartment(null);
+                  setDeleteConfirmText("");
                 }}
                 disabled={isPending}
                 className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
@@ -423,7 +442,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
               </button>
               <button
                 type="button"
-                disabled={isPending}
+                disabled={isPending || deleteConfirmText !== deletingDepartment.name}
                 onClick={handleDelete}
                 className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
               >

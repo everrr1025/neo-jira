@@ -1158,8 +1158,8 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
                 type="button"
                 disabled={isDeletingProject || deleteConfirmText !== deletingProject.name}
                 onClick={() => {
-                  startDeleteTransition(async () => {
-                    const res = await deleteProject(deletingProject.id);
+                    startDeleteTransition(async () => {
+                    const res = await deleteProject(deletingProject.id, deleteConfirmText);
                     if (res.success) {
                       setDeletingProject(null);
                       setDeleteConfirmText("");

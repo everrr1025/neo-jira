@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ChevronLeft, Building2 } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
+import ProjectNavIcon from "@/components/ProjectNavIcon";
 import { AvatarPicker } from "./AvatarPicker";
 import { SidebarUserMenu } from "./SidebarUserMenu";
 
@@ -65,9 +66,7 @@ export function SidebarClient({
           id: "projects",
           href: departmentContext ? `/departments/${departmentContext.id}/projects` : "/projects",
           icon: (
-            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
+            <ProjectNavIcon className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" />
           ),
           label: translations.sidebar.projects,
         },
@@ -149,7 +148,7 @@ export function SidebarClient({
         </svg>
       </button>
 
-      <div className={`h-20 w-full p-6 ${collapsed ? "justify-center px-0" : "flex items-center gap-3"}`}>
+      <div className={`flex h-20 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6"}`}>
         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 font-bold text-white shadow shadow-blue-500/50">
           {inProjectContext && activeProject ? activeProject.name.charAt(0).toUpperCase() : "N"}
         </div>

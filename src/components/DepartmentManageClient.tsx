@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, Crown, FolderGit2, Loader2, Pencil, PencilRuler, Plus, Shield, Trash2, Users, X } from "lucide-react";
+import { Bell, Building2, Crown, FolderGit2, Loader2, Pencil, Plus, Shield, Trash2, Users, X } from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -11,6 +11,7 @@ import {
   setDepartmentMemberRole,
   updateDepartmentProject,
 } from "@/app/actions/departments";
+import ProjectNavIcon from "@/components/ProjectNavIcon";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
 
@@ -69,6 +70,8 @@ const TEXT = {
     next: "Next",
     departmentDescription: "Department description",
     deleteWarning: "Delete this project? All related project data will be removed.",
+    typeToConfirm: "Please type the exact project name to confirm:",
+    deleteNameMismatch: "Project name confirmation does not match.",
     unassignedOwner: "Unassigned",
   },
   zh: {
@@ -80,7 +83,7 @@ const TEXT = {
     projects: "项目",
     issues: "问题",
     announcements: "通知",
-    noDescription: "暂无描述。",
+    noDescription: "暂无描述",
     noAnnouncements: "暂无部门通知。",
     noMembers: "暂无部门成员。",
     noProjects: "该部门暂未创建项目。",
@@ -124,6 +127,8 @@ const TEXT = {
     next: "下一页",
     departmentDescription: "部门描述",
     deleteWarning: "确定删除该项目吗？该项目的所有关联数据都会被删除。",
+    typeToConfirm: "请输入准确的项目名称以确认删除：",
+    deleteNameMismatch: "输入的项目名称不正确。",
     unassignedOwner: "未指派",
   },
 } as const;
@@ -164,6 +169,7 @@ export default function DepartmentManageClient({
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState<DepartmentWorkspaceProject | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [editingProject, setEditingProject] = useState<DepartmentWorkspaceProject | null>(null);
   const [memberPage, setMemberPage] = useState(1);
   const [newProject, setNewProject] = useState({
@@ -217,6 +223,7 @@ export default function DepartmentManageClient({
     if (message.includes("Selected project members must belong to this department")) return t.projectMembersScope;
     if (message.includes("Project owner must be selected from project members")) return t.projectOwnerRequired;
     if (message.includes("Project not found")) return t.projectNotFound;
+    if (message.includes("Project name confirmation does not match")) return t.deleteNameMismatch;
     return message;
   };
 
@@ -261,12 +268,13 @@ export default function DepartmentManageClient({
     if (!deletingProject) return;
     setDeleteErrorMsg("");
     startTransition(async () => {
-      const res = await deleteDepartmentProject(department.id, deletingProject.id);
+      const res = await deleteDepartmentProject(department.id, deletingProject.id, deleteConfirmText);
       if (!res.success) {
         setDeleteErrorMsg(translateError(res.error, t.projectDeleteFailed));
         return;
       }
       setDeletingProject(null);
+      setDeleteConfirmText("");
       router.refresh();
     });
   };
@@ -298,10 +306,7 @@ export default function DepartmentManageClient({
                 <Building2 size={22} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {t.departmentDescription}
-                </p>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
+                <p className="max-w-3xl text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
               </div>
             </div>
             <div className="rounded-xl bg-slate-50 px-5 py-4">
@@ -402,9 +407,8 @@ export default function DepartmentManageClient({
 
       {mode === "members" ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Users size={18} className="text-slate-400" />
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.members}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-800">{t.members}</h2>
           </div>
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <table className="w-full text-left text-sm">
@@ -452,11 +456,9 @@ export default function DepartmentManageClient({
                                 <Link
                                   key={project.id}
                                   href={`/projects/select?projectId=${project.id}`}
-                                  className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
                                 >
-                                  <FolderGit2 size={12} />
                                   <span>{project.name}</span>
-                                  <span className="font-mono text-[11px] text-emerald-800/80">{project.key}</span>
                                 </Link>
                               ))
                             )}
@@ -523,11 +525,8 @@ export default function DepartmentManageClient({
 
       {mode === "projects" ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <FolderGit2 size={18} className="text-slate-400" />
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
-          </div>
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
             {canManageProjects ? (
               <button
                 type="button"
@@ -550,13 +549,13 @@ export default function DepartmentManageClient({
               <table className="w-full text-left text-sm">
                 <thead className="border-b bg-slate-50 text-xs font-semibold uppercase text-slate-500">
                   <tr>
-                    <th className="px-5 py-4">{t.projectName}</th>
-                    <th className="px-5 py-4">{t.key}</th>
-                    <th className="px-5 py-4">{t.description}</th>
-                    <th className="px-5 py-4">{t.ownerLabel}</th>
-                    <th className="px-5 py-4">{t.members}</th>
-                    <th className="px-5 py-4">{t.createdAt}</th>
-                    <th className="w-56 px-5 py-4">{t.actions}</th>
+                    <th className="w-[24%] px-5 py-4">{t.projectName}</th>
+                    <th className="w-24 px-5 py-4">{t.key}</th>
+                    <th className="w-[18%] px-5 py-4">{t.description}</th>
+                    <th className="w-28 px-5 py-4">{t.ownerLabel}</th>
+                    <th className="w-24 px-5 py-4">{t.members}</th>
+                    <th className="w-32 px-5 py-4">{t.createdAt}</th>
+                    <th className="w-64 px-5 py-4">{t.actions}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -565,7 +564,7 @@ export default function DepartmentManageClient({
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                            <PencilRuler size={18} />
+                            <ProjectNavIcon className="h-[18px] w-[18px]" />
                           </div>
                           <Link
                             href={`/projects/select?projectId=${project.id}`}
@@ -597,20 +596,20 @@ export default function DepartmentManageClient({
                         {new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                       </td>
                       <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
                           <a
                             href={`/projects/select?projectId=${project.id}`}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                            className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                           >
                             <Building2 size={12} />
-                            {t.viewProject}
+                            <span className="whitespace-nowrap">{t.viewProject}</span>
                           </a>
                           <Link
                             href={`/departments/${department.id}/projects/${project.id}/members`}
-                            className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                            className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                           >
                             <Users size={12} />
-                            {t.memberButton}
+                            <span className="whitespace-nowrap">{t.memberButton}</span>
                           </Link>
                           {canManageProjects ? (
                             <>
@@ -627,22 +626,23 @@ export default function DepartmentManageClient({
                                   setIsEditProjectOpen(true);
                                 }}
                                 disabled={isPending}
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
                               >
                                 <Pencil size={12} />
-                                {locale === "zh" ? "编辑" : "Edit"}
+                                <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
                               </button>
                               <button
                                 type="button"
                                 onClick={() => {
                                   setDeleteErrorMsg("");
+                                  setDeleteConfirmText("");
                                   setDeletingProject(project);
                                 }}
                                 disabled={isPending}
-                                className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
                               >
                                 <Trash2 size={12} />
-                                {t.deleteProject}
+                                <span className="whitespace-nowrap">{t.deleteProject}</span>
                               </button>
                             </>
                           ) : null}
@@ -843,6 +843,16 @@ export default function DepartmentManageClient({
                   <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
                     {deletingProject.name} ({deletingProject.key})
                   </div>
+                  <div className="mt-4">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">{t.typeToConfirm}</label>
+                    <input
+                      type="text"
+                      value={deleteConfirmText}
+                      onChange={(event) => setDeleteConfirmText(event.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
+                      placeholder={deletingProject.name}
+                    />
+                  </div>
                 </div>
                 <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                   <button
@@ -850,6 +860,7 @@ export default function DepartmentManageClient({
                     onClick={() => {
                       setDeleteErrorMsg("");
                       setDeletingProject(null);
+                      setDeleteConfirmText("");
                     }}
                     disabled={isPending}
                     className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
@@ -858,7 +869,7 @@ export default function DepartmentManageClient({
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
+                    disabled={isPending || deleteConfirmText !== deletingProject.name}
                     onClick={handleDeleteProject}
                     className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
                   >

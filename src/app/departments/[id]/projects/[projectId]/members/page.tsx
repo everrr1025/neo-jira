@@ -41,7 +41,7 @@ export default async function DepartmentProjectMembersPage({
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col">
+    <div className="flex h-full w-full flex-col space-y-6">
       <DepartmentProjectMembersClient
         departmentId={department.id}
         project={project}

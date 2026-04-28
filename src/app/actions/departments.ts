@@ -294,7 +294,7 @@ export async function setDepartmentMemberRole(
   }
 }
 
-export async function deleteDepartment(departmentId: string) {
+export async function deleteDepartment(departmentId: string, confirmName?: string) {
   try {
     const session = await checkGlobalAdmin();
     const actorId = getSessionUser(session).id;
@@ -305,6 +305,9 @@ export async function deleteDepartment(departmentId: string) {
     });
     if (!department) {
       return { success: false, error: "Department not found" };
+    }
+    if ((confirmName || "").trim() !== department.name) {
+      return { success: false, error: "Department name confirmation does not match." };
     }
     
     await prisma.$transaction(async (tx) => {
@@ -709,16 +712,19 @@ export async function updateDepartmentProject(
   }
 }
 
-export async function deleteDepartmentProject(departmentId: string, projectId: string) {
+export async function deleteDepartmentProject(departmentId: string, projectId: string, confirmName?: string) {
   try {
     await checkDeptHeadOrAdmin(departmentId);
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, departmentId: true },
+      select: { id: true, departmentId: true, name: true },
     });
     if (!project || project.departmentId !== departmentId) {
       return { success: false, error: "Project not found." };
+    }
+    if ((confirmName || "").trim() !== project.name) {
+      return { success: false, error: "Project name confirmation does not match." };
     }
 
     await prisma.$transaction(async (tx) => {

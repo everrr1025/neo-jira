@@ -36,7 +36,7 @@ export default async function DepartmentMembersPage({
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-6xl flex-col space-y-6">
+    <div className="flex h-full w-full flex-col space-y-6">
       <DepartmentManageClient
         department={department}
         locale={locale}
