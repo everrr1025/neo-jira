@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 
 import {
   addMembersToDepartment,
@@ -196,10 +196,7 @@ export default function AdminDepartmentMembersClient({
                     className={`transition-colors ${isHead || isPending ? "" : "cursor-pointer hover:bg-slate-50/70"}`}
                   >
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-800">
-                        <span>{displayMember(member)}</span>
-                        {isHead ? <Crown size={14} className="text-amber-500" /> : null}
-                      </div>
+                      <div className="font-semibold text-slate-800">{displayMember(member)}</div>
                     </td>
                     <td className="px-5 py-3.5 text-slate-600">{member.userEmail}</td>
                     <td className="px-5 py-3.5">

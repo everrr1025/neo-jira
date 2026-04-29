@@ -6,7 +6,7 @@ import CreatePlanButton from "@/components/CreatePlanButton";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
-import { getProjectRole } from "@/lib/permissions";
+import { canManageProjectPlanning } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { localeDateMap } from "@/lib/i18n";
@@ -94,8 +94,6 @@ export default async function PlansPage() {
   const userId = sessionUser.id;
   const userRole = sessionUser.role ?? "USER";
   if (!userId) redirect("/login");
-  const isGlobalAdmin = userRole === "ADMIN";
-
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
 
@@ -122,8 +120,7 @@ export default async function PlansPage() {
     }),
   ]);
 
-  const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
-  const canManagePlans = projectRole === "ADMIN";
+  const canCreatePlans = await canManageProjectPlanning(userId, activeProject.id);
   const workflowStatuses = workflowProject?.workflowStatuses || [];
   const sortedPlans = [...plans].sort((a, b) => {
     const aStatus = getPlanStatusKey({ startDate: a.startDate, endDate: a.endDate });
@@ -152,7 +149,7 @@ export default async function PlansPage() {
           <h2 className="text-2xl font-bold tracking-tight text-slate-800">{text.title}</h2>
           <p className="mt-1 text-sm text-slate-500">{text.subtitle}</p>
         </div>
-        {canManagePlans ? (
+        {canCreatePlans ? (
           <CreatePlanButton projectId={activeProject.id} locale={locale} />
         ) : null}
       </div>

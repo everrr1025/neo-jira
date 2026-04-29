@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, Crown, FolderGit2, Loader2, Pencil, Plus, Shield, Trash2, Users, X } from "lucide-react";
+import { Bell, Building2, FolderGit2, Loader2, Plus, Shield, Trash2, Users, X } from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -60,6 +60,7 @@ const TEXT = {
     projectCreateFailed: "Failed to create project.",
     memberRoleFailed: "Failed to update member role.",
     ownerLabel: "Owner",
+    currentUser: "Current user",
     pinned: "Pinned",
     createdAt: "Created",
     key: "Key",
@@ -117,6 +118,7 @@ const TEXT = {
     projectCreateFailed: "创建项目失败。",
     memberRoleFailed: "更新成员角色失败。",
     ownerLabel: "负责人",
+    currentUser: "当前用户",
     pinned: "置顶",
     createdAt: "创建时间",
     key: "标识",
@@ -184,6 +186,14 @@ export default function DepartmentManageClient({
   });
 
   const headName = department.headName || t.member;
+  const currentMember = department.members.find((member) => member.userId === currentUserId) || null;
+  const currentMemberRole = currentMember
+    ? currentMember.role === "HEAD"
+      ? t.head
+      : currentMember.role === "ASSISTANT"
+        ? t.assistant
+        : t.member
+    : null;
   const sortedMembers = [...department.members].sort((a, b) => {
     const order: Record<string, number> = { HEAD: 0, ASSISTANT: 1, MEMBER: 2 };
     return (order[a.role] ?? 3) - (order[b.role] ?? 3) || displayMember(a).localeCompare(displayMember(b));
@@ -309,9 +319,19 @@ export default function DepartmentManageClient({
                 <p className="max-w-3xl text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
               </div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</p>
-              <p className="mt-2 text-base font-semibold text-slate-900">{headName}</p>
+            <div className="grid gap-3">
+              <div className="rounded-xl bg-slate-50 px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.currentUser}</p>
+                <p className="mt-2 text-base font-semibold text-slate-900">
+                  {currentMember ? displayMember(currentMember) : "-"}
+                </p>
+                {currentMemberRole ? <p className="mt-1 text-sm text-slate-500">{currentMemberRole}</p> : null}
+                {currentMember ? <p className="mt-1 truncate text-xs text-slate-400">{currentMember.userEmail}</p> : null}
+              </div>
+              <div className="rounded-xl bg-slate-50 px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</p>
+                <p className="mt-2 text-base font-semibold text-slate-900">{headName}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -435,11 +455,7 @@ export default function DepartmentManageClient({
                     return (
                       <tr key={member.userId} className="align-top hover:bg-slate-50">
                         <td className="px-5 py-4 font-medium text-slate-800">
-                          <div className="flex items-center gap-2">
-                            <span>{displayMember(member)}</span>
-                            {member.role === "HEAD" ? <Crown size={14} className="text-amber-500" /> : null}
-                            {member.role === "ASSISTANT" ? <Shield size={14} className="text-blue-500" /> : null}
-                          </div>
+                          <span>{displayMember(member)}</span>
                         </td>
                         <td className="px-5 py-4 text-slate-500">{member.userEmail}</td>
                         <td className="px-5 py-4">
@@ -453,13 +469,12 @@ export default function DepartmentManageClient({
                               <span className="text-xs text-slate-400">-</span>
                             ) : (
                               member.projects.map((project) => (
-                                <Link
+                                <span
                                   key={project.id}
-                                  href={`/projects/select?projectId=${project.id}`}
-                                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700"
                                 >
                                   <span>{project.name}</span>
-                                </Link>
+                                </span>
                               ))
                             )}
                           </div>
@@ -599,16 +614,14 @@ export default function DepartmentManageClient({
                         <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
                           <a
                             href={`/projects/select?projectId=${project.id}`}
-                            className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+                            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                           >
-                            <Building2 size={12} />
                             <span className="whitespace-nowrap">{t.viewProject}</span>
                           </a>
                           <Link
                             href={`/departments/${department.id}/projects/${project.id}/members`}
-                            className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+                            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                           >
-                            <Users size={12} />
                             <span className="whitespace-nowrap">{t.memberButton}</span>
                           </Link>
                           {canManageProjects ? (
@@ -626,9 +639,8 @@ export default function DepartmentManageClient({
                                   setIsEditProjectOpen(true);
                                 }}
                                 disabled={isPending}
-                                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                                className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
                               >
-                                <Pencil size={12} />
                                 <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
                               </button>
                               <button

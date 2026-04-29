@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 
 import DepartmentProjectMembersClient from "@/components/DepartmentProjectMembersClient";
 import { authOptions } from "@/lib/authOptions";
-import { getDepartmentWorkspaceData } from "@/lib/departmentWorkspace";
+import {
+  filterDepartmentWorkspaceProjectsForUser,
+  getDepartmentWorkspaceData,
+} from "@/lib/departmentWorkspace";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
 export const dynamic = "force-dynamic";
@@ -34,8 +37,10 @@ export default async function DepartmentProjectMembersPage({
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
+  const canManage = Boolean(isGlobalAdmin || isHead || isAssistant);
+  const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(department, userId, canManage);
 
-  const project = department.projects.find((item) => item.id === projectId);
+  const project = visibleDepartment.projects.find((item) => item.id === projectId);
   if (!project) {
     redirect(`/departments/${departmentId}/projects`);
   }
@@ -45,9 +50,9 @@ export default async function DepartmentProjectMembersPage({
       <DepartmentProjectMembersClient
         departmentId={department.id}
         project={project}
-        departmentMembers={department.members}
+        departmentMembers={visibleDepartment.members}
         locale={locale}
-        canManage={Boolean(isGlobalAdmin || isHead || isAssistant)}
+        canManage={canManage}
       />
     </div>
   );

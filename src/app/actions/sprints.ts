@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
-import { checkProjectAdmin } from "@/lib/permissions";
+import { checkProjectAdmin, checkProjectPlanning } from "@/lib/permissions";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
   getEndBeforeStartMessage,
@@ -49,7 +49,7 @@ export async function createSprint(data: {
       throw new Error("Unauthorized");
     }
 
-    await checkProjectAdmin(data.projectId);
+    await checkProjectPlanning(data.projectId);
     const name = normalizeNameOrThrow(data.name, "sprintName", ITERATION_NAME_MAX_LENGTH, locale);
     const startDate = new Date(data.startDate);
     const endDate = new Date(data.endDate);

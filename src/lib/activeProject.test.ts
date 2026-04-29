@@ -38,7 +38,9 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
         members: {
           some: {
             userId: "user-1",
-            role: "HEAD",
+            role: {
+              in: ["HEAD", "ASSISTANT"],
+            },
           },
         },
       },
@@ -58,7 +60,9 @@ assert.deepEqual(buildVisibleProjectsWhere("user-1", "USER"), {
         members: {
           some: {
             userId: "user-1",
-            role: "HEAD",
+            role: {
+              in: ["HEAD", "ASSISTANT"],
+            },
           },
         },
       },

@@ -13,7 +13,7 @@ import {
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import { authOptions } from "@/lib/authOptions";
 import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
-import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
+import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { ISSUE_TITLE_MAX_LENGTH, normalizeNameOrThrow } from "@/lib/validation";
@@ -25,6 +25,34 @@ import {
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
+
+const ISSUE_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT"] as const;
+type IssueFieldType = (typeof ISSUE_FIELD_TYPES)[number];
+
+function normalizeFieldKey(input: string) {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-\s]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 40);
+}
+
+function parseSelectOptions(optionsText?: string) {
+  const options = (optionsText || "")
+    .split(/[,\s，]+/)
+    .map((option) => option.trim())
+    .filter(Boolean);
+
+  return [...new Set(options)];
+}
+
+function assertIssueFieldType(type: string): asserts type is IssueFieldType {
+  if (!ISSUE_FIELD_TYPES.includes(type as IssueFieldType)) {
+    throw new Error("Unsupported field type");
+  }
+}
 
 const issueAuditSelect = {
   id: true,
@@ -285,6 +313,7 @@ export async function createIssue(data: {
     }
 
     if (!targetProjectId) throw new Error("Project not found or no access");
+    await checkProjectMember(targetProjectId);
     const title = normalizeNameOrThrow(data.title, "issueTitle", ISSUE_TITLE_MAX_LENGTH, locale);
 
     const project = await prisma.$transaction(async (tx) => {
@@ -500,6 +529,189 @@ export async function addBacklogIssuesToSprint(sprintId: string, issueIds: strin
       success: false,
       error: error instanceof Error ? error.message : "Failed to add issues to sprint",
     };
+  }
+}
+
+export async function createIssueFieldDefinition(data: {
+  projectId: string;
+  name: string;
+  key?: string;
+  type: string;
+  required?: boolean;
+  optionsText?: string;
+}) {
+  try {
+    assertIssueFieldType(data.type);
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    if (!isProjectInActiveContext({ activeProjectId: activeProject?.id || null, projectId: data.projectId })) {
+      throw new Error("Unauthorized");
+    }
+
+    await checkProjectFieldConfig(data.projectId);
+
+    const name = data.name.trim();
+    if (!name) throw new Error("Field name is required");
+
+    const key = normalizeFieldKey(data.key || "");
+    if (!key) throw new Error("Field key is required");
+
+    const options = parseSelectOptions(data.optionsText);
+    if (data.type === "SELECT" && options.length === 0) {
+      throw new Error("Select fields require at least one option");
+    }
+
+    const lastField = await prisma.issueFieldDefinition.findFirst({
+      where: { projectId: data.projectId },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+
+    const field = await prisma.issueFieldDefinition.create({
+      data: {
+        projectId: data.projectId,
+        key,
+        name,
+        type: data.type,
+        required: Boolean(data.required),
+        position: (lastField?.position ?? -1) + 1,
+        optionsJson: data.type === "SELECT" ? JSON.stringify(options) : null,
+      },
+    });
+
+    revalidatePath("/issues");
+    return { success: true, field };
+  } catch (error: unknown) {
+    console.error("Failed to create issue field:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to create issue field" };
+  }
+}
+
+export async function deleteIssueFieldDefinition(data: { id: string; projectId: string }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    if (!isProjectInActiveContext({ activeProjectId: activeProject?.id || null, projectId: data.projectId })) {
+      throw new Error("Unauthorized");
+    }
+
+    await checkProjectFieldConfig(data.projectId);
+
+    const existing = await prisma.issueFieldDefinition.findFirst({
+      where: { id: data.id, projectId: data.projectId },
+      select: { id: true },
+    });
+
+    if (!existing) throw new Error("Field not found");
+
+    await prisma.issueFieldDefinition.delete({ where: { id: existing.id } });
+
+    revalidatePath("/issues");
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("Failed to delete issue field:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to delete issue field" };
+  }
+}
+
+export async function updateIssueFieldValue(data: {
+  issueId: string;
+  fieldDefinitionId: string;
+  value: string | number | boolean | null;
+}) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    const activeProjectId = activeProject?.id || null;
+
+    const [issue, field] = await Promise.all([
+      prisma.issue.findUnique({
+        where: { id: data.issueId },
+        select: { id: true, projectId: true },
+      }),
+      prisma.issueFieldDefinition.findUnique({
+        where: { id: data.fieldDefinitionId },
+        select: { id: true, projectId: true, type: true, optionsJson: true },
+      }),
+    ]);
+
+    if (!issue) throw new Error("Issue not found");
+    if (!field || field.projectId !== issue.projectId) throw new Error("Field not found");
+    if (!isProjectInActiveContext({ activeProjectId, projectId: issue.projectId })) {
+      throw new Error("Unauthorized");
+    }
+
+    await checkProjectMember(issue.projectId);
+
+    const valueData: {
+      valueBoolean: boolean | null;
+      valueNumber: number | null;
+      valueText: string | null;
+      valueOption: string | null;
+    } = {
+      valueBoolean: null,
+      valueNumber: null,
+      valueText: null,
+      valueOption: null,
+    };
+
+    if (field.type === "BOOLEAN") {
+      valueData.valueBoolean = Boolean(data.value);
+    } else if (field.type === "NUMBER") {
+      const numericValue = data.value === null || data.value === "" ? null : Number(data.value);
+      if (numericValue !== null && Number.isNaN(numericValue)) throw new Error("Invalid number");
+      valueData.valueNumber = numericValue;
+    } else if (field.type === "TEXT" || field.type === "LONG_TEXT") {
+      valueData.valueText = typeof data.value === "string" ? data.value : data.value === null ? null : String(data.value);
+    } else if (field.type === "SELECT") {
+      const option = typeof data.value === "string" && data.value ? data.value : null;
+      const options = field.optionsJson ? (JSON.parse(field.optionsJson) as string[]) : [];
+      if (option && !options.includes(option)) throw new Error("Invalid option");
+      valueData.valueOption = option;
+    }
+
+    const savedValue = await prisma.issueFieldValue.upsert({
+      where: {
+        issueId_fieldDefinitionId: {
+          issueId: issue.id,
+          fieldDefinitionId: field.id,
+        },
+      },
+      create: {
+        issueId: issue.id,
+        fieldDefinitionId: field.id,
+        ...valueData,
+      },
+      update: valueData,
+    });
+
+    revalidatePath("/issues");
+    revalidatePath(`/issues/${issue.id}`);
+    return { success: true, value: savedValue };
+  } catch (error: unknown) {
+    console.error("Failed to update issue field value:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update field value" };
   }
 }
 

@@ -7,7 +7,7 @@ import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { getTranslations } from "@/lib/i18n";
-import { getProjectRole } from "@/lib/permissions";
+import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
@@ -51,6 +51,16 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           name: "asc",
         },
       },
+      issueFieldValues: {
+        select: {
+          id: true,
+          fieldDefinitionId: true,
+          valueBoolean: true,
+          valueNumber: true,
+          valueText: true,
+          valueOption: true,
+        },
+      },
       project: {
         select: {
           workflowStatuses: {
@@ -82,12 +92,17 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     where: buildProjectItemsWhere(issue.projectId),
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
+  const issueFieldDefinitions = await prisma.issueFieldDefinition.findMany({
+    where: { projectId: issue.projectId },
+    orderBy: { position: "asc" },
+  });
 
   let canDeleteIssue = isGlobalAdmin;
   if (!canDeleteIssue) {
     const role = await getProjectRole(userId, issue.projectId);
     canDeleteIssue = role === "ADMIN";
   }
+  const canManageIssueFields = await canConfigureProjectFields(userId, issue.projectId);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-5xl flex-col pb-10">
@@ -106,6 +121,8 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         locale={locale}
         canDeleteIssue={canDeleteIssue}
         canManagePlans={canDeleteIssue}
+        issueFieldDefinitions={issueFieldDefinitions}
+        canManageIssueFields={canManageIssueFields}
       />
     </div>
   );

@@ -35,7 +35,6 @@ export function SidebarClient({
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
   const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
-  const projectSectionLabel = locale === "zh" ? "项目" : "Project";
 
   const getNavClass = (href: string) => {
     let isActive = false;
@@ -184,11 +183,6 @@ export function SidebarClient({
                 {returnLabel}
               </span>
             </a>
-            <div className={`pb-1 pt-2 ${collapsed ? "px-0 text-center" : "px-3"}`}>
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 transition-all">
-                {collapsed ? "–" : projectSectionLabel}
-              </div>
-            </div>
           </div>
         ) : null}
 

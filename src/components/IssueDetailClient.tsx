@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { deleteIssue, toggleIssueWatcher, updateIssue } from "@/app/actions/issues";
+import { deleteIssue, toggleIssueWatcher, updateIssue, updateIssueFieldValue } from "@/app/actions/issues";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 import {
   getIssueTypeLabel,
@@ -67,6 +67,27 @@ type IssueRecord = {
     avatar?: string | null;
   } | null;
   watchers: IssueUser[];
+  issueFieldValues?: IssueFieldValue[];
+};
+
+type IssueFieldDefinition = {
+  id: string;
+  projectId: string;
+  key: string;
+  name: string;
+  type: string;
+  required: boolean;
+  position: number;
+  optionsJson: string | null;
+};
+
+type IssueFieldValue = {
+  id: string;
+  fieldDefinitionId: string;
+  valueBoolean: boolean | null;
+  valueNumber: number | null;
+  valueText: string | null;
+  valueOption: string | null;
 };
 
 type IssueWorkflowStatus = WorkflowStatusRecord;
@@ -83,6 +104,8 @@ export default function IssueDetailClient({
   locale,
   canDeleteIssue,
   canManagePlans,
+  issueFieldDefinitions = [],
+  canManageIssueFields,
 }: {
   initialIssue: IssueRecord;
   users: IssueUser[];
@@ -94,6 +117,8 @@ export default function IssueDetailClient({
   locale: Locale;
   canDeleteIssue: boolean;
   canManagePlans: boolean;
+  issueFieldDefinitions?: IssueFieldDefinition[];
+  canManageIssueFields: boolean;
 }) {
   const router = useRouter();
   const [issue, setIssue] = useState(initialIssue);
@@ -105,9 +130,12 @@ export default function IssueDetailClient({
   const [draftTitle, setDraftTitle] = useState(initialIssue.title);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
+  const [isIssueFieldsExpanded, setIsIssueFieldsExpanded] = useState(true);
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
   const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
+  const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
+  const noIssueFieldsLabel = locale === "zh" ? "暂无扩展字段" : "No custom fields";
 
   const isWatching = useMemo(
     () => watchers.some((watcher) => watcher.id === currentUserId),
@@ -122,6 +150,65 @@ export default function IssueDetailClient({
     );
     return buildWorkflowStatusOptions(visibleStatuses.length > 0 ? visibleStatuses : workflowStatuses, locale);
   }, [issue.status, locale, workflowStatuses, workflowTransitions]);
+
+  const getFieldOptions = (field: IssueFieldDefinition) => {
+    if (!field.optionsJson) return [];
+
+    try {
+      const parsed = JSON.parse(field.optionsJson);
+      return Array.isArray(parsed) ? parsed.filter((option): option is string => typeof option === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const getFieldValueForDisplay = (field: IssueFieldDefinition, value?: IssueFieldValue) => {
+    if (!value) return "";
+    if (field.type === "BOOLEAN") return value.valueBoolean ? "true" : "false";
+    if (field.type === "NUMBER") {
+      return value.valueNumber === null || value.valueNumber === undefined ? "" : String(value.valueNumber);
+    }
+    if (field.type === "SELECT") return value.valueOption || "";
+    return value.valueText || "";
+  };
+
+  const handleIssueFieldValueUpdate = (
+    field: IssueFieldDefinition,
+    value: string | number | boolean | null
+  ) => {
+    const valueData: IssueFieldValue = {
+      id: issue.issueFieldValues?.find((item) => item.fieldDefinitionId === field.id)?.id || `draft-${field.id}`,
+      fieldDefinitionId: field.id,
+      valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
+      valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
+      valueText:
+        field.type === "TEXT" || field.type === "LONG_TEXT"
+          ? typeof value === "string"
+            ? value
+            : value === null
+              ? null
+              : String(value)
+          : null,
+      valueOption: field.type === "SELECT" ? (typeof value === "string" && value ? value : null) : null,
+    };
+
+    const existingValues = issue.issueFieldValues || [];
+    const nextValues = existingValues.some((item) => item.fieldDefinitionId === field.id)
+      ? existingValues.map((item) => (item.fieldDefinitionId === field.id ? valueData : item))
+      : [...existingValues, valueData];
+    setIssue((prev) => ({ ...prev, issueFieldValues: nextValues }));
+
+    startTransition(async () => {
+      const result = await updateIssueFieldValue({
+        issueId: issue.id,
+        fieldDefinitionId: field.id,
+        value,
+      });
+      if (!result.success) {
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
+      }
+    });
+  };
 
   const handleAutoSave = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
     setIssue((prev) => ({ ...prev, [field]: value }));
@@ -383,6 +470,105 @@ export default function IssueDetailClient({
               />
             )}
           </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-lg font-bold text-slate-800">{issueFieldsLabel}</h3>
+            <button
+              type="button"
+              onClick={() => setIsIssueFieldsExpanded((current) => !current)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+              aria-label={isIssueFieldsExpanded ? (locale === "zh" ? "收起扩展字段" : "Collapse custom fields") : (locale === "zh" ? "展开扩展字段" : "Expand custom fields")}
+              title={isIssueFieldsExpanded ? (locale === "zh" ? "收起扩展字段" : "Collapse custom fields") : (locale === "zh" ? "展开扩展字段" : "Expand custom fields")}
+            >
+              {isIssueFieldsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+          {isIssueFieldsExpanded && issueFieldDefinitions.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              {noIssueFieldsLabel}
+            </div>
+          ) : null}
+          {isIssueFieldsExpanded && issueFieldDefinitions.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              {issueFieldDefinitions.map((field) => {
+                const fieldValue = issue.issueFieldValues?.find((value) => value.fieldDefinitionId === field.id);
+                const displayValue = getFieldValueForDisplay(field, fieldValue);
+                const isLongText = field.type === "LONG_TEXT";
+                const fieldSpanClass =
+                  field.type === "BOOLEAN" || field.type === "NUMBER"
+                    ? "md:col-span-1"
+                    : isLongText
+                      ? "md:col-span-4"
+                      : "md:col-span-2";
+                const fieldShellClass = `rounded-lg border border-slate-200 bg-white p-3 ${
+                  fieldSpanClass
+                }`;
+
+                if (field.type === "BOOLEAN") {
+                  return (
+                    <label key={field.id} className={`${fieldShellClass} flex items-center gap-2`}>
+                      <input
+                        type="checkbox"
+                        checked={fieldValue?.valueBoolean || false}
+                        onChange={(event) => handleIssueFieldValueUpdate(field, event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-semibold text-slate-700">{field.name}</span>
+                    </label>
+                  );
+                }
+
+                if (field.type === "SELECT") {
+                  return (
+                    <div key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
+                      <span className="text-xs font-semibold text-slate-500">{field.name}</span>
+                      <DropdownField
+                        id={`issue-field-${field.id}`}
+                        label={field.name}
+                        value={displayValue}
+                        onChange={(value) => handleIssueFieldValueUpdate(field, value || null)}
+                        hideLabel
+                        options={[
+                          { value: "", label: locale === "zh" ? "未选择" : "Not set" },
+                          ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
+                        ]}
+                      />
+                    </div>
+                  );
+                }
+
+                if (isLongText) {
+                  return (
+                    <label key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
+                      <span className="text-xs font-semibold text-slate-500">{field.name}</span>
+                      <textarea
+                        key={`${field.id}-${displayValue}`}
+                        defaultValue={displayValue}
+                        rows={3}
+                        onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
+                        className="w-full resize-y rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+                  );
+                }
+
+                return (
+                  <label key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
+                    <span className="text-xs font-semibold text-slate-500">{field.name}</span>
+                    <input
+                      key={`${field.id}-${displayValue}`}
+                      type={field.type === "NUMBER" ? "number" : "text"}
+                      defaultValue={displayValue}
+                      onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
+                      className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={5000} />

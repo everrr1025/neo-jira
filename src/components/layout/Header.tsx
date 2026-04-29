@@ -17,7 +17,6 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const [departmentTitle, setDepartmentTitle] = useState("");
   const translations = getTranslations(locale);
   const userName = session?.user?.name || translations.sidebar.userFallback;
-  const isDepartmentAssistant = (session?.user as { departmentRole?: string } | undefined)?.departmentRole === "ASSISTANT";
 
   useEffect(() => {
     setQuery(searchParams.get("search") || "");
@@ -113,11 +112,6 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
           <div className="text-sm font-medium text-slate-500">
             {translations.header.welcomeBack},{" "}
             <span className="text-slate-700">{userName}</span>
-            {isDepartmentAssistant ? (
-              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                {locale === "zh" ? "部门助理" : "Assistant"}
-              </span>
-            ) : null}
           </div>
           <NotificationBell locale={locale} />
         </div>

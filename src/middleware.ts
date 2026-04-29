@@ -1,13 +1,29 @@
-import { withAuth } from "next-auth/middleware"
+import { NextResponse } from "next/server";
+import { withAuth } from "next-auth/middleware";
 
-export default withAuth({
-  callbacks: {
-    authorized: ({ req, token }) => {
-      // Return true if authenticated or if path doesn't require auth
-      return !!token;
-    },
+type TokenWithDepartment = {
+  role?: string | null;
+  departmentId?: string | null;
+};
+
+export default withAuth(
+  function middleware(req) {
+    const token = req.nextauth.token as TokenWithDepartment | null;
+    const isGlobalAdmin = token?.role === "ADMIN";
+    const hasDepartment = typeof token?.departmentId === "string" && token.departmentId.length > 0;
+
+    if (!isGlobalAdmin && !hasDepartment) {
+      return NextResponse.redirect(new URL("/login?error=no-department", req.url));
+    }
+
+    return NextResponse.next();
   },
-})
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
+  }
+);
 
 export const config = {
   matcher: [
@@ -21,4 +37,4 @@ export const config = {
      */
     "/((?!api/auth|login|_next/static|_next/image|favicon.ico).*)",
   ],
-}
+};

@@ -11,6 +11,14 @@ type SessionCallbackUser = {
   departmentId?: string | null;
 };
 
+async function getAuthUserDepartmentFields(userId: string) {
+  const membership = await getUserDepartmentMembership(userId);
+  return {
+    departmentRole: membership?.role || null,
+    departmentId: membership?.departmentId || null,
+  };
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -31,11 +39,17 @@ export const authOptions: NextAuthOptions = {
         const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
         if (!isPasswordValid) return null;
 
+        const membershipFields = await getAuthUserDepartmentFields(user.id);
+        if (user.role !== "ADMIN" && !membershipFields.departmentId) {
+          throw new Error("NO_DEPARTMENT");
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
+          ...membershipFields,
         };
       }
     })
@@ -46,6 +60,8 @@ export const authOptions: NextAuthOptions = {
         const authUser = user as SessionCallbackUser;
         token.role = authUser.role;
         token.id = authUser.id;
+        token.departmentRole = authUser.departmentRole;
+        token.departmentId = authUser.departmentId;
       }
       return token;
     },
@@ -54,9 +70,8 @@ export const authOptions: NextAuthOptions = {
         const sessionUser = session.user as SessionCallbackUser;
         sessionUser.role = typeof token.role === "string" ? token.role : null;
         sessionUser.id = typeof token.id === "string" ? token.id : undefined;
-        const membership = await getUserDepartmentMembership(typeof token.id === "string" ? token.id : null);
-        sessionUser.departmentRole = membership?.role || null;
-        sessionUser.departmentId = membership?.departmentId || null;
+        sessionUser.departmentRole = typeof token.departmentRole === "string" ? token.departmentRole : null;
+        sessionUser.departmentId = typeof token.departmentId === "string" ? token.departmentId : null;
       }
       return session;
     }

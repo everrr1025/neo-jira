@@ -7,7 +7,7 @@ import IssueList from "@/components/IssueList";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
-import { getProjectRole } from "@/lib/permissions";
+import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
@@ -100,7 +100,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     plan.id
   );
 
-  const [issues, totalIssues, basicPlanIssues, planFieldDefinitions, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
+  const [issues, totalIssues, basicPlanIssues, issueFieldDefinitions, planFieldDefinitions, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
     prisma.issue.findMany({
       where: parsedWhere,
       include: {
@@ -127,6 +127,16 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
             valueOption: true,
           },
         },
+        issueFieldValues: {
+          select: {
+            id: true,
+            fieldDefinitionId: true,
+            valueBoolean: true,
+            valueNumber: true,
+            valueText: true,
+            valueOption: true,
+          },
+        },
       },
       orderBy,
       skip,
@@ -140,6 +150,10 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         planId: plan.id,
       },
       select: { status: true },
+    }),
+    prisma.issueFieldDefinition.findMany({
+      where: { projectId: activeProject.id },
+      orderBy: { position: "asc" },
     }),
     prisma.planFieldDefinition.findMany({
       where: { planId: plan.id },
@@ -176,6 +190,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   ]);
   const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
   const canManagePlans = projectRole === "ADMIN";
+  const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
   const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
 
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
@@ -248,8 +263,12 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         workflowProjects={workflowProjects}
         currentUser={currentUser}
         locale={locale}
+        activeProjectId={activeProject.id}
+        issueFieldDefinitions={issueFieldDefinitions}
+        canManageIssueFields={false}
         lockedPlanId={plan.id}
         planFieldDefinitions={planFieldDefinitions}
+        canManagePlanFields={canManageIssueFields}
         canManagePlans={canManagePlans}
         unframed
       />

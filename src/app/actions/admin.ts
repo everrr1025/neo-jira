@@ -33,6 +33,24 @@ function getErrorMessage(error: unknown, fallback = "Unexpected error") {
   return error instanceof Error ? error.message : fallback;
 }
 
+async function validateDepartmentProjectMembers(departmentId: string | null, userIds: string[]) {
+  if (!departmentId) return null;
+
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+  const departmentMemberCount = await prisma.departmentMember.count({
+    where: {
+      departmentId,
+      userId: { in: uniqueUserIds },
+    },
+  });
+
+  if (departmentMemberCount !== uniqueUserIds.length) {
+    return "Selected project members must belong to this department.";
+  }
+
+  return null;
+}
+
 function generateSecurePassword(length = 12) {
   const special = "!@#$%^&*()-_=+[]{};:,.?/|";
   const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -348,6 +366,11 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
       return { success: false, error: "System admin cannot be project member." };
     }
 
+    const memberScopeError = await validateDepartmentProjectMembers(project.departmentId, uniqueMemberIds);
+    if (memberScopeError) {
+      return { success: false, error: memberScopeError };
+    }
+
     let ownerId = project.ownerId || "";
     const ownerIsSystemAdmin = project.owner?.role === "ADMIN";
     if (!ownerId || ownerIsSystemAdmin) {
@@ -443,6 +466,11 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
       return { success: false, error: "System admin cannot be project owner." };
     }
 
+    const ownerScopeError = await validateDepartmentProjectMembers(project.departmentId, [ownerId]);
+    if (ownerScopeError) {
+      return { success: false, error: ownerScopeError };
+    }
+
     const targetMembership = project.members.find((m) => m.userId === ownerId);
     if (!targetMembership) {
       return { success: false, error: "Project owner must be a project member." };
@@ -511,6 +539,13 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
     });
     if (!project) {
       return { success: false, error: "Project not found." };
+    }
+
+    if (role === "ADMIN") {
+      const memberScopeError = await validateDepartmentProjectMembers(project.departmentId, [userId]);
+      if (memberScopeError) {
+        return { success: false, error: memberScopeError };
+      }
     }
 
     let currentOwnerId = project.ownerId || "";
@@ -609,4 +644,3 @@ export async function deleteProject(projectId: string, confirmName?: string) {
     return { success: false, error: getErrorMessage(error, "Failed to delete project") };
   }
 }
-

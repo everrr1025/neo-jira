@@ -3,7 +3,10 @@ import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import DepartmentManageClient from "@/components/DepartmentManageClient";
-import { getDepartmentWorkspaceData } from "@/lib/departmentWorkspace";
+import {
+  filterDepartmentWorkspaceProjectsForUser,
+  getDepartmentWorkspaceData,
+} from "@/lib/departmentWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -34,15 +37,21 @@ export default async function DepartmentPage({
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
+  const canViewAllProjects = Boolean(isGlobalAdmin || isHead || isAssistant);
+  const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(
+    department,
+    userId,
+    canViewAllProjects,
+  );
 
   return (
     <div className="flex h-full w-full flex-col space-y-6">
       <DepartmentManageClient
-        department={department}
+        department={visibleDepartment}
         locale={locale}
         currentUserId={userId}
         isHead={isHead}
-        canManageProjects={Boolean(isGlobalAdmin || isHead || isAssistant)}
+        canManageProjects={canViewAllProjects}
         mode="dashboard"
       />
     </div>

@@ -17,7 +17,13 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { bulkUpdateIssues, updateIssue } from "@/app/actions/issues";
+import {
+  bulkUpdateIssues,
+  createIssueFieldDefinition,
+  deleteIssueFieldDefinition,
+  updateIssue,
+  updateIssueFieldValue,
+} from "@/app/actions/issues";
 import {
   createPlanFieldDefinition,
   deletePlanFieldDefinition,
@@ -59,6 +65,7 @@ type Issue = {
   assignee?: { name: string | null } | null;
   reporter?: { name: string | null } | null;
   watchers?: { id: string }[];
+  issueFieldValues?: IssueFieldValue[];
   planFieldValues?: PlanIssueFieldValue[];
   createdAt: Date | string;
   dueDate?: Date | string | null;
@@ -66,9 +73,8 @@ type Issue = {
 
 type PlanFieldType = "BOOLEAN" | "NUMBER" | "TEXT" | "LONG_TEXT" | "SELECT";
 
-type PlanFieldDefinition = {
+type CustomFieldDefinition = {
   id: string;
-  planId: string;
   key: string;
   name: string;
   type: string;
@@ -77,7 +83,15 @@ type PlanFieldDefinition = {
   optionsJson: string | null;
 };
 
-type PlanIssueFieldValue = {
+type PlanFieldDefinition = CustomFieldDefinition & {
+  planId: string;
+};
+
+type IssueFieldDefinition = CustomFieldDefinition & {
+  projectId: string;
+};
+
+type CustomFieldValue = {
   id: string;
   fieldDefinitionId: string;
   valueBoolean: boolean | null;
@@ -85,6 +99,9 @@ type PlanIssueFieldValue = {
   valueText: string | null;
   valueOption: string | null;
 };
+
+type PlanIssueFieldValue = CustomFieldValue;
+type IssueFieldValue = CustomFieldValue;
 
 type FilterOption = {
   value: string;
@@ -116,6 +133,8 @@ type ColumnConfig = {
 type StoredIssueListColumnPreferences = {
   visibleColumnIds?: ColumnId[];
   columnWidths?: Partial<Record<ColumnId, number>>;
+  visibleIssueFieldIds?: string[];
+  issueFieldWidths?: Partial<Record<string, number>>;
   visiblePlanFieldIds?: string[];
   planFieldWidths?: Partial<Record<string, number>>;
 };
@@ -259,6 +278,9 @@ function ColumnVisibilityMenu({
   visibleColumnIds,
   onToggle,
   onReset,
+  issueFields = [],
+  visibleIssueFieldIds = [],
+  onToggleIssueField,
   planFields = [],
   visiblePlanFieldIds = [],
   onTogglePlanField,
@@ -269,6 +291,9 @@ function ColumnVisibilityMenu({
   visibleColumnIds: ColumnId[];
   onToggle: (columnId: ColumnId) => void;
   onReset: () => void;
+  issueFields?: IssueFieldDefinition[];
+  visibleIssueFieldIds?: string[];
+  onToggleIssueField?: (fieldId: string) => void;
   planFields?: PlanFieldDefinition[];
   visiblePlanFieldIds?: string[];
   onTogglePlanField?: (fieldId: string) => void;
@@ -316,6 +341,24 @@ function ColumnVisibilityMenu({
             </label>
           );
         })}
+        {issueFields.length > 0 ? (
+          <div className="mt-1 border-t border-slate-100 pt-1">
+            {issueFields.map((field) => (
+              <label
+                key={field.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={visibleIssueFieldIds.includes(field.id)}
+                  onChange={() => onToggleIssueField?.(field.id)}
+                  className="h-4 w-4"
+                />
+                <span className="truncate">{field.name}</span>
+              </label>
+            ))}
+          </div>
+        ) : null}
         {planFields.length > 0 ? (
           <div className="mt-1 border-t border-slate-100 pt-1">
             {planFields.map((field) => (
@@ -522,7 +565,7 @@ function InlineSelect({
   );
 }
 
-function getPlanFieldOptions(field: PlanFieldDefinition) {
+function getFieldOptions(field: CustomFieldDefinition) {
   if (!field.optionsJson) return [];
 
   try {
@@ -533,7 +576,7 @@ function getPlanFieldOptions(field: PlanFieldDefinition) {
   }
 }
 
-function getFieldValueForDisplay(field: PlanFieldDefinition, value?: PlanIssueFieldValue) {
+function getFieldValueForDisplay(field: CustomFieldDefinition, value?: CustomFieldValue) {
   if (!value) return "";
   if (field.type === "BOOLEAN") return value.valueBoolean ? "true" : "false";
   if (field.type === "NUMBER") return value.valueNumber === null || value.valueNumber === undefined ? "" : String(value.valueNumber);
@@ -541,18 +584,18 @@ function getFieldValueForDisplay(field: PlanFieldDefinition, value?: PlanIssueFi
   return value.valueText || "";
 }
 
-function getDefaultPlanFieldWidth(field: PlanFieldDefinition) {
+function getDefaultFieldWidth(field: CustomFieldDefinition) {
   if (field.type === "TEXT" || field.type === "LONG_TEXT") return 240;
   return 150;
 }
 
-function PlanFieldDraftInput({
+function FieldDraftInput({
   field,
   value,
   multiline = false,
   onCommit,
 }: {
-  field: PlanFieldDefinition;
+  field: CustomFieldDefinition;
   value: string;
   multiline?: boolean;
   onCommit: (value: string) => void;
@@ -624,8 +667,12 @@ export default function IssueList({
   workflowProjects,
   currentUser,
   locale,
+  activeProjectId,
+  issueFieldDefinitions = [],
+  canManageIssueFields,
   lockedPlanId,
   planFieldDefinitions = [],
+  canManagePlanFields,
   canManagePlans,
   unframed = false,
 }: {
@@ -643,14 +690,19 @@ export default function IssueList({
   }>;
   currentUser: { id: string } | null;
   locale: Locale;
+  activeProjectId: string;
+  issueFieldDefinitions?: IssueFieldDefinition[];
+  canManageIssueFields: boolean;
   lockedPlanId?: string | null;
   planFieldDefinitions?: PlanFieldDefinition[];
+  canManagePlanFields?: boolean;
   canManagePlans: boolean;
   unframed?: boolean;
 }) {
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("search") || "");
+  const [isSearchOpen, setIsSearchOpen] = useState(() => Boolean(searchParams.get("search")));
   const translations = getTranslations(locale);
   const planLabel = locale === "zh" ? "计划" : "Plan";
   const columnsButtonLabel = locale === "zh" ? "显示列" : "Columns";
@@ -662,7 +714,9 @@ export default function IssueList({
   const bulkAddToSprintLabel = locale === "zh" ? "加入迭代" : "Add to sprint";
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
-  const configureFieldsLabel = locale === "zh" ? "配置扩展列" : "Configure fields";
+  const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
+  const planFieldsManagerLabel = locale === "zh" ? "扩展列" : "Plan fields";
+  const issueFieldsManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const addFieldLabel = locale === "zh" ? "新增字段" : "Add field";
   const fieldNameLabel = locale === "zh" ? "字段名称" : "Field name";
   const fieldKeyLabel = locale === "zh" ? "字段标识" : "Field key";
@@ -714,6 +768,19 @@ export default function IssueList({
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
+  const [issueFields, setIssueFields] = useState(issueFieldDefinitions);
+  const [visibleIssueFieldIds, setVisibleIssueFieldIds] = useState<string[]>(() =>
+    issueFieldDefinitions.map((field) => field.id)
+  );
+  const [issueFieldWidths, setIssueFieldWidths] = useState<Record<string, number>>(() =>
+    issueFieldDefinitions.reduce(
+      (acc, field) => {
+        acc[field.id] = getDefaultFieldWidth(field);
+        return acc;
+      },
+      {} as Record<string, number>
+    )
+  );
   const [planFields, setPlanFields] = useState(planFieldDefinitions);
   const [visiblePlanFieldIds, setVisiblePlanFieldIds] = useState<string[]>(() =>
     planFieldDefinitions.map((field) => field.id)
@@ -721,14 +788,14 @@ export default function IssueList({
   const [planFieldWidths, setPlanFieldWidths] = useState<Record<string, number>>(() =>
     planFieldDefinitions.reduce(
       (acc, field) => {
-        acc[field.id] = getDefaultPlanFieldWidth(field);
+        acc[field.id] = getDefaultFieldWidth(field);
         return acc;
       },
       {} as Record<string, number>
     )
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false);
+  const [activeFieldManager, setActiveFieldManager] = useState<"issue" | "plan" | null>(null);
   const [fieldForm, setFieldForm] = useState({
     name: "",
     key: "",
@@ -858,6 +925,7 @@ export default function IssueList({
   };
 
   const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+  const issueFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
   const planFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
 
   const handleResizeStart = useCallback(
@@ -902,7 +970,7 @@ export default function IssueList({
     (e: React.MouseEvent, field: PlanFieldDefinition) => {
       e.preventDefault();
       e.stopPropagation();
-      const startWidth = planFieldWidths[field.id] || getDefaultPlanFieldWidth(field);
+      const startWidth = planFieldWidths[field.id] || getDefaultFieldWidth(field);
       planFieldResizingRef.current = { fieldId: field.id, startX: e.clientX, startWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
@@ -930,9 +998,55 @@ export default function IssueList({
     [planFieldWidths]
   );
 
+  const handleIssueFieldResizeStart = useCallback(
+    (e: React.MouseEvent, field: IssueFieldDefinition) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startWidth = issueFieldWidths[field.id] || getDefaultFieldWidth(field);
+      issueFieldResizingRef.current = { fieldId: field.id, startX: e.clientX, startWidth };
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const resizeState = issueFieldResizingRef.current;
+        if (!resizeState) return;
+
+        const delta = ev.clientX - resizeState.startX;
+        const newWidth = Math.max(80, resizeState.startWidth + delta);
+        setIssueFieldWidths((prev) => ({ ...prev, [resizeState.fieldId]: newWidth }));
+      };
+
+      const onMouseUp = () => {
+        issueFieldResizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [issueFieldWidths]
+  );
+
   useEffect(() => {
     setIssues(initialIssues);
   }, [initialIssues]);
+
+  useEffect(() => {
+    setIssueFields(issueFieldDefinitions);
+    setVisibleIssueFieldIds(issueFieldDefinitions.map((field) => field.id));
+    setIssueFieldWidths(
+      issueFieldDefinitions.reduce(
+        (acc, field) => {
+          acc[field.id] = getDefaultFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
+  }, [activeProjectId, issueFieldDefinitions]);
 
   useEffect(() => {
     setPlanFields(planFieldDefinitions);
@@ -940,7 +1054,7 @@ export default function IssueList({
     setPlanFieldWidths(
       planFieldDefinitions.reduce(
         (acc, field) => {
-          acc[field.id] = getDefaultPlanFieldWidth(field);
+          acc[field.id] = getDefaultFieldWidth(field);
           return acc;
         },
         {} as Record<string, number>
@@ -965,6 +1079,19 @@ export default function IssueList({
       },
       {} as Record<ColumnId, number>
     );
+    const currentIssueFieldIds = new Set(issueFields.map((field) => field.id));
+    const validVisibleIssueFieldIds = storedPreferences?.visibleIssueFieldIds?.filter((fieldId) =>
+      currentIssueFieldIds.has(fieldId)
+    );
+    const validIssueFieldWidths = Object.entries(storedPreferences?.issueFieldWidths || {}).reduce(
+      (acc, [fieldId, width]) => {
+        if (currentIssueFieldIds.has(fieldId) && typeof width === "number" && width >= 80) {
+          acc[fieldId] = width;
+        }
+        return acc;
+      },
+      {} as Record<string, number>
+    );
     const currentPlanFieldIds = new Set(planFields.map((field) => field.id));
     const validVisiblePlanFieldIds = storedPreferences?.visiblePlanFieldIds?.filter((fieldId) =>
       currentPlanFieldIds.has(fieldId)
@@ -981,6 +1108,21 @@ export default function IssueList({
 
     setVisibleColumnIds(validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds);
     setColumnWidths({ ...defaultColumnWidths, ...validColumnWidths });
+    const allIssueFieldIds = issueFields.map((field) => field.id);
+    const mergedVisibleIssueFieldIds =
+      validVisibleIssueFieldIds && validVisibleIssueFieldIds.length > 0
+        ? [...validVisibleIssueFieldIds, ...allIssueFieldIds.filter((fieldId) => !validVisibleIssueFieldIds.includes(fieldId))]
+        : allIssueFieldIds;
+    setVisibleIssueFieldIds(mergedVisibleIssueFieldIds);
+    setIssueFieldWidths(
+      issueFields.reduce(
+        (acc, field) => {
+          acc[field.id] = validIssueFieldWidths[field.id] ?? getDefaultFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
     const allPlanFieldIds = planFields.map((field) => field.id);
     const mergedVisiblePlanFieldIds =
       validVisiblePlanFieldIds && validVisiblePlanFieldIds.length > 0
@@ -991,14 +1133,14 @@ export default function IssueList({
     setPlanFieldWidths(
       planFields.reduce(
         (acc, field) => {
-          acc[field.id] = validPlanFieldWidths[field.id] ?? getDefaultPlanFieldWidth(field);
+          acc[field.id] = validPlanFieldWidths[field.id] ?? getDefaultFieldWidth(field);
           return acc;
         },
         {} as Record<string, number>
       )
     );
     setHasLoadedColumnPreferences(true);
-  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds, planFields]);
+  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds, issueFields, planFields]);
 
   useEffect(() => {
     if (!hasLoadedColumnPreferences || typeof window === "undefined") return;
@@ -1008,11 +1150,20 @@ export default function IssueList({
       JSON.stringify({
         visibleColumnIds,
         columnWidths,
+        visibleIssueFieldIds,
+        issueFieldWidths,
         visiblePlanFieldIds,
         planFieldWidths,
       } satisfies StoredIssueListColumnPreferences)
     );
-  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, planFieldWidths, visibleColumnIds, visiblePlanFieldIds]);
+  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, issueFieldWidths, planFieldWidths, visibleColumnIds, visibleIssueFieldIds, visiblePlanFieldIds]);
+
+  useEffect(() => {
+    setSearch(searchParamsSearch);
+    if (searchParamsSearch) {
+      setIsSearchOpen(true);
+    }
+  }, [searchParamsSearch]);
 
   useEffect(() => {
     const availableIssueIds = new Set(issues.map((issue) => issue.id));
@@ -1242,6 +1393,49 @@ export default function IssueList({
     });
   };
 
+  const handleIssueFieldValueUpdate = (
+    issueId: string,
+    field: IssueFieldDefinition,
+    value: string | number | boolean | null
+  ) => {
+    setIssues((prev) =>
+      prev.map((issue) => {
+        if (issue.id !== issueId) return issue;
+
+        const valueData: IssueFieldValue = {
+          id: issue.issueFieldValues?.find((item) => item.fieldDefinitionId === field.id)?.id || `draft-${field.id}`,
+          fieldDefinitionId: field.id,
+          valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
+          valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
+          valueText:
+            field.type === "TEXT" || field.type === "LONG_TEXT"
+              ? typeof value === "string"
+                ? value
+                : value === null
+                  ? null
+                  : String(value)
+              : null,
+          valueOption: field.type === "SELECT" ? (typeof value === "string" && value ? value : null) : null,
+        };
+
+        const existingValues = issue.issueFieldValues || [];
+        const nextValues = existingValues.some((item) => item.fieldDefinitionId === field.id)
+          ? existingValues.map((item) => (item.fieldDefinitionId === field.id ? valueData : item))
+          : [...existingValues, valueData];
+
+        return { ...issue, issueFieldValues: nextValues };
+      })
+    );
+
+    startTransition(() => {
+      updateIssueFieldValue({
+        issueId,
+        fieldDefinitionId: field.id,
+        value,
+      });
+    });
+  };
+
   const handleCreatePlanField = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!lockedPlanId) return;
@@ -1266,6 +1460,29 @@ export default function IssueList({
     });
   };
 
+  const handleCreateIssueField = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setFieldManagerError(null);
+    startTransition(async () => {
+      const result = await createIssueFieldDefinition({
+        projectId: activeProjectId,
+        name: fieldForm.name,
+        key: fieldForm.key,
+        type: fieldForm.type,
+        optionsText: fieldForm.optionsText,
+      });
+
+      if (!result.success || !result.field) {
+        setFieldManagerError(result.error || saveFailedLabel);
+        return;
+      }
+
+      setIssueFields((current) => [...current, result.field as IssueFieldDefinition].sort((a, b) => a.position - b.position));
+      setFieldForm({ name: "", key: "", type: "BOOLEAN", optionsText: "" });
+    });
+  };
+
   const handleDeletePlanField = (field: PlanFieldDefinition) => {
     if (!lockedPlanId) return;
     const confirmed = window.confirm(locale === "zh" ? `删除扩展列「${field.name}」？` : `Delete custom field "${field.name}"?`);
@@ -1284,6 +1501,28 @@ export default function IssueList({
         current.map((issue) => ({
           ...issue,
           planFieldValues: issue.planFieldValues?.filter((value) => value.fieldDefinitionId !== field.id) || [],
+        }))
+      );
+    });
+  };
+
+  const handleDeleteIssueField = (field: IssueFieldDefinition) => {
+    const confirmed = window.confirm(locale === "zh" ? `删除扩展字段「${field.name}」？` : `Delete custom field "${field.name}"?`);
+    if (!confirmed) return;
+
+    setFieldManagerError(null);
+    startTransition(async () => {
+      const result = await deleteIssueFieldDefinition({ projectId: activeProjectId, id: field.id });
+      if (!result.success) {
+        setFieldManagerError(result.error || saveFailedLabel);
+        return;
+      }
+
+      setIssueFields((current) => current.filter((item) => item.id !== field.id));
+      setIssues((current) =>
+        current.map((issue) => ({
+          ...issue,
+          issueFieldValues: issue.issueFieldValues?.filter((value) => value.fieldDefinitionId !== field.id) || [],
         }))
       );
     });
@@ -1316,6 +1555,10 @@ export default function IssueList({
   const visiblePlanFields = useMemo(
     () => planFields.filter((field) => visiblePlanFieldIds.includes(field.id)),
     [planFields, visiblePlanFieldIds]
+  );
+  const visibleIssueFields = useMemo(
+    () => issueFields.filter((field) => visibleIssueFieldIds.includes(field.id)),
+    [issueFields, visibleIssueFieldIds]
   );
 
   const paginatedIssueIds = paginatedIssues.map((issue) => issue.id);
@@ -1422,20 +1665,40 @@ export default function IssueList({
     );
   };
 
+  const handleToggleIssueFieldVisibility = (fieldId: string) => {
+    setVisibleIssueFieldIds((current) =>
+      current.includes(fieldId) ? current.filter((id) => id !== fieldId) : [...current, fieldId]
+    );
+  };
+
   const handleResetColumns = () => {
     setVisibleColumnIds(defaultVisibleColumnIds);
     setColumnWidths(defaultColumnWidths);
+    setVisibleIssueFieldIds(issueFields.map((field) => field.id));
+    setIssueFieldWidths(
+      issueFields.reduce(
+        (acc, field) => {
+          acc[field.id] = getDefaultFieldWidth(field);
+          return acc;
+        },
+        {} as Record<string, number>
+      )
+    );
     setVisiblePlanFieldIds(planFields.map((field) => field.id));
     setPlanFieldWidths(
       planFields.reduce(
         (acc, field) => {
-          acc[field.id] = getDefaultPlanFieldWidth(field);
+          acc[field.id] = getDefaultFieldWidth(field);
           return acc;
         },
         {} as Record<string, number>
       )
     );
   };
+
+  const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
+  const activeManagerTitle = activeFieldManager === "issue" ? issueFieldsManagerLabel : planFieldsManagerLabel;
+  const activeManagerSubmit = activeFieldManager === "issue" ? handleCreateIssueField : handleCreatePlanField;
 
   return (
     <div
@@ -1445,17 +1708,51 @@ export default function IssueList({
     >
       <div className={`bg-white p-3 sticky top-0 z-20 ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         <div className="flex flex-wrap items-center gap-2 w-full">
-          <div className="flex items-center gap-2 w-full lg:w-80 relative">
-            <Search size={16} className="absolute left-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder={translations.issueList.searchPlaceholder}
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value); updateQueryParams({ search: e.target.value });
-              }}
-              className="w-full pl-9 pr-4 py-2 text-sm border-slate-200 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+          <div className={`flex items-center gap-2 ${isSearchOpen ? "w-full lg:w-80" : "w-auto"} relative`}>
+            {isSearchOpen ? (
+              <>
+                <Search size={16} className="absolute left-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder={translations.issueList.searchPlaceholder}
+                  value={search}
+                  autoFocus
+                  onChange={(e) => {
+                    setSearch(e.target.value); updateQueryParams({ search: e.target.value });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && !search) {
+                      setIsSearchOpen(false);
+                    }
+                  }}
+                  className="w-full pl-9 pr-9 py-2 text-sm border-slate-200 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                {search ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      updateQueryParams({ search: null });
+                    }}
+                    className="absolute right-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
+                    title={locale === "zh" ? "清除搜索" : "Clear search"}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(true)}
+                className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                aria-label={translations.issueList.searchPlaceholder}
+                title={translations.issueList.searchPlaceholder}
+              >
+                <Search size={16} />
+              </button>
+            )}
           </div>
 
           <div className="h-9 px-2 inline-flex items-center text-slate-500">
@@ -1564,33 +1861,45 @@ export default function IssueList({
             visibleColumnIds={visibleColumnIds}
             onToggle={handleToggleColumnVisibility}
             onReset={handleResetColumns}
+            issueFields={issueFields}
+            visibleIssueFieldIds={visibleIssueFieldIds}
+            onToggleIssueField={handleToggleIssueFieldVisibility}
             planFields={planFields}
             visiblePlanFieldIds={visiblePlanFieldIds}
             onTogglePlanField={handleTogglePlanFieldVisibility}
           />
 
-          {lockedPlanId && canManagePlans ? (
+          {canManageIssueFields ? (
             <button
               type="button"
-              onClick={() => setIsFieldManagerOpen(true)}
+              onClick={() => setActiveFieldManager("issue")}
               className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
             >
               <Settings2 size={14} className="text-slate-400" />
-              <span>{configureFieldsLabel}</span>
+              <span>{issueFieldsManagerLabel}</span>
             </button>
           ) : null}
 
-          {lockedPlanId ? (
+          {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
             <button
               type="button"
-              onClick={() => setIsFullscreen((current) => !current)}
+              onClick={() => setActiveFieldManager("plan")}
               className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
-              title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
             >
-              {isFullscreen ? <Minimize2 size={14} className="text-slate-400" /> : <Maximize2 size={14} className="text-slate-400" />}
-              <span>{isFullscreen ? exitFullscreenLabel : fullscreenLabel}</span>
+              <Settings2 size={14} className="text-slate-400" />
+              <span>{planFieldsManagerLabel}</span>
             </button>
           ) : null}
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((current) => !current)}
+            className="h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
+            title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+            aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+          >
+            {isFullscreen ? <Minimize2 size={14} className="text-slate-400" /> : <Maximize2 size={14} className="text-slate-400" />}
+          </button>
         </div>
 
         {lockedPlanId && planFieldSummary.length > 0 ? (
@@ -1727,11 +2036,28 @@ export default function IssueList({
                     </th>
                   );
                 })}
+                {visibleIssueFields.map((field) => (
+                  <th
+                    key={field.id}
+                    className="px-5 py-4 overflow-hidden relative select-none"
+                    style={{ width: `${issueFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
+                  >
+                    <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
+                      <span className="truncate">{field.name}</span>
+                      {field.required ? <span className="text-red-500">*</span> : null}
+                    </span>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                      onMouseDown={(event) => handleIssueFieldResizeStart(event, field)}
+                      draggable={false}
+                    />
+                  </th>
+                ))}
                 {visiblePlanFields.map((field) => (
                   <th
                     key={field.id}
                     className="px-5 py-4 overflow-hidden relative select-none"
-                    style={{ width: `${planFieldWidths[field.id] || getDefaultPlanFieldWidth(field)}px` }}
+                    style={{ width: `${planFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
                   >
                     <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
                       <span className="truncate">{field.name}</span>
@@ -1934,6 +2260,82 @@ export default function IssueList({
 
                     return <td key={col.id}></td>;
                   })}
+                  {visibleIssueFields.map((field) => {
+                    const fieldValue = issue.issueFieldValues?.find((value) => value.fieldDefinitionId === field.id);
+                    const displayValue = getFieldValueForDisplay(field, fieldValue);
+
+                    if (field.type === "BOOLEAN") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <input
+                            type="checkbox"
+                            checked={fieldValue?.valueBoolean || false}
+                            onChange={(event) => handleIssueFieldValueUpdate(issue.id, field, event.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            aria-label={field.name}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "NUMBER") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <FieldDraftInput
+                            field={field}
+                            value={displayValue}
+                            onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "SELECT") {
+                      const options = [
+                        { value: "", label: locale === "zh" ? "未选择" : "Not set" },
+                        ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
+                      ];
+
+                      return (
+                        <td key={field.id} className="px-5 py-3.5">
+                          <InlineSelect
+                            value={displayValue}
+                            options={options}
+                            className="relative block w-full"
+                            onChange={(value) => handleIssueFieldValueUpdate(issue.id, field, value || null)}
+                            renderSummary={(label) => (
+                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                {label}
+                              </span>
+                            )}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (field.type === "LONG_TEXT") {
+                      return (
+                        <td key={field.id} className="px-5 py-3.5 align-top">
+                          <FieldDraftInput
+                            field={field}
+                            value={displayValue}
+                            multiline
+                            onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
+                          />
+                        </td>
+                      );
+                    }
+
+                    return (
+                      <td key={field.id} className="px-5 py-3.5">
+                        <FieldDraftInput
+                          field={field}
+                          value={displayValue}
+                          onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
+                        />
+                      </td>
+                    );
+                  })}
                   {visiblePlanFields.map((field) => {
                     const fieldValue = issue.planFieldValues?.find((value) => value.fieldDefinitionId === field.id);
                     const displayValue = getFieldValueForDisplay(field, fieldValue);
@@ -1955,7 +2357,7 @@ export default function IssueList({
                     if (field.type === "NUMBER") {
                       return (
                         <td key={field.id} className="px-5 py-3.5">
-                          <PlanFieldDraftInput
+                          <FieldDraftInput
                             field={field}
                             value={displayValue}
                             onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
@@ -1967,7 +2369,7 @@ export default function IssueList({
                     if (field.type === "SELECT") {
                       const options = [
                         { value: "", label: locale === "zh" ? "未选择" : "Not set" },
-                        ...getPlanFieldOptions(field).map((option) => ({ value: option, label: option })),
+                        ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
                       ];
 
                       return (
@@ -1990,7 +2392,7 @@ export default function IssueList({
                     if (field.type === "LONG_TEXT") {
                       return (
                         <td key={field.id} className="px-5 py-3.5 align-top">
-                          <PlanFieldDraftInput
+                          <FieldDraftInput
                             field={field}
                             value={displayValue}
                             multiline
@@ -2002,7 +2404,7 @@ export default function IssueList({
 
                     return (
                       <td key={field.id} className="px-5 py-3.5">
-                        <PlanFieldDraftInput
+                        <FieldDraftInput
                           field={field}
                           value={displayValue}
                           onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
@@ -2015,7 +2417,7 @@ export default function IssueList({
 
               {(totalIssues || issues.length) === 0 && (
                 <tr>
-                  <td colSpan={columns.length + visiblePlanFields.length + 1} className="px-5 py-16 text-center text-slate-500">
+                  <td colSpan={columns.length + visibleIssueFields.length + visiblePlanFields.length + 1} className="px-5 py-16 text-center text-slate-500">
                     <p className="font-medium text-base mb-1">{translations.issueList.noMatchTitle}</p>
                     <p className="text-sm">{translations.issueList.noMatchDesc}</p>
                   </td>
@@ -2117,14 +2519,14 @@ export default function IssueList({
         onSubmit={handleBulkSubmit}
       />
 
-      {isFieldManagerOpen ? (
+      {activeFieldManager ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
           <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h3 className="text-base font-semibold text-slate-900">{configureFieldsLabel}</h3>
+              <h3 className="text-base font-semibold text-slate-900">{activeManagerTitle}</h3>
               <button
                 type="button"
-                onClick={() => setIsFieldManagerOpen(false)}
+                onClick={() => setActiveFieldManager(null)}
                 className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                 aria-label={closeLabel}
               >
@@ -2134,12 +2536,12 @@ export default function IssueList({
 
             <div className="max-h-[70vh] overflow-y-auto p-5">
               <div className="space-y-2">
-                {planFields.length === 0 ? (
+                {activeManagerFields.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
                     {noFieldsLabel}
                   </div>
                 ) : (
-                  planFields.map((field) => (
+                  activeManagerFields.map((field) => (
                     <div
                       key={field.id}
                       className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
@@ -2155,7 +2557,11 @@ export default function IssueList({
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleDeletePlanField(field)}
+                        onClick={() =>
+                          activeFieldManager === "issue"
+                            ? handleDeleteIssueField(field as IssueFieldDefinition)
+                            : handleDeletePlanField(field as PlanFieldDefinition)
+                        }
                         className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                         aria-label={deleteFieldLabel}
                         title={deleteFieldLabel}
@@ -2167,7 +2573,7 @@ export default function IssueList({
                 )}
               </div>
 
-              <form onSubmit={handleCreatePlanField} className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <form onSubmit={activeManagerSubmit} className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium text-slate-600">{fieldNameLabel}</span>

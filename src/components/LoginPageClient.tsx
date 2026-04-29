@@ -1,7 +1,7 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useCallback, useState } from "react";
+import { signIn, signOut } from "next-auth/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { LANGUAGE_COOKIE, Locale } from "@/lib/i18n";
@@ -14,6 +14,7 @@ const LOGIN_TEXT: Record<
     emailLabel: string;
     passwordLabel: string;
     invalidCredentials: string;
+    noDepartment: string;
     signIn: string;
     signingIn: string;
     showPassword: string;
@@ -26,6 +27,7 @@ const LOGIN_TEXT: Record<
     emailLabel: "Email Address",
     passwordLabel: "Password",
     invalidCredentials: "Invalid email or password",
+    noDepartment: "Your account is not assigned to any department. Please contact an administrator.",
     signIn: "Sign In",
     signingIn: "Signing in...",
     showPassword: "Show password",
@@ -37,6 +39,7 @@ const LOGIN_TEXT: Record<
     emailLabel: "\u90AE\u7BB1\u5730\u5740",
     passwordLabel: "\u5BC6\u7801",
     invalidCredentials: "\u90AE\u7BB1\u6216\u5BC6\u7801\u9519\u8BEF",
+    noDepartment: "\u5F53\u524D\u7528\u6237\u4E0D\u5C5E\u4E8E\u4EFB\u4F55\u90E8\u95E8\uFF0C\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458",
     signIn: "\u767B\u5F55",
     signingIn: "\u767B\u5F55\u4E2D...",
     showPassword: "\u663E\u793A\u5BC6\u7801",
@@ -44,15 +47,35 @@ const LOGIN_TEXT: Record<
   },
 };
 
-export default function LoginPageClient({ initialLocale }: { initialLocale: Locale }) {
+type LoginErrorCode = "invalid-credentials" | "no-department" | null;
+
+const POST_LOGIN_REDIRECT = "/projects/select?projectId=clear&redirectTo=/";
+
+function getLoginErrorCode(error: string): Exclude<LoginErrorCode, null> {
+  const normalizedError = error.trim().toUpperCase().replace(/-/g, "_");
+  return normalizedError === "NO_DEPARTMENT" ? "no-department" : "invalid-credentials";
+}
+
+export default function LoginPageClient({
+  initialLocale,
+  initialErrorCode,
+}: {
+  initialLocale: Locale;
+  initialErrorCode?: "no-department" | null;
+}) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<LoginErrorCode>(initialErrorCode ?? null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const text = LOGIN_TEXT[locale];
+  const errorMessage = useMemo(() => {
+    if (errorCode === "invalid-credentials") return text.invalidCredentials;
+    if (errorCode === "no-department") return text.noDepartment;
+    return "";
+  }, [errorCode, text.invalidCredentials, text.noDepartment]);
 
   const switchLocale = useCallback(
     (nextLocale: Locale) => {
@@ -63,24 +86,39 @@ export default function LoginPageClient({ initialLocale }: { initialLocale: Loca
     [locale]
   );
 
+  useEffect(() => {
+    if (initialErrorCode !== "no-department") return;
+
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    void signOut({ redirect: false });
+  }, [initialErrorCode]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError("");
+    setErrorCode(null);
 
     const res = await signIn("credentials", {
       email,
       password,
       redirect: false,
+      callbackUrl: POST_LOGIN_REDIRECT,
     });
 
-    if (res?.error) {
-      setError(text.invalidCredentials);
-      setIsLoading(false);
-    } else {
-      router.push("/projects/select?projectId=clear&redirectTo=/");
+    if (res?.ok) {
+      router.push(POST_LOGIN_REDIRECT);
       router.refresh();
+      return;
     }
+
+    if (res?.error) {
+      setErrorCode(getLoginErrorCode(res.error));
+      setIsLoading(false);
+      return;
+    }
+
+    setErrorCode("invalid-credentials");
+    setIsLoading(false);
   };
 
   return (
@@ -110,9 +148,9 @@ export default function LoginPageClient({ initialLocale }: { initialLocale: Loca
           <span>{text.title}</span>
         </h1>
 
-        {error && (
+        {errorMessage && (
           <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm font-medium mb-6 border border-red-100 text-center animate-in fade-in duration-200">
-            {error}
+            {errorMessage}
           </div>
         )}
 

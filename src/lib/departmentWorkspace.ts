@@ -51,6 +51,21 @@ export type DepartmentWorkspaceData = {
   announcements: DepartmentWorkspaceAnnouncement[];
 };
 
+export function filterDepartmentWorkspaceProjectsForUser(
+  department: DepartmentWorkspaceData,
+  userId: string,
+  canViewAllProjects: boolean,
+): DepartmentWorkspaceData {
+  if (canViewAllProjects) return department;
+
+  return {
+    ...department,
+    projects: department.projects.filter((project) =>
+      project.members.some((member) => member.userId === userId),
+    ),
+  };
+}
+
 export async function getDepartmentWorkspaceData(departmentId: string, locale: Locale) {
   const department = await prisma.department.findUnique({
     where: { id: departmentId },

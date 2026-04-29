@@ -8,7 +8,7 @@ import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
-import { getProjectRole } from "@/lib/permissions";
+import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 
@@ -35,6 +35,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   if (!activeProject) redirect("/projects");
   const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
   const canManagePlans = projectRole === "ADMIN";
+  const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
 
   const searchParamsData = await searchParams;
   const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
@@ -57,6 +58,16 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
       watchers: {
         select: { id: true },
       },
+      issueFieldValues: {
+        select: {
+          id: true,
+          fieldDefinitionId: true,
+          valueBoolean: true,
+          valueNumber: true,
+          valueText: true,
+          valueOption: true,
+        },
+      },
     },
     orderBy,
     skip,
@@ -77,6 +88,10 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const plans = await prisma.plan.findMany({
     where: buildProjectItemsWhere(activeProject.id),
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+  });
+  const issueFieldDefinitions = await prisma.issueFieldDefinition.findMany({
+    where: { projectId: activeProject.id },
+    orderBy: { position: "asc" },
   });
   const workflowProjects = await prisma.project.findMany({
     where: { id: activeProject.id },
@@ -129,6 +144,9 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
         workflowProjects={workflowProjects}
         currentUser={currentUser}
         locale={locale}
+        activeProjectId={activeProject.id}
+        issueFieldDefinitions={issueFieldDefinitions}
+        canManageIssueFields={canManageIssueFields}
         canManagePlans={canManagePlans}
       />
     </div>

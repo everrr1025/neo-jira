@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
+import { buildVisibleProjectsWhere } from "@/lib/activeProjectUtils";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 
@@ -24,7 +25,7 @@ export default async function ProjectsPage() {
   const isGlobalAdmin = userRole === "ADMIN";
   const activeProjectId = await getActiveProjectIdForUser(userId, userRole);
 
-  const whereClause = isGlobalAdmin ? {} : { members: { some: { userId } } };
+  const whereClause = buildVisibleProjectsWhere(userId, userRole);
 
   const projects = await prisma.project.findMany({
     where: whereClause,

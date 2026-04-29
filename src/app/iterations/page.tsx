@@ -6,6 +6,7 @@ import { CreateSprintButton } from "@/components/CreateSprintButton";
 import { redirect } from "next/navigation";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
+import { canManageProjectPlanning } from "@/lib/permissions";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
@@ -32,21 +33,8 @@ export default async function IterationsPage() {
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
 
-  let adminProjects: { id: string; name: string; key: string }[] = [];
-  if (isGlobalAdmin) {
-    adminProjects = [activeProject];
-  } else {
-    const membership = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId, projectId: activeProject.id } },
-      include: { project: { select: { id: true, name: true, key: true } } },
-    });
-
-    if (membership?.role === "ADMIN") {
-      adminProjects = [membership.project];
-    }
-  }
-
-  const canManageSprints = adminProjects.length > 0;
+  const canCreateSprints = await canManageProjectPlanning(userId, activeProject.id);
+  const sprintCreateProjects = canCreateSprints ? [activeProject] : [];
 
   let iterations = await prisma.iteration.findMany({
     where: buildProjectItemsWhere(activeProject.id),
@@ -87,8 +75,8 @@ export default async function IterationsPage() {
             {isGlobalAdmin ? ` | ${activeProject.name} (${activeProject.key})` : ""}
           </p>
         </div>
-        {canManageSprints && (
-          <CreateSprintButton projects={adminProjects} locale={locale} />
+        {canCreateSprints && (
+          <CreateSprintButton projects={sprintCreateProjects} locale={locale} />
         )}
       </div>
 

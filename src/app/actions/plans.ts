@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { authOptions } from "@/lib/authOptions";
 import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
-import { checkProjectAdmin, checkProjectMember } from "@/lib/permissions";
+import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember, checkProjectPlanning } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
@@ -44,7 +44,7 @@ function assertPlanFieldType(type: string): asserts type is PlanFieldType {
   }
 }
 
-async function getAuthorizedPlan(planId: string, requiredAccess: "admin" | "member") {
+async function getAuthorizedPlan(planId: string, requiredAccess: "admin" | "fieldConfig" | "member") {
   const session = await getServerSession(authOptions);
   if (!session?.user) throw new Error("Unauthorized");
 
@@ -68,6 +68,8 @@ async function getAuthorizedPlan(planId: string, requiredAccess: "admin" | "memb
 
   if (requiredAccess === "admin") {
     await checkProjectAdmin(plan.projectId);
+  } else if (requiredAccess === "fieldConfig") {
+    await checkProjectFieldConfig(plan.projectId);
   } else {
     await checkProjectMember(plan.projectId);
   }
@@ -100,7 +102,7 @@ export async function createPlan(data: {
       throw new Error("Unauthorized");
     }
 
-    await checkProjectAdmin(data.projectId);
+    await checkProjectPlanning(data.projectId);
 
     const name = normalizeNameOrThrow(data.name, "planName", PLAN_NAME_MAX_LENGTH, locale);
 
@@ -276,7 +278,7 @@ export async function createPlanFieldDefinition(data: {
 }) {
   try {
     assertPlanFieldType(data.type);
-    const plan = await getAuthorizedPlan(data.planId, "admin");
+    const plan = await getAuthorizedPlan(data.planId, "fieldConfig");
     const name = data.name.trim();
     if (!name) throw new Error("Field name is required");
 
@@ -322,7 +324,7 @@ export async function updatePlanFieldDefinition(data: {
   optionsText?: string;
 }) {
   try {
-    const plan = await getAuthorizedPlan(data.planId, "admin");
+    const plan = await getAuthorizedPlan(data.planId, "fieldConfig");
     const existing = await prisma.planFieldDefinition.findFirst({
       where: { id: data.id, planId: plan.id },
       select: { id: true, type: true },
@@ -357,7 +359,7 @@ export async function updatePlanFieldDefinition(data: {
 
 export async function deletePlanFieldDefinition(data: { id: string; planId: string }) {
   try {
-    const plan = await getAuthorizedPlan(data.planId, "admin");
+    const plan = await getAuthorizedPlan(data.planId, "fieldConfig");
     const existing = await prisma.planFieldDefinition.findFirst({
       where: { id: data.id, planId: plan.id },
       select: { id: true },

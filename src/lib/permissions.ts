@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
+import { buildDepartmentProjectAccessWhere } from "@/lib/activeProjectUtils";
 import prisma from "@/lib/prisma";
 
 type SessionUser = {
@@ -46,21 +47,15 @@ export async function getProjectRole(userId: string, projectId: string): Promise
     return membership.role;
   }
 
-  const canViewAsDepartmentHead = await prisma.project.findFirst({
+  const canViewAsDepartmentManager = await prisma.project.findFirst({
     where: {
       id: projectId,
-      department: {
-        members: {
-          some: {
-            userId,
-          },
-        },
-      },
+      ...buildDepartmentProjectAccessWhere(userId),
     },
     select: { id: true },
   });
 
-  return canViewAsDepartmentHead ? "MEMBER" : null;
+  return canViewAsDepartmentManager ? "MEMBER" : null;
 }
 
 /**
@@ -78,6 +73,68 @@ export async function checkProjectAdmin(projectId: string) {
   if (role !== "ADMIN") {
     throw new Error("Unauthorized. Project admin access required.");
   }
+  return session;
+}
+
+export async function canConfigureProjectFields(userId: string, projectId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (user?.role === "ADMIN") return true;
+
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      OR: [
+        { ownerId: userId },
+        { members: { some: { userId, role: "ADMIN" } } },
+        {
+          department: {
+            members: {
+              some: {
+                userId,
+                role: "HEAD",
+              },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+
+  return Boolean(project);
+}
+
+export async function canManageProjectPlanning(userId: string, projectId: string): Promise<boolean> {
+  return canConfigureProjectFields(userId, projectId);
+}
+
+export async function checkProjectFieldConfig(projectId: string) {
+  const session = await getRequiredSession();
+  const userId = (session.user as SessionUser).id;
+  if (!userId) {
+    throw new Error("Unauthorized. Please log in.");
+  }
+
+  const canConfigure = await canConfigureProjectFields(userId, projectId);
+  if (!canConfigure) {
+    throw new Error("Unauthorized. Project field configuration access required.");
+  }
+
+  return session;
+}
+
+export async function checkProjectPlanning(projectId: string) {
+  const session = await getRequiredSession();
+  const userId = (session.user as SessionUser).id;
+  if (!userId) {
+    throw new Error("Unauthorized. Please log in.");
+  }
+
+  const canManage = await canManageProjectPlanning(userId, projectId);
+  if (!canManage) {
+    throw new Error("Unauthorized. Project planning access required.");
+  }
+
   return session;
 }
 

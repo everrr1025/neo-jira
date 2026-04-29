@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { AppShell } from '@/components/layout/AppShell';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { Providers } from '@/components/Providers';
@@ -30,21 +31,19 @@ export default async function RootLayout({
       <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased`}>
         <Providers>
           <McpProvider>
-            {session ? (
-              <div className="flex min-h-screen">
-                <Sidebar locale={locale} />
-                <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-                  <Header initialLocale={locale} />
-                  <div className="flex-1 overflow-auto p-6 bg-slate-50/50">
-                    {children}
-                  </div>
-                </main>
-              </div>
-            ) : (
-              <main className="min-h-screen">
-                {children}
-              </main>
-            )}
+            <AppShell
+              hasSession={!!session}
+              authenticatedContent={
+                <div className="flex min-h-screen">
+                  <Sidebar locale={locale} />
+                  <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+                    <Header initialLocale={locale} />
+                    <div className="flex-1 overflow-auto p-6 bg-slate-50/50">{children}</div>
+                  </main>
+                </div>
+              }
+              unauthenticatedContent={<main className="min-h-screen">{children}</main>}
+            />
           </McpProvider>
         </Providers>
       </body>
