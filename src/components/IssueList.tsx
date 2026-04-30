@@ -389,6 +389,187 @@ function ColumnVisibilityMenu({
   );
 }
 
+function getCustomFieldFilterOptions(field: CustomFieldDefinition, locale: Locale): FilterOption[] {
+  const emptyOptions = [
+    { value: "EMPTY", label: locale === "zh" ? "为空" : "Is empty" },
+    { value: "NOT_EMPTY", label: locale === "zh" ? "不为空" : "Is not empty" },
+  ];
+
+  if (field.type === "BOOLEAN") {
+    return [{ value: "EQ", label: locale === "zh" ? "等于" : "Is" }, ...emptyOptions];
+  }
+  if (field.type === "NUMBER") {
+    return [
+      { value: "EQ", label: locale === "zh" ? "等于" : "Equals" },
+      { value: "GT", label: locale === "zh" ? "大于" : "Greater than" },
+      { value: "GTE", label: locale === "zh" ? "大于等于" : "At least" },
+      { value: "LT", label: locale === "zh" ? "小于" : "Less than" },
+      { value: "LTE", label: locale === "zh" ? "小于等于" : "At most" },
+      ...emptyOptions,
+    ];
+  }
+  if (field.type === "SELECT") {
+    return [
+      { value: "EQ", label: locale === "zh" ? "等于" : "Is" },
+      { value: "NEQ", label: locale === "zh" ? "不等于" : "Is not" },
+      ...emptyOptions,
+    ];
+  }
+  return [
+    { value: "CONTAINS", label: locale === "zh" ? "包含" : "Contains" },
+    { value: "NEQ", label: locale === "zh" ? "不等于" : "Is not" },
+    ...emptyOptions,
+  ];
+}
+
+function AdvancedFieldFilters({
+  locale,
+  issueFields,
+  planFields,
+  searchParams,
+  updateQueryParams,
+}: {
+  locale: Locale;
+  issueFields: IssueFieldDefinition[];
+  planFields: PlanFieldDefinition[];
+  searchParams: URLSearchParams;
+  updateQueryParams: (updates: Record<string, string | string[] | null>) => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const allFields = [
+    ...issueFields.map((field) => ({ ...field, source: "issue" as const })),
+    ...planFields.map((field) => ({ ...field, source: "plan" as const })),
+  ];
+  const activeCount = allFields.filter((field) =>
+    searchParams.get(`${field.source === "plan" ? "planField" : "issueField"}_${field.id}_op`)
+  ).length;
+  const label = locale === "zh" ? "高级筛选" : "Advanced";
+  const clearLabel = locale === "zh" ? "清除" : "Clear";
+  const valueLabel = locale === "zh" ? "筛选值" : "Value";
+  const noFieldsLabel = locale === "zh" ? "暂无可筛选的扩展字段" : "No custom fields to filter";
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const updateFieldFilter = (field: CustomFieldDefinition & { source: "issue" | "plan" }, op: string, value: string) => {
+    const prefix = field.source === "plan" ? "planField" : "issueField";
+    const nextValue = field.type === "BOOLEAN" && op && op !== "EMPTY" && op !== "NOT_EMPTY" && !value ? "true" : value;
+    updateQueryParams({
+      [`${prefix}_${field.id}_op`]: op || null,
+      [`${prefix}_${field.id}`]: op && op !== "EMPTY" && op !== "NOT_EMPTY" ? nextValue : null,
+    });
+  };
+
+  const clearFieldFilter = (field: CustomFieldDefinition & { source: "issue" | "plan" }) => {
+    const prefix = field.source === "plan" ? "planField" : "issueField";
+    updateQueryParams({
+      [`${prefix}_${field.id}_op`]: null,
+      [`${prefix}_${field.id}`]: null,
+    });
+  };
+
+  return (
+    <details ref={detailsRef} className="relative">
+      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+        <Settings2 size={14} className="text-slate-400" />
+        <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
+        <ChevronDown size={14} className="text-slate-400" />
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-[min(92vw,520px)] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+        {allFields.length === 0 ? (
+          <p className="px-1 py-2 text-sm text-slate-500">{noFieldsLabel}</p>
+        ) : (
+          <div className="max-h-96 space-y-3 overflow-auto pr-1">
+            {allFields.map((field) => {
+              const prefix = field.source === "plan" ? "planField" : "issueField";
+              const opKey = `${prefix}_${field.id}_op`;
+              const valueKey = `${prefix}_${field.id}`;
+              const op = searchParams.get(opKey) || "";
+              const value = searchParams.get(valueKey) || "";
+              const options = getCustomFieldFilterOptions(field, locale);
+              const fieldOptions = getFieldOptions(field);
+              const needsValue = op && op !== "EMPTY" && op !== "NOT_EMPTY";
+
+              return (
+                <div key={`${field.source}-${field.id}`} className="grid gap-2 rounded-md border border-slate-100 bg-slate-50 p-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-700">{field.name}</div>
+                    <div className="text-xs text-slate-400">{field.source === "plan" ? (locale === "zh" ? "计划扩展列" : "Plan field") : (locale === "zh" ? "问题扩展字段" : "Issue field")}</div>
+                  </div>
+                  <select
+                    value={op}
+                    onChange={(event) => updateFieldFilter(field, event.target.value, value)}
+                    className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    aria-label={field.name}
+                  >
+                    <option value="">{locale === "zh" ? "不限" : "Any"}</option>
+                    {options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {needsValue && field.type === "BOOLEAN" ? (
+                    <select
+                      value={value || "true"}
+                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
+                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      aria-label={valueLabel}
+                    >
+                      <option value="true">{locale === "zh" ? "是" : "Yes"}</option>
+                      <option value="false">{locale === "zh" ? "否" : "No"}</option>
+                    </select>
+                  ) : needsValue && field.type === "SELECT" ? (
+                    <select
+                      value={value}
+                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
+                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      aria-label={valueLabel}
+                    >
+                      <option value="">{locale === "zh" ? "请选择" : "Select"}</option>
+                      {fieldOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : needsValue ? (
+                    <input
+                      type={field.type === "NUMBER" ? "number" : "text"}
+                      value={value}
+                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
+                      placeholder={valueLabel}
+                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      aria-label={valueLabel}
+                    />
+                  ) : (
+                    <div className="hidden sm:block" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => clearFieldFilter(field)}
+                    className="h-9 rounded-md px-2 text-sm text-slate-500 hover:bg-white hover:text-slate-700"
+                  >
+                    {clearLabel}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function SingleFilter({
   value,
   options,
@@ -762,7 +943,7 @@ export default function IssueList({
   );
 
   const { filters, pagination, sorting, updateQueryParams } = useIssueListFilters();
-  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
+  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
   const { page: currentPage, pageSize: itemsPerPage } = pagination;
   const { sortBy, sortDirection } = sorting;
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
@@ -1294,6 +1475,37 @@ export default function IssueList({
     [noPlanLabel, plans]
   );
 
+  const viewOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "all", label: locale === "zh" ? "全部" : "All" },
+      { value: "backlog", label: translations.issueList.backlog },
+      { value: "overdue", label: translations.issueList.overdue },
+      { value: "dueSoon", label: translations.issueList.dueSoon },
+      { value: "assignedToMe", label: translations.issueList.assignedToMe },
+      { value: "watching", label: locale === "zh" ? "我关注" : "Watching" },
+    ],
+    [
+      locale,
+      translations.issueList.assignedToMe,
+      translations.issueList.backlog,
+      translations.issueList.dueSoon,
+      translations.issueList.overdue,
+    ]
+  );
+
+  const handleViewChange = (nextView: string) => {
+    updateQueryParams({
+      view: nextView === "all" ? null : nextView,
+      page: "1",
+      ...(nextView === "backlog" ? { sprint: null } : {}),
+      ...(nextView === "overdue" || nextView === "dueSoon"
+        ? { dueFilter: null, dueDate: null, duePreset: null }
+        : {}),
+      ...(nextView === "assignedToMe" ? { assignee: null } : {}),
+      ...(nextView === "watching" ? { watcher: null } : {}),
+    });
+  };
+
   const toggleFilterValue = (value: string, filterKey: string, currentValues: string[]) => {
     const newValues = currentValues.includes(value) ? currentValues.filter((item) => item !== value) : [...currentValues, value];
     updateQueryParams({ [filterKey]: newValues });
@@ -1707,6 +1919,28 @@ export default function IssueList({
       }`}
     >
       <div className={`bg-white p-3 sticky top-0 z-20 ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
+        {!lockedPlanId ? (
+          <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-100 pb-3">
+            {viewOptions.map((option) => {
+              const isActive = (view || "all") === option.value || (!view && option.value === "all");
+
+              return (
+                <button
+                  type="button"
+                  key={option.value}
+                  onClick={() => handleViewChange(option.value)}
+                  className={`h-8 rounded-md px-3 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2 w-full">
           <div className={`flex items-center gap-2 ${isSearchOpen ? "w-full lg:w-80" : "w-auto"} relative`}>
             {isSearchOpen ? (
@@ -1759,16 +1993,18 @@ export default function IssueList({
             <ListFilter size={14} />
           </div>
 
-          <MultiFilter
-            label={translations.issueList.sprint}
-            options={sprintOptions}
-            selectedValues={sprintFilter}
-            onToggle={(value) => toggleFilterValue(value, "sprint", sprintFilter)}
-            onClear={() => {
-              updateQueryParams({ sprint: null });
-            }}
-            clearText={translations.issueList.clearSelection}
-          />
+          {view !== "backlog" ? (
+            <MultiFilter
+              label={translations.issueList.sprint}
+              options={sprintOptions}
+              selectedValues={sprintFilter}
+              onToggle={(value) => toggleFilterValue(value, "sprint", sprintFilter)}
+              onClear={() => {
+                updateQueryParams({ sprint: null });
+              }}
+              clearText={translations.issueList.clearSelection}
+            />
+          ) : null}
 
           <MultiFilter
             label={translations.issueList.status}
@@ -1816,43 +2052,57 @@ export default function IssueList({
             />
           ) : null}
 
-          <MultiFilter
-            label={translations.issueList.assignee}
-            options={assigneeFilterOptions}
-            selectedValues={assigneeFilter}
-            onToggle={(value) => toggleFilterValue(value, "assignee", assigneeFilter)}
-            onClear={() => {
-              updateQueryParams({ assignee: null });
-            }}
-            clearText={translations.issueList.clearSelection}
-          />
-
-          <SingleFilter
-            value={dueFilter}
-            options={dueFilterOptions}
-            onChange={(value) => {
-              updateQueryParams({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue });
-            }}
-            renderSummary={(label) => (
-              <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
-                <span className="text-slate-500">{translations.issueList.due}</span>
-                <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
-                <ChevronDown size={14} className="text-slate-400" />
-              </div>
-            )}
-          />
-
-          {dueFilter !== "ALL" ? (
-            <LocalizedDateInput
-              locale={locale}
-              aria-label={translations.issueList.due}
-              value={dueDateValue}
-              onChange={(e) => {
-                updateQueryParams({ duePreset: null, dueDate: e.target.value });
+          {view !== "assignedToMe" ? (
+            <MultiFilter
+              label={translations.issueList.assignee}
+              options={assigneeFilterOptions}
+              selectedValues={assigneeFilter}
+              onToggle={(value) => toggleFilterValue(value, "assignee", assigneeFilter)}
+              onClear={() => {
+                updateQueryParams({ assignee: null });
               }}
-              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              clearText={translations.issueList.clearSelection}
             />
           ) : null}
+
+          {view !== "overdue" && view !== "dueSoon" ? (
+            <>
+              <SingleFilter
+                value={dueFilter}
+                options={dueFilterOptions}
+                onChange={(value) => {
+                  updateQueryParams({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue });
+                }}
+                renderSummary={(label) => (
+                  <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
+                    <span className="text-slate-500">{translations.issueList.due}</span>
+                    <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
+                    <ChevronDown size={14} className="text-slate-400" />
+                  </div>
+                )}
+              />
+
+              {dueFilter !== "ALL" ? (
+                <LocalizedDateInput
+                  locale={locale}
+                  aria-label={translations.issueList.due}
+                  value={dueDateValue}
+                  onChange={(e) => {
+                    updateQueryParams({ duePreset: null, dueDate: e.target.value });
+                  }}
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              ) : null}
+            </>
+          ) : null}
+
+          <AdvancedFieldFilters
+            locale={locale}
+            issueFields={issueFields}
+            planFields={lockedPlanId ? planFields : []}
+            searchParams={searchParams}
+            updateQueryParams={updateQueryParams}
+          />
 
           <ColumnVisibilityMenu
             buttonLabel={columnsButtonLabel}

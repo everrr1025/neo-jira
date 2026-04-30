@@ -94,13 +94,55 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   if (!plan) return notFound();
 
   const searchParamsData = await searchParams;
+  const [issueFieldDefinitions, planFieldDefinitions, workflowProjects] = await Promise.all([
+    prisma.issueFieldDefinition.findMany({
+      where: { projectId: activeProject.id },
+      orderBy: { position: "asc" },
+    }),
+    prisma.planFieldDefinition.findMany({
+      where: { planId: plan.id },
+      orderBy: { position: "asc" },
+    }),
+    prisma.project.findMany({
+      where: { id: activeProject.id },
+      select: {
+        id: true,
+        workflowStatuses: {
+          orderBy: { position: "asc" },
+        },
+        workflowTransitions: {
+          select: {
+            fromStatusId: true,
+            toStatusId: true,
+          },
+        },
+      },
+    }),
+  ]);
+  const doneStatusKeys = workflowProjects[0]?.workflowStatuses
+    .filter((status) => status.category === "DONE")
+    .map((status) => status.key);
   const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
     searchParamsData,
     activeProject.id,
-    plan.id
+    {
+      lockedPlanId: plan.id,
+      currentUserId: userId,
+      doneStatusKeys,
+      issueFieldDefinitions: issueFieldDefinitions.map((field) => ({
+        id: field.id,
+        type: field.type,
+        source: "issue",
+      })),
+      planFieldDefinitions: planFieldDefinitions.map((field) => ({
+        id: field.id,
+        type: field.type,
+        source: "plan",
+      })),
+    }
   );
 
-  const [issues, totalIssues, basicPlanIssues, issueFieldDefinitions, planFieldDefinitions, users, plans, iterations, workflowProjects, currentUser] = await Promise.all([
+  const [issues, totalIssues, basicPlanIssues, users, plans, iterations, currentUser] = await Promise.all([
     prisma.issue.findMany({
       where: parsedWhere,
       include: {
@@ -151,14 +193,6 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
       },
       select: { status: true },
     }),
-    prisma.issueFieldDefinition.findMany({
-      where: { projectId: activeProject.id },
-      orderBy: { position: "asc" },
-    }),
-    prisma.planFieldDefinition.findMany({
-      where: { planId: plan.id },
-      orderBy: { position: "asc" },
-    }),
     prisma.user.findMany({
       where: buildProjectUsersWhere(activeProject.id),
       orderBy: { name: "asc" },
@@ -170,21 +204,6 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     prisma.iteration.findMany({
       where: buildProjectItemsWhere(activeProject.id),
       orderBy: { startDate: "desc" },
-    }),
-    prisma.project.findMany({
-      where: { id: activeProject.id },
-      select: {
-        id: true,
-        workflowStatuses: {
-          orderBy: { position: "asc" },
-        },
-        workflowTransitions: {
-          select: {
-            fromStatusId: true,
-            toStatusId: true,
-          },
-        },
-      },
     }),
     prisma.user.findUnique({ where: { id: userId } }),
   ]);

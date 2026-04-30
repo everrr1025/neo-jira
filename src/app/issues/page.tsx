@@ -38,9 +38,42 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
 
   const searchParamsData = await searchParams;
+  const [issueFieldDefinitions, workflowProjects] = await Promise.all([
+    prisma.issueFieldDefinition.findMany({
+      where: { projectId: activeProject.id },
+      orderBy: { position: "asc" },
+    }),
+    prisma.project.findMany({
+      where: { id: activeProject.id },
+      select: {
+        id: true,
+        workflowStatuses: {
+          orderBy: { position: "asc" },
+        },
+        workflowTransitions: {
+          select: {
+            fromStatusId: true,
+            toStatusId: true,
+          },
+        },
+      },
+    }),
+  ]);
+  const doneStatusKeys = workflowProjects[0]?.workflowStatuses
+    .filter((status) => status.category === "DONE")
+    .map((status) => status.key);
   const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
     searchParamsData,
-    activeProject.id
+    activeProject.id,
+    {
+      currentUserId: userId,
+      doneStatusKeys,
+      issueFieldDefinitions: issueFieldDefinitions.map((field) => ({
+        id: field.id,
+        type: field.type,
+        source: "issue",
+      })),
+    }
   );
 
   const issues = await prisma.issue.findMany({
@@ -89,26 +122,6 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
     where: buildProjectItemsWhere(activeProject.id),
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
-  const issueFieldDefinitions = await prisma.issueFieldDefinition.findMany({
-    where: { projectId: activeProject.id },
-    orderBy: { position: "asc" },
-  });
-  const workflowProjects = await prisma.project.findMany({
-    where: { id: activeProject.id },
-    select: {
-      id: true,
-      workflowStatuses: {
-        orderBy: { position: "asc" },
-      },
-      workflowTransitions: {
-        select: {
-          fromStatusId: true,
-          toStatusId: true,
-        },
-      },
-    },
-  });
-
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
 
   return (

@@ -20,6 +20,7 @@ export function useIssueListFilters() {
   const sprintFilter = getCsv("sprint");
   const assigneeFilter = getCsv("assignee");
   const watcherFilter = getCsv("watcher");
+  const view = searchParams.get("view") || "all";
 
   const dueFilter = searchParams.get("dueFilter") || "ALL";
   const dueDateValue = searchParams.get("dueDate") || "";
@@ -69,6 +70,7 @@ export function useIssueListFilters() {
       sprintFilter,
       assigneeFilter,
       watcherFilter,
+      view,
       dueFilter,
       dueDateValue,
       duePreset,
