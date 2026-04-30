@@ -14,6 +14,7 @@ import {
   Settings2,
   Trash2,
   X,
+  Eye,
   Maximize2,
   Minimize2,
 } from "lucide-react";
@@ -111,6 +112,7 @@ type FilterOption = {
 type IssueUser = {
   id: string;
   name: string | null;
+  role?: string | null;
 };
 
 type IssueIteration = {
@@ -314,9 +316,12 @@ function ColumnVisibilityMenu({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
-        <span>{buttonLabel}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+      <summary
+        className="list-none h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none"
+        aria-label={buttonLabel}
+        title={buttonLabel}
+      >
+        <Eye size={16} className="text-slate-500" />
       </summary>
       <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
         {columns.map((column) => {
@@ -949,6 +954,7 @@ export default function IssueList({
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
+  const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
   const [issueFields, setIssueFields] = useState(issueFieldDefinitions);
   const [visibleIssueFieldIds, setVisibleIssueFieldIds] = useState<string[]>(() =>
     issueFieldDefinitions.map((field) => field.id)
@@ -1404,14 +1410,14 @@ export default function IssueList({
     () => [
       { value: "ME", label: translations.issueList.assignedToMe },
       { value: "UNASSIGNED", label: translations.issueList.unassigned },
-      ...users
+      ...assigneeUsers
         .filter((user) => user.id !== currentUser?.id)
         .map((user) => ({
           value: user.id,
           label: user.name || user.id,
         })),
     ],
-    [currentUser?.id, translations.issueList.assignedToMe, translations.issueList.unassigned, users]
+    [assigneeUsers, currentUser?.id, translations.issueList.assignedToMe, translations.issueList.unassigned]
   );
 
   const dueFilterOptions = useMemo<FilterOption[]>(
@@ -1448,9 +1454,9 @@ export default function IssueList({
   const assigneeInlineOptions = useMemo<FilterOption[]>(
     () => [
       { value: "", label: translations.issueList.unassigned },
-      ...users.map((u) => ({ value: u.id as string, label: (u.name || u.id) as string })),
+      ...assigneeUsers.map((u) => ({ value: u.id as string, label: (u.name || u.id) as string })),
     ],
-    [translations.issueList.unassigned, users]
+    [assigneeUsers, translations.issueList.unassigned]
   );
 
   const perPageOptions = useMemo<FilterOption[]>(
@@ -1842,7 +1848,7 @@ export default function IssueList({
           };
         }
 
-        const targetUser = users.find((user) => user.id === action.targetId);
+        const targetUser = assigneeUsers.find((user) => user.id === action.targetId);
         return {
           ...issue,
           assigneeId: action.targetId || null,
@@ -1945,7 +1951,15 @@ export default function IssueList({
           <div className={`flex items-center gap-2 ${isSearchOpen ? "w-full lg:w-80" : "w-auto"} relative`}>
             {isSearchOpen ? (
               <>
-                <Search size={16} className="absolute left-3 text-slate-400" />
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(false)}
+                  className="absolute left-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  aria-label={locale === "zh" ? "收起搜索" : "Collapse search"}
+                  title={locale === "zh" ? "收起搜索" : "Collapse search"}
+                >
+                  <Search size={14} />
+                </button>
                 <input
                   type="text"
                   placeholder={translations.issueList.searchPlaceholder}
@@ -2104,21 +2118,6 @@ export default function IssueList({
             updateQueryParams={updateQueryParams}
           />
 
-          <ColumnVisibilityMenu
-            buttonLabel={columnsButtonLabel}
-            resetLabel={resetColumnsLabel}
-            columns={defaultColumns}
-            visibleColumnIds={visibleColumnIds}
-            onToggle={handleToggleColumnVisibility}
-            onReset={handleResetColumns}
-            issueFields={issueFields}
-            visibleIssueFieldIds={visibleIssueFieldIds}
-            onToggleIssueField={handleToggleIssueFieldVisibility}
-            planFields={planFields}
-            visiblePlanFieldIds={visiblePlanFieldIds}
-            onTogglePlanField={handleTogglePlanFieldVisibility}
-          />
-
           {canManageIssueFields ? (
             <button
               type="button"
@@ -2140,6 +2139,21 @@ export default function IssueList({
               <span>{planFieldsManagerLabel}</span>
             </button>
           ) : null}
+
+          <ColumnVisibilityMenu
+            buttonLabel={columnsButtonLabel}
+            resetLabel={resetColumnsLabel}
+            columns={defaultColumns}
+            visibleColumnIds={visibleColumnIds}
+            onToggle={handleToggleColumnVisibility}
+            onReset={handleResetColumns}
+            issueFields={issueFields}
+            visibleIssueFieldIds={visibleIssueFieldIds}
+            onToggleIssueField={handleToggleIssueFieldVisibility}
+            planFields={planFields}
+            visiblePlanFieldIds={visiblePlanFieldIds}
+            onTogglePlanField={handleTogglePlanFieldVisibility}
+          />
 
           <button
             type="button"
@@ -2211,7 +2225,7 @@ export default function IssueList({
       </div>
 
       <div className={`bg-white overflow-hidden flex-1 flex flex-col ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
-        <div className="overflow-x-auto flex-1">
+        <div className="relative overflow-x-auto flex-1">
           <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
               <tr>
@@ -2664,17 +2678,16 @@ export default function IssueList({
                   })}
                 </tr>
               ))}
-
-              {(totalIssues || issues.length) === 0 && (
-                <tr>
-                  <td colSpan={columns.length + visibleIssueFields.length + visiblePlanFields.length + 1} className="px-5 py-16 text-center text-slate-500">
-                    <p className="font-medium text-base mb-1">{translations.issueList.noMatchTitle}</p>
-                    <p className="text-sm">{translations.issueList.noMatchDesc}</p>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+          {(totalIssues || issues.length) === 0 ? (
+            <div className="pointer-events-none sticky left-0 flex min-h-52 w-full items-center justify-center px-5 py-16 text-center text-slate-500">
+              <div>
+                <p className="mb-1 text-base font-medium">{translations.issueList.noMatchTitle}</p>
+                <p className="text-sm">{translations.issueList.noMatchDesc}</p>
+              </div>
+            </div>
+          ) : null}
         </div>
 
       <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -2763,7 +2776,7 @@ export default function IssueList({
         selectedCount={selectedIssueIds.length}
         plans={plans}
         iterations={iterations}
-        users={users}
+        users={assigneeUsers}
         locale={locale}
         onClose={() => setBulkAction(null)}
         onSubmit={handleBulkSubmit}

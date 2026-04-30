@@ -28,6 +28,7 @@ type CreateIssueModalProps = {
 export type CreateIssueUser = {
   id: string;
   name: string | null;
+  role?: string | null;
 };
 
 export type CreateIssuePlan = {
@@ -215,7 +216,9 @@ export default function CreateIssueModal({
   ];
   const assigneeOptions: DropdownOption[] = [
     { value: "", label: translations.issueList.unassigned },
-    ...users.map((user) => ({ value: user.id, label: user.name || user.id })),
+    ...users
+      .filter((user) => user.role !== "ADMIN")
+      .map((user) => ({ value: user.id, label: user.name || user.id })),
   ];
   const typeOptions: DropdownOption[] = [
     { value: "TASK", label: getIssueTypeLabel("TASK", locale) },

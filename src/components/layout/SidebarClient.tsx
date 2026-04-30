@@ -31,6 +31,7 @@ export function SidebarClient({
   const inProjectContext = Boolean(activeProject) && !isDepartmentRoute;
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
+  const itemsLabel = locale === "zh" ? "事项" : "Items";
   const returnHref = departmentContext
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
@@ -71,6 +72,16 @@ export function SidebarClient({
         },
         ...(departmentContext
           ? [
+              {
+                id: "department-items",
+                href: `/departments/${departmentContext.id}/items`,
+                icon: (
+                  <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                ),
+                label: itemsLabel,
+              },
               {
                 id: "department-members",
                 href: `/departments/${departmentContext.id}/members`,

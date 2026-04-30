@@ -110,7 +110,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const totalIssues = await prisma.issue.count({ where: parsedWhere });
 
   const users = await prisma.user.findMany({
-    where: buildProjectUsersWhere(activeProject.id),
+    where: buildProjectUsersWhere(activeProject.id, false),
     orderBy: { name: "asc" },
   });
 

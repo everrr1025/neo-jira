@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, FolderGit2, Loader2, Plus, Shield, Trash2, Users, X } from "lucide-react";
+import { Bell, Building2, FolderGit2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -11,8 +11,14 @@ import {
   setDepartmentMemberRole,
   updateDepartmentProject,
 } from "@/app/actions/departments";
+import DepartmentUpcomingItemsCard from "@/components/DepartmentUpcomingItemsCard";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
+import type {
+  DepartmentReminderIssueOption,
+  DepartmentReminderScopeOption,
+  DepartmentUpcomingItem,
+} from "@/lib/departmentReminders";
 import type { Locale } from "@/lib/i18n";
 
 const TEXT = {
@@ -154,6 +160,10 @@ export default function DepartmentManageClient({
   isHead,
   canManageProjects,
   mode,
+  upcomingItems = [],
+  reminderProjectOptions = [],
+  reminderIssueOptions = [],
+  canCreateDepartmentReminder = false,
 }: {
   department: DepartmentWorkspaceData;
   locale: Locale;
@@ -161,6 +171,10 @@ export default function DepartmentManageClient({
   isHead: boolean;
   canManageProjects: boolean;
   mode: "dashboard" | "members" | "projects";
+  upcomingItems?: DepartmentUpcomingItem[];
+  reminderProjectOptions?: DepartmentReminderScopeOption[];
+  reminderIssueOptions?: DepartmentReminderIssueOption[];
+  canCreateDepartmentReminder?: boolean;
 }) {
   const t = TEXT[locale];
   const router = useRouter();
@@ -200,7 +214,6 @@ export default function DepartmentManageClient({
   });
 
   const totalIssues = department.projects.reduce((sum, project) => sum + project.issuesCount, 0);
-  const assistantCount = department.members.filter((member) => member.role === "ASSISTANT").length;
   const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / MEMBER_PAGE_SIZE));
   const currentMemberPage = Math.min(memberPage, totalMemberPages);
   const paginatedMembers = sortedMembers.slice(
@@ -212,13 +225,10 @@ export default function DepartmentManageClient({
       { label: t.members, value: department.members.length, icon: Users },
       { label: t.projects, value: department.projects.length, icon: FolderGit2 },
       { label: t.issues, value: totalIssues, icon: Bell },
-      { label: t.assistant, value: assistantCount, icon: Shield },
     ],
     [
-      assistantCount,
       department.members.length,
       department.projects.length,
-      t.assistant,
       t.issues,
       t.members,
       t.projects,
@@ -310,28 +320,34 @@ export default function DepartmentManageClient({
     <div className="space-y-6">
       {mode === "dashboard" ? (
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1.5fr)_minmax(220px,0.85fr)]">
+          <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(390px,1fr)_minmax(220px,0.55fr)]">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-sm">
                 <Building2 size={22} />
               </div>
-              <div className="min-w-0">
-                <p className="max-w-3xl text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
+              <div className="grid min-w-0 gap-3">
+                <p className="text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</span>
+                  <span className="text-base font-semibold text-slate-900">{headName}</span>
+                </div>
               </div>
             </div>
-            <div className="grid gap-3">
-              <div className="rounded-xl bg-slate-50 px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.currentUser}</p>
-                <p className="mt-2 text-base font-semibold text-slate-900">
-                  {currentMember ? displayMember(currentMember) : "-"}
-                </p>
-                {currentMemberRole ? <p className="mt-1 text-sm text-slate-500">{currentMemberRole}</p> : null}
-                {currentMember ? <p className="mt-1 truncate text-xs text-slate-400">{currentMember.userEmail}</p> : null}
-              </div>
-              <div className="rounded-xl bg-slate-50 px-5 py-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</p>
-                <p className="mt-2 text-base font-semibold text-slate-900">{headName}</p>
-              </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              {summaryCards.map((card) => (
+                <div key={card.label} className="rounded-xl bg-slate-50 px-5 py-4">
+                  <span className="text-sm font-medium text-slate-500">{card.label}</span>
+                  <div className="mt-3 text-2xl font-bold text-slate-900">{card.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl bg-slate-50 px-5 py-4">
+              <p className="text-base font-semibold text-slate-900">
+                {currentMember ? displayMember(currentMember) : "-"}
+              </p>
+              {currentMemberRole ? <p className="mt-1 text-sm text-slate-500">{currentMemberRole}</p> : null}
             </div>
           </div>
         </div>
@@ -345,19 +361,16 @@ export default function DepartmentManageClient({
 
       {mode === "dashboard" ? (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {summaryCards.map((card) => (
-              <div key={card.label} className="rounded-2xl border bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-500">{card.label}</span>
-                  <card.icon size={18} className="text-slate-400" />
-                </div>
-                <div className="mt-3 text-3xl font-bold text-slate-900">{card.value}</div>
-              </div>
-            ))}
-          </div>
-
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <DepartmentUpcomingItemsCard
+              departmentId={department.id}
+              items={upcomingItems}
+              locale={locale}
+              canCreateDepartmentReminder={canCreateDepartmentReminder}
+              projectOptions={reminderProjectOptions}
+              issueOptions={reminderIssueOptions}
+            />
+
             <div className="rounded-2xl border bg-white p-6 shadow-sm">
               <div className="mb-4 flex items-center gap-2">
                 <Bell size={18} className="text-blue-600" />

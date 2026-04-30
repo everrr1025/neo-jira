@@ -80,7 +80,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   if (!issue) return notFound();
 
   const users = await prisma.user.findMany({
-    where: buildProjectUsersWhere(issue.projectId),
+    where: buildProjectUsersWhere(issue.projectId, false),
     orderBy: { name: "asc" },
   });
 

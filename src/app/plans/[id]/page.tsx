@@ -194,7 +194,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
       select: { status: true },
     }),
     prisma.user.findMany({
-      where: buildProjectUsersWhere(activeProject.id),
+      where: buildProjectUsersWhere(activeProject.id, false),
       orderBy: { name: "asc" },
     }),
     prisma.plan.findMany({

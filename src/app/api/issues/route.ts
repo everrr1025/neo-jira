@@ -98,6 +98,23 @@ export async function POST(request: Request) {
       });
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+    if (assigneeId) {
+      const assignee = await prisma.user.findFirst({
+        where: {
+          id: assigneeId,
+          role: { not: "ADMIN" },
+          projectMemberships: {
+            some: { projectId },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!assignee) {
+        return NextResponse.json({ error: "Assignee is not available in the project" }, { status: 400 });
+      }
+    }
     
     const count = await prisma.issue.count({ where: { projectId } });
     const issueKey = `${project.key}-${count + 1}`;

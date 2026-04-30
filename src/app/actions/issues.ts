@@ -54,6 +54,29 @@ function assertIssueFieldType(type: string): asserts type is IssueFieldType {
   }
 }
 
+async function assertAssignableAssignee(
+  projectId: string,
+  assigneeId?: string | null,
+  tx: Pick<typeof prisma, "user"> = prisma
+) {
+  if (!assigneeId) return;
+
+  const assignee = await tx.user.findFirst({
+    where: {
+      id: assigneeId,
+      role: { not: "ADMIN" },
+      projectMemberships: {
+        some: { projectId },
+      },
+    },
+    select: { id: true },
+  });
+
+  if (!assignee) {
+    throw new Error("Assignee is not available in the active project");
+  }
+}
+
 const issueAuditSelect = {
   id: true,
   key: true,
@@ -355,6 +378,7 @@ export async function createIssue(data: {
     });
 
     if (!project) throw new Error("Project not found or no access");
+    await assertAssignableAssignee(project.id, data.assigneeId);
 
     const count = await prisma.issue.count({ where: { projectId: project.id } });
     const issueKey = `${project.key}-${count + 1}`;
@@ -751,6 +775,11 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         await checkProjectAdmin(previousIssue.projectId);
       }
 
+      if (Object.prototype.hasOwnProperty.call(data, "assigneeId")) {
+        const nextAssigneeId = typeof data.assigneeId === "string" && data.assigneeId ? data.assigneeId : null;
+        await assertAssignableAssignee(previousIssue.projectId, nextAssigneeId, tx);
+      }
+
       if (typeof data.planId === "string" && data.planId) {
         const targetPlan = await tx.plan.findUnique({
           where: { id: data.planId },
@@ -957,26 +986,7 @@ export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueActi
     }
 
     if (action.type === "assignAssignee" && action.targetId) {
-      const assignee = await prisma.user.findFirst({
-        where: {
-          id: action.targetId,
-          OR: [
-            { role: "ADMIN" },
-            {
-              projectMemberships: {
-                some: {
-                  projectId: activeProjectId,
-                },
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      });
-
-      if (!assignee) {
-        throw new Error("Assignee is not available in the active project");
-      }
+      await assertAssignableAssignee(activeProjectId, action.targetId);
     }
 
     const updateData =

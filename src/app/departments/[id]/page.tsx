@@ -7,6 +7,12 @@ import {
   filterDepartmentWorkspaceProjectsForUser,
   getDepartmentWorkspaceData,
 } from "@/lib/departmentWorkspace";
+import {
+  getDepartmentReminderIssueOptions,
+  getDepartmentUpcomingItems,
+  getManageableReminderProjects,
+} from "@/lib/departmentReminders";
+import prisma from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +49,40 @@ export default async function DepartmentPage({
     userId,
     canViewAllProjects,
   );
+  const visibleProjectIds = visibleDepartment.projects.map((project) => project.id);
+  const canCreateDepartmentReminder = Boolean(isGlobalAdmin || isHead || isAssistant);
+  const reminderProjectOptions = getManageableReminderProjects({
+    projects: visibleDepartment.projects,
+    userId,
+    canManageDepartment: canCreateDepartmentReminder,
+  });
+  const workflowProjects = visibleProjectIds.length
+    ? await prisma.project.findMany({
+        where: { id: { in: visibleProjectIds } },
+        select: {
+          workflowStatuses: {
+            where: { category: "DONE" },
+            select: { key: true },
+          },
+        },
+      })
+    : [];
+  const doneStatusKeys = Array.from(
+    new Set(workflowProjects.flatMap((project) => project.workflowStatuses.map((status) => status.key)))
+  );
+  const [upcomingItems, reminderIssueOptions] = await Promise.all([
+    getDepartmentUpcomingItems({
+      departmentId,
+      userId,
+      userRole,
+      visibleProjectIds,
+      manageableProjectIds: reminderProjectOptions.map((project) => project.id),
+      doneStatusKeys,
+      canManageDepartment: canCreateDepartmentReminder,
+      locale,
+    }),
+    getDepartmentReminderIssueOptions(visibleProjectIds),
+  ]);
 
   return (
     <div className="flex h-full w-full flex-col space-y-6">
@@ -53,6 +93,10 @@ export default async function DepartmentPage({
         isHead={isHead}
         canManageProjects={canViewAllProjects}
         mode="dashboard"
+        upcomingItems={upcomingItems}
+        reminderProjectOptions={reminderProjectOptions}
+        reminderIssueOptions={reminderIssueOptions}
+        canCreateDepartmentReminder={canCreateDepartmentReminder}
       />
     </div>
   );

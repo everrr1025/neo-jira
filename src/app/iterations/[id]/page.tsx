@@ -76,7 +76,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
     .map((status) => status.key);
   const [users, plans, iterations, backlogIssues] = await Promise.all([
     prisma.user.findMany({
-      where: buildProjectUsersWhere(iteration.project.id),
+      where: buildProjectUsersWhere(iteration.project.id, false),
       orderBy: { name: "asc" },
     }),
     prisma.plan.findMany({

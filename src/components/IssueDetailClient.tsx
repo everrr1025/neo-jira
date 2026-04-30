@@ -136,6 +136,7 @@ export default function IssueDetailClient({
   const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const noIssueFieldsLabel = locale === "zh" ? "暂无扩展字段" : "No custom fields";
+  const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
 
   const isWatching = useMemo(
     () => watchers.some((watcher) => watcher.id === currentUserId),
@@ -662,7 +663,7 @@ export default function IssueDetailClient({
             onChange={(value) => handleAutoSave("assigneeId", value || null)}
             options={[
               { value: "", label: translations.issueList.unassigned },
-              ...users.map((user) => ({ value: user.id, label: user.name || user.id })),
+              ...assigneeUsers.map((user) => ({ value: user.id, label: user.name || user.id })),
             ]}
           />
 
