@@ -63,7 +63,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     pathname.startsWith("/plans") ||
     pathname.startsWith("/projects") ||
     pathname.startsWith("/settings") ||
-    /^\/departments\/[^/]+\/(projects|members)(?:\/|$)/.test(pathname);
+    /^\/departments\/[^/]+\/(projects|members|items)(?:\/|$)/.test(pathname);
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;

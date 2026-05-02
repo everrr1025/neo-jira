@@ -12,16 +12,21 @@ import {
   getDepartmentReminderIssueOptions,
   getManageableReminderProjects,
 } from "@/lib/departmentReminders";
+import { getNoteFoldersForUser, getNotesForUser, getNoteTaskOptionsForUser } from "@/lib/notes";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
 export const dynamic = "force-dynamic";
 
 export default async function DepartmentItemsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id: departmentId } = await params;
+  const { tab } = await searchParams;
+  const initialTab = tab === "schedule" || tab === "notes" ? tab : "tasks";
   const locale = await getCurrentLocale();
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
@@ -47,8 +52,14 @@ export default async function DepartmentItemsPage({
     userId,
     canManageDepartment: canCreateDepartmentItem,
   });
+  const assigneeOptions = visibleDepartment.members.map((member) => ({
+    id: member.userId,
+    name: member.userName || member.userEmail,
+    email: member.userEmail,
+    projectIds: member.projects.map((project) => project.id),
+  }));
 
-  const [items, issueOptions] = await Promise.all([
+  const [items, noteFolders, notes, noteIssueOptions, noteTaskOptions] = await Promise.all([
     getDepartmentItemCenterItems({
       departmentId,
       userId,
@@ -58,7 +69,10 @@ export default async function DepartmentItemsPage({
       canManageDepartment: canCreateDepartmentItem,
       locale,
     }),
+    getNoteFoldersForUser(userId),
+    getNotesForUser(userId),
     getDepartmentReminderIssueOptions(visibleProjectIds),
+    getNoteTaskOptionsForUser({ userId, departmentId, visibleProjectIds }),
   ]);
 
   return (
@@ -66,9 +80,16 @@ export default async function DepartmentItemsPage({
       departmentId={departmentId}
       locale={locale}
       items={items}
+      noteFolders={noteFolders}
+      notes={notes}
+      noteIssueOptions={noteIssueOptions}
+      noteTaskOptions={noteTaskOptions}
+      noteProjectOptions={visibleDepartment.projects.map((project) => ({ id: project.id, name: project.name, key: project.key }))}
+      initialTab={initialTab}
+      currentUserId={userId}
       canCreateDepartmentItem={canCreateDepartmentItem}
       projectOptions={reminderProjectOptions}
-      issueOptions={issueOptions}
+      assigneeOptions={assigneeOptions}
     />
   );
 }

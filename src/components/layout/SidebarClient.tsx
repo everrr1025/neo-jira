@@ -32,16 +32,23 @@ export function SidebarClient({
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
   const itemsLabel = locale === "zh" ? "事项" : "Items";
+  const tasksLabel = locale === "zh" ? "任务" : "Tasks";
+  const scheduleLabel = locale === "zh" ? "日程" : "Schedule";
+  const notesLabel = locale === "zh" ? "笔记" : "Notes";
   const returnHref = departmentContext
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
   const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
+  const departmentItemsPath = departmentContext ? `/departments/${departmentContext.id}/items` : "";
+  const isItemsActive = Boolean(departmentItemsPath && pathname === departmentItemsPath);
 
   const getNavClass = (href: string) => {
     let isActive = false;
     if (href.includes("?")) {
       const [hrefPath] = href.split("?");
-      isActive = pathname === hrefPath && href.includes(`tab=${searchParams.get("tab")}`);
+      const tab = new URLSearchParams(href.split("?")[1]).get("tab");
+      const currentTab = searchParams.get("tab") || "tasks";
+      isActive = pathname === hrefPath && tab === currentTab;
     } else {
       isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
     }
@@ -74,7 +81,7 @@ export function SidebarClient({
           ? [
               {
                 id: "department-items",
-                href: `/departments/${departmentContext.id}/items`,
+                href: `/departments/${departmentContext.id}/items?tab=tasks`,
                 icon: (
                   <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -202,14 +209,48 @@ export function SidebarClient({
             if (isAdmin && item.id !== "dashboard") return false;
             return true;
           })
-          .map((item) => (
-            <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
-              {item.icon}
-              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {item.label}
-              </span>
-            </Link>
-          ))}
+          .map((item) =>
+            item.id === "department-items" && departmentContext ? (
+              <div key={item.id} className="space-y-1">
+                <Link href={item.href} className={getNavClass(item.href)} title={item.label}>
+                  {item.icon}
+                  <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                    {item.label}
+                  </span>
+                </Link>
+                {!collapsed ? (
+                  <div className="ml-8 space-y-1">
+                    {[
+                      { href: `${departmentItemsPath}?tab=tasks`, label: tasksLabel },
+                      { href: `${departmentItemsPath}?tab=schedule`, label: scheduleLabel },
+                      { href: `${departmentItemsPath}?tab=notes`, label: notesLabel },
+                    ].map((child) => (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={`block rounded-md px-3 py-1.5 text-sm transition-colors ${
+                          getNavClass(child.href).includes("bg-slate-800 text-white")
+                            ? "bg-slate-800 text-white"
+                            : isItemsActive
+                              ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        {child.label}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
+                {item.icon}
+                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                  {item.label}
+                </span>
+              </Link>
+            )
+          )}
 
         {isAdmin ? (
           <>

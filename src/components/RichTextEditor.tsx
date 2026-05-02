@@ -21,6 +21,8 @@ import {
   Italic,
   Link2,
   Image as ImageIcon,
+  List,
+  ListOrdered,
 } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { TiptapImageResize } from "@/lib/tiptapImageResize";
@@ -40,6 +42,8 @@ interface RichTextEditorProps {
   mentionUsers?: RichTextEditorMentionUser[];
   mentionLabel?: string;
   currentUserId?: string;
+  borderless?: boolean;
+  toolbarRight?: ReactNode;
 }
 
 export type RichTextEditorHandle = {
@@ -188,7 +192,7 @@ function ToolbarButton({ active = false, title, onMouseDown, children }: Toolbar
     <button
       type="button"
       onMouseDown={onMouseDown}
-      className={`inline-flex min-w-9 items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+      className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md px-2.5 text-xs font-semibold transition-colors ${
         active
           ? "bg-slate-900 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-200 hover:text-slate-900"
@@ -283,17 +287,21 @@ function MenuBar({
   onInsertImage,
   currentTextColor,
   onSelectPresetColor,
+  borderless = false,
+  toolbarRight,
 }: {
   editor: Editor;
   onInsertLink: () => void;
   onInsertImage: () => void;
   currentTextColor: string | null;
   onSelectPresetColor: (color: string) => void;
+  borderless?: boolean;
+  toolbarRight?: ReactNode;
 }) {
   const currentAlignment = getCurrentAlignment(editor);
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-2">
+    <div className={`flex min-h-12 w-full flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 ${borderless ? "m-0 p-0" : "px-2 py-2"}`}>
       <ToolbarButton
         active={editor.isActive("bold")}
         title="Bold"
@@ -348,7 +356,7 @@ function MenuBar({
           editor.chain().focus().toggleBulletList().run();
         }}
       >
-        UL
+        <List size={16} />
       </ToolbarButton>
       <ToolbarButton
         active={editor.isActive("orderedList")}
@@ -358,7 +366,7 @@ function MenuBar({
           editor.chain().focus().toggleOrderedList().run();
         }}
       >
-        OL
+        <ListOrdered size={16} />
       </ToolbarButton>
 
       <div className="mx-1 h-4 w-px bg-slate-300" />
@@ -423,6 +431,7 @@ function MenuBar({
         value={currentTextColor}
         onSelectPreset={onSelectPresetColor}
       />
+      {toolbarRight ? <div className="ml-auto flex h-full items-center px-3">{toolbarRight}</div> : null}
     </div>
   );
 }
@@ -458,6 +467,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     mentionUsers = [],
     mentionLabel = "Mention someone",
     currentUserId,
+    borderless = false,
+    toolbarRight,
   }: RichTextEditorProps,
   ref: ForwardedRef<RichTextEditorHandle>,
 ) {
@@ -776,6 +787,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         className={`w-full ${
           readOnly
             ? ""
+            : borderless
+              ? "neo-rich-text-editor flex h-full flex-col overflow-hidden bg-white"
             : "neo-rich-text-editor flex h-full flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm transition-[border-color,box-shadow] focus-within:border-slate-400 focus-within:shadow-[0_0_0_3px_rgba(148,163,184,0.18)]"
         }`}
       >
@@ -786,6 +799,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
             onInsertImage={handleInsertImageClick}
             currentTextColor={currentTextColor}
             onSelectPresetColor={handleSelectPresetColor}
+            borderless={borderless}
+            toolbarRight={toolbarRight}
           />
         )}
         <input
@@ -796,7 +811,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           onChange={handleFileInputChange}
         />
         <div
-          className={readOnly ? "" : "neo-rich-text-editor__scroll min-h-0 cursor-text bg-white"}
+          className={readOnly ? "" : `neo-rich-text-editor__scroll min-h-0 cursor-text bg-white ${borderless ? "neo-rich-text-editor__scroll--borderless" : ""}`}
           style={readOnly ? undefined : { minHeight: `${height}px`, height: "100%" }}
           onClick={() => {
             if (!readOnly) {

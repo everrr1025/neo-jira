@@ -15,6 +15,13 @@ export type DepartmentReminderIssueOption = {
   projectKey: string;
 };
 
+export type DepartmentReminderAssigneeOption = {
+  id: string;
+  name: string;
+  email: string;
+  projectIds: string[];
+};
+
 export type DepartmentUpcomingItem = {
   id: string;
   kind: "REMINDER" | "ISSUE_DUE";
@@ -22,16 +29,34 @@ export type DepartmentUpcomingItem = {
   title: string;
   content: string | null;
   date: string;
+  dueDate: string | null;
   priority: string;
+  taskStatus: string;
+  scopeType: string;
   scopeLabel: string;
   projectName: string | null;
   projectKey: string | null;
   issueKey: string | null;
   issueTitle: string | null;
+  creatorId: string | null;
+  assigneeId: string | null;
+  creatorName: string | null;
+  creatorEmail: string | null;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
   link: string | null;
   canComplete: boolean;
+  canEdit: boolean;
+  canComment: boolean;
   isOverdue: boolean;
   isImportant: boolean;
+  comments: Array<{
+    id: string;
+    content: string;
+    createdAt: string;
+    authorName: string | null;
+    authorEmail: string;
+  }>;
 };
 
 export type DepartmentItemCenterItem = DepartmentUpcomingItem & {
@@ -127,7 +152,11 @@ export async function getDepartmentUpcomingItems({
     prisma.reminder.findMany({
       where: {
         completedAt: null,
-        OR: [{ startAt: { lt: windowEnd } }, { isImportant: true }, { itemType: "TODO" }],
+        OR: [
+          { itemType: { not: "TODO" }, startAt: { lt: windowEnd } },
+          { isImportant: true },
+          { itemType: "TODO", remindAt: { not: null, lt: windowEnd } },
+        ],
         AND: [
           {
             OR: [
@@ -147,8 +176,14 @@ export async function getDepartmentUpcomingItems({
         issue: {
           select: { id: true, key: true, title: true },
         },
+        assignee: {
+          select: { name: true, email: true },
+        },
+        creator: {
+          select: { name: true, email: true },
+        },
       },
-      orderBy: [{ startAt: "asc" }, { priority: "desc" }],
+      orderBy: [{ remindAt: "asc" }, { startAt: "asc" }, { priority: "desc" }],
       take: 40,
     }),
     visibleProjectIds.length > 0
@@ -182,23 +217,37 @@ export async function getDepartmentUpcomingItems({
       (reminder.scopeType === "DEPARTMENT" && canManageDepartment) ||
       (reminder.projectId ? manageableProjectIds.includes(reminder.projectId) : false);
 
+    const displayDate = reminder.itemType === "TODO" ? reminder.remindAt || reminder.startAt : reminder.startAt;
+
     return {
       id: reminder.id,
       kind: "REMINDER" as const,
       itemType: reminder.itemType as DepartmentUpcomingItem["itemType"],
       title: reminder.title,
       content: reminder.content,
-      date: reminder.startAt.toISOString(),
+      date: displayDate.toISOString(),
+      dueDate: reminder.itemType === "TODO" ? reminder.remindAt?.toISOString() || null : null,
       priority: reminder.priority,
+      taskStatus: reminder.completedAt ? "DONE" : reminder.taskStatus,
+      scopeType: reminder.scopeType,
       scopeLabel: getScopeLabel(reminder.scopeType, locale),
       projectName: reminder.project?.name || null,
       projectKey: reminder.project?.key || null,
       issueKey: reminder.issue?.key || null,
       issueTitle: reminder.issue?.title || null,
+      creatorId: reminder.creatorId,
+      assigneeId: reminder.assigneeId,
+      creatorName: reminder.creator?.name || null,
+      creatorEmail: reminder.creator?.email || null,
+      assigneeName: reminder.assignee?.name || null,
+      assigneeEmail: reminder.assignee?.email || null,
       link: reminder.issue ? `/issues/${reminder.issue.id}` : reminder.project ? "/" : null,
       canComplete,
-      isOverdue: reminder.startAt < today,
+      canEdit: canComplete,
+      canComment: canComplete,
+      isOverdue: reminder.itemType === "TODO" ? Boolean(reminder.remindAt && reminder.remindAt < today) : reminder.startAt < today,
       isImportant: reminder.isImportant,
+      comments: [],
     };
   });
 
@@ -211,16 +260,28 @@ export async function getDepartmentUpcomingItems({
       title: issue.title,
       content: null,
       date: issue.dueDate!.toISOString(),
+      dueDate: issue.dueDate!.toISOString(),
       priority: issue.priority,
+      taskStatus: "IN_PROGRESS",
+      scopeType: "PROJECT",
       scopeLabel: locale === "zh" ? "问题到期" : "Issue due",
       projectName: issue.project.name,
       projectKey: issue.project.key,
       issueKey: issue.key,
       issueTitle: issue.title,
+      creatorId: null,
+      assigneeId: null,
+      creatorName: null,
+      creatorEmail: null,
+      assigneeName: null,
+      assigneeEmail: null,
       link: `/issues/${issue.id}`,
       canComplete: false,
+      canEdit: false,
+      canComment: false,
       isOverdue: issue.dueDate! < today,
       isImportant: issue.priority === "HIGH" || issue.priority === "URGENT",
+      comments: [],
     }));
 
   const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -270,18 +331,39 @@ export async function getDepartmentItemCenterItems({
       issue: {
         select: { id: true, key: true, title: true },
       },
+      assignee: {
+        select: { name: true, email: true },
+      },
+      creator: {
+        select: { name: true, email: true },
+      },
+      comments: {
+        include: {
+          author: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: "asc" },
+        take: 50,
+      },
     },
     orderBy: [{ updatedAt: "desc" }],
     take: 200,
   });
 
-  return reminders.map((reminder) => {
+  return reminders.filter((reminder) => {
+    if (reminder.itemType !== "TODO") return true;
+    if (userRole === "ADMIN" || canManageDepartment) return true;
+    if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
+    return reminder.projectId ? manageableProjectIds.includes(reminder.projectId) : false;
+  }).map((reminder) => {
     const canComplete =
       userRole === "ADMIN" ||
       reminder.creatorId === userId ||
       reminder.assigneeId === userId ||
       (reminder.scopeType === "DEPARTMENT" && canManageDepartment) ||
       (reminder.projectId ? manageableProjectIds.includes(reminder.projectId) : false);
+    const canEdit = reminder.creatorId === userId;
+
+    const displayDate = reminder.itemType === "TODO" ? reminder.remindAt || reminder.startAt : reminder.startAt;
 
     return {
       id: reminder.id,
@@ -289,17 +371,39 @@ export async function getDepartmentItemCenterItems({
       itemType: reminder.itemType as DepartmentUpcomingItem["itemType"],
       title: reminder.title,
       content: reminder.content,
-      date: reminder.startAt.toISOString(),
+      date: displayDate.toISOString(),
+      dueDate: reminder.itemType === "TODO" ? reminder.remindAt?.toISOString() || null : null,
       priority: reminder.priority,
+      taskStatus: reminder.completedAt ? "DONE" : reminder.taskStatus,
+      scopeType: reminder.scopeType,
       scopeLabel: getScopeLabel(reminder.scopeType, locale),
       projectName: reminder.project?.name || null,
       projectKey: reminder.project?.key || null,
       issueKey: reminder.issue?.key || null,
       issueTitle: reminder.issue?.title || null,
+      creatorId: reminder.creatorId,
+      assigneeId: reminder.assigneeId,
+      creatorName: reminder.creator?.name || null,
+      creatorEmail: reminder.creator?.email || null,
+      assigneeName: reminder.assignee?.name || null,
+      assigneeEmail: reminder.assignee?.email || null,
       link: reminder.issue ? `/issues/${reminder.issue.id}` : null,
       canComplete,
-      isOverdue: reminder.completedAt ? false : reminder.itemType !== "NOTE" && reminder.startAt < today,
+      canEdit,
+      canComment: canEdit || reminder.assigneeId === userId,
+      isOverdue: reminder.completedAt
+        ? false
+        : reminder.itemType === "TODO"
+          ? Boolean(reminder.remindAt && reminder.remindAt < today)
+          : reminder.itemType !== "NOTE" && reminder.startAt < today,
       isImportant: reminder.isImportant,
+      comments: reminder.comments.map((comment) => ({
+        id: comment.id,
+        content: comment.content,
+        createdAt: comment.createdAt.toISOString(),
+        authorName: comment.author.name,
+        authorEmail: comment.author.email,
+      })),
       completedAt: reminder.completedAt?.toISOString() || null,
       createdAt: reminder.createdAt.toISOString(),
     } satisfies DepartmentItemCenterItem;

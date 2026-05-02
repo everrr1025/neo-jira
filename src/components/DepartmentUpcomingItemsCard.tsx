@@ -111,6 +111,12 @@ function getDayLabel(dateValue: string, locale: Locale) {
   return t.later;
 }
 
+function formatItemDate(item: DepartmentUpcomingItem, locale: Locale) {
+  const date = new Date(item.date);
+  const localeKey = locale === "zh" ? "zh-CN" : "en-US";
+  return item.itemType === "TODO" ? date.toLocaleDateString(localeKey) : date.toLocaleString(localeKey);
+}
+
 function priorityLabel(priority: string, locale: Locale) {
   const t = TEXT[locale];
   if (priority === "URGENT") return t.urgent;
@@ -308,7 +314,7 @@ export default function DepartmentUpcomingItemsCard({
                   </div>
                   {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.content}</p> : null}
                   <p className="mt-3 text-xs text-slate-400">
-                    {new Date(item.date).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}
+                    {formatItemDate(item, locale)}
                     {item.projectKey ? ` · ${item.projectKey}` : ""}
                   </p>
                 </div>
