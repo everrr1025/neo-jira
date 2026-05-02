@@ -50,6 +50,13 @@ const TEXT = {
     noLinkedTask: "No task",
     pinned: "Favorited",
     pinNote: "Favorite note",
+    unpinNote: "Remove from favorites",
+    clearSearch: "Clear search",
+    pendingSave: "Unsaved changes",
+    savingNote: "Saving...",
+    saveFailed: "Save failed",
+    fullscreen: "Fullscreen",
+    exitFullscreen: "Exit fullscreen",
     trash: "Trash",
     restoreNote: "Restore",
     permanentlyDeleteNote: "Delete forever",
@@ -141,6 +148,13 @@ const TEXT = {
     noLinkedTask: "不关联任务",
     pinned: "已收藏",
     pinNote: "收藏笔记",
+    unpinNote: "取消收藏",
+    clearSearch: "清除搜索",
+    pendingSave: "有未保存更改",
+    savingNote: "保存中...",
+    saveFailed: "保存失败",
+    fullscreen: "全屏编辑",
+    exitFullscreen: "退出全屏",
     trash: "垃圾箱",
     restoreNote: "恢复",
     permanentlyDeleteNote: "彻底删除",
@@ -249,7 +263,13 @@ function dayKey(date: string) {
 
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
 type ItemTab = "tasks" | "schedule" | "notes";
-type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}`;
+type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}` | `pinned-folder:${string}`;
+type NoteSaveStatus = "saved" | "pending" | "saving" | "error";
+type SavedNoteSnapshot = {
+  id: string;
+  title: string;
+  content: string;
+};
 
 function notePreview(content: string | null) {
   if (!content) return "";
@@ -360,7 +380,21 @@ export default function DepartmentItemsClient({
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [noteQuery, setNoteQuery] = useState("");
+  const [pinnedNoteOverrides, setPinnedNoteOverrides] = useState<Record<string, boolean>>({});
+  const [noteTitleOverrides, setNoteTitleOverrides] = useState<Record<string, string>>({});
+  const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
+  const [isNoteFullscreen, setIsNoteFullscreen] = useState(false);
   const initialNote = notes.find((note) => !note.deletedAt) || null;
+  const savedNoteSnapshotRef = useRef<SavedNoteSnapshot | null>(
+    initialNote
+      ? {
+          id: initialNote.id,
+          title: initialNote.title,
+          content: initialNote.content || "",
+        }
+      : null
+  );
+  const [noteSavedAt, setNoteSavedAt] = useState(initialNote?.updatedAt || "");
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialNote?.id || null);
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [noteDropTarget, setNoteDropTarget] = useState<string | null>(null);
@@ -404,6 +438,17 @@ export default function DepartmentItemsClient({
     projectId: "",
     assigneeId: currentUserId,
   });
+
+  useEffect(() => {
+    if (!isNoteFullscreen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isNoteFullscreen]);
 
   const taskAssigneeChoices = useMemo(() => {
     const currentUser = assigneeOptions.find((assignee) => assignee.id === currentUserId);
@@ -474,19 +519,23 @@ export default function DepartmentItemsClient({
   });
   const activeNotes = notes.filter((note) => !note.deletedAt);
   const trashedNotes = notes.filter((note) => note.deletedAt);
+  const isNotePinned = (note: NoteListItem) => pinnedNoteOverrides[note.id] ?? note.isPinned;
+  const noteTitle = (note: NoteListItem) => noteTitleOverrides[note.id] ?? note.title;
+  const isPinnedFilter = noteFolderFilter === "pinned" || noteFolderFilter.startsWith("pinned-folder:");
   const filteredNotes = notes.filter((note) => {
     if (noteFolderFilter === "trash") {
       if (!note.deletedAt) return false;
     } else if (note.deletedAt) {
       return false;
     }
-    if (noteFolderFilter === "pinned" && !note.isPinned) return false;
+    if (isPinnedFilter && !isNotePinned(note)) return false;
+    if (noteFolderFilter.startsWith("pinned-folder:") && note.folderId !== noteFolderFilter.slice("pinned-folder:".length)) return false;
     if (noteFolderFilter.startsWith("folder:") && note.folderId !== noteFolderFilter.slice("folder:".length)) return false;
 
     const query = noteQuery.trim().toLowerCase();
     if (!query) return true;
     return [
-      note.title,
+      noteTitle(note),
       notePreview(note.content),
       note.projectKey,
       note.projectName,
@@ -497,6 +546,28 @@ export default function DepartmentItemsClient({
   });
   const selectedNote = selectedNoteId ? notes.find((note) => note.id === selectedNoteId) || null : null;
   const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
+
+  useEffect(() => {
+    if (!selectedNote) return;
+    const currentSnapshot = savedNoteSnapshotRef.current;
+    if (currentSnapshot?.id === selectedNote.id) return;
+
+    savedNoteSnapshotRef.current = {
+      id: selectedNote.id,
+      title: selectedNote.title,
+      content: selectedNote.content || "",
+    };
+    setNoteSavedAt(selectedNote.updatedAt);
+    setNoteSaveStatus("saved");
+  }, [selectedNote]);
+
+  useEffect(() => {
+    if (!selectedNoteId) {
+      setIsNoteFullscreen(false);
+      setNoteSaveStatus("saved");
+    }
+  }, [selectedNoteId]);
+
   const calendarItems = visibleItems.filter((item) => item.itemType !== "NOTE");
   const groupedByDay = calendarItems.reduce((acc, item) => {
     const key = dayKey(item.date);
@@ -705,13 +776,70 @@ export default function DepartmentItemsClient({
     });
   };
 
+  const saveSelectedNoteNow = async () => {
+    if (!selectedNote || selectedNote.deletedAt) return true;
+
+    const splitContent = splitNoteEditorContent(noteForm.content, t.untitledNote);
+    if (!splitContent.title.trim()) return true;
+
+    const savedSnapshot = savedNoteSnapshotRef.current?.id === selectedNote.id
+      ? savedNoteSnapshotRef.current
+      : { id: selectedNote.id, title: selectedNote.title, content: selectedNote.content || "" };
+
+    const hasChanges =
+      splitContent.title !== savedSnapshot.title ||
+      splitContent.content !== savedSnapshot.content;
+
+    if (!hasChanges) {
+      setNoteSaveStatus("saved");
+      return true;
+    }
+
+    setNoteError("");
+    setNoteSaveStatus("saving");
+    await noteEditorRef.current?.commitPendingUploads();
+
+    const result = await updateNote(selectedNote.id, {
+      title: splitContent.title,
+      content: splitContent.content,
+      isPinned: isNotePinned(selectedNote),
+      folderId: selectedNote.folderId,
+      departmentId,
+      projectId: selectedNote.projectId,
+      issueId: selectedNote.issueId,
+      taskId: selectedNote.taskId,
+    });
+
+    if (!result.success) {
+      setNoteError(result.error || "Failed");
+      setNoteSaveStatus("error");
+      return false;
+    }
+
+        savedNoteSnapshotRef.current = {
+          id: selectedNote.id,
+          title: splitContent.title,
+          content: splitContent.content,
+        };
+        setNoteTitleOverrides((current) => ({ ...current, [selectedNote.id]: splitContent.title }));
+        setNoteSavedAt(new Date().toISOString());
+    setNoteSaveStatus("saved");
+    return true;
+  };
+
   const openCreateNote = () => {
-    const currentFolderId = noteFolderFilter.startsWith("folder:") ? noteFolderFilter.slice("folder:".length) : "";
+    const currentFolderId = noteFolderFilter.startsWith("folder:")
+      ? noteFolderFilter.slice("folder:".length)
+      : noteFolderFilter.startsWith("pinned-folder:")
+        ? noteFolderFilter.slice("pinned-folder:".length)
+        : "";
+    const shouldPinNewNote = isPinnedFilter;
     setNoteError("");
     startTransition(async () => {
       const result = await createNote({
         title: t.untitledNote,
         content: "",
+        isPinned: shouldPinNewNote,
         folderId: currentFolderId || null,
         departmentId,
       });
@@ -722,12 +850,30 @@ export default function DepartmentItemsClient({
       setSelectedNoteId(result.noteId || null);
       if (noteFolderFilter === "trash") setNoteFolderFilter("all");
       resetNoteForm(currentFolderId);
+      if (result.noteId) {
+        savedNoteSnapshotRef.current = {
+          id: result.noteId,
+          title: t.untitledNote,
+          content: "",
+        };
+        setNoteSavedAt(new Date().toISOString());
+      }
+      setNoteForm((current) => ({ ...current, isPinned: shouldPinNewNote }));
+      setNoteSaveStatus("saved");
       router.refresh();
     });
   };
 
   const openEditNote = (note: NoteListItem) => {
+    void saveSelectedNoteNow();
     setSelectedNoteId(note.id);
+    savedNoteSnapshotRef.current = {
+      id: note.id,
+      title: note.title,
+      content: note.content || "",
+    };
+    setNoteSavedAt(note.updatedAt);
+    setNoteSaveStatus("saved");
     setNoteForm({
       title: note.title,
       content: composeNoteEditorContent(note, t.untitledNote),
@@ -738,6 +884,15 @@ export default function DepartmentItemsClient({
       taskId: note.taskId || "",
     });
     setNoteError("");
+  };
+
+  const handleNoteContentChange = (value: string) => {
+    setNoteForm((current) => ({ ...current, content: value }));
+    if (selectedNote) {
+      const splitContent = splitNoteEditorContent(value, t.untitledNote);
+      setNoteTitleOverrides((current) => ({ ...current, [selectedNote.id]: splitContent.title }));
+    }
+    setNoteSaveStatus("pending");
   };
 
   const handleDeleteNote = (targetNote = selectedNote) => {
@@ -788,6 +943,45 @@ export default function DepartmentItemsClient({
     });
   };
 
+  const handleToggleNotePinned = (targetNote = selectedNote) => {
+    if (!targetNote || targetNote.deletedAt) return;
+
+    const nextPinned = !isNotePinned(targetNote);
+    const splitContent = targetNote.id === selectedNote?.id
+      ? splitNoteEditorContent(noteForm.content, t.untitledNote)
+      : { title: targetNote.title, content: targetNote.content || "" };
+
+    setPinnedNoteOverrides((current) => ({ ...current, [targetNote.id]: nextPinned }));
+    if (targetNote.id === selectedNote?.id) {
+      setNoteForm((current) => ({ ...current, isPinned: nextPinned }));
+    }
+    setNoteError("");
+
+    startTransition(async () => {
+      const result = await updateNote(targetNote.id, {
+        title: splitContent.title,
+        content: splitContent.content,
+        isPinned: nextPinned,
+        folderId: targetNote.folderId,
+        departmentId,
+        projectId: targetNote.projectId,
+        issueId: targetNote.issueId,
+        taskId: targetNote.taskId,
+      });
+
+      if (!result.success) {
+        setPinnedNoteOverrides((current) => ({ ...current, [targetNote.id]: !nextPinned }));
+        if (targetNote.id === selectedNote?.id) {
+          setNoteForm((current) => ({ ...current, isPinned: !nextPinned }));
+        }
+        setNoteError(result.error || "Failed");
+        return;
+      }
+
+      router.refresh();
+    });
+  };
+
   const handleCreateFolder = () => {
     const name = window.prompt(t.folderNamePrompt);
     if (!name?.trim()) return;
@@ -825,7 +1019,7 @@ export default function DepartmentItemsClient({
         setNoteError(result.error || "Failed");
         return;
       }
-      if (noteFolderFilter === `folder:${folder.id}`) setNoteFolderFilter("all");
+      if (noteFolderFilter === `folder:${folder.id}` || noteFolderFilter === `pinned-folder:${folder.id}`) setNoteFolderFilter("all");
       router.refresh();
     });
   };
@@ -843,7 +1037,7 @@ export default function DepartmentItemsClient({
       const result = await updateNote(note.id, {
         title: splitContent.title,
         content: splitContent.content,
-        isPinned: note.isPinned,
+        isPinned: isNotePinned(note),
         folderId,
         departmentId,
         projectId: note.projectId,
@@ -877,20 +1071,30 @@ export default function DepartmentItemsClient({
     const splitContent = splitNoteEditorContent(noteForm.content, t.untitledNote);
     if (!splitContent.title.trim()) return;
 
-    const hasChanges =
-      splitContent.title !== selectedNote.title ||
-      splitContent.content !== (selectedNote.content || "");
+    const savedSnapshot = savedNoteSnapshotRef.current?.id === selectedNote.id
+      ? savedNoteSnapshotRef.current
+      : { id: selectedNote.id, title: selectedNote.title, content: selectedNote.content || "" };
 
-    if (!hasChanges) return;
+    const hasChanges =
+      splitContent.title !== savedSnapshot.title ||
+      splitContent.content !== savedSnapshot.content;
+
+    if (!hasChanges) {
+      setNoteSaveStatus("saved");
+      return;
+    }
+
+    setNoteSaveStatus("pending");
 
     const timer = window.setTimeout(() => {
       setNoteError("");
+      setNoteSaveStatus("saving");
       startTransition(async () => {
         await noteEditorRef.current?.commitPendingUploads();
         const result = await updateNote(selectedNote.id, {
           title: splitContent.title,
           content: splitContent.content,
-          isPinned: selectedNote.isPinned,
+          isPinned: isNotePinned(selectedNote),
           folderId: selectedNote.folderId,
           departmentId,
           projectId: selectedNote.projectId,
@@ -900,22 +1104,51 @@ export default function DepartmentItemsClient({
 
         if (!result.success) {
           setNoteError(result.error || "Failed");
+          setNoteSaveStatus("error");
           return;
         }
 
-        router.refresh();
+        savedNoteSnapshotRef.current = {
+          id: selectedNote.id,
+          title: splitContent.title,
+          content: splitContent.content,
+        };
+        setNoteTitleOverrides((current) => ({ ...current, [selectedNote.id]: splitContent.title }));
+        setNoteSavedAt(new Date().toISOString());
+        setNoteSaveStatus("saved");
       });
-    }, 900);
+    }, 2500);
 
     return () => window.clearTimeout(timer);
   }, [
     departmentId,
     noteForm.content,
-    router,
+    pinnedNoteOverrides,
     selectedNote,
     startTransition,
     t.untitledNote,
   ]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && noteSaveStatus === "pending") {
+        void saveSelectedNoteNow();
+      }
+    };
+    const handleBeforeUnload = () => {
+      if (noteSaveStatus === "pending") {
+        void saveSelectedNoteNow();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [noteSaveStatus, noteForm.content, selectedNote, pinnedNoteOverrides]);
 
   const taskFilters: Array<{ id: TaskFilter; label: string }> = [
     { id: "all", label: t.allTasks },
@@ -1040,7 +1273,7 @@ export default function DepartmentItemsClient({
         className={`group/note flex items-center gap-1 ${note.deletedAt ? "" : "cursor-grab active:cursor-grabbing"} ${draggedNoteId === note.id ? "opacity-50" : ""}`}
       >
         <button type="button" onClick={() => openEditNote(note)} className={noteButtonClass(note)}>
-          {note.title}
+          {noteTitle(note)}
         </button>
         {note.deletedAt ? (
           <>
@@ -1070,18 +1303,34 @@ export default function DepartmentItemsClient({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={(event) => {
-              event.stopPropagation();
-              handleDeleteNote(note);
-            }}
-            className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
-            title={t.deleteNote}
-          >
-            <Trash2 size={13} />
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleToggleNotePinned(note);
+              }}
+              className={`h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-amber-50 disabled:opacity-50 ${
+                isNotePinned(note) ? "hidden text-amber-500 group-hover/note:flex" : "hidden text-slate-400 hover:text-amber-500 group-hover/note:flex"
+              }`}
+              title={isNotePinned(note) ? t.unpinNote : t.pinNote}
+            >
+              <Star size={13} className={isNotePinned(note) ? "fill-amber-400" : ""} />
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeleteNote(note);
+              }}
+              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
+              title={t.deleteNote}
+            >
+              <Trash2 size={13} />
+            </button>
+          </>
         )}
       </div>
     );
@@ -1091,12 +1340,32 @@ export default function DepartmentItemsClient({
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
+    const pinnedFolderCounts = activeNotes.reduce((acc, note) => {
+      if (!isNotePinned(note)) return acc;
+      const key = note.folderId || "uncategorized";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const visibleNoteFolders = isPinnedFilter
+      ? noteFolders.filter((folder) => (pinnedFolderCounts[folder.id] || 0) > 0)
+      : noteFolders;
+    const visibleFolderCounts = isPinnedFilter ? pinnedFolderCounts : folderCounts;
     const uncategorizedNotes = filteredNotes.filter((note) => !note.folderId);
     const selectedIsDeleted = Boolean(selectedNote?.deletedAt);
+    const noteSaveLabel =
+      noteSaveStatus === "pending"
+        ? t.pendingSave
+        : noteSaveStatus === "saving"
+          ? t.savingNote
+          : noteSaveStatus === "error"
+            ? t.saveFailed
+            : selectedNote
+              ? formatSavedAgo(noteSavedAt || selectedNote.updatedAt, locale)
+              : "";
     const folderNameById = new Map(noteFolders.map((folder) => [folder.id, folder.name]));
 
     return (
-      <div className="min-h-[calc(100vh-220px)] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
+      <div className="h-[calc(100vh-172px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
           <div className="p-4">
             <button
@@ -1129,9 +1398,9 @@ export default function DepartmentItemsClient({
               <span className="inline-flex min-w-0 items-center gap-2"><StickyNote size={15} />{t.allNotes}</span>
               <span>{activeNotes.length}</span>
             </button>
-            <button type="button" onClick={() => setNoteFolderFilter("pinned")} className={folderButtonClass(noteFolderFilter === "pinned")}>
+            <button type="button" onClick={() => setNoteFolderFilter("pinned")} className={folderButtonClass(isPinnedFilter)}>
               <span className="inline-flex min-w-0 items-center gap-2"><Star size={15} />{t.pinnedNotes}</span>
-              <span>{activeNotes.filter((note) => note.isPinned).length}</span>
+              <span>{activeNotes.filter((note) => isNotePinned(note)).length}</span>
             </button>
             <button type="button" onClick={() => setNoteFolderFilter("trash")} className={folderButtonClass(noteFolderFilter === "trash")}>
               <span className="inline-flex min-w-0 items-center gap-2"><Trash2 size={15} />{t.trash}</span>
@@ -1155,12 +1424,15 @@ export default function DepartmentItemsClient({
                       ))}
                     </div>
                   ) : null}
-                  {noteFolders.map((folder) => (
+                  {visibleNoteFolders.map((folder) => {
+                    const folderFilter = isPinnedFilter ? `pinned-folder:${folder.id}` as const : `folder:${folder.id}` as const;
+
+                    return (
                     <div key={folder.id} className="group">
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => setNoteFolderFilter(`folder:${folder.id}`)}
+                          onClick={() => setNoteFolderFilter(folderFilter)}
                           onDragOver={(event) => {
                             if (!draggedNoteId) return;
                             event.preventDefault();
@@ -1172,13 +1444,13 @@ export default function DepartmentItemsClient({
                             event.preventDefault();
                             handleNoteDrop(folder.id);
                           }}
-                          className={folderButtonClass(noteFolderFilter === `folder:${folder.id}`, folder.id)}
+                          className={folderButtonClass(noteFolderFilter === folderFilter, folder.id)}
                         >
                           <span className="inline-flex min-w-0 items-center gap-2">
                             <Folder size={15} />
                             <span className="truncate">{folder.name}</span>
                           </span>
-                          <span>{folderCounts[folder.id] || 0}</span>
+                          <span>{visibleFolderCounts[folder.id] || 0}</span>
                         </button>
                         <button type="button" onClick={() => handleRenameFolder(folder)} className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex" title={t.renameFolder}>
                           <Pencil size={13} />
@@ -1193,7 +1465,8 @@ export default function DepartmentItemsClient({
                         ))}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </>
               ) : (
                 <div className="space-y-1">
@@ -1201,8 +1474,9 @@ export default function DepartmentItemsClient({
                     <div key={note.id}>
                       {renderNoteName(note)}
                       {note.folderId ? (
-                        <div className="ml-3 mt-0.5 truncate text-[11px] text-slate-400">
-                          {folderNameById.get(note.folderId) || t.noFolder}
+                        <div className="ml-3 mt-0.5 inline-flex max-w-[calc(100%-0.75rem)] items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
+                          <Folder size={10} className="mr-1 shrink-0" />
+                          <span className="truncate">{folderNameById.get(note.folderId) || t.noFolder}</span>
                         </div>
                       ) : null}
                     </div>
@@ -1216,16 +1490,59 @@ export default function DepartmentItemsClient({
         <section className="flex min-h-0 min-w-0 flex-col bg-white">
           {noteError ? <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{noteError}</div> : null}
           {selectedNote ? (
-            <div className="min-h-0 flex-1 overflow-hidden p-0">
+            <div
+              className={
+                isNoteFullscreen
+                  ? "fixed inset-4 z-50 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+                  : "min-h-0 flex-1 overflow-hidden p-0"
+              }
+            >
                 <RichTextEditor
                   key={selectedNote.id}
                   ref={noteEditorRef}
                   value={noteForm.content}
-                  onChange={(value) => setNoteForm((current) => ({ ...current, content: value }))}
+                  onChange={handleNoteContentChange}
                   readOnly={selectedIsDeleted}
                   height={560}
                   borderless
-                  toolbarRight={<span className="text-sm italic text-slate-400">{formatSavedAgo(selectedNote.updatedAt, locale)}</span>}
+                  isFullscreen={isNoteFullscreen}
+                  onToggleFullscreen={() => {
+                    if (isNoteFullscreen) void saveSelectedNoteNow();
+                    setIsNoteFullscreen((current) => !current);
+                  }}
+                  fullscreenLabel={t.fullscreen}
+                  exitFullscreenLabel={t.exitFullscreen}
+                  toolbarRight={
+                    <div className="flex min-w-0 items-center gap-2">
+                      {!selectedIsDeleted ? (
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            handleToggleNotePinned(selectedNote);
+                          }}
+                          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-amber-50 ${
+                            isNotePinned(selectedNote) ? "text-amber-500" : "text-slate-400 hover:text-amber-500"
+                          } disabled:opacity-50`}
+                          title={isNotePinned(selectedNote) ? t.unpinNote : t.pinNote}
+                        >
+                          <Star size={16} className={isNotePinned(selectedNote) ? "fill-amber-400" : ""} />
+                        </button>
+                      ) : null}
+                      <span
+                        className={`truncate text-sm italic ${
+                          noteSaveStatus === "error"
+                            ? "text-red-500"
+                            : noteSaveStatus === "saving" || noteSaveStatus === "pending"
+                              ? "text-blue-500"
+                              : "text-slate-400"
+                        }`}
+                      >
+                        {noteSaveLabel}
+                      </span>
+                    </div>
+                  }
                 />
             </div>
           ) : (
@@ -1254,8 +1571,18 @@ export default function DepartmentItemsClient({
                 value={noteQuery}
                 onChange={(event) => setNoteQuery(event.target.value)}
                 placeholder={t.searchNotes}
-                className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm outline-none focus:border-blue-200 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-10 text-sm outline-none focus:border-blue-200 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
               />
+              {noteQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setNoteQuery("")}
+                  className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  title={t.clearSearch}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
             </div>
           ) : null}
           {activeTab === "schedule" ? <div className="inline-flex rounded-md border border-slate-200 bg-white p-1">

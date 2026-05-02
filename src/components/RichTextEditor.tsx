@@ -18,15 +18,21 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  CaseSensitive,
+  Highlighter,
   Italic,
   Link2,
   Image as ImageIcon,
   List,
   ListOrdered,
+  Maximize2,
+  Minimize2,
+  Strikethrough,
 } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { TiptapImageResize } from "@/lib/tiptapImageResize";
 import { TiptapTextColor } from "@/lib/tiptapTextColor";
+import { TiptapTextBackgroundColor } from "@/lib/tiptapTextBackgroundColor";
 import { TiptapTextAlign } from "@/lib/tiptapTextAlign";
 
 export type RichTextEditorMentionUser = {
@@ -44,6 +50,10 @@ interface RichTextEditorProps {
   currentUserId?: string;
   borderless?: boolean;
   toolbarRight?: ReactNode;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  fullscreenLabel?: string;
+  exitFullscreenLabel?: string;
 }
 
 export type RichTextEditorHandle = {
@@ -180,6 +190,10 @@ function getCurrentTextColor(editor: Editor) {
   return (editor.getAttributes("textColor").color as string | undefined) || null;
 }
 
+function getCurrentTextBackgroundColor(editor: Editor) {
+  return (editor.getAttributes("textBackgroundColor").color as string | undefined) || null;
+}
+
 type ToolbarButtonProps = {
   active?: boolean;
   title: string;
@@ -192,10 +206,10 @@ function ToolbarButton({ active = false, title, onMouseDown, children }: Toolbar
     <button
       type="button"
       onMouseDown={onMouseDown}
-      className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md px-2.5 text-xs font-semibold transition-colors ${
+      className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-xs font-semibold transition-colors ${
         active
-          ? "bg-slate-900 text-white shadow-sm"
-          : "text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+          ? "border border-blue-200 bg-blue-50 text-blue-700"
+          : "border border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
       }`}
       title={title}
       aria-label={title}
@@ -216,12 +230,28 @@ const PRESET_COLORS = [
   { label: "Blue", value: "#3b82f6" },
 ];
 
+const PRESET_BACKGROUND_COLORS = [
+  { label: "Clear", value: "transparent" },
+  { label: "Yellow", value: "#fef08a" },
+  { label: "Green", value: "#bbf7d0" },
+  { label: "Blue", value: "#bfdbfe" },
+  { label: "Pink", value: "#fbcfe8" },
+  { label: "Purple", value: "#ddd6fe" },
+  { label: "Gray", value: "#e2e8f0" },
+];
+
 function ColorPickerButton({
   value,
   onSelectPreset,
+  title = "Text color",
+  colors = PRESET_COLORS,
+  icon,
 }: {
   value: string | null;
   onSelectPreset: (color: string) => void;
+  title?: string;
+  colors?: Array<{ label: string; value: string }>;
+  icon?: ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -245,21 +275,23 @@ function ColorPickerButton({
     <div className="relative" ref={containerRef}>
       <ToolbarButton
         active={isOpen}
-        title="Text color"
+        title={title}
         onMouseDown={(e) => {
           e.preventDefault();
           setIsOpen(!isOpen);
         }}
       >
-        <div
-          className="h-4 w-4 rounded border border-slate-300 shadow-sm transition-transform active:scale-90"
-          style={{ backgroundColor: value || "#0f172a" }}
-        />
+        {icon || (
+          <div
+            className="h-4 w-4 rounded border border-slate-300 shadow-sm transition-transform active:scale-90"
+            style={{ backgroundColor: value || "#0f172a" }}
+          />
+        )}
       </ToolbarButton>
 
       {isOpen && (
         <div className="absolute left-1/2 top-full z-[70] mt-1.5 flex -translate-x-1/2 gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl animate-in fade-in zoom-in-95 duration-100">
-          {PRESET_COLORS.map((color) => (
+          {colors.map((color) => (
             <button
               key={color.value}
               type="button"
@@ -269,8 +301,8 @@ function ColorPickerButton({
                 onSelectPreset(color.value);
                 setIsOpen(false);
               }}
-              className={`h-5 w-5 rounded-full border border-slate-200 transition-transform hover:scale-125 ${
-                value === color.value ? "ring-2 ring-blue-500 ring-offset-1" : ""
+              className={`h-5 w-5 rounded-full border border-slate-200 transition-transform hover:scale-110 ${
+                value === color.value ? "ring-2 ring-blue-300 ring-offset-1" : ""
               }`}
               style={{ backgroundColor: color.value }}
             />
@@ -286,22 +318,34 @@ function MenuBar({
   onInsertLink,
   onInsertImage,
   currentTextColor,
+  currentTextBackgroundColor,
   onSelectPresetColor,
+  onSelectPresetBackgroundColor,
   borderless = false,
   toolbarRight,
+  isFullscreen = false,
+  onToggleFullscreen,
+  fullscreenLabel = "Fullscreen",
+  exitFullscreenLabel = "Exit fullscreen",
 }: {
   editor: Editor;
   onInsertLink: () => void;
   onInsertImage: () => void;
   currentTextColor: string | null;
+  currentTextBackgroundColor: string | null;
   onSelectPresetColor: (color: string) => void;
+  onSelectPresetBackgroundColor: (color: string) => void;
   borderless?: boolean;
   toolbarRight?: ReactNode;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  fullscreenLabel?: string;
+  exitFullscreenLabel?: string;
 }) {
   const currentAlignment = getCurrentAlignment(editor);
 
   return (
-    <div className={`flex min-h-12 w-full flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 ${borderless ? "m-0 p-0" : "px-2 py-2"}`}>
+    <div className={`flex min-h-10 w-full flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 ${borderless ? "m-0 px-2 py-1.5" : "px-2 py-1.5"}`}>
       <ToolbarButton
         active={editor.isActive("bold")}
         title="Bold"
@@ -322,6 +366,16 @@ function MenuBar({
       >
         <Italic size={16} strokeWidth={2.5} />
       </ToolbarButton>
+      <ToolbarButton
+        active={editor.isActive("strike")}
+        title="Strikethrough"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          editor.chain().focus().toggleStrike().run();
+        }}
+      >
+        <Strikethrough size={16} strokeWidth={2.5} />
+      </ToolbarButton>
 
       <div className="mx-1 h-4 w-px bg-slate-300" />
 
@@ -330,7 +384,7 @@ function MenuBar({
         title="Heading 1"
         onMouseDown={(event) => {
           event.preventDefault();
-          editor.chain().focus().setHeading({ level: 1 }).run();
+          editor.chain().focus().toggleHeading({ level: 1 }).run();
         }}
       >
         H1
@@ -340,7 +394,7 @@ function MenuBar({
         title="Heading 2"
         onMouseDown={(event) => {
           event.preventDefault();
-          editor.chain().focus().setHeading({ level: 2 }).run();
+          editor.chain().focus().toggleHeading({ level: 2 }).run();
         }}
       >
         H2
@@ -430,8 +484,45 @@ function MenuBar({
       <ColorPickerButton
         value={currentTextColor}
         onSelectPreset={onSelectPresetColor}
+        icon={
+          <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            <CaseSensitive size={17} />
+            <span
+              className="absolute bottom-0 h-1 w-4 rounded-sm"
+              style={{ backgroundColor: currentTextColor || "#0f172a" }}
+            />
+          </span>
+        }
       />
-      {toolbarRight ? <div className="ml-auto flex h-full items-center px-3">{toolbarRight}</div> : null}
+      <ColorPickerButton
+        value={currentTextBackgroundColor}
+        title="Text background"
+        colors={PRESET_BACKGROUND_COLORS}
+        onSelectPreset={onSelectPresetBackgroundColor}
+        icon={
+          <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            <Highlighter size={16} />
+            <span
+              className="absolute bottom-0 h-1 w-4 rounded-sm"
+              style={{ backgroundColor: currentTextBackgroundColor || "#fef08a" }}
+            />
+          </span>
+        }
+      />
+      <div className="ml-auto flex h-full items-center gap-1 px-3">
+        {onToggleFullscreen ? (
+          <ToolbarButton
+            title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onToggleFullscreen();
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </ToolbarButton>
+        ) : null}
+        {toolbarRight}
+      </div>
     </div>
   );
 }
@@ -469,6 +560,10 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     currentUserId,
     borderless = false,
     toolbarRight,
+    isFullscreen = false,
+    onToggleFullscreen,
+    fullscreenLabel,
+    exitFullscreenLabel,
   }: RichTextEditorProps,
   ref: ForwardedRef<RichTextEditorHandle>,
 ) {
@@ -480,6 +575,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadedImageUrlsRef = useRef(new Set<string>());
   const latestContentRef = useRef(value || "");
+  const editorInstanceRef = useRef<Editor | null>(null);
 
   const cleanupRemovedPendingUploads = (content: string) => {
     latestContentRef.current = content;
@@ -552,6 +648,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         },
       }),
       TiptapTextColor,
+      TiptapTextBackgroundColor,
       TiptapTextAlign,
       TiptapImageResize,
     ],
@@ -584,6 +681,33 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         }
         return false;
       },
+      handleKeyDown: (_view, event) => {
+        if (event.key !== "Tab") {
+          return false;
+        }
+
+        event.preventDefault();
+
+        const activeEditor = editorInstanceRef.current;
+        if (!activeEditor || activeEditor.isDestroyed) {
+          return true;
+        }
+
+        if (event.shiftKey) {
+          if (activeEditor.can().liftListItem("listItem")) {
+            activeEditor.chain().focus().liftListItem("listItem").run();
+          }
+          return true;
+        }
+
+        if (activeEditor.can().sinkListItem("listItem")) {
+          activeEditor.chain().focus().sinkListItem("listItem").run();
+          return true;
+        }
+
+        activeEditor.chain().focus().insertContent("    ").run();
+        return true;
+      },
     },
     content: contentToHTML(value || ""),
     onUpdate: ({ editor: nextEditor }) => {
@@ -593,6 +717,15 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     },
     immediatelyRender: false,
   }, [readOnly]);
+
+  useEffect(() => {
+    editorInstanceRef.current = editor;
+    return () => {
+      if (editorInstanceRef.current === editor) {
+        editorInstanceRef.current = null;
+      }
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) {
@@ -672,6 +805,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           return trimmedName.toLowerCase().includes(mentionState.query.toLowerCase());
         });
   const currentTextColor = editor ? getCurrentTextColor(editor) : null;
+  const currentTextBackgroundColor = editor ? getCurrentTextBackgroundColor(editor) : null;
   const mentionPosition = getMentionPosition(editor, mentionState, containerElement);
 
   const handleInsertMention = (name: string) => {
@@ -781,10 +915,28 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     chain.setTextColor(color).run();
   };
 
+  const handleSelectPresetBackgroundColor = (color: string) => {
+    if (!editor) {
+      return;
+    }
+
+    const chain = editor.chain().focus();
+    if (lastSelectionRef.current) {
+      chain.setTextSelection(lastSelectionRef.current);
+    }
+
+    if (color === "transparent") {
+      chain.unsetTextBackgroundColor().run();
+      return;
+    }
+
+    chain.setTextBackgroundColor(color).run();
+  };
+
   return (
-    <div className={`relative w-full ${mentionState ? "z-50" : "z-10"}`} ref={setContainerElement}>
+    <div className={`relative h-full w-full ${mentionState ? "z-50" : "z-10"}`} ref={setContainerElement}>
       <div
-        className={`w-full ${
+        className={`h-full w-full ${
           readOnly
             ? ""
             : borderless
@@ -798,9 +950,15 @@ const RichTextEditor = forwardRef(function RichTextEditor(
             onInsertLink={handleInsertLink}
             onInsertImage={handleInsertImageClick}
             currentTextColor={currentTextColor}
+            currentTextBackgroundColor={currentTextBackgroundColor}
             onSelectPresetColor={handleSelectPresetColor}
+            onSelectPresetBackgroundColor={handleSelectPresetBackgroundColor}
             borderless={borderless}
             toolbarRight={toolbarRight}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={onToggleFullscreen}
+            fullscreenLabel={fullscreenLabel}
+            exitFullscreenLabel={exitFullscreenLabel}
           />
         )}
         <input
@@ -811,8 +969,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           onChange={handleFileInputChange}
         />
         <div
-          className={readOnly ? "" : `neo-rich-text-editor__scroll min-h-0 cursor-text bg-white ${borderless ? "neo-rich-text-editor__scroll--borderless" : ""}`}
-          style={readOnly ? undefined : { minHeight: `${height}px`, height: "100%" }}
+          className={readOnly ? "" : `neo-rich-text-editor__scroll min-h-0 flex-1 cursor-text bg-white ${borderless ? "neo-rich-text-editor__scroll--borderless" : ""}`}
+          style={readOnly ? undefined : borderless ? { height: "100%" } : { minHeight: `${height}px`, height: "100%" }}
           onClick={() => {
             if (!readOnly) {
               editor?.chain().focus().run();

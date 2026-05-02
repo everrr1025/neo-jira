@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { ChevronLeft, Building2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, Building2 } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
@@ -24,6 +24,7 @@ export function SidebarClient({
   departmentContext?: { id: string; name: string } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [itemsNavOpen, setItemsNavOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const translations = getTranslations(locale);
@@ -41,6 +42,7 @@ export function SidebarClient({
   const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
   const departmentItemsPath = departmentContext ? `/departments/${departmentContext.id}/items` : "";
   const isItemsActive = Boolean(departmentItemsPath && pathname === departmentItemsPath);
+  const showItemsChildren = !collapsed && itemsNavOpen;
 
   const getNavClass = (href: string) => {
     let isActive = false;
@@ -212,13 +214,23 @@ export function SidebarClient({
           .map((item) =>
             item.id === "department-items" && departmentContext ? (
               <div key={item.id} className="space-y-1">
-                <Link href={item.href} className={getNavClass(item.href)} title={item.label}>
+                <button
+                  type="button"
+                  onClick={() => setItemsNavOpen((current) => !current)}
+                  className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 transition-colors ${
+                    collapsed ? "mx-3 justify-center" : "gap-3 px-3"
+                  } ${isItemsActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`}
+                  title={item.label}
+                >
                   {item.icon}
                   <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                     {item.label}
                   </span>
-                </Link>
-                {!collapsed ? (
+                  {!collapsed ? (
+                    <ChevronDown className={`ml-auto h-4 w-4 text-slate-400 transition-transform ${itemsNavOpen ? "rotate-180" : ""}`} />
+                  ) : null}
+                </button>
+                {showItemsChildren ? (
                   <div className="ml-8 space-y-1">
                     {[
                       { href: `${departmentItemsPath}?tab=tasks`, label: tasksLabel },
