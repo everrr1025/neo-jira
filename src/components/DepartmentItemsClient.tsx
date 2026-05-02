@@ -1,9 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, Folder, List, Pencil, Plus, RotateCcw, Search, Star, StickyNote, Trash2, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  addMonths,
+  addWeeks,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
+  subWeeks,
+} from "date-fns";
+import {
+  Bell,
+  BriefcaseBusiness,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Folder,
+  MapPin,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  Star,
+  StickyNote,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 
 import { addReminderComment, createReminder, deleteReminderTask, setReminderCompleted, updateReminderTask } from "@/app/actions/reminders";
 import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
@@ -218,6 +251,101 @@ const TEXT = {
   },
 } as const;
 
+const SCHEDULE_TEXT = {
+  en: {
+    title: "Schedule",
+    month: "Month",
+    week: "Week",
+    eventTypes: "Event types",
+    meetings: "Meetings",
+    outOfOffice: "Out-of-office",
+    tasks: "Tasks",
+    memos: "Memos",
+    search: "Search schedule...",
+    today: "Today",
+    create: "Create",
+    quickCreate: "Quick create",
+    addSchedule: "Create meeting",
+    date: "Date",
+    startTime: "Start time",
+    endTime: "End time",
+    noTime: "All day",
+    visibility: "Visible",
+    personal: "Personal",
+    department: "Department",
+    details: "Details",
+    openTask: "Open task",
+    linkedTask: "Linked task",
+    location: "Location",
+    participants: "Participants",
+    reminderRule: "Reminder",
+    meetingMinutes: "Notes",
+    addMeetingTitle: "Add meeting title",
+    addGuest: "Add guest...",
+    agendaPlaceholder: "Add notes...",
+    createMeeting: "Create Meeting",
+    meeting: "Meeting",
+    out: "Out-of-office",
+    memo: "Memo",
+    privateMemo: "Private",
+    publicMemo: "Public",
+    memoContent: "Memo",
+    none: "None",
+    reminder15: "15 mins before",
+    reminder30: "30 mins before",
+    reminder60: "1 hour before",
+    reminderDay: "1 day before",
+    moreItems: "more",
+    noEvents: "No schedule items",
+  },
+  zh: {
+    title: "日程",
+    month: "月",
+    week: "周",
+    eventTypes: "事项类型",
+    meetings: "会议",
+    outOfOffice: "外出",
+    tasks: "任务",
+    memos: "备忘",
+    search: "搜索日程...",
+    today: "今天",
+    create: "创建",
+    quickCreate: "快速创建",
+    addSchedule: "创建会议",
+    date: "日期",
+    startTime: "开始时间",
+    endTime: "结束时间",
+    noTime: "全天",
+    visibility: "可见",
+    personal: "个人",
+    department: "部门",
+    details: "详情",
+    openTask: "打开任务",
+    linkedTask: "关联任务",
+    location: "地点",
+    participants: "参与人员",
+    reminderRule: "提醒",
+    meetingMinutes: "备注",
+    addMeetingTitle: "添加会议标题",
+    addGuest: "添加参会人...",
+    agendaPlaceholder: "填写备注...",
+    createMeeting: "创建会议",
+    meeting: "会议",
+    out: "外出",
+    memo: "备忘",
+    privateMemo: "私有",
+    publicMemo: "公开",
+    memoContent: "备注",
+    none: "无",
+    reminder15: "提前 15 分钟",
+    reminder30: "提前 30 分钟",
+    reminder60: "提前 1 小时",
+    reminderDay: "提前 1 天",
+    moreItems: "更多",
+    noEvents: "暂无日程",
+  },
+} as const;
+
 function formatDateTimeLocal(date = new Date()) {
   const next = new Date(date);
   next.setMinutes(next.getMinutes() - next.getTimezoneOffset());
@@ -258,11 +386,246 @@ function formatDisplayDate(value: string | null, locale: Locale) {
 }
 
 function dayKey(date: string) {
-  return new Date(date).toISOString().slice(0, 10);
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const month = `${parsed.getMonth() + 1}`.padStart(2, "0");
+  const day = `${parsed.getDate()}`.padStart(2, "0");
+  return `${parsed.getFullYear()}-${month}-${day}`;
+}
+
+function composeDateTime(date: Date, hour = 9, minute = 0) {
+  const next = new Date(date);
+  next.setHours(hour, minute, 0, 0);
+  return formatDateTimeLocal(next);
+}
+
+function combineDateAndTime(dateValue: string, timeValue: string) {
+  return `${dateValue || format(new Date(), "yyyy-MM-dd")}T${timeValue || "09:00"}`;
+}
+
+function getScheduleType(item: DepartmentItemCenterItem): ScheduleType {
+  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return "task";
+  if (item.itemType === "REMINDER") return "memo";
+  if (item.scopeType === "DEPARTMENT" && /外出|出差|请假|调研|out|travel|leave/i.test(`${item.title} ${item.content || ""}`)) {
+    return "out";
+  }
+  return "meeting";
+}
+
+function scheduleTypeLabel(type: ScheduleType, locale: Locale) {
+  const st = SCHEDULE_TEXT[locale];
+  if (type === "meeting") return st.meetings;
+  if (type === "out") return st.outOfOffice;
+  if (type === "task") return st.tasks;
+  return st.memos;
+}
+
+function scheduleChipClass(type: ScheduleType) {
+  if (type === "task") return "border-l-red-600 bg-red-50 text-red-700";
+  if (type === "out") return "border-l-slate-500 bg-slate-100 text-slate-700";
+  if (type === "memo") return "border-l-amber-500 bg-amber-50 text-amber-800";
+  return "border-l-[#0052CC] bg-[#E9F2FF] text-[#0052CC]";
+}
+
+function scheduleDotClass(type: ScheduleType) {
+  if (type === "task") return "bg-red-600";
+  if (type === "out") return "bg-slate-500";
+  if (type === "memo") return "bg-amber-500";
+  return "bg-[#0052CC]";
+}
+
+function scheduleBadgeClass(type: ScheduleType) {
+  if (type === "task") return "border border-red-200 bg-red-50 text-red-700";
+  if (type === "out") return "border border-slate-200 bg-slate-100 text-slate-700";
+  if (type === "memo") return "border border-amber-200 bg-amber-50 text-amber-800";
+  return "border border-blue-200 bg-[#E9F2FF] text-[#0052CC]";
+}
+
+function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, includeEnd = false) {
+  const date = new Date(item.date);
+  if (Number.isNaN(date.getTime())) return "";
+  const hasSpecificTime = date.getHours() !== 0 || date.getMinutes() !== 0;
+  if (!hasSpecificTime || item.kind === "ISSUE_DUE") {
+    return item.kind === "ISSUE_DUE" ? (locale === "zh" ? "截止" : "Due") : "";
+  }
+  const start = date.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (!includeEnd || !item.endDate) return start;
+  const end = new Date(item.endDate);
+  if (Number.isNaN(end.getTime())) return start;
+  return `${start}-${end.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+}
+
+function attendeeAvatarSrc(id: string) {
+  let sum = 0;
+  for (const char of id) sum += char.charCodeAt(0);
+  return `/avatars/cartoon-${String((sum % 12) + 1).padStart(2, "0")}.svg`;
+}
+
+const TIME_POPOVER_HEIGHT = 280;
+const TIME_POPOVER_GAP = 8;
+const TIME_VIEWPORT_MARGIN = 12;
+const timeHours = Array.from({ length: 24 }, (_, index) => `${index}`.padStart(2, "0"));
+const timeMinutes = Array.from({ length: 12 }, (_, index) => `${index * 5}`.padStart(2, "0"));
+
+function getTimePopoverPosition(element: HTMLButtonElement) {
+  const rect = element.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(TIME_VIEWPORT_MARGIN, rect.left),
+    Math.max(TIME_VIEWPORT_MARGIN, window.innerWidth - rect.width - TIME_VIEWPORT_MARGIN)
+  );
+  const shouldOpenAbove =
+    window.innerHeight - rect.bottom < TIME_POPOVER_HEIGHT + TIME_POPOVER_GAP &&
+    rect.top > TIME_POPOVER_HEIGHT + TIME_POPOVER_GAP;
+  const top = shouldOpenAbove
+    ? Math.max(TIME_VIEWPORT_MARGIN, rect.top - TIME_POPOVER_HEIGHT - TIME_POPOVER_GAP)
+    : Math.min(window.innerHeight - TIME_POPOVER_HEIGHT - TIME_VIEWPORT_MARGIN, rect.bottom + TIME_POPOVER_GAP);
+
+  return {
+    left,
+    top,
+    width: rect.width,
+  };
+}
+
+function LocalizedTimeInput({
+  id,
+  label,
+  value,
+  onChange,
+  locale,
+  required = false,
+}: {
+  id?: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  locale: Locale;
+  required?: boolean;
+}) {
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [selectedHour = "09", selectedMinute = "00"] = value.split(":");
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const clickedTrigger = buttonRef.current?.contains(target);
+      const clickedPopover = popoverRef.current?.contains(target);
+      if (!clickedTrigger && !clickedPopover) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+    const handleReposition = () => {
+      if (buttonRef.current) setPopoverPosition(getTimePopoverPosition(buttonRef.current));
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isOpen]);
+
+  const openPicker = () => {
+    if (buttonRef.current) setPopoverPosition(getTimePopoverPosition(buttonRef.current));
+    setIsOpen((current) => !current);
+  };
+
+  const updateTime = (hour: string, minute: string) => {
+    onChange(`${hour}:${minute}`);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-sm font-medium text-slate-700">{label}</label>
+      <input
+        tabIndex={-1}
+        aria-hidden="true"
+        value={value}
+        onChange={() => undefined}
+        required={required}
+        className="pointer-events-none absolute h-0 w-0 opacity-0"
+      />
+      <button
+        ref={buttonRef}
+        id={inputId}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={openPicker}
+        className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+      >
+        <span>{value || (locale === "zh" ? "选择时间" : "Select time")}</span>
+        <Clock size={16} className="shrink-0 text-slate-400" />
+      </button>
+      {isOpen && popoverPosition
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="z-[90] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl"
+              style={{ left: popoverPosition.left, top: popoverPosition.top, width: popoverPosition.width, position: "fixed" }}
+            >
+              <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="text-sm font-semibold text-slate-800">{locale === "zh" ? "选择时间" : "Select time"}</span>
+                <span className="rounded-md bg-blue-50 px-2 py-1 text-sm font-semibold text-blue-700">{value}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">{locale === "zh" ? "小时" : "Hour"}</div>
+                  <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                    {timeHours.map((hour) => (
+                      <button
+                        key={hour}
+                        type="button"
+                        onClick={() => updateTime(hour, selectedMinute)}
+                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${hour === selectedHour ? "bg-blue-600 font-semibold text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                      >
+                        {hour}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">{locale === "zh" ? "分钟" : "Minute"}</div>
+                  <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                    {timeMinutes.map((minute) => (
+                      <button
+                        key={minute}
+                        type="button"
+                        onClick={() => updateTime(selectedHour, minute)}
+                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${minute === selectedMinute ? "bg-blue-600 font-semibold text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                      >
+                        {minute}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
+  );
 }
 
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
 type ItemTab = "tasks" | "schedule" | "notes";
+type ScheduleView = "month" | "week" | "list";
+type ScheduleType = "meeting" | "out" | "task" | "memo";
+type ScheduleCreateKind = "meeting" | "out" | "memo";
 type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}` | `pinned-folder:${string}`;
 type NoteSaveStatus = "saved" | "pending" | "saving" | "error";
 type SavedNoteSnapshot = {
@@ -373,9 +736,19 @@ export default function DepartmentItemsClient({
   assigneeOptions: DepartmentReminderAssigneeOption[];
 }) {
   const t = TEXT[locale];
+  const st = SCHEDULE_TEXT[locale];
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
-  const [view, setView] = useState<"list" | "calendar">("list");
+  const [scheduleView, setScheduleView] = useState<ScheduleView>("month");
+  const [visibleScheduleTypes, setVisibleScheduleTypes] = useState<Record<ScheduleType, boolean>>({
+    meeting: true,
+    out: true,
+    task: true,
+    memo: true,
+  });
+  const [scheduleCursor, setScheduleCursor] = useState(() => new Date());
+  const [scheduleSearch, setScheduleSearch] = useState("");
+  const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(null);
   const activeTab = initialTab;
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
@@ -429,6 +802,16 @@ export default function DepartmentItemsClient({
     projectId: projectOptions[0]?.id || "",
     issueId: "",
     assigneeId: currentUserId,
+    scheduleKind: "meeting" as ScheduleCreateKind,
+    scheduleDate: format(new Date(), "yyyy-MM-dd"),
+    startTime: "09:00",
+    endTime: "10:00",
+    endAt: "",
+    location: "",
+    attendeeIds: [] as string[],
+    attendeeQuery: "",
+    reminderRule: "15",
+    meetingMinutes: "",
   });
   const [editForm, setEditForm] = useState({
     title: "",
@@ -514,9 +897,31 @@ export default function DepartmentItemsClient({
   });
   const visibleItems = items.filter((item) => {
     if (activeTab === "tasks") return filteredTaskItems.some((task) => task.id === item.id);
-    if (activeTab === "schedule") return item.itemType === "EVENT" || item.itemType === "REMINDER";
+    if (activeTab === "schedule") return item.itemType === "EVENT" || item.itemType === "REMINDER" || item.itemType === "TODO" || item.itemType === "ISSUE_DUE";
     return false;
   });
+  const scheduleItems = items
+    .filter((item) => item.itemType === "EVENT" || item.itemType === "REMINDER" || item.itemType === "TODO" || item.itemType === "ISSUE_DUE")
+    .filter((item) => item.itemType !== "TODO" || Boolean(item.dueDate))
+    .filter((item) => {
+      const type = getScheduleType(item);
+      if (!visibleScheduleTypes[type]) return false;
+      const query = scheduleSearch.trim().toLowerCase();
+      if (!query) return true;
+      return [
+        item.title,
+        item.content,
+        item.projectKey,
+        item.projectName,
+        item.issueKey,
+        item.issueTitle,
+        item.assigneeName,
+        item.assigneeEmail,
+        item.creatorName,
+        item.creatorEmail,
+      ].filter(Boolean).some((value) => value!.toLowerCase().includes(query));
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const activeNotes = notes.filter((note) => !note.deletedAt);
   const trashedNotes = notes.filter((note) => note.deletedAt);
   const isNotePinned = (note: NoteListItem) => pinnedNoteOverrides[note.id] ?? note.isPinned;
@@ -546,6 +951,7 @@ export default function DepartmentItemsClient({
   });
   const selectedNote = selectedNoteId ? notes.find((note) => note.id === selectedNoteId) || null : null;
   const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
+  const selectedScheduleItem = selectedScheduleItemId ? items.find((item) => item.id === selectedScheduleItemId) || null : null;
 
   useEffect(() => {
     if (!selectedNote) return;
@@ -568,15 +974,14 @@ export default function DepartmentItemsClient({
     }
   }, [selectedNoteId]);
 
-  const calendarItems = visibleItems.filter((item) => item.itemType !== "NOTE");
+  const calendarItems = scheduleItems.filter((item) => item.itemType !== "NOTE");
   const groupedByDay = calendarItems.reduce((acc, item) => {
     const key = dayKey(item.date);
     acc[key] = [...(acc[key] || []), item];
     return acc;
   }, {} as Record<string, DepartmentItemCenterItem[]>);
-  const calendarDays = Object.keys(groupedByDay).sort();
 
-  const resetForm = () =>
+  const resetForm = (overrides: Partial<typeof form> = {}) =>
     setForm({
       title: "",
       content: "",
@@ -590,6 +995,17 @@ export default function DepartmentItemsClient({
       projectId: projectOptions[0]?.id || "",
       issueId: "",
       assigneeId: currentUserId,
+      scheduleKind: "meeting",
+      scheduleDate: format(new Date(), "yyyy-MM-dd"),
+      startTime: "09:00",
+      endTime: "10:00",
+      endAt: "",
+      location: "",
+      attendeeIds: [],
+      attendeeQuery: "",
+      reminderRule: "15",
+      meetingMinutes: "",
+      ...overrides,
     });
 
   const openCreateModal = () => {
@@ -599,21 +1015,60 @@ export default function DepartmentItemsClient({
     setIsCreateOpen(true);
   };
 
+  const openCreateScheduleModal = (date = scheduleCursor) => {
+    const scheduleDate = format(date, "yyyy-MM-dd");
+    resetForm({
+      itemType: "EVENT",
+      hasTime: false,
+      startAt: composeDateTime(date, 9, 0),
+      endAt: composeDateTime(date, 10, 0),
+      dueAt: "",
+      scopeType: "DEPARTMENT",
+      assigneeId: currentUserId,
+      scheduleKind: "meeting",
+      scheduleDate,
+      startTime: "09:00",
+      endTime: "10:00",
+      location: "",
+      attendeeIds: [],
+      attendeeQuery: "",
+      reminderRule: "15",
+      meetingMinutes: "",
+    });
+    setError("");
+    setIsCreateMoreOpen(true);
+    setIsCreateOpen(true);
+  };
+
   const handleCreate = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
     startTransition(async () => {
+      const isScheduleCreate = activeTab === "schedule";
+      const attendeeNames = form.attendeeIds
+        .map((id) => assigneeOptions.find((assignee) => assignee.id === id))
+        .filter(Boolean)
+        .map((assignee) => assignee!.name || assignee!.email);
+      const scheduleContent = form.scheduleKind === "memo" ? form.meetingMinutes.trim() : [
+        `${t.type}: ${scheduleTypeLabel(form.scheduleKind, locale)}`,
+        form.location.trim() ? `${st.location}: ${form.location.trim()}` : "",
+        attendeeNames.length > 0 ? `${st.participants}: ${attendeeNames.join(", ")}` : "",
+        form.meetingMinutes.trim(),
+      ].filter(Boolean).join("\n\n");
       const result = await createReminder({
         departmentId,
         title: form.title,
-        content: form.content,
-        itemType: form.itemType,
-        startAt: form.hasTime ? form.startAt : undefined,
+        content: isScheduleCreate ? scheduleContent : form.content,
+        itemType: isScheduleCreate ? (form.scheduleKind === "memo" ? "REMINDER" : "EVENT") : form.itemType,
+        startAt: isScheduleCreate ? combineDateAndTime(form.scheduleDate, form.startTime) : form.itemType === "TODO" ? undefined : form.startAt,
+        endAt: isScheduleCreate && form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
         dueAt: form.dueAt || undefined,
         priority: form.priority,
         isImportant: form.isImportant,
-        scopeType: form.scopeType,
-        projectId: form.scopeType === "PROJECT" ? form.projectId : undefined,
+        scopeType: isScheduleCreate && form.scheduleKind !== "memo"
+          ? "DEPARTMENT"
+          : form.scopeType,
+        projectId: isScheduleCreate ? undefined : form.scopeType === "PROJECT" ? form.projectId : undefined,
         issueId: form.issueId || undefined,
         assigneeId: form.assigneeId || undefined,
       });
@@ -905,9 +1360,12 @@ export default function DepartmentItemsClient({
         setNoteError(result.error || "Failed");
         return;
       }
-      if (selectedNoteId === targetNote.id) {
-        setSelectedNoteId(activeNotes.find((note) => note.id !== targetNote.id)?.id || null);
-      }
+      setSelectedNoteId((current) => {
+        if (current !== targetNote.id) return current;
+        savedNoteSnapshotRef.current = null;
+        setNoteSaveStatus("saved");
+        return null;
+      });
       router.refresh();
     });
   };
@@ -936,9 +1394,12 @@ export default function DepartmentItemsClient({
         setNoteError(result.error || "Failed");
         return;
       }
-      if (selectedNoteId === targetNote.id) {
-        setSelectedNoteId(trashedNotes.find((note) => note.id !== targetNote.id)?.id || null);
-      }
+      setSelectedNoteId((current) => {
+        if (current !== targetNote.id) return current;
+        savedNoteSnapshotRef.current = null;
+        setNoteSaveStatus("saved");
+        return null;
+      });
       router.refresh();
     });
   };
@@ -1244,6 +1705,446 @@ export default function DepartmentItemsClient({
     </div>
   );
 
+  const scheduleRangeStart = scheduleView === "week" ? startOfWeek(scheduleCursor) : startOfWeek(startOfMonth(scheduleCursor));
+  const scheduleRangeEnd = scheduleView === "week" ? endOfWeek(scheduleCursor) : endOfWeek(endOfMonth(scheduleCursor));
+  const scheduleDays = eachDayOfInterval({ start: scheduleRangeStart, end: scheduleRangeEnd });
+  const scheduleTitle = scheduleView === "week"
+    ? `${scheduleRangeStart.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" })} - ${scheduleRangeEnd.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    : scheduleCursor.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "long", year: "numeric" });
+  const scheduleTypes: Array<{ id: ScheduleType; label: string }> = [
+    { id: "meeting", label: st.meetings },
+    { id: "out", label: st.outOfOffice },
+    { id: "task", label: st.tasks },
+    { id: "memo", label: st.memos },
+  ];
+
+  const moveScheduleCursor = (direction: "previous" | "next") => {
+    setScheduleCursor((current) => {
+      if (scheduleView === "week") return direction === "previous" ? subWeeks(current, 1) : addWeeks(current, 1);
+      return direction === "previous" ? subMonths(current, 1) : addMonths(current, 1);
+    });
+  };
+
+  const openScheduleItem = (item: DepartmentItemCenterItem) => {
+    if (item.itemType === "TODO") {
+      openTaskDetail(item);
+      return;
+    }
+    setSelectedScheduleItemId(item.id);
+  };
+
+  const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false) => {
+    const type = getScheduleType(item);
+    const time = scheduleTimeLabel(item, locale, scheduleView === "week");
+    const title = item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title;
+    const content = (
+      <>
+        {type === "task" ? <Check size={compact ? 10 : 12} className="shrink-0" /> : null}
+        {type === "out" ? <BriefcaseBusiness size={compact ? 10 : 12} className="shrink-0" /> : null}
+        {type === "memo" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
+        <span className="truncate">{time ? `${time} · ${title}` : title}</span>
+      </>
+    );
+
+    if (item.link && item.kind === "ISSUE_DUE") {
+      return (
+        <Link
+          key={`${item.kind}-${item.id}`}
+          href={item.link}
+          onClick={(event) => event.stopPropagation()}
+          className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${scheduleChipClass(type)}`}
+        >
+          {content}
+        </Link>
+      );
+    }
+
+    return (
+      <button
+        key={`${item.kind}-${item.id}`}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          openScheduleItem(item);
+        }}
+        className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${scheduleChipClass(type)}`}
+      >
+        {content}
+      </button>
+    );
+  };
+
+  const selectedAttendees = assigneeOptions.filter((assignee) => form.attendeeIds.includes(assignee.id));
+  const attendeeMatches = assigneeOptions
+    .filter((assignee) => !form.attendeeIds.includes(assignee.id))
+    .filter((assignee) => {
+      const query = form.attendeeQuery.trim().toLowerCase();
+      if (!query) return true;
+      return `${assignee.name} ${assignee.email}`.toLowerCase().includes(query);
+    })
+    .slice(0, 5);
+
+  const addAttendee = (assigneeId: string) => {
+    setForm((current) => ({
+      ...current,
+      attendeeIds: current.attendeeIds.includes(assigneeId) ? current.attendeeIds : [...current.attendeeIds, assigneeId],
+      attendeeQuery: "",
+    }));
+  };
+
+  const removeAttendee = (assigneeId: string) => {
+    setForm((current) => ({ ...current, attendeeIds: current.attendeeIds.filter((id) => id !== assigneeId) }));
+  };
+
+  const scheduleKindOptions = [
+    { value: "meeting", label: st.meeting, indicatorClassName: scheduleDotClass("meeting") },
+    { value: "out", label: st.out, indicatorClassName: scheduleDotClass("out") },
+    { value: "memo", label: st.memo, indicatorClassName: scheduleDotClass("memo") },
+  ];
+
+  const handleScheduleKindChange = (value: string) => {
+    const nextKind = value as ScheduleCreateKind;
+    setForm((current) => ({
+      ...current,
+      scheduleKind: nextKind,
+      scopeType: nextKind === "memo" && !canCreateDepartmentItem ? "PERSONAL" : "DEPARTMENT",
+      attendeeIds: nextKind === "meeting" ? current.attendeeIds : [],
+    }));
+  };
+
+  const renderScheduleCreateDialog = () => (
+    <div className="w-full max-w-[600px] overflow-hidden rounded-lg border border-[#C3C6D6] bg-white shadow-2xl">
+      <div className="flex items-center justify-between border-b border-[#DFE1E6] px-6 py-4">
+        <h3 className="text-xl font-semibold text-[#051A3E]">{st.create}</h3>
+        <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded p-1 text-[#42526E] hover:bg-[#EBECF0]" aria-label={t.cancel}>
+          <X size={20} />
+        </button>
+      </div>
+      <form onSubmit={handleCreate}>
+        <div className="max-h-[calc(100vh-220px)] space-y-6 overflow-y-auto p-6">
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-slate-700">{t.titleField}</label>
+            <input
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder={form.scheduleKind === "out" ? (locale === "zh" ? "添加外出标题" : "Add out-of-office title") : form.scheduleKind === "memo" ? (locale === "zh" ? "添加备忘标题" : "Add memo title") : st.addMeetingTitle}
+              className="h-10 w-full rounded border border-[#C1C7D0] px-3 text-sm text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+              required
+            />
+          </div>
+
+          <div className={`grid gap-4 ${form.scheduleKind === "memo" ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+            <DropdownField
+              id="scheduleKind"
+              label={t.type}
+              value={form.scheduleKind}
+              onChange={handleScheduleKindChange}
+              options={scheduleKindOptions}
+            />
+            {form.scheduleKind !== "memo" ? (
+              <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-slate-700">{st.location}</label>
+              <div className="relative">
+                <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4F5F7B]" />
+                <input
+                  value={form.location}
+                  onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))}
+                  className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder={locale === "zh" ? "会议室 / 地点" : "Room or location"}
+                />
+              </div>
+            </div>
+            ) : (
+              <>
+                <DropdownField
+                  id="scheduleMemoVisibility"
+                  label={st.visibility}
+                  value={form.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL"}
+                  onChange={(value) => setForm((current) => ({ ...current, scopeType: value as "PERSONAL" | "DEPARTMENT" | "PROJECT" }))}
+                  options={[
+                    ...(canCreateDepartmentItem ? [{ value: "DEPARTMENT", label: st.publicMemo }] : []),
+                    { value: "PERSONAL", label: st.privateMemo },
+                  ]}
+                />
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="scheduleMemoDate" className="text-sm font-medium text-slate-700">{st.date}</label>
+                  <LocalizedDateInput
+                    id="scheduleMemoDate"
+                    locale={locale}
+                    value={form.scheduleDate}
+                    onChange={(event) => setForm((current) => ({ ...current, scheduleDate: event.target.value }))}
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    required
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {form.scheduleKind !== "memo" ? (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="scheduleDate" className="text-sm font-medium text-slate-700">{st.date}</label>
+                <LocalizedDateInput
+                  id="scheduleDate"
+                  locale={locale}
+                  value={form.scheduleDate}
+                  onChange={(event) => setForm((current) => ({ ...current, scheduleDate: event.target.value }))}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  required
+                />
+              </div>
+              <LocalizedTimeInput
+                id="scheduleStartTime"
+                label={st.startTime}
+                value={form.startTime}
+                onChange={(value) => setForm((current) => ({ ...current, startTime: value }))}
+                locale={locale}
+                required
+              />
+              <LocalizedTimeInput
+                id="scheduleEndTime"
+                label={st.endTime}
+                value={form.endTime}
+                onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
+                locale={locale}
+                required
+              />
+          </div>
+          ) : null}
+
+          {form.scheduleKind === "meeting" ? <div className="space-y-1">
+            <label className="text-sm font-medium text-slate-700">{st.participants}</label>
+            <div className="rounded border border-[#C1C7D0] bg-white p-2">
+              <div className="flex min-h-8 flex-wrap gap-2">
+                {selectedAttendees.map((attendee) => (
+                  <span key={attendee.id} className="inline-flex items-center gap-1.5 rounded-full bg-[#EBECF0] px-2 py-1 text-xs text-[#051A3E]">
+                    <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-4 w-4 rounded-full border border-[#DFE1E6]" />
+                    {attendee.name || attendee.email}
+                    <button type="button" onClick={() => removeAttendee(attendee.id)} className="text-[#42526E] hover:text-red-600">
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={form.attendeeQuery}
+                  onChange={(event) => setForm((current) => ({ ...current, attendeeQuery: event.target.value }))}
+                  placeholder={st.addGuest}
+                  className="min-w-[120px] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none"
+                />
+              </div>
+              {form.attendeeQuery.trim() && attendeeMatches.length > 0 ? (
+                <div className="mt-2 border-t border-[#DFE1E6] pt-2">
+                  {attendeeMatches.map((attendee) => (
+                    <button
+                      key={attendee.id}
+                      type="button"
+                      onClick={() => addAttendee(attendee.id)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#051A3E] hover:bg-[#F4F5F7]"
+                    >
+                      <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-6 w-6 rounded-full border border-[#DFE1E6]" />
+                      <span className="min-w-0 truncate">{attendee.name || attendee.email}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div> : null}
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-slate-700">{st.meetingMinutes}</label>
+            <textarea
+              value={form.meetingMinutes}
+              onChange={(event) => setForm((current) => ({ ...current, meetingMinutes: event.target.value }))}
+              placeholder={st.agendaPlaceholder}
+              rows={form.scheduleKind === "memo" ? 6 : 5}
+              className="w-full rounded border border-[#C1C7D0] px-3 py-2 text-sm leading-6 text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-[#DFE1E6] bg-[#F4F5F7] px-6 py-4">
+          <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded px-4 py-2 text-sm font-semibold text-[#42526E] hover:bg-[#EBECF0]">
+            {t.cancel}
+          </button>
+          <button type="submit" disabled={isPending} className="rounded bg-[#0052CC] px-4 py-2 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50">
+            {st.create}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+
+  const renderScheduleWorkspace = () => (
+    <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden border border-[#DFE1E6] bg-white lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="hidden min-h-0 flex-col border-r border-[#DFE1E6] bg-[#FAF9FF] p-4 lg:flex">
+        <div>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.eventTypes}</h3>
+          <div className="space-y-2">
+            {scheduleTypes.map((type) => (
+              <label key={type.id} className="flex cursor-pointer items-center gap-2 text-sm text-[#172B4D]">
+                <input
+                  type="checkbox"
+                  checked={visibleScheduleTypes[type.id]}
+                  onChange={(event) => setVisibleScheduleTypes((current) => ({ ...current, [type.id]: event.target.checked }))}
+                  className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
+                />
+                <span>{type.label}</span>
+                <span className={`ml-auto h-3 w-3 rounded-full ${scheduleDotClass(type.id)}`} />
+              </label>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      <section className="flex min-h-0 min-w-0 flex-col bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="text-xl font-semibold text-[#172B4D]">{scheduleTitle}</h2>
+            <div className="flex overflow-hidden rounded border border-[#DFE1E6]">
+              <button type="button" onClick={() => moveScheduleCursor("previous")} className="inline-flex h-8 w-8 items-center justify-center border-r border-[#DFE1E6] text-[#42526E] hover:bg-[#F4F5F7]">
+                <ChevronLeft size={16} />
+              </button>
+              <button type="button" onClick={() => moveScheduleCursor("next")} className="inline-flex h-8 w-8 items-center justify-center text-[#42526E] hover:bg-[#F4F5F7]">
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <button type="button" onClick={() => setScheduleCursor(new Date())} className="h-8 rounded border border-[#DFE1E6] bg-white px-3 text-sm font-medium text-[#172B4D] hover:bg-[#F4F5F7]">
+              {st.today}
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex rounded border border-[#DFE1E6] bg-[#F4F5F7] p-1">
+              {(["month", "week", "list"] as ScheduleView[]).map((nextView) => (
+                <button
+                  key={nextView}
+                  type="button"
+                  onClick={() => setScheduleView(nextView)}
+                  className={`h-8 rounded px-4 text-sm font-medium ${scheduleView === nextView ? "bg-white text-[#0052CC] shadow-sm" : "text-[#42526E] hover:text-[#0052CC]"}`}
+                >
+                  {nextView === "month" ? st.month : nextView === "week" ? st.week : t.list}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {scheduleView === "list" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white p-4">
+            <div className="divide-y divide-[#DFE1E6] border border-[#DFE1E6]">
+              {scheduleItems.length === 0 ? <p className="p-6 text-sm text-[#42526E]">{st.noEvents}</p> : scheduleItems.map((item) => {
+                const type = getScheduleType(item);
+                return (
+                  <button key={`${item.kind}-${item.id}`} type="button" onClick={() => openScheduleItem(item)} className="grid w-full grid-cols-[120px_minmax(0,1fr)_160px] items-center gap-4 bg-white px-4 py-3 text-left text-sm hover:bg-[#F4F5F7]">
+                    <span className="text-xs font-semibold text-[#42526E]">{new Date(item.date).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", weekday: "short" })}</span>
+                    <span className="min-w-0">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${scheduleDotClass(type)}`} />
+                        <span className="truncate font-semibold text-[#172B4D]">{item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title}</span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-[#42526E]">{item.projectKey || item.scopeLabel}</span>
+                    </span>
+                    <span className="justify-self-end rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">{scheduleTypeLabel(type, locale)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-7 border-b border-[#DFE1E6] bg-white">
+            {scheduleDays.slice(0, 7).map((date) => (
+              <div key={date.toISOString()} className="border-r border-[#DFE1E6] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-[#172B4D] last:border-r-0">
+                {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {scheduleView !== "list" ? (
+          <div className={`grid min-h-0 flex-1 grid-cols-7 overflow-y-auto bg-white ${scheduleView === "week" ? "auto-rows-fr" : "auto-rows-[minmax(120px,1fr)]"}`}>
+            {scheduleDays.map((date) => {
+              const key = format(date, "yyyy-MM-dd");
+              const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+              const shownItems = dayItems.slice(0, scheduleView === "week" ? 8 : 4);
+              const isCurrentDay = isSameDay(date, new Date());
+              const muted = scheduleView === "month" && !isSameMonth(date, scheduleCursor);
+              return (
+                <div
+                  key={key}
+                  onClick={() => openCreateScheduleModal(date)}
+                  className={`group flex min-h-[120px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] bg-white p-2 text-left hover:bg-[#FAFBFC] ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
+                >
+                  <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC]" : ""}`}>
+                    {date.getDate()}
+                  </div>
+                  <div className="min-h-0 w-full space-y-1 overflow-hidden">
+                    {shownItems.map((item) => renderScheduleChip(item, true))}
+                    {dayItems.length > shownItems.length ? (
+                      <span className="block px-1 text-[11px] font-medium text-[#42526E]">+{dayItems.length - shownItems.length} {st.moreItems}</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+      </section>
+
+      {selectedScheduleItem ? (
+        <div className="fixed inset-0 z-50 bg-[#091E42]/30" onClick={() => setSelectedScheduleItemId(null)}>
+        <div
+          className="absolute inset-y-0 right-0 flex w-full max-w-[420px] flex-col border-l border-[#DFE1E6] bg-white shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
+            <div className="min-w-0">
+              <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${scheduleBadgeClass(getScheduleType(selectedScheduleItem))}`}>
+                {scheduleTypeLabel(getScheduleType(selectedScheduleItem), locale)}
+              </span>
+              <h3 className="mt-3 break-words text-lg font-semibold text-[#172B4D]">{selectedScheduleItem.title}</h3>
+            </div>
+            <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded p-1 text-[#42526E] hover:bg-[#F4F5F7]">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
+            <div className="flex gap-3">
+              <Clock size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
+              <div>
+                <p className="font-semibold">{new Date(selectedScheduleItem.date).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}</p>
+                {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Users size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
+              <p>{selectedScheduleItem.assigneeName || selectedScheduleItem.assigneeEmail || selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}</p>
+            </div>
+            <div className="flex gap-3">
+              <MapPin size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
+              <p>{selectedScheduleItem.projectName || selectedScheduleItem.scopeLabel}</p>
+            </div>
+            {selectedScheduleItem.content ? (
+              <div className="rounded border border-[#DFE1E6] bg-[#FAFBFC] p-3 leading-6">
+                {selectedScheduleItem.content}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-[#DFE1E6] bg-[#F4F5F7] px-5 py-4">
+            {selectedScheduleItem.link ? (
+              <Link href={selectedScheduleItem.link} className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B]">
+                {st.openTask}
+              </Link>
+            ) : null}
+            <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded border border-[#DFE1E6] bg-white px-3 py-2 text-sm font-semibold text-[#172B4D] hover:bg-[#F4F5F7]">
+              {t.cancel}
+            </button>
+          </div>
+        </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
   const renderNotesView = () => {
     const folderButtonClass = (active: boolean, dropTargetId?: string) =>
       `flex h-10 w-full items-center justify-between gap-2 border-l-4 px-3 text-sm transition-colors ${
@@ -1367,18 +2268,7 @@ export default function DepartmentItemsClient({
     return (
       <div className="h-[calc(100vh-172px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
-          <div className="p-4">
-            <button
-              type="button"
-              onClick={openCreateNote}
-              disabled={isPending}
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
-            >
-              <Plus size={17} />
-              {t.addNote}
-            </button>
-          </div>
-          <div className="space-y-1 px-3">
+          <div className="space-y-1 px-3 pt-4">
             <button
               type="button"
               onClick={() => setNoteFolderFilter("all")}
@@ -1565,44 +2455,68 @@ export default function DepartmentItemsClient({
         </div>
         <div className="flex items-center gap-2">
           {activeTab === "notes" ? (
-            <div className="relative w-72 max-w-[50vw]">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={noteQuery}
-                onChange={(event) => setNoteQuery(event.target.value)}
-                placeholder={t.searchNotes}
-                className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-10 text-sm outline-none focus:border-blue-200 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
-              />
-              {noteQuery ? (
-                <button
-                  type="button"
-                  onClick={() => setNoteQuery("")}
-                  className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                  title={t.clearSearch}
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
-            </div>
+            <>
+              <div className="relative w-72 max-w-[42vw]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
+                <input
+                  value={noteQuery}
+                  onChange={(event) => setNoteQuery(event.target.value)}
+                  placeholder={t.searchNotes}
+                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                />
+                {noteQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setNoteQuery("")}
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    title={t.clearSearch}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={openCreateNote}
+                disabled={isPending}
+                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
+              >
+                <Plus size={16} />
+                {t.addNote}
+              </button>
+            </>
           ) : null}
-          {activeTab === "schedule" ? <div className="inline-flex rounded-md border border-slate-200 bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setView("list")}
-              className={`inline-flex h-8 items-center gap-2 rounded px-3 text-sm ${view === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-            >
-              <List size={14} />
-              {t.list}
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("calendar")}
-              className={`inline-flex h-8 items-center gap-2 rounded px-3 text-sm ${view === "calendar" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-            >
-              <CalendarDays size={14} />
-              {t.calendar}
-            </button>
-          </div> : null}
+          {activeTab === "schedule" ? (
+            <>
+              <div className="relative w-72 max-w-[42vw]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
+                <input
+                  value={scheduleSearch}
+                  onChange={(event) => setScheduleSearch(event.target.value)}
+                  placeholder={st.search}
+                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                />
+                {scheduleSearch ? (
+                  <button
+                    type="button"
+                    onClick={() => setScheduleSearch("")}
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    title={t.clearSearch}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => openCreateScheduleModal()}
+                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B]"
+              >
+                <Plus size={16} />
+                {st.createMeeting}
+              </button>
+            </>
+          ) : null}
           {activeTab === "tasks" ? (
             <button
               type="button"
@@ -1637,9 +2551,11 @@ export default function DepartmentItemsClient({
         </div>
       ) : null}
 
-      {activeTab === "notes" ? (
+      {activeTab === "schedule" ? (
+        renderScheduleWorkspace()
+      ) : activeTab === "notes" ? (
         renderNotesView()
-      ) : view === "list" ? (
+      ) : (
         activeTab === "tasks" ? (
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
             {visibleItems.length === 0 ? <p className="p-3 text-sm text-slate-500">{t.empty}</p> : visibleItems.map(renderTaskRow)}
@@ -1647,29 +2563,13 @@ export default function DepartmentItemsClient({
         ) : (
           <div className="space-y-3">{visibleItems.length === 0 ? <p className="text-sm text-slate-500">{t.empty}</p> : visibleItems.map(renderItem)}</div>
         )
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {calendarDays.length === 0 ? (
-            <p className="text-sm text-slate-500">{t.empty}</p>
-          ) : (
-            calendarDays.map((day) => (
-              <div key={day} className="rounded-2xl border bg-white p-4 shadow-sm">
-                <h3 className="mb-3 text-sm font-semibold text-slate-500">
-                  {new Date(`${day}T00:00:00`).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </h3>
-                <div className="space-y-2">{groupedByDay[day].map(renderItem)}</div>
-              </div>
-            ))
-          )}
-        </div>
       )}
 
       {isCreateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
+          {activeTab === "schedule" ? (
+            renderScheduleCreateDialog()
+          ) : (
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900">{t.addTask}</h3>
@@ -1705,7 +2605,7 @@ export default function DepartmentItemsClient({
               </button>
               {isCreateMoreOpen ? (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
+                  {activeTab === "tasks" || form.itemType === "TODO" ? <div className="flex flex-col gap-1.5">
                     <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
                     <LocalizedDateInput
                       locale={locale}
@@ -1713,15 +2613,15 @@ export default function DepartmentItemsClient({
                       onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
                       className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
-                  </div>
-                  <DropdownField
+                  </div> : null}
+                  {(activeTab === "tasks" || form.itemType === "TODO") ? <DropdownField
                     id="taskAssignee"
                     label={t.assignee}
                     value={currentTaskAssigneeValue}
                     onChange={applyTaskAssigneeChoice}
                     options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
                     className="flex-1"
-                  />
+                  /> : null}
                 </div>
               ) : null}
               <div className="flex justify-end gap-3">
@@ -1734,6 +2634,7 @@ export default function DepartmentItemsClient({
               </div>
             </form>
           </div>
+          )}
         </div>
       ) : null}
 

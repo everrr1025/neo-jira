@@ -6,6 +6,7 @@ import { ChevronDown, Check } from "lucide-react";
 type DropdownOption = {
   value: string;
   label: string;
+  indicatorClassName?: string;
 };
 
 type DropdownFieldProps = {
@@ -97,6 +98,9 @@ export function DropdownField({ id, label, value, onChange, options, className =
           ref={summaryRef}
           className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
         >
+          {selectedOption?.indicatorClassName ? (
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${selectedOption.indicatorClassName}`} />
+          ) : null}
           <span className={`min-w-0 flex-1 truncate ${selectedOption ? "text-slate-700" : "text-slate-400"}`}>
             {selectedOption?.label || ""}
           </span>
@@ -122,7 +126,12 @@ export function DropdownField({ id, label, value, onChange, options, className =
                   option.value === value ? "bg-white font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                <span className="min-w-0 break-words whitespace-normal">{option.label}</span>
+                <span className="flex min-w-0 items-center gap-2 break-words whitespace-normal">
+                  {option.indicatorClassName ? (
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${option.indicatorClassName}`} />
+                  ) : null}
+                  <span className="min-w-0">{option.label}</span>
+                </span>
                 {option.value === value && <Check size={14} className="shrink-0 text-blue-600" />}
               </button>
             ))}

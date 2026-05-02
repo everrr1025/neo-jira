@@ -29,6 +29,7 @@ export type DepartmentUpcomingItem = {
   title: string;
   content: string | null;
   date: string;
+  endDate: string | null;
   dueDate: string | null;
   priority: string;
   taskStatus: string;
@@ -226,6 +227,7 @@ export async function getDepartmentUpcomingItems({
       title: reminder.title,
       content: reminder.content,
       date: displayDate.toISOString(),
+      endDate: reminder.endAt?.toISOString() || null,
       dueDate: reminder.itemType === "TODO" ? reminder.remindAt?.toISOString() || null : null,
       priority: reminder.priority,
       taskStatus: reminder.completedAt ? "DONE" : reminder.taskStatus,
@@ -260,11 +262,12 @@ export async function getDepartmentUpcomingItems({
       title: issue.title,
       content: null,
       date: issue.dueDate!.toISOString(),
+      endDate: null,
       dueDate: issue.dueDate!.toISOString(),
       priority: issue.priority,
       taskStatus: "IN_PROGRESS",
       scopeType: "PROJECT",
-      scopeLabel: locale === "zh" ? "问题到期" : "Issue due",
+      scopeLabel: locale === "zh" ? "任务" : "Task",
       projectName: issue.project.name,
       projectKey: issue.project.key,
       issueKey: issue.key,
@@ -314,42 +317,66 @@ export async function getDepartmentItemCenterItems({
   locale: "en" | "zh";
 }) {
   const today = startOfToday();
-  const reminders = await prisma.reminder.findMany({
-    where: {
-      OR: [
-        { scopeType: "PERSONAL", OR: [{ creatorId: userId }, { assigneeId: userId }] },
-        { scopeType: "DEPARTMENT", departmentId },
-        visibleProjectIds.length > 0
-          ? { scopeType: "PROJECT", projectId: { in: visibleProjectIds } }
-          : { id: "__none__" },
-      ],
-    },
-    include: {
-      project: {
-        select: { id: true, name: true, key: true },
+  const [reminders, dueIssues] = await Promise.all([
+    prisma.reminder.findMany({
+      where: {
+        OR: [
+          { scopeType: "PERSONAL", OR: [{ creatorId: userId }, { assigneeId: userId }] },
+          { scopeType: "DEPARTMENT", departmentId },
+          visibleProjectIds.length > 0
+            ? { scopeType: "PROJECT", projectId: { in: visibleProjectIds } }
+            : { id: "__none__" },
+        ],
       },
-      issue: {
-        select: { id: true, key: true, title: true },
-      },
-      assignee: {
-        select: { name: true, email: true },
-      },
-      creator: {
-        select: { name: true, email: true },
-      },
-      comments: {
-        include: {
-          author: { select: { name: true, email: true } },
+      include: {
+        project: {
+          select: { id: true, name: true, key: true },
         },
-        orderBy: { createdAt: "asc" },
-        take: 50,
+        issue: {
+          select: { id: true, key: true, title: true },
+        },
+        assignee: {
+          select: { name: true, email: true },
+        },
+        creator: {
+          select: { name: true, email: true },
+        },
+        comments: {
+          include: {
+            author: { select: { name: true, email: true } },
+          },
+          orderBy: { createdAt: "asc" },
+          take: 50,
+        },
       },
-    },
-    orderBy: [{ updatedAt: "desc" }],
-    take: 200,
-  });
+      orderBy: [{ updatedAt: "desc" }],
+      take: 200,
+    }),
+    visibleProjectIds.length > 0
+      ? prisma.issue.findMany({
+          where: {
+            projectId: { in: visibleProjectIds },
+            dueDate: { not: null },
+            NOT: { status: { in: ["DONE"] } },
+          },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            dueDate: true,
+            priority: true,
+            status: true,
+            assigneeId: true,
+            assignee: { select: { name: true, email: true } },
+            project: { select: { name: true, key: true } },
+          },
+          orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
+          take: 200,
+        })
+      : Promise.resolve([]),
+  ]);
 
-  return reminders.filter((reminder) => {
+  const reminderItems = reminders.filter((reminder) => {
     if (reminder.itemType !== "TODO") return true;
     if (userRole === "ADMIN" || canManageDepartment) return true;
     if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
@@ -372,6 +399,7 @@ export async function getDepartmentItemCenterItems({
       title: reminder.title,
       content: reminder.content,
       date: displayDate.toISOString(),
+      endDate: reminder.endAt?.toISOString() || null,
       dueDate: reminder.itemType === "TODO" ? reminder.remindAt?.toISOString() || null : null,
       priority: reminder.priority,
       taskStatus: reminder.completedAt ? "DONE" : reminder.taskStatus,
@@ -408,4 +436,42 @@ export async function getDepartmentItemCenterItems({
       createdAt: reminder.createdAt.toISOString(),
     } satisfies DepartmentItemCenterItem;
   });
+
+  const issueItems = dueIssues
+    .filter((issue) => issue.dueDate)
+    .map((issue) => ({
+      id: issue.id,
+      kind: "ISSUE_DUE" as const,
+      itemType: "ISSUE_DUE" as const,
+      title: issue.title,
+      content: null,
+      date: issue.dueDate!.toISOString(),
+      endDate: null,
+      dueDate: issue.dueDate!.toISOString(),
+      priority: issue.priority,
+      taskStatus: issue.status,
+      scopeType: "PROJECT",
+      scopeLabel: locale === "zh" ? "任务" : "Task",
+      projectName: issue.project.name,
+      projectKey: issue.project.key,
+      issueKey: issue.key,
+      issueTitle: issue.title,
+      creatorId: null,
+      assigneeId: issue.assigneeId,
+      creatorName: null,
+      creatorEmail: null,
+      assigneeName: issue.assignee?.name || null,
+      assigneeEmail: issue.assignee?.email || null,
+      link: `/issues/${issue.id}`,
+      canComplete: false,
+      canEdit: false,
+      canComment: false,
+      isOverdue: issue.dueDate! < today,
+      isImportant: issue.priority === "HIGH" || issue.priority === "URGENT",
+      comments: [],
+      completedAt: null,
+      createdAt: issue.dueDate!.toISOString(),
+    } satisfies DepartmentItemCenterItem));
+
+  return [...reminderItems, ...issueItems];
 }
