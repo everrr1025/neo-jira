@@ -34,11 +34,10 @@ import {
   Star,
   StickyNote,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 
-import { addReminderComment, createReminder, deleteReminderTask, setReminderCompleted, updateReminderTask } from "@/app/actions/reminders";
+import { addReminderComment, createReminder, deleteReminderItem, deleteReminderTask, setReminderCompleted, updateReminderItem, updateReminderTask } from "@/app/actions/reminders";
 import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
 import { DropdownField } from "@/components/DropdownField";
 import LocalizedDateInput from "@/components/LocalizedDateInput";
@@ -259,7 +258,7 @@ const SCHEDULE_TEXT = {
     eventTypes: "Event types",
     meetings: "Meetings",
     outOfOffice: "Out-of-office",
-    tasks: "Tasks",
+    reminders: "Reminders",
     memos: "Memos",
     search: "Search schedule...",
     today: "Today",
@@ -284,6 +283,11 @@ const SCHEDULE_TEXT = {
     addGuest: "Add guest...",
     agendaPlaceholder: "Add notes...",
     createMeeting: "Create Meeting",
+    deleteSchedule: "Delete",
+    deleteScheduleConfirm: "Delete this schedule item?",
+    deleteMeetingConfirm: "Delete this meeting? Invited participants will no longer see it in the department calendar.",
+    visibleSummary: "Visible",
+    todaySummary: "Today",
     meeting: "Meeting",
     out: "Out-of-office",
     memo: "Memo",
@@ -305,7 +309,7 @@ const SCHEDULE_TEXT = {
     eventTypes: "事项类型",
     meetings: "会议",
     outOfOffice: "外出",
-    tasks: "任务",
+    reminders: "提醒",
     memos: "备忘",
     search: "搜索日程...",
     today: "今天",
@@ -330,6 +334,11 @@ const SCHEDULE_TEXT = {
     addGuest: "添加参会人...",
     agendaPlaceholder: "填写备注...",
     createMeeting: "创建会议",
+    deleteSchedule: "删除",
+    deleteScheduleConfirm: "确定删除这个日程吗？",
+    deleteMeetingConfirm: "确定删除这个会议吗？已邀请的参会者将不再在部门日历中看到它。",
+    visibleSummary: "当前显示",
+    todaySummary: "今天",
     meeting: "会议",
     out: "外出",
     memo: "备忘",
@@ -357,6 +366,13 @@ function formatDateTimeLocalFromIso(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
+}
+
+function formatTimeLocalFromIso(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function itemTypeLabel(type: string, locale: Locale) {
@@ -404,7 +420,7 @@ function combineDateAndTime(dateValue: string, timeValue: string) {
 }
 
 function getScheduleType(item: DepartmentItemCenterItem): ScheduleType {
-  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return "task";
+  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return "reminder";
   if (item.itemType === "REMINDER") return "memo";
   if (item.scopeType === "DEPARTMENT" && /外出|出差|请假|调研|out|travel|leave/i.test(`${item.title} ${item.content || ""}`)) {
     return "out";
@@ -416,26 +432,26 @@ function scheduleTypeLabel(type: ScheduleType, locale: Locale) {
   const st = SCHEDULE_TEXT[locale];
   if (type === "meeting") return st.meetings;
   if (type === "out") return st.outOfOffice;
-  if (type === "task") return st.tasks;
+  if (type === "reminder") return st.reminders;
   return st.memos;
 }
 
 function scheduleChipClass(type: ScheduleType) {
-  if (type === "task") return "border-l-red-600 bg-red-50 text-red-700";
+  if (type === "reminder") return "border-l-red-600 bg-red-50 text-red-700";
   if (type === "out") return "border-l-slate-500 bg-slate-100 text-slate-700";
   if (type === "memo") return "border-l-amber-500 bg-amber-50 text-amber-800";
   return "border-l-[#0052CC] bg-[#E9F2FF] text-[#0052CC]";
 }
 
 function scheduleDotClass(type: ScheduleType) {
-  if (type === "task") return "bg-red-600";
+  if (type === "reminder") return "bg-red-600";
   if (type === "out") return "bg-slate-500";
   if (type === "memo") return "bg-amber-500";
   return "bg-[#0052CC]";
 }
 
 function scheduleBadgeClass(type: ScheduleType) {
-  if (type === "task") return "border border-red-200 bg-red-50 text-red-700";
+  if (type === "reminder") return "border border-red-200 bg-red-50 text-red-700";
   if (type === "out") return "border border-slate-200 bg-slate-100 text-slate-700";
   if (type === "memo") return "border border-amber-200 bg-amber-50 text-amber-800";
   return "border border-blue-200 bg-[#E9F2FF] text-[#0052CC]";
@@ -455,10 +471,60 @@ function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, inclu
   return `${start}-${end.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
 
+function scheduleDateLabel(item: DepartmentItemCenterItem, locale: Locale) {
+  const start = new Date(item.date);
+  if (Number.isNaN(start.getTime())) return "";
+  return start.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function attendeeAvatarSrc(id: string) {
   let sum = 0;
   for (const char of id) sum += char.charCodeAt(0);
   return `/avatars/cartoon-${String((sum % 12) + 1).padStart(2, "0")}.svg`;
+}
+
+function parseScheduleDetails(content: string | null) {
+  const lines = (content || "").split(/\r?\n/).map((line) => line.trim());
+  let location = "";
+  const participantNames: string[] = [];
+  const noteLines: string[] = [];
+
+  for (const line of lines) {
+    if (!line) {
+      if (noteLines.length > 0) noteLines.push("");
+      continue;
+    }
+
+    const locationMatch = line.match(/^(?:地点|Location):\s*(.+)$/i);
+    if (locationMatch) {
+      location = locationMatch[1].trim();
+      continue;
+    }
+
+    const participantsMatch = line.match(/^(?:参与人员|Participants):\s*(.+)$/i);
+    if (participantsMatch) {
+      participantNames.push(
+        ...participantsMatch[1]
+          .split(/[,，]/)
+          .map((name) => name.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+
+    if (/^(?:类型|Type):/i.test(line)) continue;
+    noteLines.push(line);
+  }
+
+  return {
+    location,
+    participantNames,
+    notes: noteLines.join("\n").trim(),
+  };
 }
 
 const TIME_POPOVER_HEIGHT = 280;
@@ -624,7 +690,7 @@ function LocalizedTimeInput({
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
 type ItemTab = "tasks" | "schedule" | "notes";
 type ScheduleView = "month" | "week" | "list";
-type ScheduleType = "meeting" | "out" | "task" | "memo";
+type ScheduleType = "meeting" | "out" | "reminder" | "memo";
 type ScheduleCreateKind = "meeting" | "out" | "memo";
 type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}` | `pinned-folder:${string}`;
 type NoteSaveStatus = "saved" | "pending" | "saving" | "error";
@@ -743,7 +809,7 @@ export default function DepartmentItemsClient({
   const [visibleScheduleTypes, setVisibleScheduleTypes] = useState<Record<ScheduleType, boolean>>({
     meeting: true,
     out: true,
-    task: true,
+    reminder: true,
     memo: true,
   });
   const [scheduleCursor, setScheduleCursor] = useState(() => new Date());
@@ -783,6 +849,7 @@ export default function DepartmentItemsClient({
   });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreateMoreOpen, setIsCreateMoreOpen] = useState(false);
+  const [editingScheduleItemId, setEditingScheduleItemId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [error, setError] = useState("");
@@ -952,6 +1019,7 @@ export default function DepartmentItemsClient({
   const selectedNote = selectedNoteId ? notes.find((note) => note.id === selectedNoteId) || null : null;
   const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
   const selectedScheduleItem = selectedScheduleItemId ? items.find((item) => item.id === selectedScheduleItemId) || null : null;
+  const editingScheduleItem = editingScheduleItemId ? items.find((item) => item.id === editingScheduleItemId) || null : null;
 
   useEffect(() => {
     if (!selectedNote) return;
@@ -980,6 +1048,11 @@ export default function DepartmentItemsClient({
     acc[key] = [...(acc[key] || []), item];
     return acc;
   }, {} as Record<string, DepartmentItemCenterItem[]>);
+  const todayScheduleCount = calendarItems.filter((item) => isSameDay(new Date(item.date), new Date())).length;
+  const visibleScheduleTypeCounts = (["meeting", "out", "reminder", "memo"] as ScheduleType[]).reduce((acc, type) => {
+    acc[type] = calendarItems.filter((item) => getScheduleType(item) === type).length;
+    return acc;
+  }, {} as Record<ScheduleType, number>);
 
   const resetForm = (overrides: Partial<typeof form> = {}) =>
     setForm({
@@ -1009,6 +1082,7 @@ export default function DepartmentItemsClient({
     });
 
   const openCreateModal = () => {
+    setEditingScheduleItemId(null);
     resetForm();
     setError("");
     setIsCreateMoreOpen(false);
@@ -1016,6 +1090,7 @@ export default function DepartmentItemsClient({
   };
 
   const openCreateScheduleModal = (date = scheduleCursor) => {
+    setEditingScheduleItemId(null);
     const scheduleDate = format(date, "yyyy-MM-dd");
     resetForm({
       itemType: "EVENT",
@@ -1040,6 +1115,44 @@ export default function DepartmentItemsClient({
     setIsCreateOpen(true);
   };
 
+  const openEditScheduleItem = (item: DepartmentItemCenterItem) => {
+    if (item.kind !== "REMINDER" || !item.canEdit) return;
+    const scheduleKind = getScheduleType(item) === "memo" ? "memo" : getScheduleType(item) === "out" ? "out" : "meeting";
+    const details = parseScheduleDetails(item.content);
+    const attendeeIds = details.participantNames
+      .map((name) => {
+        const normalizedName = name.toLowerCase();
+        return assigneeOptions.find((assignee) =>
+          assignee.name.toLowerCase() === normalizedName ||
+          assignee.email.toLowerCase() === normalizedName
+        )?.id;
+      })
+      .filter((id): id is string => Boolean(id));
+    setEditingScheduleItemId(item.id);
+    resetForm({
+      title: item.title,
+      itemType: scheduleKind === "memo" ? "REMINDER" : "EVENT",
+      hasTime: false,
+      startAt: item.date,
+      endAt: item.endDate || "",
+      dueAt: "",
+      scopeType: item.scopeType === "PERSONAL" ? "PERSONAL" : "DEPARTMENT",
+      assigneeId: item.assigneeId || currentUserId,
+      scheduleKind,
+      scheduleDate: format(new Date(item.date), "yyyy-MM-dd"),
+      startTime: formatTimeLocalFromIso(item.date) || "09:00",
+      endTime: formatTimeLocalFromIso(item.endDate) || formatTimeLocalFromIso(item.date) || "10:00",
+      location: details.location,
+      attendeeIds,
+      attendeeQuery: "",
+      reminderRule: "15",
+      meetingMinutes: details.notes,
+    });
+    setError("");
+    setIsCreateMoreOpen(true);
+    setIsCreateOpen(true);
+  };
+
   const handleCreate = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
@@ -1055,23 +1168,33 @@ export default function DepartmentItemsClient({
         attendeeNames.length > 0 ? `${st.participants}: ${attendeeNames.join(", ")}` : "",
         form.meetingMinutes.trim(),
       ].filter(Boolean).join("\n\n");
-      const result = await createReminder({
-        departmentId,
-        title: form.title,
-        content: isScheduleCreate ? scheduleContent : form.content,
-        itemType: isScheduleCreate ? (form.scheduleKind === "memo" ? "REMINDER" : "EVENT") : form.itemType,
-        startAt: isScheduleCreate ? combineDateAndTime(form.scheduleDate, form.startTime) : form.itemType === "TODO" ? undefined : form.startAt,
-        endAt: isScheduleCreate && form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
-        dueAt: form.dueAt || undefined,
-        priority: form.priority,
-        isImportant: form.isImportant,
-        scopeType: isScheduleCreate && form.scheduleKind !== "memo"
-          ? "DEPARTMENT"
-          : form.scopeType,
-        projectId: isScheduleCreate ? undefined : form.scopeType === "PROJECT" ? form.projectId : undefined,
-        issueId: form.issueId || undefined,
-        assigneeId: form.assigneeId || undefined,
-      });
+      const scheduleItemType = form.scheduleKind === "memo" ? "REMINDER" : "EVENT";
+      const scheduleScopeType = isScheduleCreate && form.scheduleKind !== "memo" ? "DEPARTMENT" : form.scopeType;
+      const result =
+        isScheduleCreate && editingScheduleItem
+          ? await updateReminderItem(editingScheduleItem.id, {
+              title: form.title,
+              content: scheduleContent,
+              itemType: scheduleItemType,
+              startAt: combineDateAndTime(form.scheduleDate, form.startTime),
+              endAt: form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
+              scopeType: scheduleScopeType,
+            })
+          : await createReminder({
+              departmentId,
+              title: form.title,
+              content: isScheduleCreate ? scheduleContent : form.content,
+              itemType: isScheduleCreate ? scheduleItemType : form.itemType,
+              startAt: isScheduleCreate ? combineDateAndTime(form.scheduleDate, form.startTime) : form.itemType === "TODO" ? undefined : form.startAt,
+              endAt: isScheduleCreate && form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
+              dueAt: form.dueAt || undefined,
+              priority: form.priority,
+              isImportant: form.isImportant,
+              scopeType: scheduleScopeType,
+              projectId: isScheduleCreate ? undefined : form.scopeType === "PROJECT" ? form.projectId : undefined,
+              issueId: form.issueId || undefined,
+              assigneeId: form.assigneeId || undefined,
+            });
 
       if (!result.success) {
         setError(result.error || "Failed");
@@ -1079,6 +1202,7 @@ export default function DepartmentItemsClient({
       }
 
       setIsCreateOpen(false);
+      setEditingScheduleItemId(null);
       resetForm();
       router.refresh();
     });
@@ -1215,6 +1339,23 @@ export default function DepartmentItemsClient({
         return;
       }
       setSelectedTaskId(null);
+      router.refresh();
+    });
+  };
+
+  const handleDeleteScheduleItem = () => {
+    if (!selectedScheduleItem || selectedScheduleItem.kind !== "REMINDER" || !selectedScheduleItem.canEdit) return;
+    const type = getScheduleType(selectedScheduleItem);
+    const confirmMessage = type === "meeting" ? st.deleteMeetingConfirm : st.deleteScheduleConfirm;
+    if (!window.confirm(confirmMessage)) return;
+    setDetailError("");
+    startTransition(async () => {
+      const result = await deleteReminderItem(selectedScheduleItem.id);
+      if (!result.success) {
+        setDetailError(result.error || "Failed");
+        return;
+      }
+      setSelectedScheduleItemId(null);
       router.refresh();
     });
   };
@@ -1705,8 +1846,12 @@ export default function DepartmentItemsClient({
     </div>
   );
 
-  const scheduleRangeStart = scheduleView === "week" ? startOfWeek(scheduleCursor) : startOfWeek(startOfMonth(scheduleCursor));
-  const scheduleRangeEnd = scheduleView === "week" ? endOfWeek(scheduleCursor) : endOfWeek(endOfMonth(scheduleCursor));
+  const scheduleRangeStart = scheduleView === "week"
+    ? startOfWeek(scheduleCursor, { weekStartsOn: 1 })
+    : startOfWeek(startOfMonth(scheduleCursor), { weekStartsOn: 1 });
+  const scheduleRangeEnd = scheduleView === "week"
+    ? endOfWeek(scheduleCursor, { weekStartsOn: 1 })
+    : endOfWeek(endOfMonth(scheduleCursor), { weekStartsOn: 1 });
   const scheduleDays = eachDayOfInterval({ start: scheduleRangeStart, end: scheduleRangeEnd });
   const scheduleTitle = scheduleView === "week"
     ? `${scheduleRangeStart.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" })} - ${scheduleRangeEnd.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", year: "numeric" })}`
@@ -1714,13 +1859,16 @@ export default function DepartmentItemsClient({
   const scheduleTypes: Array<{ id: ScheduleType; label: string }> = [
     { id: "meeting", label: st.meetings },
     { id: "out", label: st.outOfOffice },
-    { id: "task", label: st.tasks },
+    { id: "reminder", label: st.reminders },
     { id: "memo", label: st.memos },
   ];
 
   const moveScheduleCursor = (direction: "previous" | "next") => {
     setScheduleCursor((current) => {
-      if (scheduleView === "week") return direction === "previous" ? subWeeks(current, 1) : addWeeks(current, 1);
+      if (scheduleView === "week") {
+        const weekAnchor = startOfWeek(current, { weekStartsOn: 1 });
+        return direction === "previous" ? subWeeks(weekAnchor, 1) : addWeeks(weekAnchor, 1);
+      }
       return direction === "previous" ? subMonths(current, 1) : addMonths(current, 1);
     });
   };
@@ -1730,18 +1878,19 @@ export default function DepartmentItemsClient({
       openTaskDetail(item);
       return;
     }
+    setDetailError("");
     setSelectedScheduleItemId(item.id);
   };
 
   const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false) => {
     const type = getScheduleType(item);
-    const time = scheduleTimeLabel(item, locale, scheduleView === "week");
+    const time = scheduleTimeLabel(item, locale, scheduleView === "week" || scheduleView === "month");
     const title = item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title;
     const content = (
       <>
-        {type === "task" ? <Check size={compact ? 10 : 12} className="shrink-0" /> : null}
+        {type === "reminder" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
         {type === "out" ? <BriefcaseBusiness size={compact ? 10 : 12} className="shrink-0" /> : null}
-        {type === "memo" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
+        {type === "memo" ? <StickyNote size={compact ? 10 : 12} className="shrink-0" /> : null}
         <span className="truncate">{time ? `${time} · ${title}` : title}</span>
       </>
     );
@@ -1812,11 +1961,52 @@ export default function DepartmentItemsClient({
     }));
   };
 
+  const selectedScheduleDetails = selectedScheduleItem ? parseScheduleDetails(selectedScheduleItem.content) : null;
+  const selectedScheduleType = selectedScheduleItem ? getScheduleType(selectedScheduleItem) : null;
+  const selectedScheduleIsMemo = selectedScheduleType === "memo";
+  const selectedScheduleVisibilityLabel = selectedScheduleItem?.scopeType === "DEPARTMENT" ? st.publicMemo : st.privateMemo;
+  const selectedScheduleParticipants = selectedScheduleItem
+    ? [
+        {
+          id: selectedScheduleItem.creatorId || "creator",
+          name: selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-",
+          email: selectedScheduleItem.creatorEmail || "",
+          isCreator: true,
+        },
+        ...(selectedScheduleDetails?.participantNames || [])
+          .filter((name) => {
+            const creatorLabel = (selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "").toLowerCase();
+            return name.toLowerCase() !== creatorLabel;
+          })
+          .map((name) => {
+            const normalizedName = name.toLowerCase();
+            const assignee = assigneeOptions.find((option) =>
+              option.name.toLowerCase() === normalizedName ||
+              option.email.toLowerCase() === normalizedName
+            );
+            return {
+              id: assignee?.id || `guest:${name}`,
+              name: assignee?.name || name,
+              email: assignee?.email || "",
+              isCreator: false,
+            };
+          }),
+      ]
+    : [];
+
   const renderScheduleCreateDialog = () => (
     <div className="w-full max-w-[600px] overflow-hidden rounded-lg border border-[#C3C6D6] bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-[#DFE1E6] px-6 py-4">
-        <h3 className="text-xl font-semibold text-[#051A3E]">{st.create}</h3>
-        <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded p-1 text-[#42526E] hover:bg-[#EBECF0]" aria-label={t.cancel}>
+        <h3 className="text-xl font-semibold text-[#051A3E]">{editingScheduleItem ? t.edit : st.create}</h3>
+        <button
+          type="button"
+          onClick={() => {
+            setIsCreateOpen(false);
+            setEditingScheduleItemId(null);
+          }}
+          className="rounded p-1 text-[#42526E] hover:bg-[#EBECF0]"
+          aria-label={t.cancel}
+        >
           <X size={20} />
         </button>
       </div>
@@ -1963,11 +2153,18 @@ export default function DepartmentItemsClient({
           </div>
         </div>
         <div className="flex justify-end gap-3 border-t border-[#DFE1E6] bg-[#F4F5F7] px-6 py-4">
-          <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded px-4 py-2 text-sm font-semibold text-[#42526E] hover:bg-[#EBECF0]">
+          <button
+            type="button"
+            onClick={() => {
+              setIsCreateOpen(false);
+              setEditingScheduleItemId(null);
+            }}
+            className="rounded px-4 py-2 text-sm font-semibold text-[#42526E] hover:bg-[#EBECF0]"
+          >
             {t.cancel}
           </button>
           <button type="submit" disabled={isPending} className="rounded bg-[#0052CC] px-4 py-2 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50">
-            {st.create}
+            {editingScheduleItem ? t.save : st.create}
           </button>
         </div>
       </form>
@@ -1989,8 +2186,47 @@ export default function DepartmentItemsClient({
                   className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
                 />
                 <span>{type.label}</span>
-                <span className={`ml-auto h-3 w-3 rounded-full ${scheduleDotClass(type.id)}`} />
+                <span className="ml-auto tabular-nums text-xs font-semibold text-[#42526E]">{visibleScheduleTypeCounts[type.id] || 0}</span>
+                <span className={`h-3 w-3 rounded-full ${scheduleDotClass(type.id)}`} />
               </label>
+            ))}
+          </div>
+        </div>
+        <div className="mt-6 border-t border-[#DFE1E6] pt-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.visibleSummary}</h3>
+          <div className="space-y-2 text-sm text-[#172B4D]">
+            <div className="flex items-center justify-between">
+              <span>{st.todaySummary}</span>
+              <span className="font-semibold tabular-nums">{todayScheduleCount}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>{scheduleView === "month" ? st.month : scheduleView === "week" ? st.week : t.list}</span>
+              <span className="font-semibold tabular-nums">{calendarItems.length}</span>
+            </div>
+          </div>
+        </div>
+        <div className="mt-auto border-t border-[#DFE1E6] pt-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.quickCreate}</h3>
+          <div className="grid grid-cols-3 gap-2">
+            {scheduleKindOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  openCreateScheduleModal(scheduleCursor);
+                  setForm((current) => ({
+                    ...current,
+                    scheduleKind: option.value as ScheduleCreateKind,
+                    itemType: option.value === "memo" ? "REMINDER" : "EVENT",
+                    scopeType: option.value === "memo" && !canCreateDepartmentItem ? "PERSONAL" : "DEPARTMENT",
+                    attendeeIds: option.value === "meeting" ? current.attendeeIds : [],
+                  }));
+                }}
+                className="flex h-16 flex-col items-center justify-center gap-2 rounded border border-[#DFE1E6] bg-white text-xs font-semibold text-[#172B4D] hover:border-[#0052CC] hover:text-[#0052CC]"
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${option.indicatorClassName}`} />
+                <span>{option.label}</span>
+              </button>
             ))}
           </div>
         </div>
@@ -2098,46 +2334,96 @@ export default function DepartmentItemsClient({
         >
           <div className="flex items-start justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
             <div className="min-w-0">
-              <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${scheduleBadgeClass(getScheduleType(selectedScheduleItem))}`}>
-                {scheduleTypeLabel(getScheduleType(selectedScheduleItem), locale)}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${scheduleBadgeClass(getScheduleType(selectedScheduleItem))}`}>
+                  {scheduleTypeLabel(getScheduleType(selectedScheduleItem), locale)}
+                </span>
+                {selectedScheduleIsMemo ? (
+                  <span className="inline-flex rounded border border-[#DFE1E6] bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">
+                    {selectedScheduleVisibilityLabel}
+                  </span>
+                ) : null}
+              </div>
               <h3 className="mt-3 break-words text-lg font-semibold text-[#172B4D]">{selectedScheduleItem.title}</h3>
             </div>
-            <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded p-1 text-[#42526E] hover:bg-[#F4F5F7]">
-              <X size={18} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {selectedScheduleItem.kind === "REMINDER" && selectedScheduleItem.canEdit ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openEditScheduleItem(selectedScheduleItem)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
+                    title={t.edit}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={handleDeleteScheduleItem}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    title={st.deleteSchedule}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              ) : null}
+              <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7]" title={t.cancel}>
+                <X size={18} />
+              </button>
+            </div>
           </div>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
+            {detailError ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm text-red-600">{detailError}</div> : null}
             <div className="flex gap-3">
               <Clock size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
               <div>
-                <p className="font-semibold">{new Date(selectedScheduleItem.date).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}</p>
+                <p className="font-semibold">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
+                <p className="mt-0.5 text-[#42526E]">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
                 {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
               </div>
             </div>
-            <div className="flex gap-3">
-              <Users size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
-              <p>{selectedScheduleItem.assigneeName || selectedScheduleItem.assigneeEmail || selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}</p>
-            </div>
-            <div className="flex gap-3">
-              <MapPin size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
-              <p>{selectedScheduleItem.projectName || selectedScheduleItem.scopeLabel}</p>
-            </div>
-            {selectedScheduleItem.content ? (
+            {!selectedScheduleIsMemo ? (
+              <>
+                <div className="flex gap-3">
+                  <MapPin size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
+                  <p>{selectedScheduleDetails?.location || "-"}</p>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.participants}</p>
+                  <div className="min-w-0 space-y-2">
+                    {selectedScheduleParticipants.map((participant) => (
+                      <div key={`${participant.id}-${participant.name}`} className="flex min-w-0 items-center gap-2">
+                        {participant.id.startsWith("guest:") ? (
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EBECF0] text-xs font-semibold text-[#42526E]">
+                            {participant.name.slice(0, 1).toUpperCase()}
+                          </span>
+                        ) : (
+                          <img src={attendeeAvatarSrc(participant.id)} alt="" className="h-7 w-7 shrink-0 rounded-full border border-[#DFE1E6]" />
+                        )}
+                        <span className="min-w-0 truncate font-medium">{participant.name}</span>
+                        {participant.isCreator ? <span className="shrink-0 rounded bg-[#E9F2FF] px-1.5 py-0.5 text-[11px] font-semibold text-[#0052CC]">{t.openedBy}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+            {selectedScheduleDetails?.notes ? (
               <div className="rounded border border-[#DFE1E6] bg-[#FAFBFC] p-3 leading-6">
-                {selectedScheduleItem.content}
+                {selectedScheduleDetails.notes}
               </div>
             ) : null}
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-[#DFE1E6] bg-[#F4F5F7] px-5 py-4">
-            {selectedScheduleItem.link ? (
-              <Link href={selectedScheduleItem.link} className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B]">
-                {st.openTask}
-              </Link>
-            ) : null}
-            <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded border border-[#DFE1E6] bg-white px-3 py-2 text-sm font-semibold text-[#172B4D] hover:bg-[#F4F5F7]">
-              {t.cancel}
-            </button>
+              {selectedScheduleItem.link ? (
+                <Link href={selectedScheduleItem.link} className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B]">
+                  {st.openTask}
+                </Link>
+              ) : null}
+              <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded border border-[#DFE1E6] bg-white px-3 py-2 text-sm font-semibold text-[#172B4D] hover:bg-[#F4F5F7]">
+                {t.cancel}
+              </button>
           </div>
         </div>
         </div>

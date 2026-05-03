@@ -453,6 +453,124 @@ export async function deleteReminderTask(reminderId: string) {
   }
 }
 
+export async function deleteReminderItem(reminderId: string) {
+  try {
+    const session = await getRequiredSession();
+    const currentUser = getSessionUser(session);
+    if (!currentUser.id) return { success: false, error: "Unauthorized" };
+
+    const reminder = await prisma.reminder.findUnique({
+      where: { id: reminderId },
+      select: {
+        id: true,
+        itemType: true,
+        creatorId: true,
+        departmentId: true,
+      },
+    });
+
+    if (!reminder || !["EVENT", "REMINDER", "NOTE"].includes(reminder.itemType)) {
+      return { success: false, error: "Item not found" };
+    }
+    if (reminder.creatorId !== currentUser.id && currentUser.role !== "ADMIN") {
+      return { success: false, error: "Item delete permission required" };
+    }
+
+    await prisma.$transaction([
+      prisma.reminderComment.deleteMany({ where: { reminderId: reminder.id } }),
+      prisma.reminder.delete({ where: { id: reminder.id } }),
+    ]);
+
+    if (reminder.departmentId) {
+      revalidatePath(`/departments/${reminder.departmentId}`);
+      revalidatePath(`/departments/${reminder.departmentId}/items`);
+    } else {
+      revalidatePath("/");
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to delete item:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to delete item" };
+  }
+}
+
+export async function updateReminderItem(
+  reminderId: string,
+  data: {
+    title: string;
+    content?: string;
+    startAt?: string;
+    endAt?: string;
+    itemType?: ReminderItemType;
+    scopeType?: ReminderScopeType;
+  },
+) {
+  try {
+    const session = await getRequiredSession();
+    const currentUser = getSessionUser(session);
+    if (!currentUser.id) return { success: false, error: "Unauthorized" };
+
+    const reminder = await prisma.reminder.findUnique({
+      where: { id: reminderId },
+      select: {
+        id: true,
+        itemType: true,
+        creatorId: true,
+        departmentId: true,
+        scopeType: true,
+      },
+    });
+
+    if (!reminder || !["EVENT", "REMINDER", "NOTE"].includes(reminder.itemType)) {
+      return { success: false, error: "Item not found" };
+    }
+    if (reminder.creatorId !== currentUser.id && currentUser.role !== "ADMIN") {
+      return { success: false, error: "Item edit permission required" };
+    }
+
+    const title = data.title.trim();
+    if (!title) return { success: false, error: "Item title is required" };
+
+    const itemType = isValidItemType(data.itemType || "") ? data.itemType! : reminder.itemType;
+    const startAt = data.startAt ? parseLocalDateTime(data.startAt) : null;
+    const endAt = data.endAt ? parseLocalDateTime(data.endAt) : null;
+    if (!startAt) return { success: false, error: "Item time is required" };
+    if (endAt && endAt < startAt) return { success: false, error: "End time must be after start time" };
+
+    const scopeType = data.scopeType || (reminder.scopeType as ReminderScopeType);
+    if (!["PERSONAL", "DEPARTMENT", "PROJECT"].includes(scopeType)) {
+      return { success: false, error: "Invalid reminder scope" };
+    }
+
+    const updated = await prisma.reminder.update({
+      where: { id: reminder.id },
+      data: {
+        title,
+        content: data.content?.trim() || null,
+        startAt,
+        endAt,
+        itemType,
+        scopeType,
+        departmentId: scopeType === "PERSONAL" ? null : reminder.departmentId,
+      },
+      select: { departmentId: true },
+    });
+
+    if (updated.departmentId) {
+      revalidatePath(`/departments/${updated.departmentId}`);
+      revalidatePath(`/departments/${updated.departmentId}/items`);
+    } else {
+      revalidatePath("/");
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update item:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update item" };
+  }
+}
+
 export async function addReminderComment(reminderId: string, content: string) {
   try {
     const session = await getRequiredSession();
