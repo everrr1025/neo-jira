@@ -20,7 +20,6 @@ import {
 } from "date-fns";
 import {
   Bell,
-  BriefcaseBusiness,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -60,6 +59,7 @@ const TEXT = {
     list: "List",
     calendar: "Calendar",
     addTask: "New task",
+    searchTasks: "Search tasks...",
     addNote: "New note",
     allNotes: "All notes",
     pinnedNotes: "Favorites",
@@ -142,6 +142,8 @@ const TEXT = {
     noReplies: "No replies yet.",
     openedBy: "Opened by",
     priority: "Priority",
+    status: "Status",
+    actions: "Actions",
     create: "Create",
     cancel: "Cancel",
     done: "Done",
@@ -158,6 +160,7 @@ const TEXT = {
     list: "列表",
     calendar: "日历",
     addTask: "新建任务",
+    searchTasks: "搜索任务...",
     addNote: "新建笔记",
     allNotes: "全部笔记",
     pinnedNotes: "收藏",
@@ -240,6 +243,8 @@ const TEXT = {
     noReplies: "暂无回复。",
     openedBy: "发起人",
     priority: "优先级",
+    status: "状态",
+    actions: "操作",
     create: "创建",
     cancel: "取消",
     done: "完成",
@@ -419,6 +424,10 @@ function combineDateAndTime(dateValue: string, timeValue: string) {
   return `${dateValue || format(new Date(), "yyyy-MM-dd")}T${timeValue || "09:00"}`;
 }
 
+function combineDateAsAllDay(dateValue: string) {
+  return `${dateValue || format(new Date(), "yyyy-MM-dd")}T00:00`;
+}
+
 function getScheduleType(item: DepartmentItemCenterItem): ScheduleType {
   if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return "reminder";
   if (item.itemType === "REMINDER") return "memo";
@@ -461,7 +470,7 @@ function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, inclu
   const date = new Date(item.date);
   if (Number.isNaN(date.getTime())) return "";
   const hasSpecificTime = date.getHours() !== 0 || date.getMinutes() !== 0;
-  if (!hasSpecificTime || item.kind === "ISSUE_DUE") {
+  if (isAllDayScheduleItem(item) || !hasSpecificTime || item.kind === "ISSUE_DUE") {
     return item.kind === "ISSUE_DUE" ? (locale === "zh" ? "截止" : "Due") : "";
   }
   const start = date.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -469,6 +478,38 @@ function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, inclu
   const end = new Date(item.endDate);
   if (Number.isNaN(end.getTime())) return start;
   return `${start}-${end.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+}
+
+function isAllDayScheduleItem(item: DepartmentItemCenterItem) {
+  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO" || item.itemType === "REMINDER") return true;
+  const start = new Date(item.date);
+  if (Number.isNaN(start.getTime())) return true;
+  if (!item.endDate) return true;
+  return start.getHours() === 0 && start.getMinutes() === 0;
+}
+
+function getWeekTimedLayout(item: DepartmentItemCenterItem) {
+  if (isAllDayScheduleItem(item)) return null;
+  const start = new Date(item.date);
+  const rawEnd = item.endDate ? new Date(item.endDate) : null;
+  if (Number.isNaN(start.getTime())) return null;
+
+  const startMinutes = start.getHours() * 60 + start.getMinutes();
+  const endMinutes = rawEnd && !Number.isNaN(rawEnd.getTime())
+    ? rawEnd.getHours() * 60 + rawEnd.getMinutes()
+    : startMinutes + 60;
+  const minMinutes = WEEK_START_HOUR * 60;
+  const maxMinutes = WEEK_END_HOUR * 60;
+  const safeEndMinutes = endMinutes > startMinutes ? endMinutes : startMinutes + 60;
+
+  if (safeEndMinutes <= minMinutes || startMinutes >= maxMinutes) return null;
+
+  const visibleStart = Math.max(startMinutes, minMinutes);
+  const visibleEnd = Math.min(safeEndMinutes, maxMinutes);
+  return {
+    top: ((visibleStart - minMinutes) / 60) * WEEK_HOUR_HEIGHT,
+    height: Math.max(28, ((visibleEnd - visibleStart) / 60) * WEEK_HOUR_HEIGHT),
+  };
 }
 
 function scheduleDateLabel(item: DepartmentItemCenterItem, locale: Locale) {
@@ -700,6 +741,13 @@ type SavedNoteSnapshot = {
   content: string;
 };
 
+const WEEK_START_HOUR = 7;
+const WEEK_END_HOUR = 22;
+const WEEK_HOUR_HEIGHT = 64;
+const WEEK_GRID_TOP_PADDING = 18;
+const WEEK_EVENT_INSET = 4;
+const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
+
 function notePreview(content: string | null) {
   if (!content) return "";
   return content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -817,6 +865,7 @@ export default function DepartmentItemsClient({
   const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(null);
   const activeTab = initialTab;
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  const [taskQuery, setTaskQuery] = useState("");
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [noteQuery, setNoteQuery] = useState("");
   const [pinnedNoteOverrides, setPinnedNoteOverrides] = useState<Record<string, boolean>>({});
@@ -961,6 +1010,21 @@ export default function DepartmentItemsClient({
       return dueDate >= today && dueDate <= soon;
     }
     return true;
+  }).filter((item) => {
+    const query = taskQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      item.title,
+      item.content,
+      item.projectKey,
+      item.projectName,
+      item.issueKey,
+      item.issueTitle,
+      item.assigneeName,
+      item.assigneeEmail,
+      item.creatorName,
+      item.creatorEmail,
+    ].filter(Boolean).some((value) => value!.toLowerCase().includes(query));
   });
   const visibleItems = items.filter((item) => {
     if (activeTab === "tasks") return filteredTaskItems.some((task) => task.id === item.id);
@@ -1043,7 +1107,24 @@ export default function DepartmentItemsClient({
   }, [selectedNoteId]);
 
   const calendarItems = scheduleItems.filter((item) => item.itemType !== "NOTE");
+  const scheduleListItems = scheduleItems.filter((item) => {
+    const itemDate = new Date(item.date);
+    if (Number.isNaN(itemDate.getTime())) return false;
+    return itemDate >= startOfMonth(scheduleCursor) && itemDate <= endOfMonth(scheduleCursor);
+  });
   const groupedByDay = calendarItems.reduce((acc, item) => {
+    const key = dayKey(item.date);
+    acc[key] = [...(acc[key] || []), item];
+    return acc;
+  }, {} as Record<string, DepartmentItemCenterItem[]>);
+  const allDayGroupedByDay = calendarItems.reduce((acc, item) => {
+    if (!isAllDayScheduleItem(item)) return acc;
+    const key = dayKey(item.date);
+    acc[key] = [...(acc[key] || []), item];
+    return acc;
+  }, {} as Record<string, DepartmentItemCenterItem[]>);
+  const timedGroupedByDay = calendarItems.reduce((acc, item) => {
+    if (isAllDayScheduleItem(item)) return acc;
     const key = dayKey(item.date);
     acc[key] = [...(acc[key] || []), item];
     return acc;
@@ -1089,21 +1170,23 @@ export default function DepartmentItemsClient({
     setIsCreateOpen(true);
   };
 
-  const openCreateScheduleModal = (date = scheduleCursor) => {
+  const openCreateScheduleModal = (date = scheduleCursor, startTime = "09:00", endTime = "10:00") => {
     setEditingScheduleItemId(null);
     const scheduleDate = format(date, "yyyy-MM-dd");
+    const [startHour = "09", startMinute = "00"] = startTime.split(":");
+    const [endHour = "10", endMinute = "00"] = endTime.split(":");
     resetForm({
       itemType: "EVENT",
       hasTime: false,
-      startAt: composeDateTime(date, 9, 0),
-      endAt: composeDateTime(date, 10, 0),
+      startAt: composeDateTime(date, Number(startHour), Number(startMinute)),
+      endAt: composeDateTime(date, Number(endHour), Number(endMinute)),
       dueAt: "",
       scopeType: "DEPARTMENT",
       assigneeId: currentUserId,
       scheduleKind: "meeting",
       scheduleDate,
-      startTime: "09:00",
-      endTime: "10:00",
+      startTime,
+      endTime,
       location: "",
       attendeeIds: [],
       attendeeQuery: "",
@@ -1170,13 +1253,16 @@ export default function DepartmentItemsClient({
       ].filter(Boolean).join("\n\n");
       const scheduleItemType = form.scheduleKind === "memo" ? "REMINDER" : "EVENT";
       const scheduleScopeType = isScheduleCreate && form.scheduleKind !== "memo" ? "DEPARTMENT" : form.scopeType;
+      const scheduleStartAt = form.scheduleKind === "memo"
+        ? combineDateAsAllDay(form.scheduleDate)
+        : combineDateAndTime(form.scheduleDate, form.startTime);
       const result =
         isScheduleCreate && editingScheduleItem
           ? await updateReminderItem(editingScheduleItem.id, {
               title: form.title,
               content: scheduleContent,
               itemType: scheduleItemType,
-              startAt: combineDateAndTime(form.scheduleDate, form.startTime),
+              startAt: scheduleStartAt,
               endAt: form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
               scopeType: scheduleScopeType,
             })
@@ -1185,7 +1271,7 @@ export default function DepartmentItemsClient({
               title: form.title,
               content: isScheduleCreate ? scheduleContent : form.content,
               itemType: isScheduleCreate ? scheduleItemType : form.itemType,
-              startAt: isScheduleCreate ? combineDateAndTime(form.scheduleDate, form.startTime) : form.itemType === "TODO" ? undefined : form.startAt,
+              startAt: isScheduleCreate ? scheduleStartAt : form.itemType === "TODO" ? undefined : form.startAt,
               endAt: isScheduleCreate && form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
               dueAt: form.dueAt || undefined,
               priority: form.priority,
@@ -1285,6 +1371,11 @@ export default function DepartmentItemsClient({
     });
   };
 
+  const openTaskEditor = (item: DepartmentItemCenterItem) => {
+    openTaskDetail(item);
+    setIsEditingTask(true);
+  };
+
   const saveTaskEdits = async () => {
     if (!selectedTask) return;
     return updateReminderTask(selectedTask.id, {
@@ -1328,17 +1419,18 @@ export default function DepartmentItemsClient({
     });
   };
 
-  const handleDeleteTask = () => {
-    if (!selectedTask || !selectedTask.canEdit) return;
+  const handleDeleteTask = (targetTask = selectedTask) => {
+    if (!targetTask || !targetTask.canEdit) return;
     if (!window.confirm(t.deleteConfirm)) return;
+    if (targetTask.id !== selectedTask?.id) setSelectedTaskId(null);
     setDetailError("");
     startTransition(async () => {
-      const result = await deleteReminderTask(selectedTask.id);
+      const result = await deleteReminderTask(targetTask.id);
       if (!result.success) {
         setDetailError(result.error || "Failed");
         return;
       }
-      setSelectedTaskId(null);
+      setSelectedTaskId((current) => current === targetTask.id ? null : current);
       router.refresh();
     });
   };
@@ -1761,29 +1853,56 @@ export default function DepartmentItemsClient({
   ];
 
   const renderTaskRow = (item: DepartmentItemCenterItem) => (
-    <div key={item.id} className="grid min-h-12 grid-cols-[minmax(0,1fr)_112px_88px_150px] items-center gap-3 border-b border-slate-100 bg-white px-3 py-2 text-sm last:border-b-0">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${item.completedAt ? "bg-emerald-500" : item.isOverdue ? "bg-red-500" : "bg-blue-500"}`} />
-          <button
-            type="button"
-            onClick={() => openTaskDetail(item)}
-            className={`truncate text-left font-medium hover:text-blue-700 ${item.completedAt ? "text-slate-400 line-through" : "text-slate-900"}`}
-          >
-            {item.title}
-          </button>
-          {item.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
+    <tr key={item.id} className="group transition-colors hover:bg-slate-50/70">
+      <td className="px-5 py-3.5">
+        <button type="button" onClick={() => openTaskDetail(item)} className="block w-full min-w-0 text-left">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${item.completedAt ? "bg-emerald-500" : item.isOverdue ? "bg-red-500" : "bg-blue-500"}`} />
+            <span className={`truncate font-semibold hover:text-blue-600 ${item.completedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
+              {item.title}
+            </span>
+            {item.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
+          </span>
+          {item.content ? <span className="ml-4 mt-0.5 block truncate text-xs font-normal text-slate-500">{item.content}</span> : null}
+        </button>
+      </td>
+      <td className={`px-5 py-3.5 text-sm font-medium ${item.isOverdue ? "text-red-600" : "text-slate-700"}`}>
+        {item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}
+      </td>
+      <td className="px-5 py-3.5">
+        <span className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium ${item.completedAt ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
+          {taskStatusLabel(item.taskStatus, locale)}
+        </span>
+      </td>
+      <td className="px-5 py-3.5 text-sm font-medium text-slate-700">
+        <span className="block w-full truncate">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
+      </td>
+      <td className="px-4 py-3.5">
+        <div className="flex items-center justify-end gap-1">
+          {item.canEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={() => openTaskEditor(item)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
+                title={t.edit}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => handleDeleteTask(item)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                title={t.deleteTask}
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          ) : null}
         </div>
-        {item.content ? <p className="mt-0.5 truncate text-xs text-slate-500">{item.content}</p> : null}
-      </div>
-      <span className={`truncate text-xs ${item.isOverdue ? "font-semibold text-red-600" : "text-slate-500"}`}>
-        {item.dueDate ? formatDisplayDate(item.dueDate, locale) : t.noDueDate}
-      </span>
-      <span className={`text-xs font-medium ${item.completedAt ? "text-emerald-700" : "text-slate-600"}`}>
-        {taskStatusLabel(item.taskStatus, locale)}
-      </span>
-      <span className="truncate text-xs text-slate-500">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
-    </div>
+      </td>
+    </tr>
   );
 
   const renderItem = (item: DepartmentItemCenterItem) => (
@@ -1889,8 +2008,6 @@ export default function DepartmentItemsClient({
     const content = (
       <>
         {type === "reminder" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
-        {type === "out" ? <BriefcaseBusiness size={compact ? 10 : 12} className="shrink-0" /> : null}
-        {type === "memo" ? <StickyNote size={compact ? 10 : 12} className="shrink-0" /> : null}
         <span className="truncate">{time ? `${time} · ${title}` : title}</span>
       </>
     );
@@ -1901,7 +2018,7 @@ export default function DepartmentItemsClient({
           key={`${item.kind}-${item.id}`}
           href={item.link}
           onClick={(event) => event.stopPropagation()}
-          className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${scheduleChipClass(type)}`}
+          className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${compact ? "" : "h-full"} ${scheduleChipClass(type)}`}
         >
           {content}
         </Link>
@@ -1916,7 +2033,7 @@ export default function DepartmentItemsClient({
           event.stopPropagation();
           openScheduleItem(item);
         }}
-        className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${scheduleChipClass(type)}`}
+        className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${compact ? "" : "h-full"} ${scheduleChipClass(type)}`}
       >
         {content}
       </button>
@@ -2201,7 +2318,7 @@ export default function DepartmentItemsClient({
             </div>
             <div className="flex items-center justify-between">
               <span>{scheduleView === "month" ? st.month : scheduleView === "week" ? st.week : t.list}</span>
-              <span className="font-semibold tabular-nums">{calendarItems.length}</span>
+              <span className="font-semibold tabular-nums">{scheduleView === "list" ? scheduleListItems.length : calendarItems.length}</span>
             </div>
           </div>
         </div>
@@ -2267,7 +2384,7 @@ export default function DepartmentItemsClient({
         {scheduleView === "list" ? (
           <div className="min-h-0 flex-1 overflow-y-auto bg-white p-4">
             <div className="divide-y divide-[#DFE1E6] border border-[#DFE1E6]">
-              {scheduleItems.length === 0 ? <p className="p-6 text-sm text-[#42526E]">{st.noEvents}</p> : scheduleItems.map((item) => {
+              {scheduleListItems.length === 0 ? <p className="p-6 text-sm text-[#42526E]">{st.noEvents}</p> : scheduleListItems.map((item) => {
                 const type = getScheduleType(item);
                 return (
                   <button key={`${item.kind}-${item.id}`} type="button" onClick={() => openScheduleItem(item)} className="grid w-full grid-cols-[120px_minmax(0,1fr)_160px] items-center gap-4 bg-white px-4 py-3 text-left text-sm hover:bg-[#F4F5F7]">
@@ -2285,6 +2402,49 @@ export default function DepartmentItemsClient({
               })}
             </div>
           </div>
+        ) : scheduleView === "week" ? (
+          <div className="shrink-0 bg-white">
+            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6]">
+              <div className="border-r border-[#DFE1E6]" />
+              {scheduleDays.map((date) => {
+                const isCurrentDay = isSameDay(date, new Date());
+                return (
+                  <div key={date.toISOString()} className="border-r border-[#DFE1E6] px-3 py-3 text-center last:border-r-0">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">
+                      {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
+                    </div>
+                    <div className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC]" : "text-[#172B4D]"}`}>
+                      {date.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6] bg-[#FAFBFC]">
+              <div className="border-r border-[#DFE1E6] px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-[#6B778C]">
+                {st.noTime}
+              </div>
+              {scheduleDays.map((date) => {
+                const key = format(date, "yyyy-MM-dd");
+                const allDayItems = [...(allDayGroupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                const shownItems = allDayItems.slice(0, 3);
+                return (
+                  <div
+                    key={`${key}-all-day`}
+                    onClick={() => openCreateScheduleModal(date)}
+                    className="min-h-[54px] border-r border-[#DFE1E6] bg-white px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0"
+                  >
+                    <div className="space-y-1">
+                      {shownItems.map((item) => renderScheduleChip(item, true))}
+                      {allDayItems.length > shownItems.length ? (
+                        <span className="block px-1 text-[11px] font-medium text-[#42526E]">+{allDayItems.length - shownItems.length} {st.moreItems}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-7 border-b border-[#DFE1E6] bg-white">
             {scheduleDays.slice(0, 7).map((date) => (
@@ -2295,12 +2455,74 @@ export default function DepartmentItemsClient({
           </div>
         )}
 
-        {scheduleView !== "list" ? (
-          <div className={`grid min-h-0 flex-1 grid-cols-7 overflow-y-auto bg-white ${scheduleView === "week" ? "auto-rows-fr" : "auto-rows-[minmax(120px,1fr)]"}`}>
+        {scheduleView === "week" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+            <div
+              className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))]"
+              style={{ height: (WEEK_END_HOUR - WEEK_START_HOUR) * WEEK_HOUR_HEIGHT + WEEK_GRID_TOP_PADDING, paddingTop: WEEK_GRID_TOP_PADDING }}
+            >
+              <div className="relative border-r border-[#DFE1E6] bg-[#FAFBFC]">
+                {WEEK_HOURS.slice(0, -1).map((hour) => (
+                  <div
+                    key={hour}
+                    className="absolute right-2 text-[11px] font-medium tabular-nums text-[#6B778C]"
+                    style={{ top: (hour - WEEK_START_HOUR) * WEEK_HOUR_HEIGHT }}
+                  >
+                    {`${String(hour).padStart(2, "0")}:00`}
+                  </div>
+                ))}
+              </div>
+              {scheduleDays.map((date) => {
+                const key = format(date, "yyyy-MM-dd");
+                const dayItems = [...(timedGroupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                return (
+                  <div
+                    key={`${key}-time-grid`}
+                    className="relative border-r border-[#DFE1E6] last:border-r-0"
+                  >
+                    {WEEK_HOURS.slice(0, -1).map((hour) => {
+                      const startTime = `${String(hour).padStart(2, "0")}:00`;
+                      const endTime = `${String(hour + 1).padStart(2, "0")}:00`;
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          onClick={() => openCreateScheduleModal(date, startTime, endTime)}
+                          className="block w-full border-b border-[#EBECF0] text-left hover:bg-[#F4F5F7]"
+                          style={{ height: WEEK_HOUR_HEIGHT }}
+                          aria-label={`${startTime}-${endTime}`}
+                        />
+                      );
+                    })}
+                    {dayItems.map((item) => {
+                      const layout = getWeekTimedLayout(item);
+                      if (!layout) return null;
+                      return (
+                        <div
+                          key={`${item.kind}-${item.id}`}
+                          className="absolute"
+                          style={{
+                            left: WEEK_EVENT_INSET,
+                            right: WEEK_EVENT_INSET,
+                            top: layout.top + WEEK_EVENT_INSET,
+                            height: Math.max(24, layout.height - WEEK_EVENT_INSET * 2),
+                          }}
+                        >
+                          {renderScheduleChip(item)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : scheduleView === "month" ? (
+          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(120px,1fr)] overflow-y-auto bg-white">
             {scheduleDays.map((date) => {
               const key = format(date, "yyyy-MM-dd");
               const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-              const shownItems = dayItems.slice(0, scheduleView === "week" ? 8 : 4);
+              const shownItems = dayItems.slice(0, 4);
               const isCurrentDay = isSameDay(date, new Date());
               const muted = scheduleView === "month" && !isSameMonth(date, scheduleCursor);
               return (
@@ -2804,14 +3026,35 @@ export default function DepartmentItemsClient({
             </>
           ) : null}
           {activeTab === "tasks" ? (
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <Plus size={16} />
-              {t.addTask}
-            </button>
+            <>
+              <div className="relative w-72 max-w-[42vw]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
+                <input
+                  value={taskQuery}
+                  onChange={(event) => setTaskQuery(event.target.value)}
+                  placeholder={t.searchTasks}
+                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                />
+                {taskQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setTaskQuery("")}
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    title={t.clearSearch}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B]"
+              >
+                <Plus size={16} />
+                {t.addTask}
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -2843,8 +3086,35 @@ export default function DepartmentItemsClient({
         renderNotesView()
       ) : (
         activeTab === "tasks" ? (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-            {visibleItems.length === 0 ? <p className="p-3 text-sm text-slate-500">{t.empty}</p> : visibleItems.map(renderTaskRow)}
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed text-left">
+                <colgroup>
+                  <col />
+                  <col className="w-36" />
+                  <col className="w-36" />
+                  <col className="w-48" />
+                  <col className="w-24" />
+                </colgroup>
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-slate-200">
+                    <th className="px-5 py-4 font-semibold">{t.titleField}</th>
+                    <th className="px-5 py-4 font-semibold">{t.dueDate}</th>
+                    <th className="px-5 py-4 font-semibold">{t.status}</th>
+                    <th className="px-5 py-4 font-semibold">{t.assignee}</th>
+                    <th className="px-4 py-4 text-right font-semibold">{t.actions}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleItems.map(renderTaskRow)}
+                </tbody>
+              </table>
+              {visibleItems.length === 0 ? (
+                <div className="flex min-h-52 items-center justify-center px-5 py-16 text-center text-slate-500">
+                  <p className="text-sm">{t.empty}</p>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : (
           <div className="space-y-3">{visibleItems.length === 0 ? <p className="text-sm text-slate-500">{t.empty}</p> : visibleItems.map(renderItem)}</div>
@@ -3001,9 +3271,7 @@ export default function DepartmentItemsClient({
 
             <div className="mt-5">
               <div className="space-y-2">
-                {selectedTask.comments.length === 0 ? (
-                  <p className="text-sm text-slate-500">{t.noReplies}</p>
-                ) : (
+                {selectedTask.comments.length > 0 ? (
                   selectedTask.comments.map((comment) => (
                     <div key={comment.id} className="rounded-lg bg-slate-50 px-3 py-2">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -3013,7 +3281,7 @@ export default function DepartmentItemsClient({
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{comment.content}</p>
                     </div>
                   ))
-                )}
+                ) : null}
               </div>
               {selectedTask.canComment ? (
                 <div className="mt-4 space-y-2">
@@ -3055,7 +3323,7 @@ export default function DepartmentItemsClient({
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={handleDeleteTask}
+                    onClick={() => handleDeleteTask()}
                     className="inline-flex h-9 items-center gap-1 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                   >
                     <Trash2 size={14} />
