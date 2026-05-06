@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
@@ -19,6 +19,8 @@ import {
   subWeeks,
 } from "date-fns";
 import {
+  ArrowDown,
+  ArrowUp,
   Bell,
   Check,
   ChevronLeft,
@@ -411,6 +413,11 @@ function formatDisplayDate(value: string | null, locale: Locale) {
   return new Date(value).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
+function formatDisplayDateTime(value: string | null, locale: Locale) {
+  if (!value) return "";
+  return new Date(value).toLocaleString(locale === "zh" ? "zh-CN" : "en-US");
+}
+
 function dayKey(date: string) {
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -740,7 +747,140 @@ function LocalizedTimeInput({
   );
 }
 
+function InlineSelect({
+  value,
+  options,
+  onChange,
+  renderSummary,
+  className = "relative",
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
+  className?: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    openingUpward: boolean;
+  }>({ left: 0, width: 0, openingUpward: false });
+
+  const updateMenuPosition = useCallback(() => {
+    const rect = summaryRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openingUpward = spaceBelow < 280;
+
+    if (openingUpward) {
+      setMenuPosition({
+        bottom: window.innerHeight - rect.top + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: true,
+      });
+    } else {
+      setMenuPosition({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <details
+      ref={detailsRef}
+      className={className}
+      onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open) updateMenuPosition();
+      }}
+    >
+      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      {isOpen ? (
+        <div
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          style={{
+            top: menuPosition.top,
+            bottom: menuPosition.bottom,
+            left: menuPosition.left,
+            minWidth: menuPosition.width,
+          }}
+        >
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onClick={() => handleSelect(option.value)}
+              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className="block truncate">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
+type TaskSortField = "title" | "dueDate" | "createdAt" | "creator" | "status" | "assignee";
+type TaskSortDirection = "asc" | "desc";
+type TaskColumnId = "title" | "content" | "dueDate" | "createdAt" | "creator" | "status" | "assignee" | "actions";
+type TaskColumnConfig = {
+  id: TaskColumnId;
+  label: string;
+  width: number;
+};
+type SelectOption = {
+  value: string;
+  label: string;
+};
 type ItemTab = "tasks" | "schedule" | "notes";
 type ScheduleView = "week" | "month";
 type ScheduleType = "meeting" | "out" | "reminder" | "memo";
@@ -759,6 +899,40 @@ const WEEK_HOUR_HEIGHT = 64;
 const WEEK_GRID_TOP_PADDING = 18;
 const WEEK_EVENT_INSET = 4;
 const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
+const TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const TASK_STATUS_SORT_ORDER: Record<string, number> = {
+  NOT_STARTED: 0,
+  IN_PROGRESS: 1,
+  DONE: 2,
+};
+const TASK_DEFAULT_COLUMN_IDS: TaskColumnId[] = [
+  "title",
+  "content",
+  "dueDate",
+  "createdAt",
+  "creator",
+  "status",
+  "assignee",
+  "actions",
+];
+const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
+  title: 240,
+  content: 320,
+  dueDate: 140,
+  createdAt: 180,
+  creator: 160,
+  status: 130,
+  assignee: 190,
+  actions: 110,
+};
+const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
+  title: "title",
+  dueDate: "dueDate",
+  createdAt: "createdAt",
+  creator: "creator",
+  status: "status",
+  assignee: "assignee",
+};
 
 function notePreview(content: string | null) {
   if (!content) return "";
@@ -875,6 +1049,25 @@ export default function DepartmentItemsClient({
   const t = TEXT[locale];
   const st = SCHEDULE_TEXT[locale];
   const issueText = getTranslations(locale).issueDetail;
+  const taskTableText = locale === "zh"
+    ? {
+        createdAt: "\u521b\u5efa\u65f6\u95f4",
+        showing: "\u663e\u793a",
+        to: "\u5230",
+        of: "\u5171",
+        tasks: "\u6761\u4efb\u52a1",
+        page: "\u7b2c",
+        perPage: "\u6bcf\u9875",
+      }
+    : {
+        createdAt: "Created at",
+        showing: "Showing",
+        to: "to",
+        of: "of",
+        tasks: "tasks",
+        page: "Page",
+        perPage: "Per page",
+      };
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
   const [scheduleView, setScheduleView] = useState<ScheduleView>("week");
@@ -891,6 +1084,51 @@ export default function DepartmentItemsClient({
   const activeTab = initialTab;
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [taskQuery, setTaskQuery] = useState("");
+  const [taskSortField, setTaskSortField] = useState<TaskSortField>("createdAt");
+  const [taskSortDirection, setTaskSortDirection] = useState<TaskSortDirection>("desc");
+  const [taskPage, setTaskPage] = useState(1);
+  const [taskPageSize, setTaskPageSize] = useState<number>(TASK_PAGE_SIZE_OPTIONS[0]);
+  const taskPerPageOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "10", label: "10" },
+      { value: "20", label: "20" },
+      { value: "50", label: "50" },
+    ],
+    []
+  );
+  const taskColumnDefinitions = useMemo<TaskColumnConfig[]>(
+    () => [
+      { id: "title", label: t.titleField, width: TASK_DEFAULT_COLUMN_WIDTHS.title },
+      { id: "content", label: t.notes, width: TASK_DEFAULT_COLUMN_WIDTHS.content },
+      { id: "dueDate", label: t.dueDate, width: TASK_DEFAULT_COLUMN_WIDTHS.dueDate },
+      { id: "createdAt", label: taskTableText.createdAt, width: TASK_DEFAULT_COLUMN_WIDTHS.createdAt },
+      { id: "creator", label: t.openedBy, width: TASK_DEFAULT_COLUMN_WIDTHS.creator },
+      { id: "status", label: t.status, width: TASK_DEFAULT_COLUMN_WIDTHS.status },
+      { id: "assignee", label: t.assignee, width: TASK_DEFAULT_COLUMN_WIDTHS.assignee },
+      { id: "actions", label: t.actions, width: TASK_DEFAULT_COLUMN_WIDTHS.actions },
+    ],
+    [t.actions, t.assignee, t.dueDate, t.notes, t.openedBy, t.status, t.titleField, taskTableText.createdAt]
+  );
+  const taskColumnsById = useMemo(
+    () => new Map(taskColumnDefinitions.map((column) => [column.id, column] as const)),
+    [taskColumnDefinitions]
+  );
+  const [taskVisibleColumnIds, setTaskVisibleColumnIds] = useState<TaskColumnId[]>(TASK_DEFAULT_COLUMN_IDS);
+  const [taskColumnWidths, setTaskColumnWidths] = useState<Record<TaskColumnId, number>>(TASK_DEFAULT_COLUMN_WIDTHS);
+  const taskColumns = useMemo(
+    () =>
+      taskVisibleColumnIds
+        .map((columnId) => {
+          const column = taskColumnsById.get(columnId);
+          if (!column) return null;
+          return {
+            ...column,
+            width: taskColumnWidths[columnId] ?? column.width,
+          };
+        })
+        .filter((column): column is TaskColumnConfig => Boolean(column)),
+    [taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
+  );
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [noteQuery, setNoteQuery] = useState("");
   const [pinnedNoteOverrides, setPinnedNoteOverrides] = useState<Record<string, boolean>>({});
@@ -1052,6 +1290,133 @@ export default function DepartmentItemsClient({
       item.creatorEmail,
     ].filter(Boolean).some((value) => value!.toLowerCase().includes(query));
   });
+  const sortedTaskItems = useMemo(() => {
+    const compareText = (left: string | null | undefined, right: string | null | undefined) =>
+      (left || "").localeCompare(right || "", locale === "zh" ? "zh-CN" : "en-US", {
+        numeric: true,
+        sensitivity: "base",
+      });
+    const compareDate = (left: string | null | undefined, right: string | null | undefined) => {
+      if (!left && !right) return 0;
+      if (!left) return 1;
+      if (!right) return -1;
+      return new Date(left).getTime() - new Date(right).getTime();
+    };
+
+    return [...filteredTaskItems].sort((left, right) => {
+      let result = 0;
+
+      if (taskSortField === "title") {
+        result = compareText(left.title, right.title);
+      } else if (taskSortField === "dueDate") {
+        result = compareDate(left.dueDate, right.dueDate);
+      } else if (taskSortField === "createdAt") {
+        result = compareDate(left.createdAt, right.createdAt);
+      } else if (taskSortField === "creator") {
+        result = compareText(left.creatorName || left.creatorEmail, right.creatorName || right.creatorEmail);
+      } else if (taskSortField === "status") {
+        result =
+          (TASK_STATUS_SORT_ORDER[left.completedAt ? "DONE" : left.taskStatus] ?? Number.MAX_SAFE_INTEGER) -
+          (TASK_STATUS_SORT_ORDER[right.completedAt ? "DONE" : right.taskStatus] ?? Number.MAX_SAFE_INTEGER);
+      } else if (taskSortField === "assignee") {
+        result = compareText(left.assigneeName || left.assigneeEmail, right.assigneeName || right.assigneeEmail);
+      }
+
+      if (result === 0) {
+        result = compareDate(right.createdAt, left.createdAt);
+      }
+
+      return taskSortDirection === "asc" ? result : -result;
+    });
+  }, [filteredTaskItems, locale, taskSortDirection, taskSortField]);
+  const taskTotalPages = sortedTaskItems.length === 0 ? 0 : Math.ceil(sortedTaskItems.length / taskPageSize);
+  const currentTaskPage = taskTotalPages === 0 ? 1 : Math.min(taskPage, taskTotalPages);
+  const paginatedTaskItems = useMemo(() => {
+    const start = (currentTaskPage - 1) * taskPageSize;
+    return sortedTaskItems.slice(start, start + taskPageSize);
+  }, [currentTaskPage, sortedTaskItems, taskPageSize]);
+  const taskRangeStart = sortedTaskItems.length === 0 ? 0 : (currentTaskPage - 1) * taskPageSize + 1;
+  const taskRangeEnd = Math.min(currentTaskPage * taskPageSize, sortedTaskItems.length);
+  const [taskDragSourceIndex, setTaskDragSourceIndex] = useState<number | null>(null);
+  const [taskDragOverIndex, setTaskDragOverIndex] = useState<number | null>(null);
+  const [taskDragOverSide, setTaskDragOverSide] = useState<"left" | "right" | null>(null);
+  const taskResizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+
+  const handleTaskColumnDragStart = (event: React.DragEvent, index: number) => {
+    event.dataTransfer.setData("taskColIndex", index.toString());
+    event.dataTransfer.effectAllowed = "move";
+    setTaskDragSourceIndex(index);
+  };
+
+  const handleTaskColumnDrop = (event: React.DragEvent, targetIndex: number) => {
+    event.preventDefault();
+    const sourceIndexStr = event.dataTransfer.getData("taskColIndex");
+    if (sourceIndexStr) {
+      const sourceIndex = parseInt(sourceIndexStr, 10);
+      if (sourceIndex !== targetIndex) {
+        const nextVisibleColumnIds = [...taskVisibleColumnIds];
+        const [removed] = nextVisibleColumnIds.splice(sourceIndex, 1);
+        const adjustedTarget =
+          taskDragOverSide === "right"
+            ? sourceIndex < targetIndex
+              ? targetIndex
+              : targetIndex + 1
+            : sourceIndex < targetIndex
+              ? targetIndex - 1
+              : targetIndex;
+        nextVisibleColumnIds.splice(Math.max(0, adjustedTarget), 0, removed);
+        setTaskVisibleColumnIds(nextVisibleColumnIds);
+      }
+    }
+    setTaskDragSourceIndex(null);
+    setTaskDragOverIndex(null);
+    setTaskDragOverSide(null);
+  };
+
+  const handleTaskColumnDragOver = (event: React.DragEvent, index: number) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    const side = event.clientX < midX ? "left" : "right";
+    setTaskDragOverIndex(index);
+    setTaskDragOverSide(side);
+  };
+
+  const handleTaskColumnDragEnd = () => {
+    setTaskDragSourceIndex(null);
+    setTaskDragOverIndex(null);
+    setTaskDragOverSide(null);
+  };
+
+  const handleTaskColumnResizeStart = (event: React.MouseEvent, colIndex: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const column = taskColumns[colIndex];
+    const startWidth = column.width || 150;
+    taskResizingRef.current = { colIndex, startX: event.clientX, startWidth };
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const resizeState = taskResizingRef.current;
+      if (!resizeState) return;
+
+      const delta = moveEvent.clientX - resizeState.startX;
+      const newWidth = Math.max(80, resizeState.startWidth + delta);
+      const resizeColumnId = taskColumns[resizeState.colIndex]?.id;
+      if (!resizeColumnId) return;
+
+      setTaskColumnWidths((current) => ({ ...current, [resizeColumnId]: newWidth }));
+    };
+
+    const onMouseUp = () => {
+      taskResizingRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
   const visibleItems = items.filter((item) => {
     if (activeTab === "tasks") return filteredTaskItems.some((task) => task.id === item.id);
     if (activeTab === "schedule") return item.itemType === "EVENT" || item.itemType === "REMINDER" || item.itemType === "TODO" || item.itemType === "ISSUE_DUE";
@@ -1890,56 +2255,147 @@ export default function DepartmentItemsClient({
     { id: "dueSoon", label: t.dueSoonTasks },
   ];
 
+  const handleTaskSort = (field: TaskSortField) => {
+    if (taskSortField === field) {
+      setTaskSortDirection((current) => current === "asc" ? "desc" : "asc");
+      setTaskPage(1);
+      return;
+    }
+
+    setTaskSortField(field);
+    setTaskSortDirection(field === "createdAt" ? "desc" : "asc");
+    setTaskPage(1);
+  };
+
+  const renderTaskHeaderLabel = (column: TaskColumnConfig) => {
+    const sortField = TASK_COLUMN_SORT_FIELD_MAP[column.id];
+    const isSorted = Boolean(sortField) && taskSortField === sortField;
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (sortField) handleTaskSort(sortField);
+        }}
+        disabled={!sortField}
+        className={`inline-flex items-center gap-1 font-semibold ${
+          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : "cursor-grab text-slate-500"
+        }`}
+        draggable={false}
+      >
+        <span>{column.label}</span>
+        {sortField && isSorted ? (
+          taskSortDirection === "asc" ? (
+            <ArrowUp size={12} />
+          ) : (
+            <ArrowDown size={12} />
+          )
+        ) : null}
+      </button>
+    );
+  };
+
   const renderTaskRow = (item: DepartmentItemCenterItem) => (
     <tr key={item.id} className="group transition-colors hover:bg-slate-50/70">
-      <td className="px-5 py-3.5">
-        <button type="button" onClick={() => openTaskDetail(item)} className="block w-full min-w-0 text-left">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${item.completedAt ? "bg-emerald-500" : item.isOverdue ? "bg-red-500" : "bg-blue-500"}`} />
-            <span className={`truncate font-semibold hover:text-blue-600 ${item.completedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
-              {item.title}
-            </span>
-            {item.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
-          </span>
-          {item.content ? <span className="ml-4 mt-0.5 block truncate text-xs font-normal text-slate-500">{item.content}</span> : null}
-        </button>
-      </td>
-      <td className={`px-5 py-3.5 text-sm font-medium ${item.isOverdue ? "text-red-600" : "text-slate-700"}`}>
-        {item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}
-      </td>
-      <td className="px-5 py-3.5">
-        <span className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium ${item.completedAt ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
-          {taskStatusLabel(item.taskStatus, locale)}
-        </span>
-      </td>
-      <td className="px-5 py-3.5 text-sm font-medium text-slate-700">
-        <span className="block w-full truncate">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
-      </td>
-      <td className="px-4 py-3.5">
-        <div className="flex items-center justify-end gap-1">
-          {item.canEdit ? (
-            <>
-              <button
-                type="button"
-                onClick={() => openTaskEditor(item)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
-                title={t.edit}
-              >
-                <Pencil size={16} />
+      {taskColumns.map((column) => {
+        if (column.id === "title") {
+          return (
+            <td key={column.id} className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden">
+              <button type="button" onClick={() => openTaskDetail(item)} className="flex w-full min-w-0 items-center gap-2 text-left hover:text-blue-600">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${item.completedAt ? "bg-emerald-500" : item.isOverdue ? "bg-red-500" : "bg-blue-500"}`} />
+                <span className={`truncate ${item.completedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
+                  {item.title}
+                </span>
+                {item.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
               </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => handleDeleteTask(item)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                title={t.deleteTask}
-              >
-                <Trash2 size={16} />
+            </td>
+          );
+        }
+
+        if (column.id === "content") {
+          return (
+            <td key={column.id} className="px-5 py-3.5 align-top text-slate-500 whitespace-normal">
+              <button type="button" onClick={() => openTaskDetail(item)} className="block w-full text-left">
+                {item.content ? (
+                  <span className="block overflow-hidden text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                    {item.content}
+                  </span>
+                ) : null}
               </button>
-            </>
-          ) : null}
-        </div>
-      </td>
+            </td>
+          );
+        }
+
+        if (column.id === "dueDate") {
+          return (
+            <td key={column.id} className={`px-5 py-3.5 text-sm font-medium ${item.isOverdue ? "text-red-600" : "text-slate-700"}`}>
+              {item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}
+            </td>
+          );
+        }
+
+        if (column.id === "createdAt") {
+          return (
+            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+              {formatDisplayDateTime(item.createdAt, locale)}
+            </td>
+          );
+        }
+
+        if (column.id === "creator") {
+          return (
+            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+              <span className="block w-full truncate">{item.creatorName || item.creatorEmail || "-"}</span>
+            </td>
+          );
+        }
+
+        if (column.id === "status") {
+          return (
+            <td key={column.id} className="px-5 py-3.5">
+              <span className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium ${item.completedAt ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
+                {taskStatusLabel(item.taskStatus, locale)}
+              </span>
+            </td>
+          );
+        }
+
+        if (column.id === "assignee") {
+          return (
+            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+              <span className="block w-full truncate">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
+            </td>
+          );
+        }
+
+        return (
+          <td key={column.id} className="px-4 py-3.5">
+            <div className="flex items-center gap-1">
+              {item.canEdit ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openTaskEditor(item)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
+                    title={t.edit}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => handleDeleteTask(item)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    title={t.deleteTask}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </td>
+        );
+      })}
     </tr>
   );
 
@@ -3290,14 +3746,20 @@ export default function DepartmentItemsClient({
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
                 <input
                   value={taskQuery}
-                  onChange={(event) => setTaskQuery(event.target.value)}
+                  onChange={(event) => {
+                    setTaskQuery(event.target.value);
+                    setTaskPage(1);
+                  }}
                   placeholder={t.searchTasks}
                   className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
                 />
                 {taskQuery ? (
                   <button
                     type="button"
-                    onClick={() => setTaskQuery("")}
+                    onClick={() => {
+                      setTaskQuery("");
+                      setTaskPage(1);
+                    }}
                     className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
                     title={t.clearSearch}
                   >
@@ -3326,7 +3788,10 @@ export default function DepartmentItemsClient({
             <button
               key={filter.id}
               type="button"
-              onClick={() => setTaskFilter(filter.id)}
+              onClick={() => {
+                setTaskFilter(filter.id);
+                setTaskPage(1);
+              }}
               className={`h-8 rounded-md border px-3 text-sm font-medium ${
                 taskFilter === filter.id
                   ? "border-slate-900 bg-slate-900 text-white"
@@ -3345,34 +3810,129 @@ export default function DepartmentItemsClient({
         renderNotesView()
       ) : (
         activeTab === "tasks" ? (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-fixed text-left">
-                <colgroup>
-                  <col />
-                  <col className="w-36" />
-                  <col className="w-36" />
-                  <col className="w-48" />
-                  <col className="w-24" />
-                </colgroup>
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr className="border-b border-slate-200">
-                    <th className="px-5 py-4 font-semibold">{t.titleField}</th>
-                    <th className="px-5 py-4 font-semibold">{t.dueDate}</th>
-                    <th className="px-5 py-4 font-semibold">{t.status}</th>
-                    <th className="px-5 py-4 font-semibold">{t.assignee}</th>
-                    <th className="px-4 py-4 text-right font-semibold">{t.actions}</th>
+          <div className="bg-white overflow-hidden flex flex-col rounded-xl border shadow-sm">
+            <div className="relative overflow-x-auto flex-1">
+              <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
+                <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
+                  <tr>
+                    {taskColumns.map((column, index) => {
+                      const showLeftLine =
+                        taskDragOverIndex === index && taskDragOverSide === "left" && taskDragSourceIndex !== index;
+                      const showRightLine =
+                        taskDragOverIndex === index && taskDragOverSide === "right" && taskDragSourceIndex !== index;
+                      const isDragging = taskDragSourceIndex === index;
+
+                      return (
+                        <th
+                          key={column.id}
+                          className={`px-5 py-4 cursor-grab active:cursor-grabbing hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                            isDragging ? "opacity-40" : ""
+                          } ${column.id === "actions" ? "px-4" : ""}`}
+                          style={{ width: `${column.width}px` }}
+                          draggable
+                          onDragStart={(event) => handleTaskColumnDragStart(event, index)}
+                          onDragOver={(event) => handleTaskColumnDragOver(event, index)}
+                          onDrop={(event) => handleTaskColumnDrop(event, index)}
+                          onDragEnd={handleTaskColumnDragEnd}
+                          onDragLeave={() => {
+                            if (taskDragOverIndex === index) {
+                              setTaskDragOverIndex(null);
+                              setTaskDragOverSide(null);
+                            }
+                          }}
+                        >
+                          {showLeftLine ? <div className="absolute left-0 top-0 bottom-0 z-10 w-0.5 bg-blue-500" /> : null}
+
+                          {renderTaskHeaderLabel(column)}
+
+                          {showRightLine ? <div className="absolute right-0 top-0 bottom-0 z-10 w-0.5 bg-blue-500" /> : null}
+
+                          <div
+                            className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                            onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
+                            draggable={false}
+                          />
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {visibleItems.map(renderTaskRow)}
+                  {paginatedTaskItems.map(renderTaskRow)}
                 </tbody>
               </table>
-              {visibleItems.length === 0 ? (
+              {paginatedTaskItems.length === 0 ? (
                 <div className="flex min-h-52 items-center justify-center px-5 py-16 text-center text-slate-500">
                   <p className="text-sm">{t.empty}</p>
                 </div>
               ) : null}
+            </div>
+            <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+              <div className="font-medium text-slate-500">
+                {locale === "zh" ? (
+                  <>
+                    {taskTableText.showing}
+                    <span className="font-bold text-slate-800"> {taskRangeStart} </span>
+                    {taskTableText.to}
+                    <span className="font-bold text-slate-800"> {taskRangeEnd} </span>
+                    {taskTableText.of}
+                    <span className="font-bold text-slate-800"> {sortedTaskItems.length} </span>
+                    {taskTableText.tasks}
+                  </>
+                ) : (
+                  <>
+                    {taskTableText.showing} <span className="font-bold text-slate-800">{taskRangeStart}</span> {taskTableText.to}{" "}
+                    <span className="font-bold text-slate-800">{taskRangeEnd}</span> {taskTableText.of}{" "}
+                    <span className="font-bold text-slate-800">{sortedTaskItems.length}</span> {taskTableText.tasks}
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
+                  <span>{locale === "zh" ? "\u6bcf\u9875" : "Per page"}</span>
+                  <span>{taskTableText.perPage}</span>
+                  <InlineSelect
+                    value={String(taskPageSize)}
+                    options={taskPerPageOptions}
+                    onChange={(value) => {
+                      setTaskPageSize(Number(value));
+                      setTaskPage(1);
+                    }}
+                    renderSummary={(label) => (
+                      <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        {label}
+                      </span>
+                    )}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTaskPage(Math.max(1, currentTaskPage - 1))}
+                    disabled={currentTaskPage === 1}
+                    className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+
+                  <span className="px-2 font-medium leading-none text-slate-700">
+                    {locale === "zh"
+                      ? `${taskTableText.page} ${currentTaskPage} / ${taskTotalPages || 1} \u9875`
+                      : `${taskTableText.page} ${currentTaskPage} of ${taskTotalPages || 1}`}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setTaskPage(Math.min(taskTotalPages || 1, currentTaskPage + 1))}
+                    disabled={currentTaskPage === taskTotalPages || taskTotalPages === 0}
+                    className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -3578,17 +4138,6 @@ export default function DepartmentItemsClient({
                     {t.done}
                   </button>
                 )}
-                {selectedTask.canEdit ? (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => handleDeleteTask()}
-                    className="inline-flex h-9 items-center gap-1 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    <Trash2 size={14} />
-                    {t.deleteTask}
-                  </button>
-                ) : null}
               </div>
               <div className="flex items-center gap-3">
                 <button
