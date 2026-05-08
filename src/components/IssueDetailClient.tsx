@@ -11,8 +11,8 @@ import {
   getPriorityLabel,
   getTranslations,
   type Locale,
-  localeDateMap,
 } from "@/lib/i18n";
+import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import {
   buildWorkflowStatusOptions,
@@ -448,7 +448,7 @@ export default function IssueDetailClient({
               </div>
             )}
           </div>
-          <div className={isEditingDescription ? "" : "min-h-[200px] rounded-lg border bg-white p-3"}>
+          <div className={isEditingDescription ? "" : "min-h-[200px] rounded-lg bg-slate-50 px-4 py-3"}>
             {isEditingDescription ? (
               <RichTextEditor
                 ref={descriptionEditorRef}
@@ -729,9 +729,15 @@ export default function IssueDetailClient({
         </div>
 
         <div className="px-1 text-xs font-medium text-slate-400">
-          {translations.issueDetail.created}: {new Date(issue.createdAt).toLocaleString(localeDateMap[locale])}
+          {translations.issueDetail.created}:{" "}
+          <span title={formatFullDateTime(issue.createdAt, locale)}>
+            {formatRelativeTime(issue.createdAt, locale)}
+          </span>
           <br />
-          {translations.issueDetail.updated}: {new Date(issue.updatedAt).toLocaleString(localeDateMap[locale])}
+          {translations.issueDetail.updated}:{" "}
+          <span title={formatFullDateTime(issue.updatedAt, locale)}>
+            {formatRelativeTime(issue.updatedAt, locale)}
+          </span>
         </div>
       </div>
     </div>

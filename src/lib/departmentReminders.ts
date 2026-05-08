@@ -11,8 +11,58 @@ export type DepartmentReminderIssueOption = {
   id: string;
   key: string;
   title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  type: string;
+  dueDate: string | null;
+  planName: string | null;
+  iterationName: string | null;
+  createdAt: string;
+  updatedAt: string;
   projectId: string;
   projectKey: string;
+  projectName: string;
+  workflowStatuses: Array<{
+    id: string;
+    key: string;
+    name: string;
+    category: string;
+    position: number;
+    isInitial: boolean;
+  }>;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
+  reporterName: string | null;
+  reporterEmail: string | null;
+  comments: Array<{
+    id: string;
+    content: string;
+    createdAt: string;
+    authorName: string | null;
+    authorEmail: string;
+  }>;
+  attachments: Array<{
+    id: string;
+    fileName: string;
+    createdAt: string;
+    uploaderName: string | null;
+    uploaderEmail: string;
+  }>;
+  issueFieldDefinitions: Array<{
+    id: string;
+    name: string;
+    type: string;
+    position: number;
+  }>;
+  issueFieldValues: Array<{
+    id: string;
+    fieldDefinitionId: string;
+    valueBoolean: boolean | null;
+    valueNumber: number | null;
+    valueText: string | null;
+    valueOption: string | null;
+  }>;
 };
 
 export type DepartmentReminderAssigneeOption = {
@@ -106,10 +156,71 @@ export async function getDepartmentReminderIssueOptions(projectIds: string[]) {
       id: true,
       key: true,
       title: true,
+      description: true,
+      status: true,
+      priority: true,
+      type: true,
+      dueDate: true,
+      createdAt: true,
+      updatedAt: true,
       projectId: true,
+      plan: { select: { name: true } },
+      iteration: { select: { name: true } },
       project: {
         select: {
           key: true,
+          name: true,
+          issueFieldDefinitions: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              position: true,
+            },
+            orderBy: { position: "asc" },
+          },
+          workflowStatuses: {
+            select: {
+              id: true,
+              key: true,
+              name: true,
+              category: true,
+              position: true,
+              isInitial: true,
+            },
+            orderBy: { position: "asc" },
+          },
+        },
+      },
+      assignee: { select: { name: true, email: true } },
+      reporter: { select: { name: true, email: true } },
+      comments: {
+        select: {
+          id: true,
+          content: true,
+          createdAt: true,
+          author: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      },
+      attachments: {
+        select: {
+          id: true,
+          fileName: true,
+          createdAt: true,
+          uploader: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      issueFieldValues: {
+        select: {
+          id: true,
+          fieldDefinitionId: true,
+          valueBoolean: true,
+          valueNumber: true,
+          valueText: true,
+          valueOption: true,
         },
       },
     },
@@ -121,8 +232,39 @@ export async function getDepartmentReminderIssueOptions(projectIds: string[]) {
     id: issue.id,
     key: issue.key,
     title: issue.title,
+    description: issue.description,
+    status: issue.status,
+    priority: issue.priority,
+    type: issue.type,
+    dueDate: issue.dueDate?.toISOString() || null,
+    planName: issue.plan?.name || null,
+    iterationName: issue.iteration?.name || null,
+    createdAt: issue.createdAt.toISOString(),
+    updatedAt: issue.updatedAt.toISOString(),
     projectId: issue.projectId,
     projectKey: issue.project.key,
+    projectName: issue.project.name,
+    workflowStatuses: issue.project.workflowStatuses,
+    assigneeName: issue.assignee?.name || null,
+    assigneeEmail: issue.assignee?.email || null,
+    reporterName: issue.reporter?.name || null,
+    reporterEmail: issue.reporter?.email || null,
+    comments: issue.comments.map((comment) => ({
+      id: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt.toISOString(),
+      authorName: comment.author.name,
+      authorEmail: comment.author.email,
+    })),
+    attachments: issue.attachments.map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      createdAt: attachment.createdAt.toISOString(),
+      uploaderName: attachment.uploader.name,
+      uploaderEmail: attachment.uploader.email,
+    })),
+    issueFieldDefinitions: issue.project.issueFieldDefinitions,
+    issueFieldValues: issue.issueFieldValues,
   }));
 }
 

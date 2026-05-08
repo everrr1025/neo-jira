@@ -8,11 +8,11 @@ import Image from "next/image";
 import {
   getTranslations,
   Locale,
-  localeDateMap,
 } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
 import { ISSUE_ACTIVITY_UPDATED_EVENT } from "@/lib/issueActivityEvents";
 import { formatActivityEntry, type ActivityLogEntry } from "@/lib/activityLogFormatter";
+import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 
 type ActivityUser = {
   id: string;
@@ -170,8 +170,8 @@ export default function ActivityLogSection({
                           );
                         })}
                       </div>
-                      <div className="mt-2 text-xs text-slate-400">
-                        {new Date(group.createdAt).toLocaleString(localeDateMap[locale])}
+                      <div className="mt-2 text-xs text-slate-400" title={formatFullDateTime(group.createdAt, locale)}>
+                        {formatRelativeTime(group.createdAt, locale)}
                       </div>
                     </>
                   ) : (
@@ -187,8 +187,8 @@ export default function ActivityLogSection({
                           {msg.secondary ? (
                             <div className="mt-1 line-clamp-2 text-sm text-slate-500">{msg.secondary}</div>
                           ) : null}
-                          <div className="mt-1 text-xs text-slate-400">
-                            {new Date(child.createdAt).toLocaleString(localeDateMap[locale])}
+                          <div className="mt-1 text-xs text-slate-400" title={formatFullDateTime(child.createdAt, locale)}>
+                            {formatRelativeTime(child.createdAt, locale)}
                           </div>
                         </div>
                       );

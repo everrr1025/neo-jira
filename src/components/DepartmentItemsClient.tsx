@@ -27,6 +27,8 @@ import {
   Clock,
   Folder,
   MapPin,
+  MessageSquare,
+  Paperclip,
   Pencil,
   Plus,
   RotateCcw,
@@ -48,8 +50,11 @@ import type {
   DepartmentItemCenterItem,
   DepartmentReminderScopeOption,
 } from "@/lib/departmentReminders";
+import { getTranslations, getIssueTypeLabel } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import type { NoteFolderListItem, NoteListItem, NoteTaskOption } from "@/lib/notes";
+import { getWorkflowStatusName } from "@/lib/workflows";
+import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 
 const TEXT = {
   en: {
@@ -736,6 +741,17 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#039;");
 }
 
+function formatIssueFieldValue(
+  field: DepartmentReminderIssueOption["issueFieldDefinitions"][number],
+  value?: DepartmentReminderIssueOption["issueFieldValues"][number],
+) {
+  if (!value) return "";
+  if (field.type === "BOOLEAN") return value.valueBoolean ? "true" : "false";
+  if (field.type === "NUMBER") return value.valueNumber === null || value.valueNumber === undefined ? "" : String(value.valueNumber);
+  if (field.type === "SELECT") return value.valueOption || "";
+  return value.valueText || "";
+}
+
 function composeNoteEditorContent(note: Pick<NoteListItem, "title" | "content"> | null, fallbackTitle: string) {
   const title = note?.title?.trim() || fallbackTitle;
   const body = note?.content?.trim() || "<p></p>";
@@ -803,6 +819,7 @@ export default function DepartmentItemsClient({
 }) {
   const t = TEXT[locale];
   const st = SCHEDULE_TEXT[locale];
+  const issueText = getTranslations(locale).issueDetail;
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
   const [scheduleView, setScheduleView] = useState<ScheduleView>("month");
@@ -823,6 +840,7 @@ export default function DepartmentItemsClient({
   const [noteTitleOverrides, setNoteTitleOverrides] = useState<Record<string, string>>({});
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [isNoteFullscreen, setIsNoteFullscreen] = useState(false);
+  const [selectedNoteIssueId, setSelectedNoteIssueId] = useState<string | null>(null);
   const initialNote = notes.find((note) => !note.deletedAt) || null;
   const savedNoteSnapshotRef = useRef<SavedNoteSnapshot | null>(
     initialNote
@@ -1020,6 +1038,9 @@ export default function DepartmentItemsClient({
   const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
   const selectedScheduleItem = selectedScheduleItemId ? items.find((item) => item.id === selectedScheduleItemId) || null : null;
   const editingScheduleItem = editingScheduleItemId ? items.find((item) => item.id === editingScheduleItemId) || null : null;
+  const selectedNoteIssue = selectedNoteIssueId
+    ? noteIssueOptions.find((issue) => issue.id === selectedNoteIssueId) || null
+    : null;
 
   useEffect(() => {
     if (!selectedNote) return;
@@ -2681,6 +2702,9 @@ export default function DepartmentItemsClient({
                   readOnly={selectedIsDeleted}
                   height={560}
                   borderless
+                  issueMentionOptions={noteIssueOptions}
+                  issueMentionLabel={locale === "zh" ? "插入问题" : "Insert issue"}
+                  onIssueLinkClick={(issueId) => setSelectedNoteIssueId(issueId)}
                   isFullscreen={isNoteFullscreen}
                   onToggleFullscreen={() => {
                     if (isNoteFullscreen) void saveSelectedNoteNow();
@@ -2727,6 +2751,168 @@ export default function DepartmentItemsClient({
             </div>
           )}
         </section>
+
+        {selectedNoteIssue ? (
+          <div className="fixed inset-0 z-[80] bg-[#091E42]/25" onClick={() => setSelectedNoteIssueId(null)}>
+            <aside
+              className="absolute inset-y-0 right-0 flex w-full max-w-[460px] flex-col border-l border-slate-200 bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                      {selectedNoteIssue.key}
+                    </span>
+                    <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                      {selectedNoteIssue.projectKey}
+                    </span>
+                  </div>
+                  <h3 className="mt-3 break-words text-lg font-semibold leading-6 text-slate-900">
+                    {selectedNoteIssue.title}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteIssueId(null)}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  title={t.cancel}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+                <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                  {[
+                    [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
+                    [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
+                    [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
+                    [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
+                    [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                    [locale === "zh" ? "计划" : "Plan", selectedNoteIssue.planName || ""],
+                    [issueText.sprint, selectedNoteIssue.iterationName || ""],
+                    [issueText.reporter, selectedNoteIssue.reporterName || selectedNoteIssue.reporterEmail || "-"],
+                    [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
+                    [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
+                  ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
+                    const fullTimeTitle =
+                      label === issueText.created
+                        ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
+                        : label === issueText.updated
+                          ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
+                          : undefined;
+                    return (
+                    <div key={label} className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-500">{label}</p>
+                      <p className="mt-0.5 min-w-0 break-words font-medium text-slate-800" title={fullTimeTitle}>{value}</p>
+                    </div>
+                    );
+                  })}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{issueText.description}</p>
+                  <div className="min-h-32 rounded-md bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800 [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm">
+                    {selectedNoteIssue.description ? (
+                      <RichTextEditor value={selectedNoteIssue.description} onChange={() => {}} readOnly />
+                    ) : (
+                      <p className="text-sm text-slate-400">{locale === "zh" ? "暂无描述" : "No description"}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {locale === "zh" ? "扩展字段" : "Custom fields"}
+                  </p>
+                  {selectedNoteIssue.issueFieldDefinitions.length > 0 ? (
+                    <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                      {selectedNoteIssue.issueFieldDefinitions.map((field) => {
+                        const value = selectedNoteIssue.issueFieldValues.find((item) => item.fieldDefinitionId === field.id);
+                        const displayValue = formatIssueFieldValue(field, value);
+
+                        return (
+                          <div key={field.id} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 px-3 py-2 text-sm">
+                            <p className="text-xs font-semibold text-slate-500">{field.name}</p>
+                            <p className="min-w-0 whitespace-pre-wrap break-words font-medium text-slate-800">
+                              {displayValue || "-"}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-400">
+                      {locale === "zh" ? "暂无扩展字段" : "No custom fields"}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <MessageSquare size={13} />
+                    {locale === "zh" ? `评论 (${selectedNoteIssue.comments.length})` : `Comments (${selectedNoteIssue.comments.length})`}
+                  </p>
+                  {selectedNoteIssue.comments.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedNoteIssue.comments.map((comment) => (
+                        <div key={comment.id} className="rounded-md border border-slate-200 bg-white p-3">
+                          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+                            <span className="truncate font-semibold text-slate-700">
+                              {comment.authorName || comment.authorEmail}
+                            </span>
+                            <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>
+                              {formatRelativeTime(comment.createdAt, locale)}
+                            </span>
+                          </div>
+                          <div className="text-sm [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm">
+                            <RichTextEditor value={comment.content} onChange={() => {}} readOnly />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-400">
+                      {locale === "zh" ? "暂无评论" : "No comments"}
+                    </p>
+                  )}
+                </div>
+
+                {selectedNoteIssue.attachments.length > 0 ? (
+                  <div>
+                    <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <Paperclip size={13} />
+                      {locale === "zh" ? `附件 (${selectedNoteIssue.attachments.length})` : `Attachments (${selectedNoteIssue.attachments.length})`}
+                    </p>
+                    <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                      {selectedNoteIssue.attachments.map((attachment) => (
+                        <div key={attachment.id} className="px-3 py-2 text-sm">
+                          <p className="truncate font-semibold text-slate-800">{attachment.fileName}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {attachment.uploaderName || attachment.uploaderEmail} ·{" "}
+                            <span title={formatFullDateTime(attachment.createdAt, locale)}>
+                              {formatRelativeTime(attachment.createdAt, locale)}
+                            </span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+                <Link
+                  href={`/issues/${selectedNoteIssue.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  {locale === "zh" ? "打开问题" : "Open issue"}
+                </Link>
+              </div>
+            </aside>
+          </div>
+        ) : null}
       </div>
     );
   };

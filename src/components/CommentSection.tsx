@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import { Loader2, Trash2 } from "lucide-react";
-import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
+import { getTranslations, Locale } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
+import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 
 type CommentUser = {
   id: string;
@@ -203,7 +204,9 @@ export default function CommentSection({
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-slate-500 text-xs font-medium">{new Date(comment.createdAt).toLocaleString(localeDateMap[locale])}</span>
+                  <span className="text-slate-500 text-xs font-medium" title={formatFullDateTime(comment.createdAt, locale)}>
+                    {formatRelativeTime(comment.createdAt, locale)}
+                  </span>
                   {isAuthor && !isEditing && (
                     <div className="flex items-center gap-3">
                       <button

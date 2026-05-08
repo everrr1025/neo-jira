@@ -40,6 +40,13 @@ export type RichTextEditorMentionUser = {
   name: string | null;
 };
 
+export type RichTextEditorIssueMentionOption = {
+  id: string;
+  key: string;
+  title: string;
+  projectKey?: string | null;
+};
+
 interface RichTextEditorProps {
   value: string;
   onChange: (val: string) => void;
@@ -47,6 +54,9 @@ interface RichTextEditorProps {
   height?: number;
   mentionUsers?: RichTextEditorMentionUser[];
   mentionLabel?: string;
+  issueMentionOptions?: RichTextEditorIssueMentionOption[];
+  issueMentionLabel?: string;
+  onIssueLinkClick?: (issueId: string) => void;
   currentUserId?: string;
   borderless?: boolean;
   toolbarRight?: ReactNode;
@@ -73,6 +83,20 @@ type SelectionSnapshot = {
   from: number;
   to: number;
 } | null;
+
+type MentionMenuItem =
+  | {
+      kind: "user";
+      id: string;
+      label: string;
+    }
+  | {
+      kind: "issue";
+      id: string;
+      key: string;
+      title: string;
+      projectKey?: string | null;
+    };
 
 const markdownParser = new MarkdownIt({
   html: true,
@@ -549,6 +573,20 @@ function getMentionPosition(
   }
 }
 
+function getIssueIdFromLinkElement(element: HTMLElement | null) {
+  const link = element?.closest("a[href]") as HTMLAnchorElement | null;
+  if (!link) return null;
+
+  const dataIssueId = link.dataset.issueId;
+  if (dataIssueId) return dataIssueId;
+
+  const rawHref = link.getAttribute("href") || "";
+  const baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+  const href = new URL(rawHref, baseUrl);
+  const issueMatch = href.pathname.match(/^\/issues\/([^/?#]+)/);
+  return issueMatch?.[1] || null;
+}
+
 const RichTextEditor = forwardRef(function RichTextEditor(
   {
     value,
@@ -557,6 +595,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     height = 200,
     mentionUsers = [],
     mentionLabel = "Mention someone",
+    issueMentionOptions = [],
+    issueMentionLabel = "Mention issue",
+    onIssueLinkClick,
     currentUserId,
     borderless = false,
     toolbarRight,
@@ -576,6 +617,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const pendingUploadedImageUrlsRef = useRef(new Set<string>());
   const latestContentRef = useRef(value || "");
   const editorInstanceRef = useRef<Editor | null>(null);
+  const mentionStateRef = useRef<MentionState>(null);
+  const mentionMenuItemsRef = useRef<MentionMenuItem[]>([]);
+  const selectedMentionIndexRef = useRef(0);
 
   const cleanupRemovedPendingUploads = (content: string) => {
     latestContentRef.current = content;
@@ -635,6 +679,18 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     }
   };
 
+  const handleIssueLinkEvent = (event: MouseEvent) => {
+    const issueId = getIssueIdFromLinkElement(event.target as HTMLElement | null);
+    if (!issueId || !onIssueLinkClick) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onIssueLinkClick(issueId);
+    return true;
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -682,6 +738,37 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         return false;
       },
       handleKeyDown: (_view, event) => {
+        const currentMentionState = mentionStateRef.current;
+        const currentMentionItems = mentionMenuItemsRef.current;
+
+        if (currentMentionState && currentMentionItems.length > 0) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const direction = event.key === "ArrowDown" ? 1 : -1;
+            const nextIndex =
+              (selectedMentionIndexRef.current + direction + currentMentionItems.length) %
+              currentMentionItems.length;
+            selectedMentionIndexRef.current = nextIndex;
+            setUiVersion((currentValue) => currentValue + 1);
+            return true;
+          }
+
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const selectedItem = currentMentionItems[selectedMentionIndexRef.current] || currentMentionItems[0];
+            if (selectedItem) {
+              insertMentionItem(selectedItem, currentMentionState);
+            }
+            return true;
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setMentionState(null);
+            return true;
+          }
+        }
+
         if (event.key !== "Tab") {
           return false;
         }
@@ -707,6 +794,12 @@ const RichTextEditor = forwardRef(function RichTextEditor(
 
         activeEditor.chain().focus().insertContent("    ").run();
         return true;
+      },
+      handleClick: (_view, _pos, event) => {
+        return handleIssueLinkEvent(event);
+      },
+      handleDOMEvents: {
+        click: (_view, event) => handleIssueLinkEvent(event),
       },
     },
     content: contentToHTML(value || ""),
@@ -789,44 +882,122 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     [],
   );
 
-  const filteredMentionUsers =
+  const mentionMenuItems: MentionMenuItem[] =
     mentionState === null
       ? []
-      : mentionUsers.filter((user) => {
-          const trimmedName = user.name?.trim();
-          if (!trimmedName) {
-            return false;
-          }
+      : issueMentionOptions.length > 0
+        ? mentionState.query.trim()
+          ? issueMentionOptions
+              .filter((issue) => {
+                const query = mentionState.query.trim().toLowerCase();
+                return `${issue.key} ${issue.title} ${issue.projectKey || ""}`.toLowerCase().includes(query);
+              })
+              .slice(0, 8)
+              .map((issue) => ({
+                kind: "issue" as const,
+                id: issue.id,
+                key: issue.key,
+                title: issue.title,
+                projectKey: issue.projectKey,
+              }))
+          : []
+        : mentionUsers
+            .filter((user) => {
+              const trimmedName = user.name?.trim();
+              if (!trimmedName) {
+                return false;
+              }
 
-          if (currentUserId && user.id === currentUserId) {
-            return false;
-          }
+              if (currentUserId && user.id === currentUserId) {
+                return false;
+              }
 
-          return trimmedName.toLowerCase().includes(mentionState.query.toLowerCase());
-        });
+              return trimmedName.toLowerCase().includes(mentionState.query.toLowerCase());
+            })
+            .slice(0, 8)
+            .map((user) => ({
+              kind: "user" as const,
+              id: user.id,
+              label: user.name || user.id,
+            }));
   const currentTextColor = editor ? getCurrentTextColor(editor) : null;
   const currentTextBackgroundColor = editor ? getCurrentTextBackgroundColor(editor) : null;
   const mentionPosition = getMentionPosition(editor, mentionState, containerElement);
 
-  const handleInsertMention = (name: string) => {
-    if (!editor || !mentionState) {
+  useEffect(() => {
+    mentionStateRef.current = mentionState;
+  }, [mentionState]);
+
+  useEffect(() => {
+    mentionMenuItemsRef.current = mentionMenuItems;
+    if (selectedMentionIndexRef.current >= mentionMenuItems.length) {
+      selectedMentionIndexRef.current = 0;
+    }
+  }, [mentionMenuItems]);
+
+  function insertMentionItem(item: MentionMenuItem, state: NonNullable<MentionState>) {
+    const activeEditor = editorInstanceRef.current;
+    if (!activeEditor || activeEditor.isDestroyed) {
       return;
     }
 
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(
-        {
-          from: mentionState.from,
-          to: mentionState.to,
-        },
-        `@${name} `,
-      )
-      .run();
+    if (item.kind === "issue") {
+      activeEditor
+        .chain()
+        .focus()
+        .insertContentAt(
+          {
+            from: state.from,
+            to: state.to,
+          },
+          [
+            {
+              type: "text",
+              text: item.key,
+              marks: [
+                {
+                  type: "link",
+                  attrs: {
+                    href: `/issues/${item.id}`,
+                  },
+                },
+              ],
+            },
+            {
+              type: "text",
+              text: " ",
+            },
+          ],
+        )
+        .run();
+    } else {
+      activeEditor
+        .chain()
+        .focus()
+        .insertContentAt(
+          {
+            from: state.from,
+            to: state.to,
+          },
+          `@${item.label} `,
+        )
+        .run();
+    }
 
     setMentionState(null);
+    selectedMentionIndexRef.current = 0;
+  }
+
+  const handleInsertMention = (item: MentionMenuItem) => {
+    if (!mentionState) {
+      return;
+    }
+
+    insertMentionItem(item, mentionState);
   };
+
+  const selectedMentionIndex = selectedMentionIndexRef.current;
+  const activeMentionLabel = issueMentionOptions.length > 0 ? issueMentionLabel : mentionLabel;
 
   const handleInsertLink = () => {
     if (!editor) {
@@ -981,33 +1152,47 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         </div>
       </div>
 
-      {!readOnly && editor && isFocused && mentionState !== null && filteredMentionUsers.length > 0 && mentionPosition && (
+      {!readOnly && editor && isFocused && mentionState !== null && mentionMenuItems.length > 0 && mentionPosition && (
         <div
-          className="absolute z-[100] w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="absolute z-[100] w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
           style={{
             top: `${mentionPosition.top}px`,
             left: `${mentionPosition.left}px`,
           }}
         >
           <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500">
-            {mentionLabel}
+            {activeMentionLabel}
           </div>
           <div className="max-h-48 overflow-y-auto">
-            {filteredMentionUsers.map((user) => {
-              const displayName = user.name || user.id;
-
+            {mentionMenuItems.map((item, index) => {
+              const isSelected = index === selectedMentionIndex;
               return (
                 <button
                   type="button"
-                  key={user.id}
+                  key={`${item.kind}-${item.id}`}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => handleInsertMention(displayName)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                  onMouseEnter={() => {
+                    selectedMentionIndexRef.current = index;
+                    setUiVersion((currentValue) => currentValue + 1);
+                  }}
+                  onClick={() => handleInsertMention(item)}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                    isSelected ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                  }`}
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                    {displayName.charAt(0) || "U"}
+                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                    item.kind === "issue" ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-600"
+                  }`}>
+                    {item.kind === "issue" ? "#" : item.label.charAt(0) || "U"}
                   </div>
-                  {displayName}
+                  {item.kind === "issue" ? (
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">{item.key}</span>
+                      <span className="block truncate text-xs text-slate-500">{item.title}</span>
+                    </span>
+                  ) : (
+                    <span className="truncate">{item.label}</span>
+                  )}
                 </button>
               );
             })}
