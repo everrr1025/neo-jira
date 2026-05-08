@@ -40,8 +40,8 @@ jobs:
           script: |
             set -e
             INITIAL_MIGRATION="20260417000000_init"
-            PROD_DATABASE_URL="file:/var/www/neo-jira-data/dev.db"
-            BACKUP_DIR="/var/www/neo-jira-data/backups"
+            PROD_DATABASE_URL="file:/home/ubuntu/var/www/neo-jira-data/dev.db"
+            BACKUP_DIR="/home/ubuntu/var/www/neo-jira-data/backups"
 
             log_step() {
               echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -51,7 +51,7 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
             log_step "Switching to deploy directory"
-            cd /var/www/neo-jira
+            cd /home/ubuntu/var/www/neo-jira
 
             log_step "Fetching latest code from origin/main"
             git fetch origin main
@@ -60,28 +60,28 @@ jobs:
 
             # Keep production SQLite data outside the git checkout.
             log_step "Ensuring production data directories exist"
-            mkdir -p /var/www/neo-jira-data "$BACKUP_DIR"
+            mkdir -p /home/ubuntu/var/www/neo-jira-data "$BACKUP_DIR"
 
             # ONE-TIME DATABASE IMPORT LOGIC
             if [ -f prisma/import-me.db ]; then
               echo "Found prisma/import-me.db. Performing one-time database import..."
-              mv -f prisma/import-me.db /var/www/neo-jira-data/dev.db
-              echo "Import completed to /var/www/neo-jira-data/dev.db"
+              mv -f prisma/import-me.db /home/ubuntu/var/www/neo-jira-data/dev.db
+              echo "Import completed to /home/ubuntu/var/www/neo-jira-data/dev.db"
 
               # If the .env is still pointing to the old local path, update it.
               if grep -q "DATABASE_URL=.*prisma/dev.db" .env; then
                 echo "Updating .env to point to the new production database path..."
                 sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$PROD_DATABASE_URL\"|" .env
               fi
-            elif [ ! -f /var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
+            elif [ ! -f /home/ubuntu/var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
               echo "Initializing production DB from prisma/dev.db..."
-              cp prisma/dev.db /var/www/neo-jira-data/dev.db
+              cp prisma/dev.db /home/ubuntu/var/www/neo-jira-data/dev.db
             fi
 
             # Ensure Prisma and the app use the protected production DB path.
             touch .env
             if ! grep -q '^DATABASE_URL=' .env; then
-              echo "DATABASE_URL is missing from /var/www/neo-jira/.env"
+              echo "DATABASE_URL is missing from /home/ubuntu/var/www/neo-jira/.env"
               echo "Expected: DATABASE_URL=\"$PROD_DATABASE_URL\""
               exit 1
             fi
@@ -89,7 +89,7 @@ jobs:
             # Fail fast if production DATABASE_URL drifts away from the managed external SQLite path.
             CURRENT_DB_URL=$(grep '^DATABASE_URL=' .env | tail -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
             if [ "$CURRENT_DB_URL" != "$PROD_DATABASE_URL" ]; then
-              echo "DATABASE_URL mismatch in /var/www/neo-jira/.env"
+              echo "DATABASE_URL mismatch in /home/ubuntu/var/www/neo-jira/.env"
               echo "Expected: $PROD_DATABASE_URL"
               echo "Actual:   $CURRENT_DB_URL"
               exit 1
@@ -97,9 +97,9 @@ jobs:
 
             export DATABASE_URL="$CURRENT_DB_URL"
 
-            if [ -f /var/www/neo-jira-data/dev.db ]; then
+            if [ -f /home/ubuntu/var/www/neo-jira-data/dev.db ]; then
               TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-              cp /var/www/neo-jira-data/dev.db "$BACKUP_DIR/dev-$TIMESTAMP.db"
+              cp /home/ubuntu/var/www/neo-jira-data/dev.db "$BACKUP_DIR/dev-$TIMESTAMP.db"
               echo "Backed up SQLite database to $BACKUP_DIR/dev-$TIMESTAMP.db"
             fi
 
