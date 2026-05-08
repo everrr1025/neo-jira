@@ -474,7 +474,7 @@ function scheduleBadgeClass(type: ScheduleType) {
 function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, includeEnd = false) {
   const date = new Date(item.date);
   if (Number.isNaN(date.getTime())) return "";
-  const hasSpecificTime = date.getHours() !== 0 || date.getMinutes() !== 0;
+  const hasSpecificTime = hasTimedSchedulePlacement(item);
   if (isAllDayScheduleItem(item) || !hasSpecificTime || item.kind === "ISSUE_DUE") {
     return item.kind === "ISSUE_DUE" ? (locale === "zh" ? "截止" : "Due") : "";
   }
@@ -485,11 +485,18 @@ function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, inclu
   return `${start}-${end.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
 
+function hasTimedSchedulePlacement(item: DepartmentItemCenterItem) {
+  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return false;
+  const start = new Date(item.date);
+  if (Number.isNaN(start.getTime())) return false;
+  return start.getHours() !== 0 || start.getMinutes() !== 0;
+}
+
 function isAllDayScheduleItem(item: DepartmentItemCenterItem) {
-  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO" || item.itemType === "REMINDER") return true;
+  if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return true;
   const start = new Date(item.date);
   if (Number.isNaN(start.getTime())) return true;
-  if (!item.endDate) return true;
+  if (item.itemType === "REMINDER") return !hasTimedSchedulePlacement(item);
   return start.getHours() === 0 && start.getMinutes() === 0;
 }
 
@@ -735,7 +742,7 @@ function LocalizedTimeInput({
 
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
 type ItemTab = "tasks" | "schedule" | "notes";
-type ScheduleView = "month" | "week" | "list";
+type ScheduleView = "week" | "month";
 type ScheduleType = "meeting" | "out" | "reminder" | "memo";
 type ScheduleCreateKind = "meeting" | "out" | "memo";
 type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}` | `pinned-folder:${string}`;
@@ -870,7 +877,7 @@ export default function DepartmentItemsClient({
   const issueText = getTranslations(locale).issueDetail;
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
-  const [scheduleView, setScheduleView] = useState<ScheduleView>("month");
+  const [scheduleView, setScheduleView] = useState<ScheduleView>("week");
   const [visibleScheduleTypes, setVisibleScheduleTypes] = useState<Record<ScheduleType, boolean>>({
     meeting: true,
     out: true,
@@ -880,6 +887,7 @@ export default function DepartmentItemsClient({
   const [scheduleCursor, setScheduleCursor] = useState(() => new Date());
   const [scheduleSearch, setScheduleSearch] = useState("");
   const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(null);
+  const [scheduleOverflowDate, setScheduleOverflowDate] = useState<string | null>(null);
   const activeTab = initialTab;
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [taskQuery, setTaskQuery] = useState("");
@@ -1128,11 +1136,6 @@ export default function DepartmentItemsClient({
   }, [selectedNoteId]);
 
   const calendarItems = scheduleItems.filter((item) => item.itemType !== "NOTE");
-  const scheduleListItems = scheduleItems.filter((item) => {
-    const itemDate = new Date(item.date);
-    if (Number.isNaN(itemDate.getTime())) return false;
-    return itemDate >= startOfMonth(scheduleCursor) && itemDate <= endOfMonth(scheduleCursor);
-  });
   const groupedByDay = calendarItems.reduce((acc, item) => {
     const key = dayKey(item.date);
     acc[key] = [...(acc[key] || []), item];
@@ -1155,6 +1158,17 @@ export default function DepartmentItemsClient({
     acc[type] = calendarItems.filter((item) => getScheduleType(item) === type).length;
     return acc;
   }, {} as Record<ScheduleType, number>);
+  const scheduleOverflowItems = scheduleOverflowDate
+    ? [...(groupedByDay[scheduleOverflowDate] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    : [];
+  const scheduleOverflowTitle = scheduleOverflowDate
+    ? new Date(`${scheduleOverflowDate}T00:00`).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        weekday: "short",
+      })
+    : "";
 
   const resetForm = (overrides: Partial<typeof form> = {}) =>
     setForm({
@@ -1191,23 +1205,23 @@ export default function DepartmentItemsClient({
     setIsCreateOpen(true);
   };
 
-  const openCreateScheduleModal = (date = scheduleCursor, startTime = "09:00", endTime = "10:00") => {
+  const openCreateScheduleModal = (date = scheduleCursor, startTime = "09:00", endTime = "10:00", hasTime = false) => {
     setEditingScheduleItemId(null);
     const scheduleDate = format(date, "yyyy-MM-dd");
     const [startHour = "09", startMinute = "00"] = startTime.split(":");
     const [endHour = "10", endMinute = "00"] = endTime.split(":");
     resetForm({
-      itemType: "EVENT",
-      hasTime: false,
+      itemType: "REMINDER",
       startAt: composeDateTime(date, Number(startHour), Number(startMinute)),
       endAt: composeDateTime(date, Number(endHour), Number(endMinute)),
       dueAt: "",
-      scopeType: "DEPARTMENT",
+      scopeType: canCreateDepartmentItem ? "DEPARTMENT" : "PERSONAL",
       assigneeId: currentUserId,
-      scheduleKind: "meeting",
+      scheduleKind: "memo",
       scheduleDate,
       startTime,
       endTime,
+      hasTime,
       location: "",
       attendeeIds: [],
       attendeeQuery: "",
@@ -1236,7 +1250,7 @@ export default function DepartmentItemsClient({
     resetForm({
       title: item.title,
       itemType: scheduleKind === "memo" ? "REMINDER" : "EVENT",
-      hasTime: false,
+      hasTime: scheduleKind === "memo" ? hasTimedSchedulePlacement(item) : true,
       startAt: item.date,
       endAt: item.endDate || "",
       dueAt: "",
@@ -1274,9 +1288,12 @@ export default function DepartmentItemsClient({
       ].filter(Boolean).join("\n\n");
       const scheduleItemType = form.scheduleKind === "memo" ? "REMINDER" : "EVENT";
       const scheduleScopeType = isScheduleCreate && form.scheduleKind !== "memo" ? "DEPARTMENT" : form.scopeType;
-      const scheduleStartAt = form.scheduleKind === "memo"
+      const scheduleStartAt = form.scheduleKind === "memo" && !form.hasTime
         ? combineDateAsAllDay(form.scheduleDate)
         : combineDateAndTime(form.scheduleDate, form.startTime);
+      const scheduleEndAt = form.scheduleKind === "memo" && !form.hasTime
+        ? undefined
+        : combineDateAndTime(form.scheduleDate, form.endTime);
       const result =
         isScheduleCreate && editingScheduleItem
           ? await updateReminderItem(editingScheduleItem.id, {
@@ -1284,7 +1301,7 @@ export default function DepartmentItemsClient({
               content: scheduleContent,
               itemType: scheduleItemType,
               startAt: scheduleStartAt,
-              endAt: form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
+              endAt: scheduleEndAt,
               scopeType: scheduleScopeType,
             })
           : await createReminder({
@@ -1293,7 +1310,7 @@ export default function DepartmentItemsClient({
               content: isScheduleCreate ? scheduleContent : form.content,
               itemType: isScheduleCreate ? scheduleItemType : form.itemType,
               startAt: isScheduleCreate ? scheduleStartAt : form.itemType === "TODO" ? undefined : form.startAt,
-              endAt: isScheduleCreate && form.scheduleKind !== "memo" ? combineDateAndTime(form.scheduleDate, form.endTime) : undefined,
+              endAt: isScheduleCreate ? scheduleEndAt : undefined,
               dueAt: form.dueAt || undefined,
               priority: form.priority,
               isImportant: form.isImportant,
@@ -2239,7 +2256,39 @@ export default function DepartmentItemsClient({
                 required
               />
           </div>
-          ) : null}
+          ) : (
+            <div className="space-y-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.hasTime}
+                  onChange={(event) => setForm((current) => ({ ...current, hasTime: event.target.checked }))}
+                  className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
+                />
+                {t.hasTime}
+              </label>
+              {form.hasTime ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <LocalizedTimeInput
+                    id="scheduleMemoStartTime"
+                    label={st.startTime}
+                    value={form.startTime}
+                    onChange={(value) => setForm((current) => ({ ...current, startTime: value }))}
+                    locale={locale}
+                    required
+                  />
+                  <LocalizedTimeInput
+                    id="scheduleMemoEndTime"
+                    label={st.endTime}
+                    value={form.endTime}
+                    onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
+                    locale={locale}
+                    required
+                  />
+                </div>
+              ) : null}
+            </div>
+          )}
 
           {form.scheduleKind === "meeting" ? <div className="space-y-1">
             <label className="text-sm font-medium text-slate-700">{st.participants}</label>
@@ -2331,41 +2380,15 @@ export default function DepartmentItemsClient({
           </div>
         </div>
         <div className="mt-6 border-t border-[#DFE1E6] pt-5">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.visibleSummary}</h3>
           <div className="space-y-2 text-sm text-[#172B4D]">
             <div className="flex items-center justify-between">
               <span>{st.todaySummary}</span>
               <span className="font-semibold tabular-nums">{todayScheduleCount}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span>{scheduleView === "month" ? st.month : scheduleView === "week" ? st.week : t.list}</span>
-              <span className="font-semibold tabular-nums">{scheduleView === "list" ? scheduleListItems.length : calendarItems.length}</span>
+              <span>{scheduleView === "week" ? st.week : st.month}</span>
+              <span className="font-semibold tabular-nums">{calendarItems.length}</span>
             </div>
-          </div>
-        </div>
-        <div className="mt-auto border-t border-[#DFE1E6] pt-5">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.quickCreate}</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {scheduleKindOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  openCreateScheduleModal(scheduleCursor);
-                  setForm((current) => ({
-                    ...current,
-                    scheduleKind: option.value as ScheduleCreateKind,
-                    itemType: option.value === "memo" ? "REMINDER" : "EVENT",
-                    scopeType: option.value === "memo" && !canCreateDepartmentItem ? "PERSONAL" : "DEPARTMENT",
-                    attendeeIds: option.value === "meeting" ? current.attendeeIds : [],
-                  }));
-                }}
-                className="flex h-16 flex-col items-center justify-center gap-2 rounded border border-[#DFE1E6] bg-white text-xs font-semibold text-[#172B4D] hover:border-[#0052CC] hover:text-[#0052CC]"
-              >
-                <span className={`h-2.5 w-2.5 rounded-full ${option.indicatorClassName}`} />
-                <span>{option.label}</span>
-              </button>
-            ))}
           </div>
         </div>
       </aside>
@@ -2388,7 +2411,7 @@ export default function DepartmentItemsClient({
           </div>
           <div className="flex items-center gap-3">
             <div className="inline-flex rounded border border-[#DFE1E6] bg-[#F4F5F7] p-1">
-              {(["month", "week", "list"] as ScheduleView[]).map((nextView) => (
+              {(["week", "month"] as ScheduleView[]).map((nextView) => (
                 <button
                   key={nextView}
                   type="button"
@@ -2402,28 +2425,7 @@ export default function DepartmentItemsClient({
           </div>
         </div>
 
-        {scheduleView === "list" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto bg-white p-4">
-            <div className="divide-y divide-[#DFE1E6] border border-[#DFE1E6]">
-              {scheduleListItems.length === 0 ? <p className="p-6 text-sm text-[#42526E]">{st.noEvents}</p> : scheduleListItems.map((item) => {
-                const type = getScheduleType(item);
-                return (
-                  <button key={`${item.kind}-${item.id}`} type="button" onClick={() => openScheduleItem(item)} className="grid w-full grid-cols-[120px_minmax(0,1fr)_160px] items-center gap-4 bg-white px-4 py-3 text-left text-sm hover:bg-[#F4F5F7]">
-                    <span className="text-xs font-semibold text-[#42526E]">{new Date(item.date).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", weekday: "short" })}</span>
-                    <span className="min-w-0">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${scheduleDotClass(type)}`} />
-                        <span className="truncate font-semibold text-[#172B4D]">{item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title}</span>
-                      </span>
-                      <span className="mt-0.5 block truncate text-xs text-[#42526E]">{item.projectKey || item.scopeLabel}</span>
-                    </span>
-                    <span className="justify-self-end rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">{scheduleTypeLabel(type, locale)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : scheduleView === "week" ? (
+        {scheduleView === "week" ? (
           <div className="shrink-0 bg-white">
             <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6]">
               <div className="border-r border-[#DFE1E6]" />
@@ -2447,18 +2449,28 @@ export default function DepartmentItemsClient({
               </div>
               {scheduleDays.map((date) => {
                 const key = format(date, "yyyy-MM-dd");
+                const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                 const allDayItems = [...(allDayGroupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-                const shownItems = allDayItems.slice(0, 3);
+                const shownItems = allDayItems.slice(0, 4);
                 return (
                   <div
                     key={`${key}-all-day`}
                     onClick={() => openCreateScheduleModal(date)}
-                    className="min-h-[54px] border-r border-[#DFE1E6] bg-white px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0"
+                    className="min-h-[148px] border-r border-[#DFE1E6] bg-white px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0"
                   >
                     <div className="space-y-1">
                       {shownItems.map((item) => renderScheduleChip(item, true))}
                       {allDayItems.length > shownItems.length ? (
-                        <span className="block px-1 text-[11px] font-medium text-[#42526E]">+{allDayItems.length - shownItems.length} {st.moreItems}</span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setScheduleOverflowDate(key);
+                          }}
+                          className="block w-full px-1 text-left text-[11px] font-medium text-[#42526E] hover:text-[#0052CC]"
+                        >
+                          +{allDayItems.length - shownItems.length} {st.moreItems}
+                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -2508,7 +2520,7 @@ export default function DepartmentItemsClient({
                         <button
                           key={hour}
                           type="button"
-                          onClick={() => openCreateScheduleModal(date, startTime, endTime)}
+                          onClick={() => openCreateScheduleModal(date, startTime, endTime, true)}
                           className="block w-full border-b border-[#EBECF0] text-left hover:bg-[#F4F5F7]"
                           style={{ height: WEEK_HOUR_HEIGHT }}
                           aria-label={`${startTime}-${endTime}`}
@@ -2539,7 +2551,7 @@ export default function DepartmentItemsClient({
             </div>
           </div>
         ) : scheduleView === "month" ? (
-          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(120px,1fr)] overflow-y-auto bg-white">
+          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(170px,1fr)] overflow-y-auto bg-white">
             {scheduleDays.map((date) => {
               const key = format(date, "yyyy-MM-dd");
               const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -2550,7 +2562,7 @@ export default function DepartmentItemsClient({
                 <div
                   key={key}
                   onClick={() => openCreateScheduleModal(date)}
-                  className={`group flex min-h-[120px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] bg-white p-2 text-left hover:bg-[#FAFBFC] ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
+                  className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] bg-white p-2 text-left hover:bg-[#FAFBFC] ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
                 >
                   <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC]" : ""}`}>
                     {date.getDate()}
@@ -2558,7 +2570,16 @@ export default function DepartmentItemsClient({
                   <div className="min-h-0 w-full space-y-1 overflow-hidden">
                     {shownItems.map((item) => renderScheduleChip(item, true))}
                     {dayItems.length > shownItems.length ? (
-                      <span className="block px-1 text-[11px] font-medium text-[#42526E]">+{dayItems.length - shownItems.length} {st.moreItems}</span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setScheduleOverflowDate(key);
+                        }}
+                        className="block w-full px-1 text-left text-[11px] font-medium text-[#42526E] hover:text-[#0052CC]"
+                      >
+                        +{dayItems.length - shownItems.length} {st.moreItems}
+                      </button>
                     ) : null}
                   </div>
                 </div>
@@ -2568,6 +2589,58 @@ export default function DepartmentItemsClient({
         ) : null}
 
       </section>
+
+      {scheduleOverflowDate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#091E42]/30 px-4" onClick={() => setScheduleOverflowDate(null)}>
+          <div
+            className="flex max-h-[78vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-[#DFE1E6] bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#DFE1E6] px-5 py-4">
+              <h3 className="min-w-0 truncate text-base font-semibold text-[#172B4D]">{scheduleOverflowTitle}</h3>
+              <button
+                type="button"
+                onClick={() => setScheduleOverflowDate(null)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7]"
+                title={t.cancel}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {scheduleOverflowItems.length === 0 ? (
+                <p className="p-5 text-sm text-[#42526E]">{st.noEvents}</p>
+              ) : (
+                <div className="divide-y divide-[#DFE1E6]">
+                  {scheduleOverflowItems.map((item) => {
+                    const type = getScheduleType(item);
+                    return (
+                      <button
+                        key={`${item.kind}-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setScheduleOverflowDate(null);
+                          openScheduleItem(item);
+                        }}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-white px-5 py-3 text-left text-sm hover:bg-[#F4F5F7]"
+                      >
+                        <span className="min-w-0">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${scheduleDotClass(type)}`} />
+                            <span className="truncate font-semibold text-[#172B4D]">{item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title}</span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-[#42526E]">{scheduleTimeLabel(item, locale, true) || st.noTime}</span>
+                        </span>
+                        <span className="shrink-0 rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">{scheduleTypeLabel(type, locale)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedScheduleItem ? (
         <div className="fixed inset-0 z-50 bg-[#091E42]/30" onClick={() => setSelectedScheduleItemId(null)}>
@@ -3207,7 +3280,7 @@ export default function DepartmentItemsClient({
                 className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
-                {st.createMeeting}
+                {st.create}
               </button>
             </>
           ) : null}
