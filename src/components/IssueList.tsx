@@ -1111,7 +1111,13 @@ export default function IssueList({
     setDragOverSide(null);
   };
 
-  const resizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+  const resizingRef = useRef<{
+    colIndex: number;
+    nextColIndex: number;
+    startX: number;
+    startWidth: number;
+    nextStartWidth: number;
+  } | null>(null);
   const issueFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
   const planFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
 
@@ -1120,21 +1126,37 @@ export default function IssueList({
       e.preventDefault();
       e.stopPropagation();
       const col = columns[colIndex];
+      const nextCol = columns[colIndex + 1];
+      if (!col || !nextCol) return;
       const startWidth = col.width || 150;
-      resizingRef.current = { colIndex, startX: e.clientX, startWidth };
+      const nextStartWidth = nextCol.width || 150;
+      const minWidth = 60;
+      resizingRef.current = { colIndex, nextColIndex: colIndex + 1, startX: e.clientX, startWidth, nextStartWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
         const resizeState = resizingRef.current;
         if (!resizeState) return;
 
         const delta = ev.clientX - resizeState.startX;
-        const newWidth = Math.max(60, resizeState.startWidth + delta);
         const resizeColIndex = resizeState.colIndex;
+        const nextResizeColIndex = resizeState.nextColIndex;
         const resizeColumnId = columns[resizeColIndex]?.id;
+        const nextResizeColumnId = columns[nextResizeColIndex]?.id;
 
-        if (!resizeColumnId) return;
+        if (!resizeColumnId || !nextResizeColumnId) return;
 
-        setColumnWidths((prev) => ({ ...prev, [resizeColumnId]: newWidth }));
+        const boundedDelta = Math.min(
+          resizeState.nextStartWidth - minWidth,
+          Math.max(minWidth - resizeState.startWidth, delta)
+        );
+        const newWidth = resizeState.startWidth + boundedDelta;
+        const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
+
+        setColumnWidths((prev) => ({
+          ...prev,
+          [resizeColumnId]: newWidth,
+          [nextResizeColumnId]: nextNewWidth,
+        }));
       };
 
       const onMouseUp = () => {
@@ -2292,11 +2314,13 @@ export default function IssueList({
 
                       {showRightLine && <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      <div
-                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/50 z-20"
-                        onMouseDown={(e) => handleResizeStart(e, index)}
-                        draggable={false}
-                      />
+                      {columns[index + 1] ? (
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/50 z-20"
+                          onMouseDown={(e) => handleResizeStart(e, index)}
+                          draggable={false}
+                        />
+                      ) : null}
                     </th>
                   );
                 })}

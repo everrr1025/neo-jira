@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, ChevronLeft, Building2 } from "lucide-react";
+import { Building2, CalendarDays, ChevronLeft, ListTodo, StickyNote } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
@@ -24,7 +24,6 @@ export function SidebarClient({
   departmentContext?: { id: string; name: string } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [itemsNavOpen, setItemsNavOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const translations = getTranslations(locale);
@@ -32,7 +31,6 @@ export function SidebarClient({
   const inProjectContext = Boolean(activeProject) && !isDepartmentRoute;
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
-  const itemsLabel = locale === "zh" ? "事项" : "Items";
   const tasksLabel = locale === "zh" ? "任务" : "Tasks";
   const scheduleLabel = locale === "zh" ? "日程" : "Schedule";
   const notesLabel = locale === "zh" ? "笔记" : "Notes";
@@ -40,9 +38,6 @@ export function SidebarClient({
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
   const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
-  const departmentItemsPath = departmentContext ? `/departments/${departmentContext.id}/items` : "";
-  const isItemsActive = Boolean(departmentItemsPath && pathname === departmentItemsPath);
-  const showItemsChildren = !collapsed && itemsNavOpen;
 
   const getNavClass = (href: string) => {
     let isActive = false;
@@ -75,27 +70,35 @@ export function SidebarClient({
           id: "projects",
           href: departmentContext ? `/departments/${departmentContext.id}/projects` : "/projects",
           icon: (
-            <ProjectNavIcon className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-purple-500" />
+            <ProjectNavIcon className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />
           ),
           label: translations.sidebar.projects,
         },
         ...(departmentContext
           ? [
               {
-                id: "department-items",
+                id: "department-tasks",
                 href: `/departments/${departmentContext.id}/items?tab=tasks`,
-                icon: (
-                  <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                ),
-                label: itemsLabel,
+                icon: <ListTodo className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />,
+                label: tasksLabel,
+              },
+              {
+                id: "department-schedule",
+                href: `/departments/${departmentContext.id}/items?tab=schedule`,
+                icon: <CalendarDays className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />,
+                label: scheduleLabel,
+              },
+              {
+                id: "department-notes",
+                href: `/departments/${departmentContext.id}/items?tab=notes`,
+                icon: <StickyNote className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />,
+                label: notesLabel,
               },
               {
                 id: "department-members",
                 href: `/departments/${departmentContext.id}/members`,
                 icon: (
-                  <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 ),
@@ -119,7 +122,7 @@ export function SidebarClient({
           id: "kanban",
           href: "/iterations",
           icon: (
-            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           ),
@@ -129,7 +132,7 @@ export function SidebarClient({
           id: "issues",
           href: "/issues",
           icon: (
-            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           ),
@@ -139,7 +142,7 @@ export function SidebarClient({
           id: "plans",
           href: "/plans",
           icon: (
-            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
           ),
@@ -198,7 +201,7 @@ export function SidebarClient({
               }`}
               title={returnLabel}
             >
-              <ChevronLeft className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-400" />
+              <ChevronLeft className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />
               <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                 {returnLabel}
               </span>
@@ -211,63 +214,19 @@ export function SidebarClient({
             if (isAdmin && item.id !== "dashboard") return false;
             return true;
           })
-          .map((item) =>
-            item.id === "department-items" && departmentContext ? (
-              <div key={item.id} className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => setItemsNavOpen((current) => !current)}
-                  className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 transition-colors ${
-                    collapsed ? "mx-3 justify-center" : "gap-3 px-3"
-                  } ${isItemsActive ? "bg-slate-800 text-white" : "hover:bg-slate-800 hover:text-white"}`}
-                  title={item.label}
-                >
-                  {item.icon}
-                  <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                    {item.label}
-                  </span>
-                  {!collapsed ? (
-                    <ChevronDown className={`ml-auto h-4 w-4 text-slate-400 transition-transform ${itemsNavOpen ? "rotate-180" : ""}`} />
-                  ) : null}
-                </button>
-                {showItemsChildren ? (
-                  <div className="ml-8 space-y-1">
-                    {[
-                      { href: `${departmentItemsPath}?tab=tasks`, label: tasksLabel },
-                      { href: `${departmentItemsPath}?tab=schedule`, label: scheduleLabel },
-                      { href: `${departmentItemsPath}?tab=notes`, label: notesLabel },
-                    ].map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className={`block rounded-md px-3 py-1.5 text-sm transition-colors ${
-                          getNavClass(child.href).includes("bg-slate-800 text-white")
-                            ? "bg-slate-800 text-white"
-                            : isItemsActive
-                              ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                              : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                        }`}
-                      >
-                        {child.label}
-                      </Link>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
-                {item.icon}
-                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                  {item.label}
-                </span>
-              </Link>
-            )
-          )}
+          .map((item) => (
+            <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
+              {item.icon}
+              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {item.label}
+              </span>
+            </Link>
+          ))}
 
         {isAdmin ? (
           <>
             <Link href="/admin/users" className={getNavClass("/admin/users")} title={locale === "zh" ? "用户" : "Users"}>
-              <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
@@ -275,7 +234,7 @@ export function SidebarClient({
               </span>
             </Link>
             <Link href="/admin/departments" className={getNavClass("/admin/departments")} title={locale === "zh" ? "部门" : "Departments"}>
-              <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-emerald-400" />
+              <Building2 className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />
               <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                 {locale === "zh" ? "部门" : "Departments"}
               </span>

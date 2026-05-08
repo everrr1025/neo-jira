@@ -26,6 +26,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Eye,
   Folder,
   MapPin,
   MessageSquare,
@@ -531,6 +532,64 @@ function getWeekTimedLayout(item: DepartmentItemCenterItem) {
   };
 }
 
+function getWeekTimedBounds(item: DepartmentItemCenterItem) {
+  if (isAllDayScheduleItem(item)) return null;
+  const start = new Date(item.date);
+  const rawEnd = item.endDate ? new Date(item.endDate) : null;
+  if (Number.isNaN(start.getTime())) return null;
+
+  const startMinutes = start.getHours() * 60 + start.getMinutes();
+  const endMinutes = rawEnd && !Number.isNaN(rawEnd.getTime())
+    ? rawEnd.getHours() * 60 + rawEnd.getMinutes()
+    : startMinutes + 60;
+  const safeEndMinutes = endMinutes > startMinutes ? endMinutes : startMinutes + 60;
+
+  return { startMinutes, endMinutes: safeEndMinutes };
+}
+
+function getWeekTimedRenderItems(items: DepartmentItemCenterItem[]) {
+  const sortedItems = items
+    .map((item) => {
+      const layout = getWeekTimedLayout(item);
+      const bounds = getWeekTimedBounds(item);
+      if (!layout || !bounds) return null;
+      return { item, layout, ...bounds };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
+
+  const renderItems: Array<(typeof sortedItems)[number] & { laneIndex: number; laneCount: number }> = [];
+  let cluster: typeof sortedItems = [];
+  let clusterEnd = -Infinity;
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+
+    const laneEnds: number[] = [];
+    const clusterRenderItems = cluster.map((entry) => {
+      const reusableLane = laneEnds.findIndex((endMinutes) => endMinutes <= entry.startMinutes);
+      const laneIndex = reusableLane === -1 ? laneEnds.length : reusableLane;
+      laneEnds[laneIndex] = entry.endMinutes;
+      return { ...entry, laneIndex, laneCount: 1 };
+    });
+    const laneCount = Math.max(1, laneEnds.length);
+    renderItems.push(...clusterRenderItems.map((entry) => ({ ...entry, laneCount })));
+  };
+
+  sortedItems.forEach((entry) => {
+    if (cluster.length > 0 && entry.startMinutes >= clusterEnd) {
+      flushCluster();
+      cluster = [];
+      clusterEnd = -Infinity;
+    }
+    cluster.push(entry);
+    clusterEnd = Math.max(clusterEnd, entry.endMinutes);
+  });
+  flushCluster();
+
+  return renderItems;
+}
+
 function scheduleDateLabel(item: DepartmentItemCenterItem, locale: Locale) {
   const start = new Date(item.date);
   if (Number.isNaN(start.getTime())) return "";
@@ -591,7 +650,6 @@ const TIME_POPOVER_HEIGHT = 280;
 const TIME_POPOVER_GAP = 8;
 const TIME_VIEWPORT_MARGIN = 12;
 const timeHours = Array.from({ length: 24 }, (_, index) => `${index}`.padStart(2, "0"));
-const timeMinutes = Array.from({ length: 12 }, (_, index) => `${index * 5}`.padStart(2, "0"));
 
 function getTimePopoverPosition(element: HTMLButtonElement) {
   const rect = element.getBoundingClientRect();
@@ -619,6 +677,7 @@ function LocalizedTimeInput({
   value,
   onChange,
   locale,
+  minuteStep = 5,
   required = false,
 }: {
   id?: string;
@@ -626,6 +685,7 @@ function LocalizedTimeInput({
   value: string;
   onChange: (value: string) => void;
   locale: Locale;
+  minuteStep?: 5 | 15;
   required?: boolean;
 }) {
   const generatedId = useId();
@@ -635,6 +695,7 @@ function LocalizedTimeInput({
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null);
   const [selectedHour = "09", selectedMinute = "00"] = value.split(":");
+  const timeMinutes = Array.from({ length: 60 / minuteStep }, (_, index) => `${index * minuteStep}`.padStart(2, "0"));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -908,22 +969,19 @@ const TASK_STATUS_SORT_ORDER: Record<string, number> = {
 const TASK_DEFAULT_COLUMN_IDS: TaskColumnId[] = [
   "title",
   "content",
-  "dueDate",
-  "createdAt",
-  "creator",
   "status",
   "assignee",
-  "actions",
+  "dueDate",
 ];
 const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
-  title: 240,
-  content: 320,
-  dueDate: 140,
+  title: 220,
+  content: 260,
+  dueDate: 130,
   createdAt: 180,
   creator: 160,
-  status: 130,
-  assignee: 190,
-  actions: 110,
+  status: 120,
+  assignee: 160,
+  actions: 80,
 };
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
   title: "title",
@@ -1058,6 +1116,8 @@ export default function DepartmentItemsClient({
         tasks: "\u6761\u4efb\u52a1",
         page: "\u7b2c",
         perPage: "\u6bcf\u9875",
+        columns: "\u663e\u793a\u5217",
+        resetColumns: "\u91cd\u7f6e\u5217",
       }
     : {
         createdAt: "Created at",
@@ -1067,6 +1127,8 @@ export default function DepartmentItemsClient({
         tasks: "tasks",
         page: "Page",
         perPage: "Per page",
+        columns: "Columns",
+        resetColumns: "Reset columns",
       };
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
@@ -1115,9 +1177,13 @@ export default function DepartmentItemsClient({
   );
   const [taskVisibleColumnIds, setTaskVisibleColumnIds] = useState<TaskColumnId[]>(TASK_DEFAULT_COLUMN_IDS);
   const [taskColumnWidths, setTaskColumnWidths] = useState<Record<TaskColumnId, number>>(TASK_DEFAULT_COLUMN_WIDTHS);
+  const taskConfigurableColumns = useMemo(
+    () => taskColumnDefinitions.filter((column) => column.id !== "actions"),
+    [taskColumnDefinitions]
+  );
   const taskColumns = useMemo(
-    () =>
-      taskVisibleColumnIds
+    () => {
+      const visibleColumns = taskVisibleColumnIds
         .map((columnId) => {
           const column = taskColumnsById.get(columnId);
           if (!column) return null;
@@ -1126,7 +1192,12 @@ export default function DepartmentItemsClient({
             width: taskColumnWidths[columnId] ?? column.width,
           };
         })
-        .filter((column): column is TaskColumnConfig => Boolean(column)),
+        .filter((column): column is TaskColumnConfig => Boolean(column));
+      const actionsColumn = taskColumnsById.get("actions");
+      return actionsColumn
+        ? [...visibleColumns, { ...actionsColumn, width: taskColumnWidths.actions ?? actionsColumn.width }]
+        : visibleColumns;
+    },
     [taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
   );
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
@@ -1134,7 +1205,6 @@ export default function DepartmentItemsClient({
   const [pinnedNoteOverrides, setPinnedNoteOverrides] = useState<Record<string, boolean>>({});
   const [noteTitleOverrides, setNoteTitleOverrides] = useState<Record<string, string>>({});
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
-  const [isNoteFullscreen, setIsNoteFullscreen] = useState(false);
   const [selectedNoteIssueId, setSelectedNoteIssueId] = useState<string | null>(null);
   const initialNote = notes.find((note) => !note.deletedAt) || null;
   const savedNoteSnapshotRef = useRef<SavedNoteSnapshot | null>(
@@ -1201,17 +1271,6 @@ export default function DepartmentItemsClient({
     projectId: "",
     assigneeId: currentUserId,
   });
-
-  useEffect(() => {
-    if (!isNoteFullscreen) return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isNoteFullscreen]);
 
   const taskAssigneeChoices = useMemo(() => {
     const currentUser = assigneeOptions.find((assignee) => assignee.id === currentUserId);
@@ -1340,9 +1399,19 @@ export default function DepartmentItemsClient({
   const [taskDragSourceIndex, setTaskDragSourceIndex] = useState<number | null>(null);
   const [taskDragOverIndex, setTaskDragOverIndex] = useState<number | null>(null);
   const [taskDragOverSide, setTaskDragOverSide] = useState<"left" | "right" | null>(null);
-  const taskResizingRef = useRef<{ colIndex: number; startX: number; startWidth: number } | null>(null);
+  const taskResizingRef = useRef<{
+    colIndex: number;
+    nextColIndex: number;
+    startX: number;
+    startWidth: number;
+    nextStartWidth: number;
+  } | null>(null);
 
   const handleTaskColumnDragStart = (event: React.DragEvent, index: number) => {
+    if (taskColumns[index]?.id === "actions") {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.setData("taskColIndex", index.toString());
     event.dataTransfer.effectAllowed = "move";
     setTaskDragSourceIndex(index);
@@ -1350,9 +1419,11 @@ export default function DepartmentItemsClient({
 
   const handleTaskColumnDrop = (event: React.DragEvent, targetIndex: number) => {
     event.preventDefault();
+    if (taskColumns[targetIndex]?.id === "actions") return;
     const sourceIndexStr = event.dataTransfer.getData("taskColIndex");
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
+      if (taskColumns[sourceIndex]?.id === "actions") return;
       if (sourceIndex !== targetIndex) {
         const nextVisibleColumnIds = [...taskVisibleColumnIds];
         const [removed] = nextVisibleColumnIds.splice(sourceIndex, 1);
@@ -1374,6 +1445,7 @@ export default function DepartmentItemsClient({
   };
 
   const handleTaskColumnDragOver = (event: React.DragEvent, index: number) => {
+    if (taskColumns[index]?.id === "actions" || taskColumns[taskDragSourceIndex ?? -1]?.id === "actions") return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1393,19 +1465,34 @@ export default function DepartmentItemsClient({
     event.preventDefault();
     event.stopPropagation();
     const column = taskColumns[colIndex];
+    const nextColumn = taskColumns[colIndex + 1];
+    if (!column || !nextColumn || column.id === "actions" || nextColumn.id === "actions") return;
     const startWidth = column.width || 150;
-    taskResizingRef.current = { colIndex, startX: event.clientX, startWidth };
+    const nextStartWidth = nextColumn.width || 150;
+    const minWidth = 80;
+    taskResizingRef.current = { colIndex, nextColIndex: colIndex + 1, startX: event.clientX, startWidth, nextStartWidth };
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const resizeState = taskResizingRef.current;
       if (!resizeState) return;
 
       const delta = moveEvent.clientX - resizeState.startX;
-      const newWidth = Math.max(80, resizeState.startWidth + delta);
       const resizeColumnId = taskColumns[resizeState.colIndex]?.id;
-      if (!resizeColumnId) return;
+      const nextResizeColumnId = taskColumns[resizeState.nextColIndex]?.id;
+      if (!resizeColumnId || !nextResizeColumnId) return;
 
-      setTaskColumnWidths((current) => ({ ...current, [resizeColumnId]: newWidth }));
+      const boundedDelta = Math.min(
+        resizeState.nextStartWidth - minWidth,
+        Math.max(minWidth - resizeState.startWidth, delta)
+      );
+      const newWidth = resizeState.startWidth + boundedDelta;
+      const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
+
+      setTaskColumnWidths((current) => ({
+        ...current,
+        [resizeColumnId]: newWidth,
+        [nextResizeColumnId]: nextNewWidth,
+      }));
     };
 
     const onMouseUp = () => {
@@ -1416,6 +1503,23 @@ export default function DepartmentItemsClient({
 
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
+  };
+
+  const handleToggleTaskColumnVisibility = (columnId: TaskColumnId) => {
+    if (columnId === "actions") return;
+    setTaskVisibleColumnIds((current) => {
+      if (current.includes(columnId)) {
+        if (current.length === 1) return current;
+        return current.filter((id) => id !== columnId);
+      }
+      const availableOrder = taskConfigurableColumns.map((column) => column.id);
+      return [...current, columnId].sort((left, right) => availableOrder.indexOf(left) - availableOrder.indexOf(right));
+    });
+  };
+
+  const resetTaskColumns = () => {
+    setTaskVisibleColumnIds(TASK_DEFAULT_COLUMN_IDS);
+    setTaskColumnWidths(TASK_DEFAULT_COLUMN_WIDTHS);
   };
   const visibleItems = items.filter((item) => {
     if (activeTab === "tasks") return filteredTaskItems.some((task) => task.id === item.id);
@@ -1495,7 +1599,6 @@ export default function DepartmentItemsClient({
 
   useEffect(() => {
     if (!selectedNoteId) {
-      setIsNoteFullscreen(false);
       setNoteSaveStatus("saved");
     }
   }, [selectedNoteId]);
@@ -1580,7 +1683,7 @@ export default function DepartmentItemsClient({
       startAt: composeDateTime(date, Number(startHour), Number(startMinute)),
       endAt: composeDateTime(date, Number(endHour), Number(endMinute)),
       dueAt: "",
-      scopeType: canCreateDepartmentItem ? "DEPARTMENT" : "PERSONAL",
+      scopeType: "PERSONAL",
       assigneeId: currentUserId,
       scheduleKind: "memo",
       scheduleDate,
@@ -2278,8 +2381,8 @@ export default function DepartmentItemsClient({
           if (sortField) handleTaskSort(sortField);
         }}
         disabled={!sortField}
-        className={`inline-flex items-center gap-1 font-semibold ${
-          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : "cursor-grab text-slate-500"
+        className={`inline-flex items-center gap-1 font-semibold ${column.id === "actions" ? "w-full justify-start" : ""} ${
+          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : column.id === "actions" ? "cursor-default text-slate-500" : "cursor-grab text-slate-500"
         }`}
         draggable={false}
       >
@@ -2292,6 +2395,53 @@ export default function DepartmentItemsClient({
           )
         ) : null}
       </button>
+    );
+  };
+
+  const renderTaskColumnMenu = () => {
+    const visibleCount = taskVisibleColumnIds.length;
+
+    return (
+      <details className="relative">
+        <summary
+          className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-700 transition-colors hover:bg-slate-100"
+          aria-label={taskTableText.columns}
+          title={taskTableText.columns}
+        >
+          <Eye size={16} className="text-slate-500" />
+        </summary>
+        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+          {taskConfigurableColumns.map((column) => {
+            const isChecked = taskVisibleColumnIds.includes(column.id);
+            const isDisabled = isChecked && visibleCount === 1;
+
+            return (
+              <label
+                key={column.id}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  isDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer hover:bg-slate-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  disabled={isDisabled}
+                  onChange={() => handleToggleTaskColumnVisibility(column.id)}
+                  className="h-4 w-4"
+                />
+                <span>{column.label}</span>
+              </label>
+            );
+          })}
+          <button
+            type="button"
+            onClick={resetTaskColumns}
+            className="mt-1 w-full rounded-md border-t border-slate-100 px-2 py-1.5 pt-2 text-left text-sm text-blue-600 hover:bg-blue-50"
+          >
+            {taskTableText.resetColumns}
+          </button>
+        </div>
+      </details>
     );
   };
 
@@ -2369,8 +2519,8 @@ export default function DepartmentItemsClient({
         }
 
         return (
-          <td key={column.id} className="px-4 py-3.5">
-            <div className="flex items-center gap-1">
+          <td key={column.id} className="sticky right-0 z-10 bg-white px-2 py-3.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-slate-50">
+            <div className="flex items-center justify-start gap-0.5">
               {item.canEdit ? (
                 <>
                   <button
@@ -2495,16 +2645,31 @@ export default function DepartmentItemsClient({
     setSelectedScheduleItemId(item.id);
   };
 
-  const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false) => {
+  const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false, maxTitleLines = 1) => {
     const type = getScheduleType(item);
-    const time = scheduleTimeLabel(item, locale, scheduleView === "week" || scheduleView === "month");
+    const time = scheduleView === "week" && !compact
+      ? ""
+      : scheduleTimeLabel(item, locale, scheduleView === "month");
     const title = item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title;
+    const titleStyle = compact
+      ? undefined
+      : {
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical" as const,
+          WebkitLineClamp: maxTitleLines,
+          overflow: "hidden",
+        };
     const content = (
       <>
         {type === "reminder" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
-        <span className="truncate">{time ? `${time} · ${title}` : title}</span>
+        <span className={compact ? "truncate" : "min-w-0 whitespace-normal"} style={titleStyle}>
+          {time ? `${time} · ${title}` : title}
+        </span>
       </>
     );
+    const timedPaddingClass = maxTitleLines >= 6 ? "py-3" : maxTitleLines >= 3 ? "py-2" : "py-1";
+    const timedAlignmentClass = maxTitleLines >= 3 ? "items-center" : "items-start";
+    const chipClassName = `flex min-h-6 w-full min-w-0 gap-1 border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] hover:brightness-95 ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
 
     if (item.link && item.kind === "ISSUE_DUE") {
       return (
@@ -2512,7 +2677,7 @@ export default function DepartmentItemsClient({
           key={`${item.kind}-${item.id}`}
           href={item.link}
           onClick={(event) => event.stopPropagation()}
-          className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${compact ? "" : "h-full"} ${scheduleChipClass(type)}`}
+          className={chipClassName}
         >
           {content}
         </Link>
@@ -2527,7 +2692,7 @@ export default function DepartmentItemsClient({
           event.stopPropagation();
           openScheduleItem(item);
         }}
-        className={`flex min-h-6 w-full min-w-0 items-center gap-1 border-l-2 px-1.5 py-1 text-left text-[11px] font-semibold leading-3 hover:brightness-95 ${compact ? "" : "h-full"} ${scheduleChipClass(type)}`}
+        className={chipClassName}
       >
         {content}
       </button>
@@ -2567,7 +2732,7 @@ export default function DepartmentItemsClient({
     setForm((current) => ({
       ...current,
       scheduleKind: nextKind,
-      scopeType: nextKind === "memo" && !canCreateDepartmentItem ? "PERSONAL" : "DEPARTMENT",
+      scopeType: nextKind === "memo" ? "PERSONAL" : "DEPARTMENT",
       attendeeIds: nextKind === "meeting" ? current.attendeeIds : [],
     }));
   };
@@ -2731,6 +2896,7 @@ export default function DepartmentItemsClient({
                     value={form.startTime}
                     onChange={(value) => setForm((current) => ({ ...current, startTime: value }))}
                     locale={locale}
+                    minuteStep={15}
                     required
                   />
                   <LocalizedTimeInput
@@ -2739,6 +2905,7 @@ export default function DepartmentItemsClient({
                     value={form.endTime}
                     onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
                     locale={locale}
+                    minuteStep={15}
                     required
                   />
                 </div>
@@ -2816,7 +2983,7 @@ export default function DepartmentItemsClient({
 
   const renderScheduleWorkspace = () => (
     <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden border border-[#DFE1E6] bg-white lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 flex-col border-r border-[#DFE1E6] bg-[#FAF9FF] p-4 lg:flex">
+      <aside className="hidden min-h-0 flex-col border-r border-[#DFE1E6] bg-slate-50 p-4 lg:flex">
         <div>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.eventTypes}</h3>
           <div className="space-y-2">
@@ -2882,7 +3049,7 @@ export default function DepartmentItemsClient({
         </div>
 
         {scheduleView === "week" ? (
-          <div className="shrink-0 bg-white">
+          <div className="shrink-0 overflow-y-auto bg-white [scrollbar-gutter:stable]">
             <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6]">
               <div className="border-r border-[#DFE1E6]" />
               {scheduleDays.map((date) => {
@@ -2892,7 +3059,7 @@ export default function DepartmentItemsClient({
                     <div className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">
                       {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
                     </div>
-                    <div className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC]" : "text-[#172B4D]"}`}>
+                    <div className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC] ring-2 ring-[#0052CC]/30" : "text-[#172B4D]"}`}>
                       {date.getDate()}
                     </div>
                   </div>
@@ -2905,14 +3072,14 @@ export default function DepartmentItemsClient({
               </div>
               {scheduleDays.map((date) => {
                 const key = format(date, "yyyy-MM-dd");
-                const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                 const allDayItems = [...(allDayGroupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                 const shownItems = allDayItems.slice(0, 4);
+                const isCurrentDay = isSameDay(date, new Date());
                 return (
                   <div
                     key={`${key}-all-day`}
                     onClick={() => openCreateScheduleModal(date)}
-                    className="min-h-[148px] border-r border-[#DFE1E6] bg-white px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0"
+                    className={`min-h-[148px] border-r border-[#DFE1E6] px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0 ${isCurrentDay ? "bg-[#F4F7FF]" : "bg-white"}`}
                   >
                     <div className="space-y-1">
                       {shownItems.map((item) => renderScheduleChip(item, true))}
@@ -2935,7 +3102,7 @@ export default function DepartmentItemsClient({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-7 border-b border-[#DFE1E6] bg-white">
+          <div className="grid grid-cols-7 overflow-y-auto border-b border-[#DFE1E6] bg-white [scrollbar-gutter:stable]">
             {scheduleDays.slice(0, 7).map((date) => (
               <div key={date.toISOString()} className="border-r border-[#DFE1E6] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-[#172B4D] last:border-r-0">
                 {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
@@ -2945,7 +3112,7 @@ export default function DepartmentItemsClient({
         )}
 
         {scheduleView === "week" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white [scrollbar-gutter:stable]">
             <div
               className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))]"
               style={{ height: (WEEK_END_HOUR - WEEK_START_HOUR) * WEEK_HOUR_HEIGHT + WEEK_GRID_TOP_PADDING, paddingTop: WEEK_GRID_TOP_PADDING }}
@@ -2964,10 +3131,12 @@ export default function DepartmentItemsClient({
               {scheduleDays.map((date) => {
                 const key = format(date, "yyyy-MM-dd");
                 const dayItems = [...(timedGroupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                const timedRenderItems = getWeekTimedRenderItems(dayItems);
+                const isCurrentDay = isSameDay(date, new Date());
                 return (
                   <div
                     key={`${key}-time-grid`}
-                    className="relative border-r border-[#DFE1E6] last:border-r-0"
+                    className={`relative border-r border-[#DFE1E6] last:border-r-0 ${isCurrentDay ? "bg-[#F8FAFF]" : ""}`}
                   >
                     {WEEK_HOURS.slice(0, -1).map((hour) => {
                       const startTime = `${String(hour).padStart(2, "0")}:00`;
@@ -2983,21 +3152,22 @@ export default function DepartmentItemsClient({
                         />
                       );
                     })}
-                    {dayItems.map((item) => {
-                      const layout = getWeekTimedLayout(item);
-                      if (!layout) return null;
+                    {timedRenderItems.map(({ item, layout, laneIndex, laneCount }) => {
+                      const columnWidth = 100 / laneCount;
+                      const horizontalInset = laneCount > 1 ? 2 : WEEK_EVENT_INSET;
+                      const titleLineCount = Math.max(1, Math.floor((layout.height / WEEK_HOUR_HEIGHT) * 3));
                       return (
                         <div
                           key={`${item.kind}-${item.id}`}
                           className="absolute"
                           style={{
-                            left: WEEK_EVENT_INSET,
-                            right: WEEK_EVENT_INSET,
+                            left: `calc(${laneIndex * columnWidth}% + ${horizontalInset}px)`,
+                            width: `calc(${columnWidth}% - ${horizontalInset * 2}px)`,
                             top: layout.top + WEEK_EVENT_INSET,
                             height: Math.max(24, layout.height - WEEK_EVENT_INSET * 2),
                           }}
                         >
-                          {renderScheduleChip(item)}
+                          {renderScheduleChip(item, false, titleLineCount)}
                         </div>
                       );
                     })}
@@ -3007,7 +3177,7 @@ export default function DepartmentItemsClient({
             </div>
           </div>
         ) : scheduleView === "month" ? (
-          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(170px,1fr)] overflow-y-auto bg-white">
+          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(170px,1fr)] overflow-y-auto bg-white [scrollbar-gutter:stable]">
             {scheduleDays.map((date) => {
               const key = format(date, "yyyy-MM-dd");
               const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -3018,9 +3188,9 @@ export default function DepartmentItemsClient({
                 <div
                   key={key}
                   onClick={() => openCreateScheduleModal(date)}
-                  className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] bg-white p-2 text-left hover:bg-[#FAFBFC] ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
+                  className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] p-2 text-left hover:bg-[#FAFBFC] ${isCurrentDay ? "bg-[#F4F7FF] ring-2 ring-inset ring-[#0052CC]/35" : "bg-white"} ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
                 >
-                  <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC]" : ""}`}>
+                  <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC] ring-2 ring-[#0052CC]/30" : ""}`}>
                     {date.getDate()}
                   </div>
                   <div className="min-h-0 w-full space-y-1 overflow-hidden">
@@ -3365,13 +3535,28 @@ export default function DepartmentItemsClient({
                       <Plus size={14} />
                     </button>
                   </div>
-                  {noteFolderFilter === "all" || noteFolderFilter === "pinned" ? (
-                    <div className="mb-2 ml-4 space-y-1">
-                      {uncategorizedNotes.map((note) => (
-                        renderNoteName(note)
-                      ))}
-                    </div>
-                  ) : null}
+                  <div
+                    className={`mb-2 min-h-2 rounded-md px-2 py-1.5 ${noteDropTarget === "root" ? "ring-2 ring-blue-300 ring-inset" : ""}`}
+                    onDragOver={(event) => {
+                      if (!draggedNoteId) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setNoteDropTarget("root");
+                    }}
+                    onDragLeave={() => setNoteDropTarget((current) => current === "root" ? null : current)}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      handleNoteDrop(null);
+                    }}
+                  >
+                    {noteFolderFilter === "all" || noteFolderFilter === "pinned" ? (
+                      <div className="space-y-1">
+                        {uncategorizedNotes.map((note) => (
+                          renderNoteName(note)
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   {visibleNoteFolders.map((folder) => {
                     const folderFilter = isPinnedFilter ? `pinned-folder:${folder.id}` as const : `folder:${folder.id}` as const;
 
@@ -3438,13 +3623,7 @@ export default function DepartmentItemsClient({
         <section className="flex min-h-0 min-w-0 flex-col bg-white">
           {noteError ? <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{noteError}</div> : null}
           {selectedNote ? (
-            <div
-              className={
-                isNoteFullscreen
-                  ? "fixed inset-4 z-50 min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
-                  : "min-h-0 flex-1 overflow-hidden p-0"
-              }
-            >
+            <div className="min-h-0 flex-1 overflow-hidden p-0">
                 <RichTextEditor
                   key={selectedNote.id}
                   ref={noteEditorRef}
@@ -3456,13 +3635,6 @@ export default function DepartmentItemsClient({
                   issueMentionOptions={noteIssueOptions}
                   issueMentionLabel={locale === "zh" ? "插入问题" : "Insert issue"}
                   onIssueLinkClick={(issueId) => setSelectedNoteIssueId(issueId)}
-                  isFullscreen={isNoteFullscreen}
-                  onToggleFullscreen={() => {
-                    if (isNoteFullscreen) void saveSelectedNoteNow();
-                    setIsNoteFullscreen((current) => !current);
-                  }}
-                  fullscreenLabel={t.fullscreen}
-                  exitFullscreenLabel={t.exitFullscreen}
                   toolbarRight={
                     <div className="flex min-w-0 items-center gap-2">
                       {!selectedIsDeleted ? (
@@ -3669,10 +3841,10 @@ export default function DepartmentItemsClient({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">
+          <h2 className="text-xl font-bold tracking-tight text-slate-800">
             {activeTab === "tasks" ? t.tasks : activeTab === "schedule" ? t.schedule : t.notesTab}
           </h2>
         </div>
@@ -3685,7 +3857,7 @@ export default function DepartmentItemsClient({
                   value={noteQuery}
                   onChange={(event) => setNoteQuery(event.target.value)}
                   placeholder={t.searchNotes}
-                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
                 />
                 {noteQuery ? (
                   <button
@@ -3702,7 +3874,7 @@ export default function DepartmentItemsClient({
                 type="button"
                 onClick={openCreateNote}
                 disabled={isPending}
-                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
               >
                 <Plus size={16} />
                 {t.addNote}
@@ -3717,7 +3889,7 @@ export default function DepartmentItemsClient({
                   value={scheduleSearch}
                   onChange={(event) => setScheduleSearch(event.target.value)}
                   placeholder={st.search}
-                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
                 />
                 {scheduleSearch ? (
                   <button
@@ -3733,10 +3905,10 @@ export default function DepartmentItemsClient({
               <button
                 type="button"
                 onClick={() => openCreateScheduleModal()}
-                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B]"
+                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
-                {st.create}
+                {locale === "zh" ? "新建日程" : "New schedule"}
               </button>
             </>
           ) : null}
@@ -3751,7 +3923,7 @@ export default function DepartmentItemsClient({
                     setTaskPage(1);
                   }}
                   placeholder={t.searchTasks}
-                  className="h-10 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
                 />
                 {taskQuery ? (
                   <button
@@ -3770,7 +3942,7 @@ export default function DepartmentItemsClient({
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="inline-flex h-10 items-center gap-2 rounded bg-[#0052CC] px-4 text-sm font-semibold text-white hover:bg-[#003D9B]"
+                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {t.addTask}
@@ -3783,7 +3955,7 @@ export default function DepartmentItemsClient({
       {error ? <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{error}</div> : null}
 
       {activeTab === "tasks" ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {taskFilters.map((filter) => (
             <button
               key={filter.id}
@@ -3801,6 +3973,7 @@ export default function DepartmentItemsClient({
               {filter.label}
             </button>
           ))}
+          {renderTaskColumnMenu()}
         </div>
       ) : null}
 
@@ -3825,11 +3998,13 @@ export default function DepartmentItemsClient({
                       return (
                         <th
                           key={column.id}
-                          className={`px-5 py-4 cursor-grab active:cursor-grabbing hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                          className={`relative select-none overflow-hidden py-3 transition-colors ${
+                            column.id === "actions" ? "sticky right-0 z-20 bg-slate-50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-grab px-5 hover:bg-slate-100 active:cursor-grabbing"
+                          } ${
                             isDragging ? "opacity-40" : ""
-                          } ${column.id === "actions" ? "px-4" : ""}`}
+                          }`}
                           style={{ width: `${column.width}px` }}
-                          draggable
+                          draggable={column.id !== "actions"}
                           onDragStart={(event) => handleTaskColumnDragStart(event, index)}
                           onDragOver={(event) => handleTaskColumnDragOver(event, index)}
                           onDrop={(event) => handleTaskColumnDrop(event, index)}
@@ -3847,11 +4022,13 @@ export default function DepartmentItemsClient({
 
                           {showRightLine ? <div className="absolute right-0 top-0 bottom-0 z-10 w-0.5 bg-blue-500" /> : null}
 
-                          <div
-                            className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
-                            onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
-                            draggable={false}
-                          />
+                          {column.id !== "actions" && taskColumns[index + 1]?.id !== "actions" ? (
+                            <div
+                              className="absolute bottom-0 right-0 top-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                              onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
+                              draggable={false}
+                            />
+                          ) : null}
                         </th>
                       );
                     })}

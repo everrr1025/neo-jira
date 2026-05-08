@@ -564,7 +564,7 @@ export default function DepartmentManageClient({
                   setNewProject({ name: "", key: "", description: "" });
                   setIsCreateProjectOpen(true);
                 }}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {t.createProject}
