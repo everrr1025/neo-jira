@@ -12,7 +12,8 @@ type MentionNotificationParams = {
 type NotificationPayload = {
   type: string;
   message: string;
-  issueId: string;
+  issueId?: string;
+  link?: string;
   actorId: string;
 };
 
@@ -86,7 +87,28 @@ async function createNotifications(
   const notificationPayload = Array.from(new Set(userIds)).map((userId) => ({
     type,
     message,
-    link: `/issues/${issueId}`,
+    link: issueId ? `/issues/${issueId}` : null,
+    userId,
+    actorId,
+  }));
+
+  if (notificationPayload.length === 0) {
+    return;
+  }
+
+  await prisma.notification.createMany({
+    data: notificationPayload,
+  });
+}
+
+async function createLinkNotifications(
+  userIds: Iterable<string>,
+  { type, message, link, actorId }: NotificationPayload
+) {
+  const notificationPayload = Array.from(new Set(userIds)).map((userId) => ({
+    type,
+    message,
+    link: link || null,
     userId,
     actorId,
   }));
@@ -208,6 +230,28 @@ export async function notifyAssignedUser({
     type: "ASSIGNMENT",
     message: `assigned you to ${issueKey}`,
     issueId,
+    actorId,
+  });
+}
+
+export async function notifyMeetingAttendees({
+  actorId,
+  attendeeIds,
+  title,
+  departmentId,
+  locale = "zh",
+}: {
+  actorId: string;
+  attendeeIds: string[];
+  title: string;
+  departmentId: string;
+  locale?: "en" | "zh";
+}) {
+  const targetIds = attendeeIds.filter((userId) => userId !== actorId);
+  await createLinkNotifications(targetIds, {
+    type: "MEETING",
+    message: locale === "zh" ? `邀请你参加会议：${title}` : `invited you to meeting: ${title}`,
+    link: `/departments/${departmentId}/items?tab=schedule`,
     actorId,
   });
 }

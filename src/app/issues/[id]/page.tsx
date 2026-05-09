@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import IssueDetailClient from "@/components/IssueDetailClient";
 import BackButton from "@/components/BackButton";
 import { getActiveProjectForUser } from "@/lib/activeProject";
-import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
+import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere, buildVisibleProjectsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { getTranslations } from "@/lib/i18n";
 import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
@@ -24,12 +24,24 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const userRole = sessionUser.role as string;
   const isGlobalAdmin = userRole === "ADMIN";
 
-  const activeProject = await getActiveProjectForUser(userId, userRole);
-  if (!activeProject) redirect("/projects");
-
   const resolvedParams = await params;
+  const issueProject = await prisma.issue.findFirst({
+    where: {
+      id: resolvedParams.id,
+      ...(isGlobalAdmin ? {} : { project: buildVisibleProjectsWhere(userId, userRole) }),
+    },
+    select: { id: true, projectId: true },
+  });
+
+  if (!issueProject) return notFound();
+
+  const activeProject = await getActiveProjectForUser(userId, userRole);
+  if (activeProject?.id !== issueProject.projectId) {
+    redirect(`/projects/select?projectId=${issueProject.projectId}&redirectTo=${encodeURIComponent(`/issues/${resolvedParams.id}`)}`);
+  }
+
   const issue = await prisma.issue.findFirst({
-    where: buildProjectEntityWhere(resolvedParams.id, activeProject.id),
+    where: buildProjectEntityWhere(resolvedParams.id, issueProject.projectId),
     include: {
       assignee: true,
       reporter: {

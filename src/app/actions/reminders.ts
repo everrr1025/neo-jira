@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import prisma from "@/lib/prisma";
+import { notifyMeetingAttendees } from "@/lib/notifications";
 import { getRequiredSession, getProjectRole } from "@/lib/permissions";
 
 type SessionUser = {
@@ -12,6 +13,7 @@ type SessionUser = {
 
 type ReminderScopeType = "PERSONAL" | "DEPARTMENT" | "PROJECT";
 type ReminderItemType = "NOTE" | "TODO" | "EVENT" | "REMINDER";
+type ReminderAttendanceStatus = "PENDING" | "CONFIRMED" | "DECLINED" | "TENTATIVE";
 
 function getSessionUser(session: unknown) {
   const user = (session as { user?: SessionUser }).user;
@@ -35,6 +37,10 @@ function isValidPriority(value: string) {
 
 function isValidItemType(value: string): value is ReminderItemType {
   return ["NOTE", "TODO", "EVENT", "REMINDER"].includes(value);
+}
+
+function isValidAttendanceStatus(value: string): value is ReminderAttendanceStatus {
+  return ["PENDING", "CONFIRMED", "DECLINED", "TENTATIVE"].includes(value);
 }
 
 async function getDepartmentMembership(userId: string, departmentId: string) {
@@ -113,6 +119,13 @@ async function canReplyToReminder(
 ) {
   if (!reminder) return false;
   if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
+  if (reminder.itemType === "EVENT") {
+    const attendee = await prisma.reminderAttendee.findUnique({
+      where: { reminderId_userId: { reminderId: reminder.id, userId } },
+      select: { id: true },
+    });
+    if (attendee) return true;
+  }
   return canManageReminder(reminder, userId, userRole);
 }
 
@@ -148,6 +161,42 @@ async function assertReminderAssignee({
   }
 }
 
+async function assertDepartmentAttendees(attendeeIds: string[], departmentId: string) {
+  if (attendeeIds.length === 0) return;
+  const members = await prisma.departmentMember.findMany({
+    where: { departmentId, userId: { in: attendeeIds } },
+    select: { userId: true },
+  });
+  const memberIds = new Set(members.map((member) => member.userId));
+  const missingAttendee = attendeeIds.find((id) => !memberIds.has(id));
+  if (missingAttendee) throw new Error("Attendees must belong to this department");
+}
+
+async function syncReminderAttendees(reminderId: string, attendeeIds: string[], creatorId: string) {
+  const nextAttendeeIds = Array.from(new Set(attendeeIds.filter(Boolean)));
+  await prisma.reminderAttendee.deleteMany({
+    where: {
+      reminderId,
+      userId: { notIn: nextAttendeeIds.length > 0 ? nextAttendeeIds : ["__none__"] },
+    },
+  });
+
+  await Promise.all(
+    nextAttendeeIds.map((userId) =>
+      prisma.reminderAttendee.upsert({
+        where: { reminderId_userId: { reminderId, userId } },
+        update: {},
+        create: {
+          reminderId,
+          userId,
+          status: userId === creatorId ? "CONFIRMED" : "PENDING",
+          respondedAt: userId === creatorId ? new Date() : null,
+        },
+      }),
+    ),
+  );
+}
+
 export async function createReminder(data: {
   departmentId: string;
   title: string;
@@ -162,6 +211,7 @@ export async function createReminder(data: {
   issueId?: string;
   assigneeId?: string;
   dueAt?: string;
+  attendeeIds?: string[];
 }) {
   try {
     const session = await getRequiredSession();
@@ -197,7 +247,7 @@ export async function createReminder(data: {
     let issueId: string | null = null;
     let assigneeId: string | null = null;
 
-    if (scopeType === "DEPARTMENT") {
+    if (scopeType === "DEPARTMENT" && itemType !== "EVENT") {
       const canManage = await canManageDepartmentReminder(currentUser.id, currentUser.role, departmentId);
       if (!canManage) return { success: false, error: "Department reminder permission required" };
     }
@@ -250,6 +300,11 @@ export async function createReminder(data: {
       assigneeId = requestedAssigneeId;
     }
 
+    const attendeeIds = Array.from(new Set((data.attendeeIds || []).map((id) => id.trim()).filter(Boolean)));
+    if (itemType === "EVENT" && attendeeIds.length > 0) {
+      await assertDepartmentAttendees(attendeeIds, departmentId);
+    }
+
     const reminder = await prisma.reminder.create({
       data: {
         title,
@@ -269,6 +324,16 @@ export async function createReminder(data: {
         assigneeId: assigneeId || (itemType === "TODO" || scopeType === "PERSONAL" ? currentUser.id : null),
       },
     });
+
+    if (itemType === "EVENT" && attendeeIds.length > 0) {
+      await syncReminderAttendees(reminder.id, attendeeIds, currentUser.id);
+      await notifyMeetingAttendees({
+        actorId: currentUser.id,
+        attendeeIds,
+        title,
+        departmentId,
+      });
+    }
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/items`);
@@ -477,6 +542,7 @@ export async function deleteReminderItem(reminderId: string) {
     }
 
     await prisma.$transaction([
+      prisma.reminderAttendee.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminderComment.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminder.delete({ where: { id: reminder.id } }),
     ]);
@@ -504,6 +570,7 @@ export async function updateReminderItem(
     endAt?: string;
     itemType?: ReminderItemType;
     scopeType?: ReminderScopeType;
+    attendeeIds?: string[];
   },
 ) {
   try {
@@ -516,6 +583,10 @@ export async function updateReminderItem(
       select: {
         id: true,
         itemType: true,
+        title: true,
+        content: true,
+        startAt: true,
+        endAt: true,
         creatorId: true,
         departmentId: true,
         scopeType: true,
@@ -535,6 +606,7 @@ export async function updateReminderItem(
     const itemType = isValidItemType(data.itemType || "") ? data.itemType! : reminder.itemType;
     const startAt = data.startAt ? parseLocalDateTime(data.startAt) : null;
     const endAt = data.endAt ? parseLocalDateTime(data.endAt) : null;
+    const content = data.content?.trim() || null;
     if (!startAt) return { success: false, error: "Item time is required" };
     if (endAt && endAt < startAt) return { success: false, error: "End time must be after start time" };
 
@@ -543,11 +615,17 @@ export async function updateReminderItem(
       return { success: false, error: "Invalid reminder scope" };
     }
 
+    const attendeeIds = Array.from(new Set((data.attendeeIds || []).map((id) => id.trim()).filter(Boolean)));
+    if (itemType === "EVENT" && attendeeIds.length > 0) {
+      if (!reminder.departmentId) return { success: false, error: "Department access required" };
+      await assertDepartmentAttendees(attendeeIds, reminder.departmentId);
+    }
+
     const updated = await prisma.reminder.update({
       where: { id: reminder.id },
       data: {
         title,
-        content: data.content?.trim() || null,
+        content,
         startAt,
         endAt,
         itemType,
@@ -556,6 +634,23 @@ export async function updateReminderItem(
       },
       select: { departmentId: true },
     });
+
+    if (itemType === "EVENT" && attendeeIds.length > 0) {
+      await syncReminderAttendees(reminder.id, attendeeIds, reminder.creatorId);
+      const coreChanged =
+        title !== reminder.title ||
+        content !== (reminder.content || null) ||
+        startAt.getTime() !== reminder.startAt.getTime() ||
+        (endAt?.getTime() || null) !== (reminder.endAt?.getTime() || null);
+      if (coreChanged) {
+        await prisma.reminderAttendee.updateMany({
+          where: { reminderId: reminder.id, userId: { not: reminder.creatorId } },
+          data: { status: "PENDING", note: null, respondedAt: null },
+        });
+      }
+    } else if (itemType !== "EVENT" || data.attendeeIds !== undefined) {
+      await prisma.reminderAttendee.deleteMany({ where: { reminderId: reminder.id } });
+    }
 
     if (updated.departmentId) {
       revalidatePath(`/departments/${updated.departmentId}`);
@@ -568,6 +663,70 @@ export async function updateReminderItem(
   } catch (error) {
     console.error("Failed to update item:", error);
     return { success: false, error: error instanceof Error ? error.message : "Failed to update item" };
+  }
+}
+
+export async function updateMeetingAttendance(
+  reminderId: string,
+  status: ReminderAttendanceStatus,
+  note?: string,
+) {
+  try {
+    const session = await getRequiredSession();
+    const currentUser = getSessionUser(session);
+    if (!currentUser.id) return { success: false, error: "Unauthorized" };
+    if (!isValidAttendanceStatus(status)) return { success: false, error: "Invalid attendance status" };
+
+    const reminder = await prisma.reminder.findUnique({
+      where: { id: reminderId },
+      select: {
+        id: true,
+        itemType: true,
+        title: true,
+        departmentId: true,
+        attendees: {
+          where: { userId: currentUser.id },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!reminder || reminder.itemType !== "EVENT") return { success: false, error: "Meeting not found" };
+    const attendee = reminder.attendees[0];
+    if (!attendee) return { success: false, error: "Only invited attendees can confirm this meeting" };
+
+    const trimmedNote = note?.trim() || "";
+    await prisma.$transaction([
+      prisma.reminderAttendee.update({
+        where: { id: attendee.id },
+        data: {
+          status,
+          note: trimmedNote || null,
+          respondedAt: status === "PENDING" ? null : new Date(),
+        },
+      }),
+      ...(trimmedNote
+        ? [
+            prisma.reminderComment.create({
+              data: {
+                reminderId: reminder.id,
+                authorId: currentUser.id,
+                content: trimmedNote,
+              },
+            }),
+          ]
+        : []),
+    ]);
+
+    if (reminder.departmentId) {
+      revalidatePath(`/departments/${reminder.departmentId}`);
+      revalidatePath(`/departments/${reminder.departmentId}/items`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to update meeting attendance:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update meeting attendance" };
   }
 }
 

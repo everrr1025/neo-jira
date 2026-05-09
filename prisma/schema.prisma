@@ -27,6 +27,7 @@ model User {
   watchedIssues      Issue[]           @relation("IssueWatchers")
   createdReminders   Reminder[]        @relation("ReminderCreator")
   assignedReminders  Reminder[]        @relation("ReminderAssignee")
+  reminderAttendances ReminderAttendee[]
   reminderComments   ReminderComment[]
   noteFolders        NoteFolder[]
   notes              Note[]            @relation("NoteAuthor")
@@ -389,6 +390,7 @@ model Reminder {
   assigneeId String?
   assignee   User?   @relation("ReminderAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
+  attendees   ReminderAttendee[]
   comments    ReminderComment[]
   notes       Note[]
   completedAt DateTime?
@@ -400,6 +402,23 @@ model Reminder {
   @@index([departmentId, startAt])
   @@index([projectId, startAt])
   @@index([issueId])
+}
+
+model ReminderAttendee {
+  id          String    @id @default(cuid())
+  reminderId  String
+  reminder    Reminder  @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String    @default("PENDING")
+  note        String?
+  respondedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([reminderId, userId])
+  @@index([userId, status])
+  @@index([reminderId, status])
 }
 
 model ReminderComment {

@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     return redirectTo("/login");
   }
   const projectId = request.nextUrl.searchParams.get("projectId");
-  const redirectPath = resolveRedirectPath(request.nextUrl.searchParams.get("redirectTo"), "/projects");
+  const redirectPath = resolveRedirectPath(request.nextUrl.searchParams.get("redirectTo"), "/");
 
   if (!projectId) {
     return redirectTo("/projects");
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
   });
   hasAccess = !!project;
 
-  const response = redirectTo(hasAccess ? "/" : redirectPath);
+  const response = redirectTo(hasAccess ? redirectPath : "/projects");
   if (hasAccess) {
     response.cookies.set(ACTIVE_PROJECT_COOKIE, projectId, {
       path: "/",

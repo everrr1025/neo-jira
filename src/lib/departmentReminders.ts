@@ -108,6 +108,15 @@ export type DepartmentUpcomingItem = {
     authorName: string | null;
     authorEmail: string;
   }>;
+  attendees: Array<{
+    id: string;
+    userId: string;
+    userName: string | null;
+    userEmail: string;
+    status: string;
+    note: string | null;
+    respondedAt: string | null;
+  }>;
 };
 
 export type DepartmentItemCenterItem = DepartmentUpcomingItem & {
@@ -325,6 +334,12 @@ export async function getDepartmentUpcomingItems({
         creator: {
           select: { name: true, email: true },
         },
+        attendees: {
+          include: {
+            user: { select: { name: true, email: true } },
+          },
+          orderBy: [{ createdAt: "asc" }],
+        },
       },
       orderBy: [{ remindAt: "asc" }, { startAt: "asc" }, { priority: "desc" }],
       take: 40,
@@ -392,6 +407,15 @@ export async function getDepartmentUpcomingItems({
       isOverdue: reminder.itemType === "TODO" ? Boolean(reminder.remindAt && reminder.remindAt < today) : reminder.startAt < today,
       isImportant: reminder.isImportant,
       comments: [],
+      attendees: reminder.attendees.map((attendee) => ({
+        id: attendee.id,
+        userId: attendee.userId,
+        userName: attendee.user.name,
+        userEmail: attendee.user.email,
+        status: attendee.status,
+        note: attendee.note,
+        respondedAt: attendee.respondedAt?.toISOString() || null,
+      })),
     };
   });
 
@@ -427,6 +451,7 @@ export async function getDepartmentUpcomingItems({
       isOverdue: issue.dueDate! < today,
       isImportant: issue.priority === "HIGH" || issue.priority === "URGENT",
       comments: [],
+      attendees: [],
     }));
 
   const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -489,6 +514,12 @@ export async function getDepartmentItemCenterItems({
           },
           orderBy: { createdAt: "asc" },
           take: 50,
+        },
+        attendees: {
+          include: {
+            user: { select: { name: true, email: true } },
+          },
+          orderBy: [{ createdAt: "asc" }],
         },
       },
       orderBy: [{ updatedAt: "desc" }],
@@ -574,6 +605,15 @@ export async function getDepartmentItemCenterItems({
         authorName: comment.author.name,
         authorEmail: comment.author.email,
       })),
+      attendees: reminder.attendees.map((attendee) => ({
+        id: attendee.id,
+        userId: attendee.userId,
+        userName: attendee.user.name,
+        userEmail: attendee.user.email,
+        status: attendee.status,
+        note: attendee.note,
+        respondedAt: attendee.respondedAt?.toISOString() || null,
+      })),
       completedAt: reminder.completedAt?.toISOString() || null,
       createdAt: reminder.createdAt.toISOString(),
     } satisfies DepartmentItemCenterItem;
@@ -611,6 +651,7 @@ export async function getDepartmentItemCenterItems({
       isOverdue: issue.dueDate! < today,
       isImportant: issue.priority === "HIGH" || issue.priority === "URGENT",
       comments: [],
+      attendees: [],
       completedAt: null,
       createdAt: issue.dueDate!.toISOString(),
     } satisfies DepartmentItemCenterItem));

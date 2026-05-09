@@ -38,10 +38,11 @@ import {
   Star,
   StickyNote,
   Trash2,
+  UserCheck,
   X,
 } from "lucide-react";
 
-import { addReminderComment, createReminder, deleteReminderItem, deleteReminderTask, setReminderCompleted, updateReminderItem, updateReminderTask } from "@/app/actions/reminders";
+import { addReminderComment, createReminder, deleteReminderItem, deleteReminderTask, setReminderCompleted, updateMeetingAttendance, updateReminderItem, updateReminderTask } from "@/app/actions/reminders";
 import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
 import { DropdownField } from "@/components/DropdownField";
 import LocalizedDateInput from "@/components/LocalizedDateInput";
@@ -299,6 +300,20 @@ const SCHEDULE_TEXT = {
     deleteSchedule: "Delete",
     deleteScheduleConfirm: "Delete this schedule item?",
     deleteMeetingConfirm: "Delete this meeting? Invited participants will no longer see it in the department calendar.",
+    attendance: "Attendance",
+    attendanceSummary: "Confirmed",
+    confirmAttendance: "Confirm",
+    declineAttendance: "Decline",
+    tentativeAttendance: "Tentative",
+    pendingAttendance: "Pending",
+    confirmedAttendance: "Confirmed",
+    declinedAttendance: "Declined",
+    attendanceUpdated: "Response saved",
+    allSchedule: "All schedule",
+    myMeetings: "My meetings",
+    pendingMeetings: "Pending",
+    meetingCommentPlaceholder: "Please leave a message",
+    sendMessage: "Send",
     visibleSummary: "Visible",
     todaySummary: "Today",
     meeting: "Meeting",
@@ -350,6 +365,20 @@ const SCHEDULE_TEXT = {
     deleteSchedule: "删除",
     deleteScheduleConfirm: "确定删除这个日程吗？",
     deleteMeetingConfirm: "确定删除这个会议吗？已邀请的参会者将不再在部门日历中看到它。",
+    attendance: "参会确认",
+    attendanceSummary: "已确认",
+    confirmAttendance: "确认参加",
+    declineAttendance: "无法参加",
+    tentativeAttendance: "暂不确定",
+    pendingAttendance: "待确认",
+    confirmedAttendance: "已确认",
+    declinedAttendance: "无法参加",
+    attendanceUpdated: "已保存确认状态",
+    allSchedule: "全部日程",
+    myMeetings: "我的会议",
+    pendingMeetings: "待确认",
+    meetingCommentPlaceholder: "请留言",
+    sendMessage: "发送",
     visibleSummary: "当前显示",
     todaySummary: "今天",
     meeting: "会议",
@@ -477,6 +506,21 @@ function scheduleBadgeClass(type: ScheduleType) {
   if (type === "out") return "border border-slate-200 bg-slate-100 text-slate-700";
   if (type === "memo") return "border border-amber-200 bg-amber-50 text-amber-800";
   return "border border-blue-200 bg-[#E9F2FF] text-[#0052CC]";
+}
+
+function attendanceStatusLabel(status: string, locale: Locale) {
+  const st = SCHEDULE_TEXT[locale];
+  if (status === "CONFIRMED") return st.confirmedAttendance;
+  if (status === "DECLINED") return st.declinedAttendance;
+  if (status === "TENTATIVE") return st.tentativeAttendance;
+  return st.pendingAttendance;
+}
+
+function attendanceStatusClass(status: string) {
+  if (status === "CONFIRMED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "DECLINED") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "TENTATIVE") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
 function scheduleTimeLabel(item: DepartmentItemCenterItem, locale: Locale, includeEnd = false) {
@@ -946,6 +990,7 @@ type ItemTab = "tasks" | "schedule" | "notes";
 type ScheduleView = "week" | "month";
 type ScheduleType = "meeting" | "out" | "reminder" | "memo";
 type ScheduleCreateKind = "meeting" | "out" | "memo";
+type AttendanceStatus = "PENDING" | "CONFIRMED" | "DECLINED" | "TENTATIVE";
 type NoteFolderFilter = "all" | "pinned" | "trash" | `folder:${string}` | `pinned-folder:${string}`;
 type NoteSaveStatus = "saved" | "pending" | "saving" | "error";
 type SavedNoteSnapshot = {
@@ -958,7 +1003,7 @@ const WEEK_START_HOUR = 7;
 const WEEK_END_HOUR = 22;
 const WEEK_HOUR_HEIGHT = 64;
 const WEEK_GRID_TOP_PADDING = 18;
-const WEEK_EVENT_INSET = 4;
+const WEEK_EVENT_INSET = 2;
 const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
 const TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const TASK_STATUS_SORT_ORDER: Record<string, number> = {
@@ -1238,6 +1283,8 @@ export default function DepartmentItemsClient({
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [replyContent, setReplyContent] = useState("");
+  const [scheduleReplyContent, setScheduleReplyContent] = useState("");
+  const [activeAttendeeMatchIndex, setActiveAttendeeMatchIndex] = useState(0);
   const [isPending, startTransition] = useTransition();
   const [form, setForm] = useState({
     title: "",
@@ -1532,6 +1579,11 @@ export default function DepartmentItemsClient({
     .filter((item) => {
       const type = getScheduleType(item);
       if (!visibleScheduleTypes[type]) return false;
+      if (type === "meeting") {
+        const isParticipant = item.attendees.some((attendee) => attendee.userId === currentUserId);
+        const isCreator = item.creatorId === currentUserId;
+        if (!isParticipant && !isCreator) return false;
+      }
       const query = scheduleSearch.trim().toLowerCase();
       if (!query) return true;
       return [
@@ -1603,7 +1655,21 @@ export default function DepartmentItemsClient({
     }
   }, [selectedNoteId]);
 
+  useEffect(() => {
+    setScheduleReplyContent("");
+  }, [selectedScheduleItemId]);
+
+  useEffect(() => {
+    setActiveAttendeeMatchIndex(0);
+  }, [form.attendeeQuery]);
+
   const calendarItems = scheduleItems.filter((item) => item.itemType !== "NOTE");
+  const pendingMeetingCount = items.filter((item) => {
+    if (getScheduleType(item) !== "meeting") return false;
+    return item.attendees.some((attendee) =>
+      attendee.userId === currentUserId && (attendee.status === "PENDING" || attendee.status === "TENTATIVE")
+    );
+  }).length;
   const groupedByDay = calendarItems.reduce((acc, item) => {
     const key = dayKey(item.date);
     acc[key] = [...(acc[key] || []), item];
@@ -1622,10 +1688,6 @@ export default function DepartmentItemsClient({
     return acc;
   }, {} as Record<string, DepartmentItemCenterItem[]>);
   const todayScheduleCount = calendarItems.filter((item) => isSameDay(new Date(item.date), new Date())).length;
-  const visibleScheduleTypeCounts = (["meeting", "out", "reminder", "memo"] as ScheduleType[]).reduce((acc, type) => {
-    acc[type] = calendarItems.filter((item) => getScheduleType(item) === type).length;
-    return acc;
-  }, {} as Record<ScheduleType, number>);
   const scheduleOverflowItems = scheduleOverflowDate
     ? [...(groupedByDay[scheduleOverflowDate] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     : [];
@@ -1705,15 +1767,18 @@ export default function DepartmentItemsClient({
     if (item.kind !== "REMINDER" || !item.canEdit) return;
     const scheduleKind = getScheduleType(item) === "memo" ? "memo" : getScheduleType(item) === "out" ? "out" : "meeting";
     const details = parseScheduleDetails(item.content);
-    const attendeeIds = details.participantNames
-      .map((name) => {
-        const normalizedName = name.toLowerCase();
-        return assigneeOptions.find((assignee) =>
-          assignee.name.toLowerCase() === normalizedName ||
-          assignee.email.toLowerCase() === normalizedName
-        )?.id;
-      })
-      .filter((id): id is string => Boolean(id));
+    const attendeeIds = item.attendees.length > 0
+      ? item.attendees
+          .map((attendee) => attendee.userId)
+      : details.participantNames
+          .map((name) => {
+            const normalizedName = name.toLowerCase();
+            return assigneeOptions.find((assignee) =>
+              assignee.name.toLowerCase() === normalizedName ||
+              assignee.email.toLowerCase() === normalizedName
+            )?.id;
+          })
+          .filter((id): id is string => Boolean(id));
     setEditingScheduleItemId(item.id);
     resetForm({
       title: item.title,
@@ -1771,6 +1836,7 @@ export default function DepartmentItemsClient({
               startAt: scheduleStartAt,
               endAt: scheduleEndAt,
               scopeType: scheduleScopeType,
+              attendeeIds: form.scheduleKind === "meeting" ? form.attendeeIds : [],
             })
           : await createReminder({
               departmentId,
@@ -1786,6 +1852,7 @@ export default function DepartmentItemsClient({
               projectId: isScheduleCreate ? undefined : form.scopeType === "PROJECT" ? form.projectId : undefined,
               issueId: form.issueId || undefined,
               assigneeId: form.assigneeId || undefined,
+              attendeeIds: isScheduleCreate && form.scheduleKind === "meeting" ? form.attendeeIds : undefined,
             });
 
       if (!result.success) {
@@ -1954,6 +2021,34 @@ export default function DepartmentItemsClient({
         return;
       }
       setSelectedScheduleItemId(null);
+      router.refresh();
+    });
+  };
+
+  const handleMeetingAttendance = (status: AttendanceStatus) => {
+    if (!selectedScheduleItem || !selectedScheduleCanRespond) return;
+    setDetailError("");
+    startTransition(async () => {
+      const result = await updateMeetingAttendance(selectedScheduleItem.id, status, scheduleReplyContent);
+      if (!result.success) {
+        setDetailError(result.error || "Failed");
+        return;
+      }
+      setScheduleReplyContent("");
+      router.refresh();
+    });
+  };
+
+  const handleSaveScheduleReply = () => {
+    if (!selectedScheduleItem || !scheduleReplyContent.trim()) return;
+    setDetailError("");
+    startTransition(async () => {
+      const result = await addReminderComment(selectedScheduleItem.id, scheduleReplyContent);
+      if (!result.success) {
+        setDetailError(result.error || "Failed");
+        return;
+      }
+      setScheduleReplyContent("");
       router.refresh();
     });
   };
@@ -2616,8 +2711,16 @@ export default function DepartmentItemsClient({
     ? endOfWeek(scheduleCursor, { weekStartsOn: 1 })
     : endOfWeek(endOfMonth(scheduleCursor), { weekStartsOn: 1 });
   const scheduleDays = eachDayOfInterval({ start: scheduleRangeStart, end: scheduleRangeEnd });
+  const weekTitleStartOptions: Intl.DateTimeFormatOptions =
+    scheduleRangeStart.getFullYear() === scheduleRangeEnd.getFullYear()
+      ? { month: "short", day: "numeric", year: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" };
+  const weekTitleEndOptions: Intl.DateTimeFormatOptions =
+    scheduleRangeStart.getFullYear() === scheduleRangeEnd.getFullYear()
+      ? { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" };
   const scheduleTitle = scheduleView === "week"
-    ? `${scheduleRangeStart.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" })} - ${scheduleRangeEnd.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    ? `${scheduleRangeStart.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", weekTitleStartOptions)} - ${scheduleRangeEnd.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", weekTitleEndOptions)}`
     : scheduleCursor.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "long", year: "numeric" });
   const scheduleTypes: Array<{ id: ScheduleType; label: string }> = [
     { id: "meeting", label: st.meetings },
@@ -2647,6 +2750,8 @@ export default function DepartmentItemsClient({
 
   const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false, maxTitleLines = 1) => {
     const type = getScheduleType(item);
+    const myAttendance = type === "meeting" ? item.attendees.find((attendee) => attendee.userId === currentUserId) : null;
+    const needsConfirmation = myAttendance?.status === "PENDING" || myAttendance?.status === "TENTATIVE";
     const time = scheduleView === "week" && !compact
       ? ""
       : scheduleTimeLabel(item, locale, scheduleView === "month");
@@ -2662,14 +2767,16 @@ export default function DepartmentItemsClient({
     const content = (
       <>
         {type === "reminder" ? <Bell size={compact ? 10 : 12} className="shrink-0" /> : null}
+        {needsConfirmation ? <UserCheck size={compact ? 10 : 12} className="shrink-0" /> : null}
         <span className={compact ? "truncate" : "min-w-0 whitespace-normal"} style={titleStyle}>
           {time ? `${time} · ${title}` : title}
         </span>
+        {needsConfirmation ? <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#DE350B] ring-1 ring-white" /> : null}
       </>
     );
     const timedPaddingClass = maxTitleLines >= 6 ? "py-3" : maxTitleLines >= 3 ? "py-2" : "py-1";
     const timedAlignmentClass = maxTitleLines >= 3 ? "items-center" : "items-start";
-    const chipClassName = `flex min-h-6 w-full min-w-0 gap-1 border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] hover:brightness-95 ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
+    const chipClassName = `relative flex min-h-6 w-full min-w-0 gap-1 border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] hover:brightness-95 ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
 
     if (item.link && item.kind === "ISSUE_DUE") {
       return (
@@ -2721,6 +2828,30 @@ export default function DepartmentItemsClient({
     setForm((current) => ({ ...current, attendeeIds: current.attendeeIds.filter((id) => id !== assigneeId) }));
   };
 
+  const handleAttendeeInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!form.attendeeQuery.trim() || attendeeMatches.length === 0) {
+      if (event.key === "Enter") event.preventDefault();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveAttendeeMatchIndex((current) => (current + 1) % attendeeMatches.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveAttendeeMatchIndex((current) => (current - 1 + attendeeMatches.length) % attendeeMatches.length);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addAttendee(attendeeMatches[Math.min(activeAttendeeMatchIndex, attendeeMatches.length - 1)].id);
+    }
+  };
+
   const scheduleKindOptions = [
     { value: "meeting", label: st.meeting, indicatorClassName: scheduleDotClass("meeting") },
     { value: "out", label: st.out, indicatorClassName: scheduleDotClass("out") },
@@ -2742,33 +2873,57 @@ export default function DepartmentItemsClient({
   const selectedScheduleIsMemo = selectedScheduleType === "memo";
   const selectedScheduleVisibilityLabel = selectedScheduleItem?.scopeType === "DEPARTMENT" ? st.publicMemo : st.privateMemo;
   const selectedScheduleParticipants = selectedScheduleItem
-    ? [
-        {
-          id: selectedScheduleItem.creatorId || "creator",
-          name: selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-",
-          email: selectedScheduleItem.creatorEmail || "",
-          isCreator: true,
-        },
-        ...(selectedScheduleDetails?.participantNames || [])
-          .filter((name) => {
-            const creatorLabel = (selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "").toLowerCase();
-            return name.toLowerCase() !== creatorLabel;
-          })
-          .map((name) => {
-            const normalizedName = name.toLowerCase();
-            const assignee = assigneeOptions.find((option) =>
-              option.name.toLowerCase() === normalizedName ||
-              option.email.toLowerCase() === normalizedName
-            );
-            return {
-              id: assignee?.id || `guest:${name}`,
-              name: assignee?.name || name,
-              email: assignee?.email || "",
-              isCreator: false,
-            };
-          }),
-      ]
+    ? selectedScheduleItem.attendees.length > 0
+      ? selectedScheduleItem.attendees.map((attendee) => ({
+          id: attendee.userId,
+          name: attendee.userName || attendee.userEmail,
+          email: attendee.userEmail,
+          isCreator: attendee.userId === selectedScheduleItem.creatorId,
+          status: attendee.status,
+          note: attendee.note,
+          respondedAt: attendee.respondedAt,
+        }))
+      : [
+          {
+            id: selectedScheduleItem.creatorId || "creator",
+            name: selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-",
+            email: selectedScheduleItem.creatorEmail || "",
+            isCreator: true,
+            status: "CONFIRMED",
+            note: null,
+            respondedAt: null,
+          },
+          ...(selectedScheduleDetails?.participantNames || [])
+            .filter((name) => {
+              const creatorLabel = (selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "").toLowerCase();
+              return name.toLowerCase() !== creatorLabel;
+            })
+            .map((name) => {
+              const normalizedName = name.toLowerCase();
+              const assignee = assigneeOptions.find((option) =>
+                option.name.toLowerCase() === normalizedName ||
+                option.email.toLowerCase() === normalizedName
+              );
+              return {
+                id: assignee?.id || `guest:${name}`,
+                name: assignee?.name || name,
+                email: assignee?.email || "",
+                isCreator: false,
+                status: "PENDING",
+                note: null,
+                respondedAt: null,
+              };
+            }),
+        ]
     : [];
+  const selectedScheduleMyAttendance = selectedScheduleItem?.attendees.find((attendee) => attendee.userId === currentUserId) || null;
+  const selectedScheduleConfirmedCount = selectedScheduleParticipants.filter((participant) => participant.status === "CONFIRMED").length;
+  const selectedScheduleCanRespond = Boolean(selectedScheduleItem && selectedScheduleType === "meeting" && selectedScheduleMyAttendance);
+  const selectedScheduleCanComment = Boolean(
+    selectedScheduleItem &&
+    selectedScheduleType === "meeting" &&
+    (selectedScheduleItem.creatorId === currentUserId || selectedScheduleMyAttendance || selectedScheduleItem.canEdit)
+  );
 
   const renderScheduleCreateDialog = () => (
     <div className="w-full max-w-[600px] overflow-hidden rounded-lg border border-[#C3C6D6] bg-white shadow-2xl">
@@ -2786,7 +2941,14 @@ export default function DepartmentItemsClient({
           <X size={20} />
         </button>
       </div>
-      <form onSubmit={handleCreate}>
+      <form
+        onSubmit={handleCreate}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLElement && event.target.tagName !== "TEXTAREA") {
+            event.preventDefault();
+          }
+        }}
+      >
         <div className="max-h-[calc(100vh-220px)] space-y-6 overflow-y-auto p-6">
           <div className="space-y-1">
             <label className="text-sm font-medium text-slate-700">{t.titleField}</label>
@@ -2929,18 +3091,22 @@ export default function DepartmentItemsClient({
                 <input
                   value={form.attendeeQuery}
                   onChange={(event) => setForm((current) => ({ ...current, attendeeQuery: event.target.value }))}
+                  onKeyDown={handleAttendeeInputKeyDown}
                   placeholder={st.addGuest}
                   className="min-w-[120px] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none"
                 />
               </div>
               {form.attendeeQuery.trim() && attendeeMatches.length > 0 ? (
                 <div className="mt-2 border-t border-[#DFE1E6] pt-2">
-                  {attendeeMatches.map((attendee) => (
+                  {attendeeMatches.map((attendee, index) => (
                     <button
                       key={attendee.id}
                       type="button"
+                      onMouseEnter={() => setActiveAttendeeMatchIndex(index)}
                       onClick={() => addAttendee(attendee.id)}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#051A3E] hover:bg-[#F4F5F7]"
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#051A3E] ${
+                        index === activeAttendeeMatchIndex ? "bg-[#E9F2FF]" : "hover:bg-[#F4F5F7]"
+                      }`}
                     >
                       <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-6 w-6 rounded-full border border-[#DFE1E6]" />
                       <span className="min-w-0 truncate">{attendee.name || attendee.email}</span>
@@ -2984,23 +3150,26 @@ export default function DepartmentItemsClient({
   const renderScheduleWorkspace = () => (
     <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden border border-[#DFE1E6] bg-white lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
       <aside className="hidden min-h-0 flex-col border-r border-[#DFE1E6] bg-slate-50 p-4 lg:flex">
-        <div>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.eventTypes}</h3>
-          <div className="space-y-2">
-            {scheduleTypes.map((type) => (
-              <label key={type.id} className="flex cursor-pointer items-center gap-2 text-sm text-[#172B4D]">
-                <input
-                  type="checkbox"
-                  checked={visibleScheduleTypes[type.id]}
-                  onChange={(event) => setVisibleScheduleTypes((current) => ({ ...current, [type.id]: event.target.checked }))}
-                  className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
-                />
-                <span>{type.label}</span>
-                <span className="ml-auto tabular-nums text-xs font-semibold text-[#42526E]">{visibleScheduleTypeCounts[type.id] || 0}</span>
-                <span className={`h-3 w-3 rounded-full ${scheduleDotClass(type.id)}`} />
-              </label>
-            ))}
-          </div>
+        <div className="space-y-2">
+          {scheduleTypes.map((type) => (
+            <label key={type.id} className="flex cursor-pointer items-center gap-2 text-sm text-[#172B4D]">
+              <input
+                type="checkbox"
+                checked={visibleScheduleTypes[type.id]}
+                onChange={(event) => setVisibleScheduleTypes((current) => ({ ...current, [type.id]: event.target.checked }))}
+                className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
+              />
+              <span>{type.label}</span>
+              <span className={`h-3 w-3 shrink-0 rounded-full ${scheduleDotClass(type.id)}`} />
+              {type.id === "meeting" && pendingMeetingCount > 0 ? (
+                <span className="ml-auto rounded bg-[#DE350B] px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                  {locale === "zh" ? `${st.pendingMeetings}${pendingMeetingCount}` : `${st.pendingMeetings} ${pendingMeetingCount}`}
+                </span>
+              ) : (
+                <span className="ml-auto" />
+              )}
+            </label>
+          ))}
         </div>
         <div className="mt-6 border-t border-[#DFE1E6] pt-5">
           <div className="space-y-2 text-sm text-[#172B4D]">
@@ -3067,7 +3236,7 @@ export default function DepartmentItemsClient({
               })}
             </div>
             <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6] bg-[#FAFBFC]">
-              <div className="border-r border-[#DFE1E6] px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-[#6B778C]">
+              <div className="border-r border-[#DFE1E6] px-0.5 py-0.5 text-right text-[11px] font-semibold uppercase tracking-wide text-[#6B778C]">
                 {st.noTime}
               </div>
               {scheduleDays.map((date) => {
@@ -3079,7 +3248,7 @@ export default function DepartmentItemsClient({
                   <div
                     key={`${key}-all-day`}
                     onClick={() => openCreateScheduleModal(date)}
-                    className={`min-h-[148px] border-r border-[#DFE1E6] px-2 py-2 text-left hover:bg-[#FAFBFC] last:border-r-0 ${isCurrentDay ? "bg-[#F4F7FF]" : "bg-white"}`}
+                    className={`min-h-16 border-r border-[#DFE1E6] p-0.5 text-left hover:bg-[#FAFBFC] last:border-r-0 ${isCurrentDay ? "bg-[#F4F7FF]" : "bg-white"}`}
                   >
                     <div className="space-y-1">
                       {shownItems.map((item) => renderScheduleChip(item, true))}
@@ -3154,15 +3323,14 @@ export default function DepartmentItemsClient({
                     })}
                     {timedRenderItems.map(({ item, layout, laneIndex, laneCount }) => {
                       const columnWidth = 100 / laneCount;
-                      const horizontalInset = laneCount > 1 ? 2 : WEEK_EVENT_INSET;
                       const titleLineCount = Math.max(1, Math.floor((layout.height / WEEK_HOUR_HEIGHT) * 3));
                       return (
                         <div
                           key={`${item.kind}-${item.id}`}
                           className="absolute"
                           style={{
-                            left: `calc(${laneIndex * columnWidth}% + ${horizontalInset}px)`,
-                            width: `calc(${columnWidth}% - ${horizontalInset * 2}px)`,
+                            left: `calc(${laneIndex * columnWidth}% + ${WEEK_EVENT_INSET}px)`,
+                            width: `calc(${columnWidth}% - ${WEEK_EVENT_INSET * 2}px)`,
                             top: layout.top + WEEK_EVENT_INSET,
                             height: Math.max(24, layout.height - WEEK_EVENT_INSET * 2),
                           }}
@@ -3315,24 +3483,46 @@ export default function DepartmentItemsClient({
               </button>
             </div>
           </div>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
             {detailError ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm text-red-600">{detailError}</div> : null}
-            <div className="flex gap-3">
-              <Clock size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
-              <div>
-                <p className="font-semibold">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
-                <p className="mt-0.5 text-[#42526E]">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
-                {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
+            <div className={`grid gap-x-5 gap-y-2 text-xs text-[#42526E] ${!selectedScheduleIsMemo && selectedScheduleDetails?.location ? "grid-cols-2" : "grid-cols-1"}`}>
+              <div className="flex min-w-0 gap-2">
+                <Clock size={14} className="mt-0.5 shrink-0 text-[#6B778C]" />
+                <div className="min-w-0">
+                  <p>{scheduleDateLabel(selectedScheduleItem, locale)}</p>
+                  <p className="mt-0.5">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
+                  {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
+                </div>
               </div>
+              {!selectedScheduleIsMemo && selectedScheduleDetails?.location ? (
+                <div className="flex min-w-0 gap-2">
+                  <MapPin size={14} className="mt-0.5 shrink-0 text-[#6B778C]" />
+                  <p className="min-w-0 break-words">{selectedScheduleDetails.location}</p>
+                </div>
+              ) : null}
             </div>
+            {selectedScheduleDetails?.notes ? (
+              <div className="rounded bg-[#FAFBFC] p-3 whitespace-pre-wrap leading-6">
+                {selectedScheduleDetails.notes}
+              </div>
+            ) : null}
+            {selectedScheduleIsMemo ? (
+              <div className="text-xs text-[#42526E]">
+                {selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}{" "}
+                {locale === "zh" ? "创建于" : "created"} {formatRelativeTime(selectedScheduleItem.createdAt, locale)}
+              </div>
+            ) : null}
             {!selectedScheduleIsMemo ? (
               <>
-                <div className="flex gap-3">
-                  <MapPin size={17} className="mt-0.5 shrink-0 text-[#42526E]" />
-                  <p>{selectedScheduleDetails?.location || "-"}</p>
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.participants}</p>
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.participants}</p>
+                    {selectedScheduleType === "meeting" && selectedScheduleParticipants.length > 0 ? (
+                      <span className="shrink-0 rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">
+                        {st.attendanceSummary} {selectedScheduleConfirmedCount}/{selectedScheduleParticipants.length}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="min-w-0 space-y-2">
                     {selectedScheduleParticipants.map((participant) => (
                       <div key={`${participant.id}-${participant.name}`} className="flex min-w-0 items-center gap-2">
@@ -3345,27 +3535,86 @@ export default function DepartmentItemsClient({
                         )}
                         <span className="min-w-0 truncate font-medium">{participant.name}</span>
                         {participant.isCreator ? <span className="shrink-0 rounded bg-[#E9F2FF] px-1.5 py-0.5 text-[11px] font-semibold text-[#0052CC]">{t.openedBy}</span> : null}
+                        {selectedScheduleType === "meeting" ? (
+                          participant.id === currentUserId && selectedScheduleCanRespond ? (
+                            <details className="group relative ml-auto shrink-0">
+                              <summary className={`flex cursor-pointer list-none rounded border px-1.5 py-0.5 text-[11px] font-semibold [&::-webkit-details-marker]:hidden ${attendanceStatusClass(participant.status)}`}>
+                                {attendanceStatusLabel(participant.status, locale)}
+                              </summary>
+                              <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded border border-[#DFE1E6] bg-white py-1 shadow-lg">
+                                {([
+                                  ["CONFIRMED", st.confirmAttendance],
+                                  ["TENTATIVE", st.tentativeAttendance],
+                                  ["DECLINED", st.declineAttendance],
+                                ] as Array<[AttendanceStatus, string]>).map(([status, label]) => (
+                                  <button
+                                    key={status}
+                                    type="button"
+                                    disabled={isPending}
+                                    onClick={(event) => {
+                                      handleMeetingAttendance(status);
+                                      event.currentTarget.closest("details")?.removeAttribute("open");
+                                    }}
+                                    className={`block w-full px-3 py-2 text-left text-xs font-semibold disabled:opacity-50 ${
+                                      participant.status === status
+                                        ? "bg-[#E9F2FF] text-[#0052CC]"
+                                        : "text-[#172B4D] hover:bg-[#F4F5F7]"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </details>
+                          ) : (
+                            <span className={`ml-auto shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${attendanceStatusClass(participant.status)}`}>
+                              {attendanceStatusLabel(participant.status, locale)}
+                            </span>
+                          )
+                        ) : null}
                       </div>
                     ))}
                   </div>
                 </div>
+                <div className="space-y-4 pt-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">{t.replies} ({selectedScheduleItem.comments.length})</p>
+                  {selectedScheduleItem.comments.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedScheduleItem.comments.map((comment) => (
+                        <div key={comment.id} className="rounded-lg bg-slate-50 px-3 py-2">
+                          <div className="flex items-start justify-between gap-3 text-xs text-slate-500">
+                            <span className="min-w-0 truncate font-semibold text-slate-700">{comment.authorName || comment.authorEmail}</span>
+                            <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>{formatRelativeTime(comment.createdAt, locale)}</span>
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{comment.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {selectedScheduleCanComment ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={scheduleReplyContent}
+                        onChange={(event) => setScheduleReplyContent(event.target.value)}
+                        placeholder={st.meetingCommentPlaceholder}
+                        rows={3}
+                        className="w-full rounded border border-[#C1C7D0] px-3 py-2 text-sm leading-6 text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          disabled={isPending || !scheduleReplyContent.trim()}
+                          onClick={handleSaveScheduleReply}
+                          className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
+                        >
+                          {st.sendMessage}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </>
             ) : null}
-            {selectedScheduleDetails?.notes ? (
-              <div className="rounded border border-[#DFE1E6] bg-[#FAFBFC] p-3 leading-6">
-                {selectedScheduleDetails.notes}
-              </div>
-            ) : null}
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-[#DFE1E6] bg-[#F4F5F7] px-5 py-4">
-              {selectedScheduleItem.link ? (
-                <Link href={selectedScheduleItem.link} className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B]">
-                  {st.openTask}
-                </Link>
-              ) : null}
-              <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="rounded border border-[#DFE1E6] bg-white px-3 py-2 text-sm font-semibold text-[#172B4D] hover:bg-[#F4F5F7]">
-                {t.cancel}
-              </button>
           </div>
         </div>
         </div>
@@ -4270,9 +4519,9 @@ export default function DepartmentItemsClient({
                 {selectedTask.comments.length > 0 ? (
                   selectedTask.comments.map((comment) => (
                     <div key={comment.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="font-semibold text-slate-700">{comment.authorName || comment.authorEmail}</span>
-                        <span>{new Date(comment.createdAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}</span>
+                      <div className="flex items-start justify-between gap-3 text-xs text-slate-500">
+                        <span className="min-w-0 truncate font-semibold text-slate-700">{comment.authorName || comment.authorEmail}</span>
+                        <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>{formatRelativeTime(comment.createdAt, locale)}</span>
                       </div>
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{comment.content}</p>
                     </div>
