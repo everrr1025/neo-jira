@@ -28,6 +28,7 @@ import {
   Clock,
   Eye,
   Folder,
+  FolderOpen,
   MapPin,
   MessageSquare,
   Paperclip,
@@ -1246,6 +1247,7 @@ export default function DepartmentItemsClient({
     [taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
   );
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
+  const [collapsedNoteFolderIds, setCollapsedNoteFolderIds] = useState<Record<string, boolean>>({});
   const [noteQuery, setNoteQuery] = useState("");
   const [pinnedNoteOverrides, setPinnedNoteOverrides] = useState<Record<string, boolean>>({});
   const [noteTitleOverrides, setNoteTitleOverrides] = useState<Record<string, string>>({});
@@ -1612,8 +1614,6 @@ export default function DepartmentItemsClient({
       return false;
     }
     if (isPinnedFilter && !isNotePinned(note)) return false;
-    if (noteFolderFilter.startsWith("pinned-folder:") && note.folderId !== noteFolderFilter.slice("pinned-folder:".length)) return false;
-    if (noteFolderFilter.startsWith("folder:") && note.folderId !== noteFolderFilter.slice("folder:".length)) return false;
 
     const query = noteQuery.trim().toLowerCase();
     if (!query) return true;
@@ -3624,14 +3624,14 @@ export default function DepartmentItemsClient({
 
   const renderNotesView = () => {
     const folderButtonClass = (active: boolean, dropTargetId?: string) =>
-      `flex h-10 w-full items-center justify-between gap-2 border-l-4 px-3 text-sm transition-colors ${
+      `flex h-9 w-full min-w-0 items-center justify-between gap-1.5 border-l-4 px-2 text-sm transition-colors ${
         active
           ? "border-blue-600 bg-blue-50/70 font-medium text-blue-700"
           : "border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
       } ${dropTargetId && noteDropTarget === dropTargetId ? "ring-2 ring-blue-300 ring-inset" : ""}`;
 
     const noteButtonClass = (note: NoteListItem) =>
-      `block min-w-0 flex-1 truncate rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
+      `block min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
         selectedNoteId === note.id ? "bg-blue-50 font-medium text-blue-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
       }`;
     const renderNoteName = (note: NoteListItem) => (
@@ -3648,7 +3648,7 @@ export default function DepartmentItemsClient({
           setDraggedNoteId(null);
           setNoteDropTarget(null);
         }}
-        className={`group/note flex items-center gap-1 ${note.deletedAt ? "" : "cursor-grab active:cursor-grabbing"} ${draggedNoteId === note.id ? "opacity-50" : ""}`}
+        className={`group/note flex min-w-0 items-center gap-0.5 ${note.deletedAt ? "" : "cursor-grab active:cursor-grabbing"} ${draggedNoteId === note.id ? "opacity-50" : ""}`}
       >
         <button type="button" onClick={() => openEditNote(note)} className={noteButtonClass(note)}>
           {noteTitle(note)}
@@ -3662,7 +3662,7 @@ export default function DepartmentItemsClient({
                 event.stopPropagation();
                 handleRestoreNote(note);
               }}
-              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover/note:flex"
+              className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover/note:flex"
               title={t.restoreNote}
             >
               <RotateCcw size={13} />
@@ -3674,7 +3674,7 @@ export default function DepartmentItemsClient({
                 event.stopPropagation();
                 handlePermanentlyDeleteNote(note);
               }}
-              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
+              className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
               title={t.permanentlyDeleteNote}
             >
               <Trash2 size={13} />
@@ -3689,7 +3689,7 @@ export default function DepartmentItemsClient({
                 event.stopPropagation();
                 handleToggleNotePinned(note);
               }}
-              className={`h-7 w-7 shrink-0 items-center justify-center rounded-md hover:bg-amber-50 disabled:opacity-50 ${
+              className={`h-6 w-6 shrink-0 items-center justify-center rounded-md hover:bg-amber-50 disabled:opacity-50 ${
                 isNotePinned(note) ? "hidden text-amber-500 group-hover/note:flex" : "hidden text-slate-400 hover:text-amber-500 group-hover/note:flex"
               }`}
               title={isNotePinned(note) ? t.unpinNote : t.pinNote}
@@ -3703,7 +3703,7 @@ export default function DepartmentItemsClient({
                 event.stopPropagation();
                 handleDeleteNote(note);
               }}
-              className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
+              className="hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover/note:flex"
               title={t.deleteNote}
             >
               <Trash2 size={13} />
@@ -3741,11 +3741,17 @@ export default function DepartmentItemsClient({
               ? formatSavedAgo(noteSavedAt || selectedNote.updatedAt, locale)
               : "";
     const folderNameById = new Map(noteFolders.map((folder) => [folder.id, folder.name]));
+    const toggleFolderCollapsed = (folderId: string) => {
+      setCollapsedNoteFolderIds((current) => ({
+        ...current,
+        [folderId]: !current[folderId],
+      }));
+    };
 
     return (
       <div className="h-[calc(100vh-172px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
-          <div className="space-y-1 px-3 pt-4">
+          <div className="space-y-0.5 px-2 pt-3">
             <button
               type="button"
               onClick={() => setNoteFolderFilter("all")}
@@ -3762,30 +3768,30 @@ export default function DepartmentItemsClient({
               }}
               className={folderButtonClass(noteFolderFilter === "all", "all")}
             >
-              <span className="inline-flex min-w-0 items-center gap-2"><StickyNote size={15} />{t.allNotes}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5"><StickyNote size={15} />{t.allNotes}</span>
               <span>{activeNotes.length}</span>
             </button>
             <button type="button" onClick={() => setNoteFolderFilter("pinned")} className={folderButtonClass(isPinnedFilter)}>
-              <span className="inline-flex min-w-0 items-center gap-2"><Star size={15} />{t.pinnedNotes}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5"><Star size={15} />{t.pinnedNotes}</span>
               <span>{activeNotes.filter((note) => isNotePinned(note)).length}</span>
             </button>
             <button type="button" onClick={() => setNoteFolderFilter("trash")} className={folderButtonClass(noteFolderFilter === "trash")}>
-              <span className="inline-flex min-w-0 items-center gap-2"><Trash2 size={15} />{t.trash}</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5"><Trash2 size={15} />{t.trash}</span>
               <span>{trashedNotes.length}</span>
             </button>
           </div>
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-3 py-4">
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-4">
             <div className="space-y-1">
               {noteFolderFilter !== "trash" ? (
                 <>
-                  <div className="mb-2 flex items-center justify-between px-3">
+                  <div className="mb-2 flex items-center justify-between px-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.folders}</p>
                     <button type="button" onClick={handleCreateFolder} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-900" title={t.newFolder}>
                       <Plus size={14} />
                     </button>
                   </div>
                   <div
-                    className={`mb-2 min-h-2 rounded-md px-2 py-1.5 ${noteDropTarget === "root" ? "ring-2 ring-blue-300 ring-inset" : ""}`}
+                    className={`mb-2 min-h-2 rounded-md px-1 py-1.5 ${noteDropTarget === "root" ? "ring-2 ring-blue-300 ring-inset" : ""}`}
                     onDragOver={(event) => {
                       if (!draggedNoteId) return;
                       event.preventDefault();
@@ -3798,23 +3804,21 @@ export default function DepartmentItemsClient({
                       handleNoteDrop(null);
                     }}
                   >
-                    {noteFolderFilter === "all" || noteFolderFilter === "pinned" ? (
-                      <div className="space-y-1">
-                        {uncategorizedNotes.map((note) => (
-                          renderNoteName(note)
-                        ))}
-                      </div>
-                    ) : null}
+                    <div className="space-y-1">
+                      {uncategorizedNotes.map((note) => (
+                        renderNoteName(note)
+                      ))}
+                    </div>
                   </div>
                   {visibleNoteFolders.map((folder) => {
-                    const folderFilter = isPinnedFilter ? `pinned-folder:${folder.id}` as const : `folder:${folder.id}` as const;
+                    const isFolderExpanded = !collapsedNoteFolderIds[folder.id];
 
                     return (
                     <div key={folder.id} className="group">
-                      <div className="flex items-center gap-1">
+                      <div className="flex min-w-0 items-center gap-0.5">
                         <button
                           type="button"
-                          onClick={() => setNoteFolderFilter(folderFilter)}
+                          onClick={() => toggleFolderCollapsed(folder.id)}
                           onDragOver={(event) => {
                             if (!draggedNoteId) return;
                             event.preventDefault();
@@ -3826,26 +3830,28 @@ export default function DepartmentItemsClient({
                             event.preventDefault();
                             handleNoteDrop(folder.id);
                           }}
-                          className={folderButtonClass(noteFolderFilter === folderFilter, folder.id)}
+                          className={`${folderButtonClass(false, folder.id)} flex-1`}
                         >
-                          <span className="inline-flex min-w-0 items-center gap-2">
-                            <Folder size={15} />
+                          <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+                            {isFolderExpanded ? <FolderOpen size={15} className="shrink-0" /> : <Folder size={15} className="shrink-0" />}
                             <span className="truncate">{folder.name}</span>
                           </span>
-                          <span>{visibleFolderCounts[folder.id] || 0}</span>
+                          <span className="shrink-0">{visibleFolderCounts[folder.id] || 0}</span>
                         </button>
-                        <button type="button" onClick={() => handleRenameFolder(folder)} className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex" title={t.renameFolder}>
+                        <button type="button" onClick={() => handleRenameFolder(folder)} className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 group-hover:flex" title={t.renameFolder}>
                           <Pencil size={13} />
                         </button>
-                        <button type="button" onClick={() => handleDeleteFolder(folder)} className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:flex" title={t.deleteFolder}>
+                        <button type="button" onClick={() => handleDeleteFolder(folder)} className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:flex" title={t.deleteFolder}>
                           <Trash2 size={13} />
                         </button>
                       </div>
-                      <div className="ml-4 mt-1 space-y-1">
-                        {filteredNotes.filter((note) => note.folderId === folder.id).map((note) => (
-                          renderNoteName(note)
-                        ))}
-                      </div>
+                      {isFolderExpanded ? (
+                        <div className="ml-4 mt-1 space-y-1">
+                          {filteredNotes.filter((note) => note.folderId === folder.id).map((note) => (
+                            renderNoteName(note)
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     );
                   })}
