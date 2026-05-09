@@ -10,17 +10,23 @@ import { AvatarPicker } from "./AvatarPicker";
 export function SidebarUserMenu({
   userId,
   userName,
-  userEmail,
   userAvatar,
   locale,
 }: {
   userId: string;
   userName: string;
-  userEmail: string;
   userAvatar?: string | null;
   locale: Locale;
 }) {
   const translations = getTranslations(locale);
+
+  async function handleSignOut() {
+    try {
+      await signOut({ redirect: false });
+    } finally {
+      window.location.assign("/login");
+    }
+  }
 
   return (
     <div className="flex items-center justify-between gap-2 w-full">
@@ -39,9 +45,6 @@ export function SidebarUserMenu({
           <span className="truncate text-sm font-medium text-white" title={userName}>
             {userName}
           </span>
-          <span className="truncate text-xs text-slate-500" title={userEmail}>
-            {userEmail}
-          </span>
         </div>
       </div>
 
@@ -55,7 +58,8 @@ export function SidebarUserMenu({
         </Link>
 
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          type="button"
+          onClick={() => void handleSignOut()}
           className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
           title={translations.sidebar.signOut}
         >

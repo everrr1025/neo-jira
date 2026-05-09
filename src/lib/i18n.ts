@@ -748,7 +748,7 @@ const translations: Record<Locale, TranslationBundle> = {
       title: "项目",
       adminSubtitle: "管理并查看所有工作区。",
       memberSubtitle: "请先选择一个项目，然后访问该项目的仪表盘、问题和迭代。",
-      createProject: "创建项目",
+      createProject: "新建项目",
       project: "项目",
       key: "标识",
       lead: "负责人",

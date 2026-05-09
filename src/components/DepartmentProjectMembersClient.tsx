@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
@@ -49,6 +49,9 @@ const TEXT = {
   },
 } as const;
 
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
 function displayMember(member: Pick<DepartmentWorkspaceMember, "userName" | "userEmail">) {
   return member.userName || member.userEmail;
 }
@@ -73,6 +76,8 @@ export default function DepartmentProjectMembersClient({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberPageSize, setMemberPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const currentMemberIds = new Set(project.members.map((member) => member.userId));
   const projectMembers = [...project.members].sort((a, b) => {
@@ -86,6 +91,14 @@ export default function DepartmentProjectMembersClient({
     if (!normalizedSearch) return true;
     return `${user.userName || ""} ${user.userEmail}`.toLowerCase().includes(normalizedSearch);
   });
+  const totalMemberPages = Math.max(1, Math.ceil(projectMembers.length / memberPageSize));
+  const currentMemberPage = Math.min(memberPage, totalMemberPages);
+  const paginatedProjectMembers = projectMembers.slice(
+    (currentMemberPage - 1) * memberPageSize,
+    currentMemberPage * memberPageSize
+  );
+  const memberRangeStart = projectMembers.length > 0 ? (currentMemberPage - 1) * memberPageSize + 1 : 0;
+  const memberRangeEnd = Math.min(currentMemberPage * memberPageSize, projectMembers.length);
 
   const translateError = (message: string | undefined) => {
     if (!message) return t.assignFailed;
@@ -182,7 +195,7 @@ export default function DepartmentProjectMembersClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {projectMembers.map((member) => {
+              {paginatedProjectMembers.map((member) => {
                 const isOwner = member.userId === project.ownerId;
                 return (
                   <tr
@@ -240,6 +253,61 @@ export default function DepartmentProjectMembersClient({
             </tbody>
           </table>
         </div>
+        {projectMembers.length > 0 ? (
+          <div className="border-t bg-slate-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="font-medium text-slate-500">
+              {locale === "zh" ? "显示" : "Showing"}
+              <span className="font-bold text-slate-800"> {memberRangeStart} </span>
+              {locale === "zh" ? "至" : "to"}
+              <span className="font-bold text-slate-800"> {memberRangeEnd} </span>
+              {locale === "zh" ? "共" : "of"}
+              <span className="font-bold text-slate-800"> {projectMembers.length} </span>
+              {locale === "zh" ? "成员" : "members"}
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-slate-500">
+                <span>{locale === "zh" ? "每页" : "Per page"}</span>
+                <select
+                  value={memberPageSize}
+                  onChange={(event) => {
+                    setMemberPageSize(Number(event.target.value));
+                    setMemberPage(1);
+                  }}
+                  className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
+                  disabled={currentMemberPage === 1}
+                  className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="px-2 font-medium leading-none text-slate-700">
+                  {locale === "zh"
+                    ? `第 ${currentMemberPage} / ${totalMemberPages || 1} 页`
+                    : `Page ${currentMemberPage} of ${totalMemberPages || 1}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMemberPage(Math.min(totalMemberPages || 1, currentMemberPage + 1))}
+                  disabled={currentMemberPage === totalMemberPages || totalMemberPages === 0}
+                  className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {isAddOpen ? (

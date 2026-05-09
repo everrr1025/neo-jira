@@ -23,12 +23,12 @@ import {
   ArrowUp,
   Bell,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   Eye,
   Folder,
-  FolderOpen,
   MapPin,
   MessageSquare,
   Paperclip,
@@ -2477,7 +2477,7 @@ export default function DepartmentItemsClient({
         }}
         disabled={!sortField}
         className={`inline-flex items-center gap-1 font-semibold ${column.id === "actions" ? "w-full justify-start" : ""} ${
-          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : column.id === "actions" ? "cursor-default text-slate-500" : "cursor-grab text-slate-500"
+          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : column.id === "actions" ? "cursor-default text-slate-500" : "cursor-move text-slate-500"
         }`}
         draggable={false}
       >
@@ -2547,7 +2547,6 @@ export default function DepartmentItemsClient({
           return (
             <td key={column.id} className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden">
               <button type="button" onClick={() => openTaskDetail(item)} className="flex w-full min-w-0 items-center gap-2 text-left hover:text-blue-600">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${item.completedAt ? "bg-emerald-500" : item.isOverdue ? "bg-red-500" : "bg-blue-500"}`} />
                 <span className={`truncate ${item.completedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
                   {item.title}
                 </span>
@@ -3624,10 +3623,10 @@ export default function DepartmentItemsClient({
 
   const renderNotesView = () => {
     const folderButtonClass = (active: boolean, dropTargetId?: string) =>
-      `flex h-9 w-full min-w-0 items-center justify-between gap-1.5 border-l-4 px-2 text-sm transition-colors ${
+      `flex h-9 w-full min-w-0 items-center justify-between gap-1.5 rounded-md px-2 text-sm transition-colors ${
         active
-          ? "border-blue-600 bg-blue-50/70 font-medium text-blue-700"
-          : "border-transparent text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
+          ? "bg-blue-50/70 font-medium text-blue-700"
+          : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
       } ${dropTargetId && noteDropTarget === dropTargetId ? "ring-2 ring-blue-300 ring-inset" : ""}`;
 
     const noteButtonClass = (note: NoteListItem) =>
@@ -3749,7 +3748,7 @@ export default function DepartmentItemsClient({
     };
 
     return (
-      <div className="h-[calc(100vh-172px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
+      <div className="h-[calc(100vh-100px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
           <div className="space-y-0.5 px-2 pt-3">
             <button
@@ -3780,18 +3779,18 @@ export default function DepartmentItemsClient({
               <span>{trashedNotes.length}</span>
             </button>
           </div>
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-4">
+          <div className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-2">
             <div className="space-y-1">
               {noteFolderFilter !== "trash" ? (
                 <>
-                  <div className="mb-2 flex items-center justify-between px-2">
+                  <div className="mb-1 flex items-center justify-between px-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{t.folders}</p>
                     <button type="button" onClick={handleCreateFolder} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-900" title={t.newFolder}>
                       <Plus size={14} />
                     </button>
                   </div>
                   <div
-                    className={`mb-2 min-h-2 rounded-md px-1 py-1.5 ${noteDropTarget === "root" ? "ring-2 ring-blue-300 ring-inset" : ""}`}
+                    className={`mb-1 min-h-1 rounded-md px-1 py-0.5 ${noteDropTarget === "root" ? "ring-2 ring-blue-300 ring-inset" : ""}`}
                     onDragOver={(event) => {
                       if (!draggedNoteId) return;
                       event.preventDefault();
@@ -3815,10 +3814,21 @@ export default function DepartmentItemsClient({
 
                     return (
                     <div key={folder.id} className="group">
-                      <div className="flex min-w-0 items-center gap-0.5">
+                      <div className="flex min-w-0 items-center gap-0">
                         <button
                           type="button"
                           onClick={() => toggleFolderCollapsed(folder.id)}
+                          className="ml-1 inline-flex h-9 w-3 shrink-0 items-center justify-center text-slate-400 hover:text-slate-700"
+                          aria-label={isFolderExpanded ? t.less : t.more}
+                        >
+                          {isFolderExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNoteFolderFilter(isPinnedFilter ? `pinned-folder:${folder.id}` : `folder:${folder.id}`);
+                            toggleFolderCollapsed(folder.id);
+                          }}
                           onDragOver={(event) => {
                             if (!draggedNoteId) return;
                             event.preventDefault();
@@ -3830,10 +3840,10 @@ export default function DepartmentItemsClient({
                             event.preventDefault();
                             handleNoteDrop(folder.id);
                           }}
-                          className={`${folderButtonClass(false, folder.id)} flex-1`}
+                          className={`${folderButtonClass(noteFolderFilter === `folder:${folder.id}` || noteFolderFilter === `pinned-folder:${folder.id}`, folder.id)} flex-1 pl-1`}
                         >
                           <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
-                            {isFolderExpanded ? <FolderOpen size={15} className="shrink-0" /> : <Folder size={15} className="shrink-0" />}
+                            <Folder size={15} className="shrink-0" />
                             <span className="truncate">{folder.name}</span>
                           </span>
                           <span className="shrink-0">{visibleFolderCounts[folder.id] || 0}</span>
@@ -4253,8 +4263,8 @@ export default function DepartmentItemsClient({
                       return (
                         <th
                           key={column.id}
-                          className={`relative select-none overflow-hidden py-3 transition-colors ${
-                            column.id === "actions" ? "sticky right-0 z-20 bg-slate-50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-grab px-5 hover:bg-slate-100 active:cursor-grabbing"
+                          className={`group/column relative select-none overflow-hidden py-3 transition-colors ${
+                            column.id === "actions" ? "sticky right-0 z-20 bg-slate-50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-move px-5 hover:bg-slate-100 active:cursor-move"
                           } ${
                             isDragging ? "opacity-40" : ""
                           }`}
@@ -4279,9 +4289,10 @@ export default function DepartmentItemsClient({
 
                           {column.id !== "actions" && taskColumns[index + 1]?.id !== "actions" ? (
                             <div
-                              className="absolute bottom-0 right-0 top-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                              className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                               onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
                               draggable={false}
+                              title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
                             />
                           ) : null}
                         </th>

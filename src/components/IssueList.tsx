@@ -1169,7 +1169,7 @@ export default function IssueList({
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
+      document.body.style.cursor = "ew-resize";
       document.body.style.userSelect = "none";
     },
     [columns]
@@ -1201,7 +1201,7 @@ export default function IssueList({
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
+      document.body.style.cursor = "ew-resize";
       document.body.style.userSelect = "none";
     },
     [planFieldWidths]
@@ -1233,7 +1233,7 @@ export default function IssueList({
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
+      document.body.style.cursor = "ew-resize";
       document.body.style.userSelect = "none";
     },
     [issueFieldWidths]
@@ -2272,7 +2272,7 @@ export default function IssueList({
                   return (
                     <th
                       key={col.id}
-                      className={`px-5 py-4 cursor-grab active:cursor-grabbing hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={col.width ? { width: `${col.width}px` } : undefined}
@@ -2297,7 +2297,7 @@ export default function IssueList({
                         className={`inline-flex items-center gap-1 font-semibold ${
                           columnSortField
                             ? "cursor-pointer text-slate-600 hover:text-slate-800"
-                            : "cursor-grab text-slate-500"
+                            : "cursor-move text-slate-500"
                         }`}
                         draggable={false}
                       >
@@ -2316,9 +2316,10 @@ export default function IssueList({
 
                       {columns[index + 1] ? (
                         <div
-                          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/50 z-20"
+                          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                           onMouseDown={(e) => handleResizeStart(e, index)}
                           draggable={false}
+                          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
                         />
                       ) : null}
                     </th>
@@ -2327,7 +2328,7 @@ export default function IssueList({
                 {visibleIssueFields.map((field) => (
                   <th
                     key={field.id}
-                    className="px-5 py-4 overflow-hidden relative select-none"
+                    className="group/column px-5 py-4 overflow-hidden relative select-none"
                     style={{ width: `${issueFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
                   >
                     <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
@@ -2335,16 +2336,17 @@ export default function IssueList({
                       {field.required ? <span className="text-red-500">*</span> : null}
                     </span>
                     <div
-                      className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                      className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                       onMouseDown={(event) => handleIssueFieldResizeStart(event, field)}
                       draggable={false}
+                      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
                     />
                   </th>
                 ))}
                 {visiblePlanFields.map((field) => (
                   <th
                     key={field.id}
-                    className="px-5 py-4 overflow-hidden relative select-none"
+                    className="group/column px-5 py-4 overflow-hidden relative select-none"
                     style={{ width: `${planFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
                   >
                     <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
@@ -2352,9 +2354,10 @@ export default function IssueList({
                       {field.required ? <span className="text-red-500">*</span> : null}
                     </span>
                     <div
-                      className="absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize hover:bg-blue-400/50"
+                      className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                       onMouseDown={(event) => handlePlanFieldResizeStart(event, field)}
                       draggable={false}
+                      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
                     />
                   </th>
                 ))}

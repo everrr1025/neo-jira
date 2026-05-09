@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, FolderGit2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bell, Building2, ChevronLeft, ChevronRight, FolderGit2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -103,7 +103,7 @@ const TEXT = {
     actions: "操作",
     setAssistant: "设为助理",
     setMember: "设为成员",
-    createProject: "创建项目",
+    createProject: "新建项目",
     projectName: "名称",
     projectKey: "标识",
     projectDescription: "描述",
@@ -141,7 +141,27 @@ const TEXT = {
   },
 } as const;
 
-const MEMBER_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
+type ProjectColumnId = "name" | "key" | "description" | "owner" | "members" | "createdAt" | "actions";
+type ProjectSortField = Exclude<ProjectColumnId, "actions">;
+type SortDirection = "asc" | "desc";
+type ProjectColumnConfig = {
+  id: ProjectColumnId;
+  label: string;
+  width: number;
+};
+
+const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
+  name: 260,
+  key: 110,
+  description: 220,
+  owner: 140,
+  members: 120,
+  createdAt: 150,
+  actions: 260,
+};
 
 const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
   HEAD: { bg: "bg-amber-100", text: "text-amber-800" },
@@ -152,7 +172,90 @@ const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
 function displayMember(member: { userName: string | null; userEmail: string }) {
   return member.userName || member.userEmail;
 }
+function compareText(left: string | null | undefined, right: string | null | undefined) {
+  return (left || "").localeCompare(right || "", undefined, { numeric: true, sensitivity: "base" });
+}
 
+function PaginationFooter({
+  locale,
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  itemLabel,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  locale: Locale;
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  itemLabel: string;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const rangeStart = totalItems > 0 ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, totalItems);
+  const showing = locale === "zh" ? "显示" : "Showing";
+  const to = locale === "zh" ? "至" : "to";
+  const of = locale === "zh" ? "共" : "of";
+  const perPage = locale === "zh" ? "每页" : "Per page";
+  const pageLabel = locale === "zh" ? "第" : "Page";
+
+  return (
+    <div className="border-t bg-slate-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div className="font-medium text-slate-500">
+        {showing}
+        <span className="font-bold text-slate-800"> {rangeStart} </span>
+        {to}
+        <span className="font-bold text-slate-800"> {rangeEnd} </span>
+        {of}
+        <span className="font-bold text-slate-800"> {totalItems} </span>
+        {itemLabel}
+      </div>
+
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 text-slate-500">
+          <span>{perPage}</span>
+          <select
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            disabled={page === 1}
+            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <span className="px-2 font-medium leading-none text-slate-700">
+            {locale === "zh" ? `${pageLabel} ${page} / ${totalPages || 1} 页` : `${pageLabel} ${page} of ${totalPages || 1}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPageChange(Math.min(totalPages || 1, page + 1))}
+            disabled={page === totalPages || totalPages === 0}
+            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function DepartmentManageClient({
   department,
   locale,
@@ -188,6 +291,31 @@ export default function DepartmentManageClient({
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [editingProject, setEditingProject] = useState<DepartmentWorkspaceProject | null>(null);
   const [memberPage, setMemberPage] = useState(1);
+  const [memberPageSize, setMemberPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [projectPage, setProjectPage] = useState(1);
+  const [projectPageSize, setProjectPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [projectSortField, setProjectSortField] = useState<ProjectSortField>("createdAt");
+  const [projectSortDirection, setProjectSortDirection] = useState<SortDirection>("desc");
+  const [projectColumnOrder, setProjectColumnOrder] = useState<ProjectColumnId[]>([
+    "name",
+    "key",
+    "description",
+    "owner",
+    "members",
+    "createdAt",
+    "actions",
+  ]);
+  const [projectColumnWidths, setProjectColumnWidths] = useState(PROJECT_DEFAULT_COLUMN_WIDTHS);
+  const [projectDragSourceIndex, setProjectDragSourceIndex] = useState<number | null>(null);
+  const [projectDragOverIndex, setProjectDragOverIndex] = useState<number | null>(null);
+  const [projectDragOverSide, setProjectDragOverSide] = useState<"left" | "right" | null>(null);
+  const projectResizingRef = useRef<{
+    colIndex: number;
+    nextColIndex: number;
+    startX: number;
+    startWidth: number;
+    nextStartWidth: number;
+  } | null>(null);
   const [newProject, setNewProject] = useState({
     name: "",
     key: "",
@@ -212,13 +340,63 @@ export default function DepartmentManageClient({
     const order: Record<string, number> = { HEAD: 0, ASSISTANT: 1, MEMBER: 2 };
     return (order[a.role] ?? 3) - (order[b.role] ?? 3) || displayMember(a).localeCompare(displayMember(b));
   });
+  const projectColumnsById = useMemo(
+    () =>
+      new Map<ProjectColumnId, ProjectColumnConfig>([
+        ["name", { id: "name", label: t.projectName, width: PROJECT_DEFAULT_COLUMN_WIDTHS.name }],
+        ["key", { id: "key", label: t.key, width: PROJECT_DEFAULT_COLUMN_WIDTHS.key }],
+        ["description", { id: "description", label: t.description, width: PROJECT_DEFAULT_COLUMN_WIDTHS.description }],
+        ["owner", { id: "owner", label: t.ownerLabel, width: PROJECT_DEFAULT_COLUMN_WIDTHS.owner }],
+        ["members", { id: "members", label: t.members, width: PROJECT_DEFAULT_COLUMN_WIDTHS.members }],
+        ["createdAt", { id: "createdAt", label: t.createdAt, width: PROJECT_DEFAULT_COLUMN_WIDTHS.createdAt }],
+        ["actions", { id: "actions", label: t.actions, width: PROJECT_DEFAULT_COLUMN_WIDTHS.actions }],
+      ]),
+    [t.actions, t.createdAt, t.description, t.key, t.members, t.ownerLabel, t.projectName]
+  );
+  const projectColumns = useMemo(
+    () =>
+      projectColumnOrder
+        .map((columnId) => {
+          const column = projectColumnsById.get(columnId);
+          if (!column) return null;
+          return { ...column, width: projectColumnWidths[columnId] ?? column.width };
+        })
+        .filter((column): column is ProjectColumnConfig => Boolean(column)),
+    [projectColumnOrder, projectColumnWidths, projectColumnsById]
+  );
+  const sortedProjects = useMemo(() => {
+    const getValue = (project: DepartmentWorkspaceProject, field: ProjectSortField) => {
+      if (field === "name") return project.name;
+      if (field === "key") return project.key;
+      if (field === "description") return project.description || "";
+      if (field === "owner") return project.ownerName || "";
+      if (field === "members") return project.members.length;
+      return new Date(project.createdAt).getTime();
+    };
+
+    return [...department.projects].sort((left, right) => {
+      const leftValue = getValue(left, projectSortField);
+      const rightValue = getValue(right, projectSortField);
+      const result =
+        typeof leftValue === "number" && typeof rightValue === "number"
+          ? leftValue - rightValue
+          : compareText(String(leftValue), String(rightValue));
+      return projectSortDirection === "asc" ? result : -result;
+    });
+  }, [department.projects, projectSortDirection, projectSortField]);
 
   const totalIssues = department.projects.reduce((sum, project) => sum + project.issuesCount, 0);
-  const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / MEMBER_PAGE_SIZE));
+  const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / memberPageSize));
   const currentMemberPage = Math.min(memberPage, totalMemberPages);
   const paginatedMembers = sortedMembers.slice(
-    (currentMemberPage - 1) * MEMBER_PAGE_SIZE,
-    currentMemberPage * MEMBER_PAGE_SIZE
+    (currentMemberPage - 1) * memberPageSize,
+    currentMemberPage * memberPageSize
+  );
+  const totalProjectPages = Math.max(1, Math.ceil(sortedProjects.length / projectPageSize));
+  const currentProjectPage = Math.min(projectPage, totalProjectPages);
+  const paginatedProjects = sortedProjects.slice(
+    (currentProjectPage - 1) * projectPageSize,
+    currentProjectPage * projectPageSize
   );
   const summaryCards = useMemo(
     () => [
@@ -245,6 +423,253 @@ export default function DepartmentManageClient({
     if (message.includes("Project not found")) return t.projectNotFound;
     if (message.includes("Project name confirmation does not match")) return t.deleteNameMismatch;
     return message;
+  };
+
+  const handleProjectSort = (field: ProjectSortField) => {
+    if (projectSortField === field) {
+      setProjectSortDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setProjectSortField(field);
+      setProjectSortDirection(field === "createdAt" ? "desc" : "asc");
+    }
+    setProjectPage(1);
+  };
+
+  const handleProjectColumnDragStart = (event: React.DragEvent, index: number) => {
+    if (projectColumns[index]?.id === "actions") return;
+    event.dataTransfer.setData("colIndex", String(index));
+    event.dataTransfer.effectAllowed = "move";
+    setProjectDragSourceIndex(index);
+  };
+
+  const handleProjectColumnDragOver = (event: React.DragEvent, index: number) => {
+    if (projectColumns[index]?.id === "actions" || projectColumns[projectDragSourceIndex ?? -1]?.id === "actions") return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setProjectDragOverIndex(index);
+    setProjectDragOverSide(event.clientX < rect.left + rect.width / 2 ? "left" : "right");
+  };
+
+  const handleProjectColumnDrop = (event: React.DragEvent, targetIndex: number) => {
+    event.preventDefault();
+    if (projectColumns[targetIndex]?.id === "actions") return;
+    const sourceIndex = Number(event.dataTransfer.getData("colIndex"));
+    if (Number.isFinite(sourceIndex) && sourceIndex !== targetIndex && projectColumns[sourceIndex]?.id !== "actions") {
+      const nextColumnOrder = [...projectColumnOrder];
+      const [removed] = nextColumnOrder.splice(sourceIndex, 1);
+      const adjustedTarget =
+        projectDragOverSide === "right"
+          ? sourceIndex < targetIndex
+            ? targetIndex
+            : targetIndex + 1
+          : sourceIndex < targetIndex
+            ? targetIndex - 1
+            : targetIndex;
+      nextColumnOrder.splice(Math.max(0, adjustedTarget), 0, removed);
+      setProjectColumnOrder(nextColumnOrder);
+    }
+    setProjectDragSourceIndex(null);
+    setProjectDragOverIndex(null);
+    setProjectDragOverSide(null);
+  };
+
+  const handleProjectColumnDragEnd = () => {
+    setProjectDragSourceIndex(null);
+    setProjectDragOverIndex(null);
+    setProjectDragOverSide(null);
+  };
+
+  const handleProjectColumnResizeStart = useCallback(
+    (event: React.MouseEvent, colIndex: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const column = projectColumns[colIndex];
+      const nextColumn = projectColumns[colIndex + 1];
+      if (!column || !nextColumn || column.id === "actions" || nextColumn.id === "actions") return;
+      projectResizingRef.current = {
+        colIndex,
+        nextColIndex: colIndex + 1,
+        startX: event.clientX,
+        startWidth: column.width,
+        nextStartWidth: nextColumn.width,
+      };
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const resizeState = projectResizingRef.current;
+        if (!resizeState) return;
+        const resizeColumnId = projectColumns[resizeState.colIndex]?.id;
+        const nextResizeColumnId = projectColumns[resizeState.nextColIndex]?.id;
+        if (!resizeColumnId || !nextResizeColumnId) return;
+
+        const minWidth = 80;
+        const delta = moveEvent.clientX - resizeState.startX;
+        const boundedDelta = Math.min(
+          resizeState.nextStartWidth - minWidth,
+          Math.max(minWidth - resizeState.startWidth, delta)
+        );
+        setProjectColumnWidths((current) => ({
+          ...current,
+          [resizeColumnId]: resizeState.startWidth + boundedDelta,
+          [nextResizeColumnId]: resizeState.nextStartWidth - boundedDelta,
+        }));
+      };
+
+      const onMouseUp = () => {
+        projectResizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+    },
+    [projectColumns]
+  );
+
+  const renderProjectHeaderLabel = (column: ProjectColumnConfig) => {
+    const sortField = column.id === "actions" ? null : column.id;
+    const isSorted = sortField === projectSortField;
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (sortField) handleProjectSort(sortField);
+        }}
+        disabled={!sortField}
+        className={`inline-flex items-center gap-1 font-semibold ${
+          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : "cursor-default text-slate-500"
+        }`}
+        draggable={false}
+      >
+        <span>{column.label}</span>
+        {sortField && isSorted ? projectSortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}
+      </button>
+    );
+  };
+
+  const renderProjectCell = (project: DepartmentWorkspaceProject, column: ProjectColumnConfig) => {
+    if (column.id === "name") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+              <ProjectNavIcon className="h-[18px] w-[18px]" />
+            </div>
+            <Link
+              href={`/projects/select?projectId=${project.id}`}
+              className="truncate font-semibold text-slate-800 transition-colors hover:text-emerald-700"
+            >
+              {project.name}
+            </Link>
+          </div>
+        </td>
+      );
+    }
+
+    if (column.id === "key") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-3.5">
+          <span className="block truncate font-mono text-xs text-slate-500">{project.key}</span>
+        </td>
+      );
+    }
+
+    if (column.id === "description") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-3.5 text-slate-600">
+          <div className="truncate">{project.description || t.noDescription}</div>
+        </td>
+      );
+    }
+
+    if (column.id === "owner") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-3.5">
+          {project.ownerId ? (
+            <span className="block truncate font-medium text-slate-700">{project.ownerName}</span>
+          ) : (
+            <span className="block truncate text-slate-400">{t.unassignedOwner}</span>
+          )}
+        </td>
+      );
+    }
+
+    if (column.id === "members") {
+      return (
+        <td key={column.id} className="px-5 py-3.5">
+          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+            {project.members.length} {t.members}
+          </span>
+        </td>
+      );
+    }
+
+    if (column.id === "createdAt") {
+      return (
+        <td key={column.id} className="px-5 py-3.5 text-xs font-medium text-slate-500">
+          {new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+        </td>
+      );
+    }
+
+    return (
+      <td key={column.id} className="px-5 py-3.5">
+        <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+          <a
+            href={`/projects/select?projectId=${project.id}`}
+            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+          >
+            <span className="whitespace-nowrap">{t.viewProject}</span>
+          </a>
+          <Link
+            href={`/departments/${department.id}/projects/${project.id}/members`}
+            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+          >
+            <span className="whitespace-nowrap">{t.memberButton}</span>
+          </Link>
+          {canManageProjects ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProject(project);
+                  setEditProjectForm({
+                    name: project.name,
+                    key: project.key,
+                    description: project.description || "",
+                  });
+                  setCreateProjectErrorMsg("");
+                  setIsEditProjectOpen(true);
+                }}
+                disabled={isPending}
+                className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+              >
+                <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteErrorMsg("");
+                  setDeleteConfirmText("");
+                  setDeletingProject(project);
+                }}
+                disabled={isPending}
+                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+              >
+                <Trash2 size={12} />
+                <span className="whitespace-nowrap">{t.deleteProject}</span>
+              </button>
+            </>
+          ) : null}
+        </div>
+      </td>
+    );
   };
 
   useEffect(() => {
@@ -451,13 +876,13 @@ export default function DepartmentManageClient({
                   <th className="border-b px-5 py-4">{t.email}</th>
                   <th className="border-b px-5 py-4">{t.role}</th>
                   <th className="border-b px-5 py-4">{t.memberProjects}</th>
-                  <th className="border-b px-5 py-4">{t.actions}</th>
+                  {isHead ? <th className="border-b px-5 py-4">{t.actions}</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sortedMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-8 text-center text-slate-500">
+                    <td colSpan={isHead ? 5 : 4} className="px-5 py-8 text-center text-slate-500">
                       {t.noMembers}
                     </td>
                   </tr>
@@ -492,62 +917,53 @@ export default function DepartmentManageClient({
                             )}
                           </div>
                         </td>
-                        <td className="px-5 py-4">
-                          {canToggleAssistant ? (
-                            member.role === "ASSISTANT" ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSetRole(member.userId, "MEMBER")}
-                                disabled={isPending}
-                                className="text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-50"
-                              >
-                                {t.setMember}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleSetRole(member.userId, "ASSISTANT")}
-                                disabled={isPending}
-                                className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                              >
-                                {t.setAssistant}
-                              </button>
-                            )
-                          ) : null}
-                        </td>
+                        {isHead ? (
+                          <td className="px-5 py-4">
+                            {canToggleAssistant ? (
+                              member.role === "ASSISTANT" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetRole(member.userId, "MEMBER")}
+                                  disabled={isPending}
+                                  className="text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-50"
+                                >
+                                  {t.setMember}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetRole(member.userId, "ASSISTANT")}
+                                  disabled={isPending}
+                                  className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                >
+                                  {t.setAssistant}
+                                </button>
+                              )
+                            ) : null}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+            {sortedMembers.length > 0 ? (
+              <PaginationFooter
+                locale={locale}
+                page={currentMemberPage}
+                totalPages={totalMemberPages}
+                totalItems={sortedMembers.length}
+                pageSize={memberPageSize}
+                itemLabel={t.members}
+                onPageChange={setMemberPage}
+                onPageSizeChange={(nextPageSize) => {
+                  setMemberPageSize(nextPageSize);
+                  setMemberPage(1);
+                }}
+              />
+            ) : null}
           </div>
-
-          {sortedMembers.length > 0 ? (
-            <div className="flex items-center justify-between rounded-xl border bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-              <span>
-                {t.page} {currentMemberPage} / {totalMemberPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
-                  disabled={currentMemberPage === 1}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t.previous}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMemberPage(Math.min(totalMemberPages, currentMemberPage + 1))}
-                  disabled={currentMemberPage === totalMemberPages}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t.next}
-                </button>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -574,110 +990,60 @@ export default function DepartmentManageClient({
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
             <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full whitespace-nowrap text-left text-sm" style={{ tableLayout: "fixed" }}>
                 <thead className="border-b bg-slate-50 text-xs font-semibold uppercase text-slate-500">
                   <tr>
-                    <th className="w-[24%] px-5 py-4">{t.projectName}</th>
-                    <th className="w-24 px-5 py-4">{t.key}</th>
-                    <th className="w-[18%] px-5 py-4">{t.description}</th>
-                    <th className="w-28 px-5 py-4">{t.ownerLabel}</th>
-                    <th className="w-24 px-5 py-4">{t.members}</th>
-                    <th className="w-32 px-5 py-4">{t.createdAt}</th>
-                    <th className="w-64 px-5 py-4">{t.actions}</th>
+                    {projectColumns.map((column, index) => {
+                      const showLeftLine =
+                        projectDragOverIndex === index && projectDragOverSide === "left" && projectDragSourceIndex !== index;
+                      const showRightLine =
+                        projectDragOverIndex === index && projectDragOverSide === "right" && projectDragSourceIndex !== index;
+                      const isDragging = projectDragSourceIndex === index;
+
+                      return (
+                        <th
+                          key={column.id}
+                          className={`group/column relative select-none overflow-hidden py-4 transition-colors ${
+                            column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-slate-100 active:cursor-move"
+                          } ${isDragging ? "opacity-40" : ""}`}
+                          style={{ width: `${column.width}px` }}
+                          draggable={column.id !== "actions"}
+                          onDragStart={(event) => handleProjectColumnDragStart(event, index)}
+                          onDragOver={(event) => handleProjectColumnDragOver(event, index)}
+                          onDrop={(event) => handleProjectColumnDrop(event, index)}
+                          onDragEnd={handleProjectColumnDragEnd}
+                          onDragLeave={() => {
+                            if (projectDragOverIndex === index) {
+                              setProjectDragOverIndex(null);
+                              setProjectDragOverSide(null);
+                            }
+                          }}
+                        >
+                          {showLeftLine ? <div className="absolute bottom-0 left-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
+                          {renderProjectHeaderLabel(column)}
+                          {showRightLine ? <div className="absolute bottom-0 right-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
+                          {column.id !== "actions" && projectColumns[index + 1]?.id !== "actions" ? (
+                            <div
+                              className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                              onMouseDown={(event) => handleProjectColumnResizeStart(event, index)}
+                              draggable={false}
+                              title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                            />
+                          ) : null}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {department.projects.map((project) => (
+                  {paginatedProjects.map((project) => (
                     <tr key={project.id} className="transition-colors hover:bg-slate-50/70">
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-                            <ProjectNavIcon className="h-[18px] w-[18px]" />
-                          </div>
-                          <Link
-                            href={`/projects/select?projectId=${project.id}`}
-                            className="font-semibold text-slate-800 transition-colors hover:text-emerald-700"
-                          >
-                            {project.name}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="font-mono text-xs text-slate-500">{project.key}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600">
-                        <div className="max-w-sm truncate">{project.description || t.noDescription}</div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {project.ownerId ? (
-                          <span className="font-medium text-blue-700">{project.ownerName}</span>
-                        ) : (
-                          <span className="text-slate-400">{t.unassignedOwner}</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                          {project.members.length} {t.members}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs font-medium text-slate-500">
-                        {new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
-                          <a
-                            href={`/projects/select?projectId=${project.id}`}
-                            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
-                          >
-                            <span className="whitespace-nowrap">{t.viewProject}</span>
-                          </a>
-                          <Link
-                            href={`/departments/${department.id}/projects/${project.id}/members`}
-                            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
-                          >
-                            <span className="whitespace-nowrap">{t.memberButton}</span>
-                          </Link>
-                          {canManageProjects ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingProject(project);
-                                  setEditProjectForm({
-                                    name: project.name,
-                                    key: project.key,
-                                    description: project.description || "",
-                                  });
-                                  setCreateProjectErrorMsg("");
-                                  setIsEditProjectOpen(true);
-                                }}
-                                disabled={isPending}
-                                className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
-                              >
-                                <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeleteErrorMsg("");
-                                  setDeleteConfirmText("");
-                                  setDeletingProject(project);
-                                }}
-                                disabled={isPending}
-                                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                              >
-                                <Trash2 size={12} />
-                                <span className="whitespace-nowrap">{t.deleteProject}</span>
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      </td>
+                      {projectColumns.map((column) => renderProjectCell(project, column))}
                     </tr>
                   ))}
                   {department.projects.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-5 py-16 text-center text-slate-500">
+                      <td colSpan={projectColumns.length} className="px-5 py-16 text-center text-slate-500">
                         {t.noProjects}
                       </td>
                     </tr>
@@ -685,6 +1051,21 @@ export default function DepartmentManageClient({
                 </tbody>
               </table>
             </div>
+            {sortedProjects.length > 0 ? (
+              <PaginationFooter
+                locale={locale}
+                page={currentProjectPage}
+                totalPages={totalProjectPages}
+                totalItems={sortedProjects.length}
+                pageSize={projectPageSize}
+                itemLabel={t.projects}
+                onPageChange={setProjectPage}
+                onPageSizeChange={(nextPageSize) => {
+                  setProjectPageSize(nextPageSize);
+                  setProjectPage(1);
+                }}
+              />
+            ) : null}
           </div>
 
           {isCreateProjectOpen ? (

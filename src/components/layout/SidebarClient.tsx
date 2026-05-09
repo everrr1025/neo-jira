@@ -259,7 +259,6 @@ export function SidebarClient({
           <SidebarUserMenu
             userId={user?.id || user?.email || user?.name || "anonymous"}
             userName={user?.name || translations.sidebar.userFallback}
-            userEmail={user?.email || ""}
             userAvatar={user?.avatar}
             locale={locale}
           />
