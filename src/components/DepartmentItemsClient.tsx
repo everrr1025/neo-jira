@@ -30,7 +30,6 @@ import {
   Eye,
   Folder,
   MapPin,
-  MessageSquare,
   Paperclip,
   Pencil,
   Plus,
@@ -2739,6 +2738,12 @@ export default function DepartmentItemsClient({
   };
 
   const openScheduleItem = (item: DepartmentItemCenterItem) => {
+    if (item.kind === "ISSUE_DUE") {
+      setSelectedNoteIssueId(item.id);
+      setSelectedScheduleItemId(null);
+      setScheduleOverflowDate(null);
+      return;
+    }
     if (item.itemType === "TODO") {
       openTaskDetail(item);
       return;
@@ -2776,19 +2781,6 @@ export default function DepartmentItemsClient({
     const timedPaddingClass = maxTitleLines >= 6 ? "py-3" : maxTitleLines >= 3 ? "py-2" : "py-1";
     const timedAlignmentClass = maxTitleLines >= 3 ? "items-center" : "items-start";
     const chipClassName = `relative flex min-h-6 w-full min-w-0 gap-1 border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] hover:brightness-95 ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
-
-    if (item.link && item.kind === "ISSUE_DUE") {
-      return (
-        <Link
-          key={`${item.kind}-${item.id}`}
-          href={item.link}
-          onClick={(event) => event.stopPropagation()}
-          className={chipClassName}
-        >
-          {content}
-        </Link>
-      );
-    }
 
     return (
       <button
@@ -3223,11 +3215,14 @@ export default function DepartmentItemsClient({
               {scheduleDays.map((date) => {
                 const isCurrentDay = isSameDay(date, new Date());
                 return (
-                  <div key={date.toISOString()} className="border-r border-[#DFE1E6] px-3 py-3 text-center last:border-r-0">
+                  <div
+                    key={date.toISOString()}
+                    className={`border-r border-[#DFE1E6] px-3 py-3 text-center last:border-r-0 ${isCurrentDay ? "bg-[#F8FAFF]" : ""}`}
+                  >
                     <div className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">
                       {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
                     </div>
-                    <div className={`mx-auto mt-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC] ring-2 ring-[#0052CC]/30" : "text-[#172B4D]"}`}>
+                    <div className={`mt-1 text-sm font-semibold ${isCurrentDay ? "text-[#0052CC]" : "text-[#172B4D]"}`}>
                       {date.getDate()}
                     </div>
                   </div>
@@ -3357,7 +3352,7 @@ export default function DepartmentItemsClient({
                   onClick={() => openCreateScheduleModal(date)}
                   className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] p-2 text-left hover:bg-[#FAFBFC] ${isCurrentDay ? "bg-[#F4F7FF] ring-2 ring-inset ring-[#0052CC]/35" : "bg-white"} ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
                 >
-                  <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${isCurrentDay ? "bg-[#D8E2FF] text-[#0052CC] ring-2 ring-[#0052CC]/30" : ""}`}>
+                  <div className={`mb-1 text-sm font-semibold ${isCurrentDay ? "text-[#0052CC]" : ""}`}>
                     {date.getDate()}
                   </div>
                   <div className="min-h-0 w-full space-y-1 overflow-hidden">
@@ -4038,8 +4033,7 @@ export default function DepartmentItemsClient({
 
                 <div>
                   <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <MessageSquare size={13} />
-                    {locale === "zh" ? `评论 (${selectedNoteIssue.comments.length})` : `Comments (${selectedNoteIssue.comments.length})`}
+                    {locale === "zh" ? `\u56de\u590d (${selectedNoteIssue.comments.length})` : `Replies (${selectedNoteIssue.comments.length})`}
                   </p>
                   {selectedNoteIssue.comments.length > 0 ? (
                     <div className="space-y-3">
@@ -4061,7 +4055,7 @@ export default function DepartmentItemsClient({
                     </div>
                   ) : (
                     <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-400">
-                      {locale === "zh" ? "暂无评论" : "No comments"}
+                      {locale === "zh" ? "\u6682\u65e0\u56de\u590d" : "No replies"}
                     </p>
                   )}
                 </div>
@@ -4383,14 +4377,191 @@ export default function DepartmentItemsClient({
         )
       )}
 
+      {activeTab !== "notes" && selectedNoteIssue ? (
+        <div className="fixed inset-0 z-[80] bg-[#091E42]/25" onClick={() => setSelectedNoteIssueId(null)}>
+          <aside
+            className="absolute inset-y-0 right-0 flex w-full max-w-[460px] flex-col border-l border-slate-200 bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                    {selectedNoteIssue.key}
+                  </span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                    {selectedNoteIssue.projectKey}
+                  </span>
+                </div>
+                <h3 className="mt-3 break-words text-lg font-semibold leading-6 text-slate-900">
+                  {selectedNoteIssue.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedNoteIssueId(null)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                title={t.cancel}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                {[
+                  [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
+                  [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
+                  [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
+                  [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
+                  [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                  [locale === "zh" ? "\u8ba1\u5212" : "Plan", selectedNoteIssue.planName || ""],
+                  [issueText.sprint, selectedNoteIssue.iterationName || ""],
+                  [issueText.reporter, selectedNoteIssue.reporterName || selectedNoteIssue.reporterEmail || "-"],
+                  [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
+                  [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
+                ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
+                  const fullTimeTitle =
+                    label === issueText.created
+                      ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
+                      : label === issueText.updated
+                        ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
+                        : undefined;
+                  return (
+                    <div key={label} className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-500">{label}</p>
+                      <p className="mt-0.5 min-w-0 break-words font-medium text-slate-800" title={fullTimeTitle}>{value}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{issueText.description}</p>
+                <div className="min-h-32 rounded-md bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800 [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm">
+                  {selectedNoteIssue.description ? (
+                    <RichTextEditor value={selectedNoteIssue.description} onChange={() => {}} readOnly />
+                  ) : (
+                    <p className="text-sm text-slate-400">{locale === "zh" ? "\u6682\u65e0\u63cf\u8ff0" : "No description"}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {locale === "zh" ? "\u6269\u5c55\u5b57\u6bb5" : "Custom fields"}
+                </p>
+                {selectedNoteIssue.issueFieldDefinitions.length > 0 ? (
+                  <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                    {selectedNoteIssue.issueFieldDefinitions.map((field) => {
+                      const value = selectedNoteIssue.issueFieldValues.find((item) => item.fieldDefinitionId === field.id);
+                      const displayValue = formatIssueFieldValue(field, value);
+
+                      return (
+                        <div key={field.id} className="grid grid-cols-[128px_minmax(0,1fr)] gap-3 px-3 py-2 text-sm">
+                          <p className="text-xs font-semibold text-slate-500">{field.name}</p>
+                          <p className="min-w-0 whitespace-pre-wrap break-words font-medium text-slate-800">
+                            {displayValue || "-"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-400">
+                    {locale === "zh" ? "\u6682\u65e0\u6269\u5c55\u5b57\u6bb5" : "No custom fields"}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {locale === "zh" ? `\u56de\u590d (${selectedNoteIssue.comments.length})` : `Replies (${selectedNoteIssue.comments.length})`}
+                </p>
+                {selectedNoteIssue.comments.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedNoteIssue.comments.map((comment) => (
+                      <div key={comment.id} className="rounded-md border border-slate-200 bg-white p-3">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+                          <span className="truncate font-semibold text-slate-700">
+                            {comment.authorName || comment.authorEmail}
+                          </span>
+                          <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>
+                            {formatRelativeTime(comment.createdAt, locale)}
+                          </span>
+                        </div>
+                        <div className="text-sm [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm">
+                          <RichTextEditor value={comment.content} onChange={() => {}} readOnly />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-400">
+                    {locale === "zh" ? "\u6682\u65e0\u56de\u590d" : "No replies"}
+                  </p>
+                )}
+              </div>
+
+              {selectedNoteIssue.attachments.length > 0 ? (
+                <div>
+                  <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <Paperclip size={13} />
+                    {locale === "zh" ? `\u9644\u4ef6 (${selectedNoteIssue.attachments.length})` : `Attachments (${selectedNoteIssue.attachments.length})`}
+                  </p>
+                  <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                    {selectedNoteIssue.attachments.map((attachment) => (
+                      <div key={attachment.id} className="px-3 py-2 text-sm">
+                        <p className="truncate font-semibold text-slate-800">{attachment.fileName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {attachment.uploaderName || attachment.uploaderEmail} 路{" "}
+                          <span title={formatFullDateTime(attachment.createdAt, locale)}>
+                            {formatRelativeTime(attachment.createdAt, locale)}
+                          </span>
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Link
+                href={`/issues/${selectedNoteIssue.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                {locale === "zh" ? "\u6253\u5f00\u95ee\u9898" : "Open issue"}
+              </Link>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
       {isCreateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
           {activeTab === "schedule" ? (
             renderScheduleCreateDialog()
           ) : (
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">{t.addTask}</h3>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <h3 className="text-lg font-semibold text-slate-900">{t.addTask}</h3>
+                <button
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, isImportant: !current.isImportant }))}
+                  className={`inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors ${
+                    form.isImportant
+                      ? "bg-amber-50 text-amber-500 hover:bg-amber-100"
+                      : "text-slate-300 hover:bg-slate-100 hover:text-amber-400"
+                  }`}
+                  title={t.important}
+                  aria-pressed={form.isImportant}
+                  aria-label={t.important}
+                >
+                  <Star size={16} className={form.isImportant ? "fill-amber-400 text-amber-400" : ""} />
+                </button>
+              </div>
               <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">
                 <X size={18} />
               </button>
