@@ -1252,6 +1252,7 @@ export default function DepartmentItemsClient({
   const [noteTitleOverrides, setNoteTitleOverrides] = useState<Record<string, string>>({});
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [selectedNoteIssueId, setSelectedNoteIssueId] = useState<string | null>(null);
+  const [isNoteIssuePropertiesExpanded, setIsNoteIssuePropertiesExpanded] = useState(false);
   const initialNote = notes.find((note) => !note.deletedAt) || null;
   const savedNoteSnapshotRef = useRef<SavedNoteSnapshot | null>(
     initialNote
@@ -1633,6 +1634,10 @@ export default function DepartmentItemsClient({
   const selectedNoteIssue = selectedNoteIssueId
     ? noteIssueOptions.find((issue) => issue.id === selectedNoteIssueId) || null
     : null;
+
+  useEffect(() => {
+    setIsNoteIssuePropertiesExpanded(false);
+  }, [selectedNoteIssueId]);
 
   useEffect(() => {
     if (!selectedNote) return;
@@ -3965,32 +3970,51 @@ export default function DepartmentItemsClient({
                 </button>
               </div>
               <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-                <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
-                  {[
-                    [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
-                    [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
-                    [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
-                    [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
-                    [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
-                    [locale === "zh" ? "计划" : "Plan", selectedNoteIssue.planName || ""],
-                    [issueText.sprint, selectedNoteIssue.iterationName || ""],
-                    [issueText.reporter, selectedNoteIssue.reporterName || selectedNoteIssue.reporterEmail || "-"],
-                    [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
-                    [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
-                  ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
-                    const fullTimeTitle =
-                      label === issueText.created
-                        ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
-                        : label === issueText.updated
-                          ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
-                          : undefined;
-                    return (
-                    <div key={label} className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-500">{label}</p>
-                      <p className="mt-0.5 min-w-0 break-words font-medium text-slate-800" title={fullTimeTitle}>{value}</p>
+                <div className="relative pb-5">
+                  <div className="grid grid-cols-4 gap-x-3 text-sm">
+                    {[
+                      [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
+                      [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
+                      [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
+                      [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                    ].map(([label, value]) => (
+                      <div key={label} className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500">{label}</p>
+                        <p className="mt-0.5 truncate font-medium text-slate-800" title={value}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsNoteIssuePropertiesExpanded((expanded) => !expanded)}
+                    className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    title={locale === "zh" ? "展开/收起属性" : "Expand/collapse properties"}
+                  >
+                    <ChevronDown size={16} className={`transition-transform ${isNoteIssuePropertiesExpanded ? "rotate-180" : ""}`} />
+                  </button>
+                  {isNoteIssuePropertiesExpanded ? (
+                    <div className="mt-3 grid grid-cols-4 gap-x-3 text-sm">
+                    {[
+                      [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
+                      [issueText.sprint, selectedNoteIssue.iterationName || ""],
+                      [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
+                      [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
+                    ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
+                      const fullTimeTitle =
+                        label === issueText.created
+                          ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
+                          : label === issueText.updated
+                            ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
+                            : undefined;
+                      return (
+                      <div key={label} className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500">{label}</p>
+                        <p className="mt-0.5 truncate font-medium text-slate-800" title={fullTimeTitle || value}>{value}</p>
+                      </div>
+                      );
+                    })}
                     </div>
-                    );
-                  })}
+                  ) : null}
                 </div>
 
                 <div>
@@ -4407,32 +4431,51 @@ export default function DepartmentItemsClient({
               </button>
             </div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
-              <div className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
-                {[
-                  [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
-                  [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
-                  [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
-                  [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
-                  [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
-                  [locale === "zh" ? "\u8ba1\u5212" : "Plan", selectedNoteIssue.planName || ""],
-                  [issueText.sprint, selectedNoteIssue.iterationName || ""],
-                  [issueText.reporter, selectedNoteIssue.reporterName || selectedNoteIssue.reporterEmail || "-"],
-                  [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
-                  [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
-                ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
-                  const fullTimeTitle =
-                    label === issueText.created
-                      ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
-                      : label === issueText.updated
-                        ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
-                        : undefined;
-                  return (
+              <div className="relative pb-5">
+                <div className="grid grid-cols-4 gap-x-3 text-sm">
+                  {[
+                    [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
+                    [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
+                    [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
+                    [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                  ].map(([label, value]) => (
                     <div key={label} className="min-w-0">
                       <p className="text-xs font-semibold text-slate-500">{label}</p>
-                      <p className="mt-0.5 min-w-0 break-words font-medium text-slate-800" title={fullTimeTitle}>{value}</p>
+                      <p className="mt-0.5 truncate font-medium text-slate-800" title={value}>{value}</p>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNoteIssuePropertiesExpanded((expanded) => !expanded)}
+                  className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  title={locale === "zh" ? "\u5c55\u5f00/\u6536\u8d77\u5c5e\u6027" : "Expand/collapse properties"}
+                >
+                  <ChevronDown size={16} className={`transition-transform ${isNoteIssuePropertiesExpanded ? "rotate-180" : ""}`} />
+                </button>
+                {isNoteIssuePropertiesExpanded ? (
+                  <div className="mt-3 grid grid-cols-4 gap-x-3 text-sm">
+                  {[
+                    [issueText.type, getIssueTypeLabel(selectedNoteIssue.type, locale)],
+                    [issueText.sprint, selectedNoteIssue.iterationName || ""],
+                    [issueText.created, formatRelativeTime(selectedNoteIssue.createdAt, locale)],
+                    [issueText.updated, formatRelativeTime(selectedNoteIssue.updatedAt, locale)],
+                  ].filter(([, value]) => Boolean(value)).map(([label, value]) => {
+                    const fullTimeTitle =
+                      label === issueText.created
+                        ? formatFullDateTime(selectedNoteIssue.createdAt, locale)
+                        : label === issueText.updated
+                          ? formatFullDateTime(selectedNoteIssue.updatedAt, locale)
+                          : undefined;
+                    return (
+                      <div key={label} className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500">{label}</p>
+                        <p className="mt-0.5 truncate font-medium text-slate-800" title={fullTimeTitle || value}>{value}</p>
+                    </div>
+                    );
+                  })}
+                  </div>
+                ) : null}
               </div>
 
               <div>
