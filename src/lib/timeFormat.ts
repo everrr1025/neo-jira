@@ -13,7 +13,7 @@ export function formatRelativeTime(value: string | Date, locale: Locale) {
   const diffYears = Math.floor(diffDays / 365);
 
   if (locale === "zh") {
-    if (diffSeconds < 45) return "刚刚";
+    if (diffSeconds < 60) return "刚刚";
     if (diffMinutes < 60) return `${diffMinutes}分钟前`;
     if (diffHours < 24) return `${diffHours}小时前`;
     if (diffDays < 30) return `${diffDays}天前`;
@@ -21,7 +21,7 @@ export function formatRelativeTime(value: string | Date, locale: Locale) {
     return `${diffYears}年前`;
   }
 
-  if (diffSeconds < 45) return "Just now";
+  if (diffSeconds < 60) return "Just now";
   if (diffMinutes < 60) return `${diffMinutes} min ago`;
   if (diffHours < 24) return `${diffHours} hr ago`;
   if (diffDays < 30) return `${diffDays} d ago`;

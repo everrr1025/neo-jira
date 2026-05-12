@@ -434,7 +434,7 @@ export default async function Dashboard({
     ]);
 
     const adminDashText = locale === "zh"
-      ? { title: "系统管理仪表盘", subtitle: "全局概览与系统管理", totalUsers: "用户总数", totalDepts: "部门总数", totalProjects: "项目总数", totalIssues: "问题总数" }
+      ? { title: "系统管理概览", subtitle: "全局概览与系统管理", totalUsers: "用户总数", totalDepts: "部门总数", totalProjects: "项目总数", totalIssues: "问题总数" }
       : { title: "System Admin Dashboard", subtitle: "Global overview & system management", totalUsers: "Total Users", totalDepts: "Total Departments", totalProjects: "Total Projects", totalIssues: "Total Issues" };
 
     return (

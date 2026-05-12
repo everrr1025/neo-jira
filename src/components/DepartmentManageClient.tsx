@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Bell, Building2, ChevronLeft, ChevronRight, FolderGit2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
@@ -14,23 +13,18 @@ import {
 } from "@/app/actions/departments";
 import {
   createAnnouncementNotification,
-  deleteAnnouncementNotification,
   markAnnouncementRead,
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
-import DepartmentUpcomingItemsCard from "@/components/DepartmentUpcomingItemsCard";
+import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
+import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
 } from "@/lib/departmentNotifications";
-import type {
-  DepartmentReminderIssueOption,
-  DepartmentReminderScopeOption,
-  DepartmentUpcomingItem,
-} from "@/lib/departmentReminders";
 import type { Locale } from "@/lib/i18n";
 
 const TEXT = {
@@ -65,8 +59,9 @@ const TEXT = {
     notificationManageFailed: "Failed to update notification.",
     revokeNotification: "Revoke",
     deleteNotification: "Delete",
-    resendNotification: "Edit and resend",
+    resendNotification: "Resend",
     revoked: "Revoked",
+    sent: "Sent",
     unread: "Unread",
     read: "Read",
     systemActor: "System",
@@ -146,8 +141,9 @@ const TEXT = {
     notificationManageFailed: "更新通知失败。",
     revokeNotification: "撤回",
     deleteNotification: "删除",
-    resendNotification: "编辑后再次发出",
+    resendNotification: "再次发出",
     revoked: "已撤回",
+    sent: "已发出",
     unread: "未读",
     read: "已读",
     systemActor: "系统",
@@ -232,6 +228,25 @@ function getNotificationLevelText(level: DepartmentNotificationListItem["level"]
   if (level === "DEPARTMENT") return t.departmentNotification;
   if (level === "PROJECT") return t.projectNotification;
   return t.systemNotification;
+}
+function detailDialogLabels(t: typeof TEXT[Locale], locale: Locale) {
+  return {
+    level: {
+      department: t.departmentNotification,
+      project: t.projectNotification,
+      system: t.systemNotification,
+    },
+    revoked: t.revoked,
+    sent: t.sent,
+    title: t.notificationTitle,
+    content: t.notificationContent,
+    project: t.notificationProject,
+    createdBy: locale === "zh" ? "创建人" : "Creator",
+    createdAt: t.createdAt,
+    status: locale === "zh" ? "状态" : "Status",
+    resend: t.resendNotification,
+    revoke: t.revokeNotification,
+  };
 }
 function formatRelativeTime(value: string, locale: Locale) {
   const diffMs = Date.now() - new Date(value).getTime();
@@ -341,10 +356,6 @@ export default function DepartmentManageClient({
   isHead,
   canManageProjects,
   mode,
-  upcomingItems = [],
-  reminderProjectOptions = [],
-  reminderIssueOptions = [],
-  canCreateDepartmentReminder = false,
   notifications = [],
   notificationPermission = {
     canCreate: false,
@@ -359,10 +370,6 @@ export default function DepartmentManageClient({
   isHead: boolean;
   canManageProjects: boolean;
   mode: "dashboard" | "members" | "projects";
-  upcomingItems?: DepartmentUpcomingItem[];
-  reminderProjectOptions?: DepartmentReminderScopeOption[];
-  reminderIssueOptions?: DepartmentReminderIssueOption[];
-  canCreateDepartmentReminder?: boolean;
   notifications?: DepartmentNotificationListItem[];
   notificationPermission?: DepartmentNotificationPermission;
 }) {
@@ -407,6 +414,7 @@ export default function DepartmentManageClient({
     startWidth: number;
     nextStartWidth: number;
   } | null>(null);
+  const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const [newProject, setNewProject] = useState({
     name: "",
     key: "",
@@ -579,19 +587,7 @@ export default function DepartmentManageClient({
         setNotificationErrorMsg(translateError(result.error, t.notificationManageFailed));
         return;
       }
-      setSelectedNotification(null);
-      router.refresh();
-    });
-  };
-
-  const handleDeleteNotification = (notificationId: string) => {
-    setNotificationErrorMsg("");
-    startTransition(async () => {
-      const result = await deleteAnnouncementNotification(notificationId);
-      if (!result.success) {
-        setNotificationErrorMsg(translateError(result.error, t.notificationManageFailed));
-        return;
-      }
+      resendContentEditorRef.current?.commitPendingUploads();
       setSelectedNotification(null);
       router.refresh();
     });
@@ -974,15 +970,6 @@ export default function DepartmentManageClient({
       {mode === "dashboard" ? (
         <div className="space-y-6">
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <DepartmentUpcomingItemsCard
-              departmentId={department.id}
-              items={upcomingItems}
-              locale={locale}
-              canCreateDepartmentReminder={canCreateDepartmentReminder}
-              projectOptions={reminderProjectOptions}
-              issueOptions={reminderIssueOptions}
-            />
-
             <div className="self-start rounded-2xl border bg-white p-6 shadow-sm">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -1003,10 +990,8 @@ export default function DepartmentManageClient({
               ) : (
                 <div className="divide-y divide-slate-100">
                   {notifications.map((notification) => (
-                    <button
+                    <div
                       key={notification.receiptId}
-                      type="button"
-                      onClick={() => openNotification(notification)}
                       className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-slate-50 ${
                         notification.read || readNotificationIds.has(notification.id) ? "bg-white" : "bg-blue-50/50"
                       }`}
@@ -1014,17 +999,19 @@ export default function DepartmentManageClient({
                       <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
                         {getNotificationLevelText(notification.level, t)}
                       </span>
-                      <span
-                        className={`truncate text-sm font-semibold ${
+                      <button
+                        type="button"
+                        onClick={() => openNotification(notification)}
+                        className={`min-w-0 truncate text-left text-sm font-semibold hover:text-blue-700 ${
                           notification.read || readNotificationIds.has(notification.id) ? "text-slate-700" : "text-blue-900"
                         }`}
                       >
                         {notification.title}
-                      </span>
+                      </button>
                       <span className="whitespace-nowrap text-xs font-medium text-slate-400">
                         {formatRelativeTime(notification.createdAt, locale)}
                       </span>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1272,235 +1259,6 @@ export default function DepartmentManageClient({
             ) : null}
           </div>
 
-          {isCreateNotificationOpen ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                  <h2 className="text-xl font-bold text-slate-900">{t.newNotification}</h2>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreateNotificationOpen(false);
-                      setNotificationErrorMsg("");
-                    }}
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-                <form onSubmit={handleCreateNotification} className="space-y-4 px-6 py-5">
-                  {notificationErrorMsg ? (
-                    <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                      {notificationErrorMsg}
-                    </div>
-                  ) : null}
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationLevel}</label>
-                    <select
-                      value={notificationForm.level}
-                      onChange={(event) =>
-                        setNotificationForm((current) => ({ ...current, level: event.target.value }))
-                      }
-                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none"
-                    >
-                      {notificationPermission.canCreateDepartment ? (
-                        <option value="DEPARTMENT">{t.departmentNotification}</option>
-                      ) : null}
-                      <option value="PROJECT">{t.projectNotification}</option>
-                    </select>
-                  </div>
-                  {notificationForm.level === "PROJECT" ? (
-                    <div>
-                      <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationProject}</label>
-                      <select
-                        required
-                        value={notificationForm.projectId}
-                        onChange={(event) =>
-                          setNotificationForm((current) => ({ ...current, projectId: event.target.value }))
-                        }
-                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none"
-                      >
-                        <option value="">{t.selectProject}</option>
-                        {notificationPermission.manageableProjects.map((project) => (
-                          <option key={project.id} value={project.id}>
-                            {project.name} ({project.key})
-                          </option>
-                        ))}
-                      </select>
-                      {notificationPermission.manageableProjects.length === 0 ? (
-                        <p className="mt-1 text-xs text-slate-500">{t.noProjectOptions}</p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationTitle}</label>
-                    <input
-                      required
-                      value={notificationForm.title}
-                      onChange={(event) =>
-                        setNotificationForm((current) => ({ ...current, title: event.target.value }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                      placeholder={t.notificationTitlePlaceholder}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationContent}</label>
-                    <textarea
-                      required
-                      rows={6}
-                      value={notificationForm.content}
-                      onChange={(event) =>
-                        setNotificationForm((current) => ({ ...current, content: event.target.value }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                      placeholder={t.notificationContentPlaceholder}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreateNotificationOpen(false);
-                        setNotificationErrorMsg("");
-                      }}
-                      disabled={isPending}
-                      className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {t.cancel}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isPending || (notificationForm.level === "PROJECT" && !notificationForm.projectId)}
-                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {t.create}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          ) : null}
-
-          {selectedNotification && typeof document !== "undefined" ? createPortal((
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/30 p-4">
-              <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
-                <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4">
-                  <div className="min-w-0">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">
-                        {getNotificationLevelText(selectedNotification.level, t)}
-                      </span>
-                      {selectedNotification.status === "REVOKED" ? (
-                        <span className="rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">
-                          {t.revoked}
-                        </span>
-                      ) : null}
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-900">{selectedNotification.title}</h2>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {new Date(selectedNotification.createdAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")} ·{" "}
-                      {selectedNotification.authorName}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedNotification(null);
-                      setNotificationErrorMsg("");
-                    }}
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-                <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_280px]">
-                  <div className="overflow-y-auto px-6 py-5">
-                    {notificationErrorMsg ? (
-                      <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                        {notificationErrorMsg}
-                      </div>
-                    ) : null}
-                    {selectedNotification.status === "REVOKED" && selectedNotification.canManage ? (
-                      <form onSubmit={handleResendNotification} className="space-y-4">
-                        <input
-                          required
-                          value={resendForm.title}
-                          onChange={(event) => setResendForm((current) => ({ ...current, title: event.target.value }))}
-                          className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                        />
-                        <textarea
-                          required
-                          rows={10}
-                          value={resendForm.content}
-                          onChange={(event) => setResendForm((current) => ({ ...current, content: event.target.value }))}
-                          className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 focus:border-blue-500 focus:outline-none"
-                        />
-                        <button
-                          type="submit"
-                          disabled={isPending}
-                          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                          {t.resendNotification}
-                        </button>
-                      </form>
-                    ) : (
-                      <div>
-                        <h3 className="mb-3 text-lg font-bold text-slate-800">{t.notificationContent}</h3>
-                        <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{selectedNotification.content}</p>
-                      </div>
-                    )}
-                  </div>
-                  <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0">
-                    <h3 className="text-sm font-bold text-slate-800">{locale === "zh" ? "属性" : "Properties"}</h3>
-                    <div className="mt-4 space-y-4 text-sm">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500">{t.notificationProject}</p>
-                        <p className="mt-1 text-slate-800">{selectedNotification.projectName || "-"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500">{locale === "zh" ? "创建人" : "Creator"}</p>
-                        <p className="mt-1 text-slate-800">{selectedNotification.authorName}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500">{t.createdAt}</p>
-                        <p className="mt-1 text-slate-800">
-                          {new Date(selectedNotification.createdAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}
-                        </p>
-                      </div>
-                    </div>
-                  </aside>
-                </div>
-                {selectedNotification.canManage || selectedNotification.canDelete ? (
-                  <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-                    {selectedNotification.canManage && selectedNotification.status === "SENT" ? (
-                      <button
-                        type="button"
-                        onClick={() => handleRevokeNotification(selectedNotification.id)}
-                        disabled={isPending}
-                        className="rounded-md border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50"
-                      >
-                        {t.revokeNotification}
-                      </button>
-                    ) : null}
-                    {selectedNotification.canDelete ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNotification(selectedNotification.id)}
-                        disabled={isPending}
-                        className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
-                      >
-                        <Trash2 size={15} />
-                        {t.deleteNotification}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ), document.body) : null}
 
           {isCreateProjectOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
@@ -1721,6 +1479,137 @@ export default function DepartmentManageClient({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {isCreateNotificationOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <h2 className="text-xl font-bold text-slate-900">{t.newNotification}</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateNotificationOpen(false);
+                  setNotificationErrorMsg("");
+                }}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateNotification} className="space-y-4 px-6 py-5">
+              {notificationErrorMsg ? (
+                <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                  {notificationErrorMsg}
+                </div>
+              ) : null}
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationLevel}</label>
+                <select
+                  value={notificationForm.level}
+                  onChange={(event) =>
+                    setNotificationForm((current) => ({ ...current, level: event.target.value }))
+                  }
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none"
+                >
+                  {notificationPermission.canCreateDepartment ? (
+                    <option value="DEPARTMENT">{t.departmentNotification}</option>
+                  ) : null}
+                  <option value="PROJECT">{t.projectNotification}</option>
+                </select>
+              </div>
+              {notificationForm.level === "PROJECT" ? (
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationProject}</label>
+                  <select
+                    required
+                    value={notificationForm.projectId}
+                    onChange={(event) =>
+                      setNotificationForm((current) => ({ ...current, projectId: event.target.value }))
+                    }
+                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">{t.selectProject}</option>
+                    {notificationPermission.manageableProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name} ({project.key})
+                      </option>
+                    ))}
+                  </select>
+                  {notificationPermission.manageableProjects.length === 0 ? (
+                    <p className="mt-1 text-xs text-slate-500">{t.noProjectOptions}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationTitle}</label>
+                <input
+                  required
+                  value={notificationForm.title}
+                  onChange={(event) =>
+                    setNotificationForm((current) => ({ ...current, title: event.target.value }))
+                  }
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder={t.notificationTitlePlaceholder}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700">{t.notificationContent}</label>
+                <textarea
+                  required
+                  rows={6}
+                  value={notificationForm.content}
+                  onChange={(event) =>
+                    setNotificationForm((current) => ({ ...current, content: event.target.value }))
+                  }
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder={t.notificationContentPlaceholder}
+                />
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateNotificationOpen(false);
+                    setNotificationErrorMsg("");
+                  }}
+                  disabled={isPending}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending || (notificationForm.level === "PROJECT" && !notificationForm.projectId)}
+                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {t.create}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedNotification ? (
+        <DepartmentNotificationDetailDialog
+          locale={locale}
+          notification={selectedNotification}
+          isPending={isPending}
+          errorMsg={notificationErrorMsg}
+          resendForm={resendForm}
+          setResendForm={setResendForm}
+          labels={detailDialogLabels(t, locale)}
+          resendEditorRef={resendContentEditorRef}
+          onClose={() => {
+            void resendContentEditorRef.current?.discardPendingUploads();
+            setSelectedNotification(null);
+            setNotificationErrorMsg("");
+          }}
+          onSubmitResend={handleResendNotification}
+          onRevoke={() => handleRevokeNotification(selectedNotification.id)}
+        />
       ) : null}
     </div>
   );

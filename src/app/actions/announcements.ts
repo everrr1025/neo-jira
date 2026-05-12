@@ -81,9 +81,11 @@ async function assertCanManageAnnouncement(announcementId: string, userId: strin
     },
   });
   if (!announcement?.departmentId) throw new Error("Notification not found.");
-  if (announcement.level === "SYSTEM") throw new Error("System notifications cannot be managed manually.");
 
   const permission = await getDepartmentNotificationPermission(announcement.departmentId, { userId, userRole });
+  if (announcement.level === "SYSTEM" && !permission.canManageDepartment) {
+    throw new Error("System notifications can only be managed by department managers.");
+  }
   const ownsNotification = announcement.authorId === userId;
   const canManageProject = announcement.projectId
     ? permission.manageableProjects.some((project) => project.id === announcement.projectId)
@@ -196,7 +198,10 @@ export async function deleteAnnouncementNotification(announcementId: string) {
   try {
     const user = await getCurrentUser();
     const announcement = await assertCanManageAnnouncement(announcementId, user.id, user.role);
-    if (announcement.authorId !== user.id) {
+    const permission = announcement.departmentId
+      ? await getDepartmentNotificationPermission(announcement.departmentId, { userId: user.id, userRole: user.role })
+      : null;
+    if (!permission?.canManageDepartment && announcement.authorId !== user.id) {
       return { success: false, error: "Only the notification creator can delete it." };
     }
     await prisma.announcement.delete({ where: { id: announcementId } });

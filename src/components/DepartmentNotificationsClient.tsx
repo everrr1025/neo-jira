@@ -1,7 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition, useEffect, useCallback, type ReactNode } from "react";
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
 import { useRouter } from "next/navigation";
 import {
   ArrowDown,
@@ -9,11 +13,10 @@ import {
   ArrowRight,
   ArrowUp,
   ChevronDown,
-  ListFilter,
+  Eye,
   Loader2,
   Plus,
   Search,
-  Settings2,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,11 +28,16 @@ import {
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
+import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
+import { DropdownField } from "@/components/DropdownField";
+import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
 } from "@/lib/departmentNotifications";
 import type { Locale } from "@/lib/i18n";
+import { formatRelativeTime } from "@/lib/timeFormat";
+import LocalizedDateInput from "./LocalizedDateInput";
 
 const TEXT = {
   en: {
@@ -41,6 +49,10 @@ const TEXT = {
     readState: "Read state",
     from: "From",
     to: "To",
+    allCreated: "All created",
+    dateEquals: "Equals",
+    dateOnOrAfter: "On or after",
+    dateOnOrBefore: "On or before",
     filter: "Filter",
     reset: "Reset",
     department: "Department",
@@ -58,8 +70,9 @@ const TEXT = {
     cancel: "Cancel",
     revoke: "Revoke",
     delete: "Delete",
-    resend: "Edit and resend",
+    resend: "Resend",
     revoked: "Revoked",
+    sent: "Sent",
     showing: "Showing",
     rangeTo: "to",
     of: "of",
@@ -69,6 +82,11 @@ const TEXT = {
     createdBy: "Creator",
     status: "Status",
     columns: "Columns",
+    resetColumns: "Reset columns",
+    actions: "Actions",
+    notificationsUnit: "notifications",
+    revokeConfirm: "Revoke this notification?",
+    deleteConfirm: "Delete this notification? This action cannot be undone.",
     searchPlaceholder: "Search notifications...",
     createFailed: "Failed to create notification.",
     manageFailed: "Failed to update notification.",
@@ -82,6 +100,10 @@ const TEXT = {
     readState: "已读状态",
     from: "开始时间",
     to: "结束时间",
+    allCreated: "全部创建时间",
+    dateEquals: "等于",
+    dateOnOrAfter: "晚于或等于",
+    dateOnOrBefore: "早于或等于",
     filter: "筛选",
     reset: "重置",
     department: "部门",
@@ -92,15 +114,16 @@ const TEXT = {
     notApplicable: "-",
     noNotifications: "暂无通知。",
     newNotification: "新建通知",
-    titleField: "通知标题",
-    content: "通知内容",
+    titleField: "标题",
+    content: "内容",
     selectProject: "选择项目",
     create: "创建",
     cancel: "取消",
     revoke: "撤回",
     delete: "删除",
-    resend: "编辑后再次发出",
+    resend: "再次发出",
     revoked: "已撤回",
+    sent: "已发出",
     showing: "显示",
     rangeTo: "至",
     of: "共",
@@ -110,6 +133,11 @@ const TEXT = {
     createdBy: "创建人",
     status: "状态",
     columns: "列",
+    resetColumns: "重置列",
+    actions: "操作",
+    notificationsUnit: "条通知",
+    revokeConfirm: "确认撤回这条通知？",
+    deleteConfirm: "确认删除这条通知？此操作不可恢复。",
     searchPlaceholder: "搜索通知...",
     createFailed: "创建通知失败。",
     manageFailed: "更新通知失败。",
@@ -131,27 +159,40 @@ type ColumnConfig = {
 };
 
 const DEFAULT_WIDTHS: Record<ColumnId, number> = {
-  level: 120,
-  title: 360,
-  project: 220,
-  createdAt: 170,
-  author: 150,
-  read: 110,
+  level: 110,
+  title: 320,
+  project: 160,
+  createdAt: 130,
+  author: 130,
+  read: 90,
 };
+
+const DEFAULT_COLUMN_ORDER: ColumnId[] = ["level", "title", "project", "read", "author", "createdAt"];
+
+function detailDialogLabels(t: typeof TEXT[Locale]) {
+  return {
+    level: {
+      department: t.department,
+      project: t.projectLevel,
+      system: t.system,
+    },
+    revoked: t.revoked,
+    sent: t.sent,
+    title: t.titleField,
+    content: t.content,
+    project: t.project,
+    createdBy: t.createdBy,
+    createdAt: t.createdAt,
+    status: t.status,
+    resend: t.resend,
+    revoke: t.revoke,
+  };
+}
 
 function levelLabel(level: DepartmentNotificationListItem["level"], t: typeof TEXT[Locale]) {
   if (level === "DEPARTMENT") return t.department;
   if (level === "PROJECT") return t.projectLevel;
   return t.system;
-}
-
-function buildHref(departmentId: string, currentParams: Record<string, string>, patch: Record<string, string | number>) {
-  const params = new URLSearchParams(currentParams);
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === "") params.delete(key);
-    else params.set(key, String(value));
-  }
-  return `/departments/${departmentId}/notifications?${params.toString()}`;
 }
 
 function formatDateTime(value: string, locale: Locale) {
@@ -194,17 +235,22 @@ export default function DepartmentNotificationsClient({
     content: "",
   });
   const [resendForm, setResendForm] = useState({ title: "", content: "" });
-  const [isSearchOpen, setIsSearchOpen] = useState(Boolean(filters.search));
-  const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>([
-    "level",
-    "title",
-    "project",
-    "createdAt",
-    "author",
-    "read",
-  ]);
+  const [columnOrder, setColumnOrder] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [columnWidths, setColumnWidths] = useState(DEFAULT_WIDTHS);
-  const resizingRef = useRef<{ columnId: ColumnId; startX: number; startWidth: number } | null>(null);
+  const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<"left" | "right" | null>(null);
+  const columnMenuRef = useRef<HTMLDetailsElement>(null);
+  const createContentEditorRef = useRef<RichTextEditorHandle>(null);
+  const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
+  const resizingRef = useRef<{
+    colIndex: number;
+    nextColIndex: number;
+    startX: number;
+    startWidth: number;
+    nextStartWidth: number;
+  } | null>(null);
 
   const columnsById = useMemo(
     () =>
@@ -218,7 +264,8 @@ export default function DepartmentNotificationsClient({
       ]),
     [t.createdAt, t.createdBy, t.level, t.project, t.status, t.titleField],
   );
-  const columns = visibleColumns
+  const columns = columnOrder
+    .filter((columnId) => visibleColumns.includes(columnId))
     .map((columnId) => columnsById.get(columnId))
     .filter((column): column is ColumnConfig => Boolean(column))
     .map((column) => ({ ...column, width: columnWidths[column.id] || column.width }));
@@ -229,6 +276,96 @@ export default function DepartmentNotificationsClient({
     () => ({ ...filters, pageSize: String(pagination.pageSize) }),
     [filters, pagination.pageSize],
   );
+  const createdFilter = filters.createdFilter || "ALL";
+  const createdDate = filters.createdDate || "";
+  const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
+  const createdFilterOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "ALL", label: t.allCreated },
+      { value: "EQ", label: t.dateEquals },
+      { value: "GTE", label: t.dateOnOrAfter },
+      { value: "LTE", label: t.dateOnOrBefore },
+    ],
+    [t.allCreated, t.dateEquals, t.dateOnOrAfter, t.dateOnOrBefore],
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
+        columnMenuRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleDragStart = (event: React.DragEvent, index: number) => {
+    event.dataTransfer.setData("colIndex", index.toString());
+    event.dataTransfer.effectAllowed = "move";
+    setDragSourceIndex(index);
+  };
+
+  const handleDragOver = (event: React.DragEvent, index: number) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragOverIndex(index);
+    setDragOverSide(event.clientX < rect.left + rect.width / 2 ? "left" : "right");
+  };
+
+  const handleDrop = (event: React.DragEvent, targetIndex: number) => {
+    event.preventDefault();
+    const sourceIndex = Number(event.dataTransfer.getData("colIndex"));
+    if (Number.isFinite(sourceIndex) && sourceIndex !== targetIndex) {
+      setColumnOrder((currentOrder) => {
+        const visibleOrder = currentOrder.filter((columnId) => visibleColumns.includes(columnId));
+        const sourceColumnId = visibleOrder[sourceIndex];
+        const targetColumnId = visibleOrder[targetIndex];
+        if (!sourceColumnId || !targetColumnId) return currentOrder;
+
+        const nextVisibleOrder = [...visibleOrder];
+        const [removed] = nextVisibleOrder.splice(sourceIndex, 1);
+        const adjustedTarget =
+          dragOverSide === "right"
+            ? sourceIndex < targetIndex
+              ? targetIndex
+              : targetIndex + 1
+            : sourceIndex < targetIndex
+              ? targetIndex - 1
+              : targetIndex;
+        nextVisibleOrder.splice(Math.max(0, adjustedTarget), 0, removed);
+
+        const hiddenOrder = currentOrder.filter((columnId) => !visibleColumns.includes(columnId));
+        return [...nextVisibleOrder, ...hiddenOrder];
+      });
+    }
+    setDragSourceIndex(null);
+    setDragOverIndex(null);
+    setDragOverSide(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragSourceIndex(null);
+    setDragOverIndex(null);
+    setDragOverSide(null);
+  };
+
+  const handleToggleColumnVisibility = (columnId: ColumnId) => {
+    setVisibleColumns((current) => {
+      if (current.includes(columnId)) {
+        return current.length > 1 ? current.filter((id) => id !== columnId) : current;
+      }
+
+      return DEFAULT_COLUMN_ORDER.filter((id) => id === columnId || current.includes(id));
+    });
+  };
+
+  const handleResetColumns = () => {
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    setVisibleColumns(DEFAULT_COLUMN_ORDER);
+    setColumnWidths(DEFAULT_WIDTHS);
+  };
 
   const openNotification = (notification: DepartmentNotificationListItem) => {
     setSelected(notification);
@@ -257,6 +394,7 @@ export default function DepartmentNotificationsClient({
         setErrorMsg(result.error || t.createFailed);
         return;
       }
+      createContentEditorRef.current?.commitPendingUploads();
       setIsCreateOpen(false);
       setForm({
         level: permission.canCreateDepartment ? "DEPARTMENT" : "PROJECT",
@@ -278,12 +416,26 @@ export default function DepartmentNotificationsClient({
         setErrorMsg(result.error || t.manageFailed);
         return;
       }
+      resendContentEditorRef.current?.commitPendingUploads();
       setSelected(null);
       router.refresh();
     });
   };
 
+  const closeCreateDialog = () => {
+    void createContentEditorRef.current?.discardPendingUploads();
+    setIsCreateOpen(false);
+  };
+
+  const closeDetailDialog = () => {
+    void resendContentEditorRef.current?.discardPendingUploads();
+    setSelected(null);
+  };
+
   const manage = (kind: "revoke" | "delete", id: string) => {
+    const confirmed = window.confirm(kind === "revoke" ? t.revokeConfirm : t.deleteConfirm);
+    if (!confirmed) return;
+
     setErrorMsg("");
     startTransition(async () => {
       const result = kind === "revoke" ? await revokeAnnouncementNotification(id) : await deleteAnnouncementNotification(id);
@@ -296,27 +448,53 @@ export default function DepartmentNotificationsClient({
     });
   };
 
-  const beginResize = (event: React.MouseEvent, columnId: ColumnId) => {
+  const handleResizeStart = useCallback((event: React.MouseEvent, colIndex: number) => {
     event.preventDefault();
+    event.stopPropagation();
+    const col = columns[colIndex];
+    const nextCol = columns[colIndex + 1];
+    if (!col || !nextCol) return;
+    const startWidth = col.width || 150;
+    const nextStartWidth = nextCol.width || 150;
+    const minWidth = 60;
     resizingRef.current = {
-      columnId,
+      colIndex,
+      nextColIndex: colIndex + 1,
       startX: event.clientX,
-      startWidth: columnWidths[columnId],
+      startWidth,
+      nextStartWidth,
     };
     const handleMove = (moveEvent: MouseEvent) => {
       const current = resizingRef.current;
       if (!current) return;
-      const nextWidth = Math.max(90, current.startWidth + moveEvent.clientX - current.startX);
-      setColumnWidths((widths) => ({ ...widths, [current.columnId]: nextWidth }));
+      const resizeColumnId = columns[current.colIndex]?.id;
+      const nextResizeColumnId = columns[current.nextColIndex]?.id;
+      if (!resizeColumnId || !nextResizeColumnId) return;
+
+      const delta = moveEvent.clientX - current.startX;
+      const boundedDelta = Math.min(
+        current.nextStartWidth - minWidth,
+        Math.max(minWidth - current.startWidth, delta),
+      );
+
+      setColumnWidths((widths) => ({
+        ...widths,
+        [resizeColumnId]: current.startWidth + boundedDelta,
+        [nextResizeColumnId]: current.nextStartWidth - boundedDelta,
+      }));
     };
     const handleUp = () => {
       resizingRef.current = null;
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
-  };
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+  }, [columns]);
 
   const updateQueryParams = (patch: Record<string, string | number | null>) => {
     const params = new URLSearchParams(currentParams);
@@ -325,6 +503,13 @@ export default function DepartmentNotificationsClient({
       else params.set(key, String(value));
     }
     router.push(`/departments/${departmentId}/notifications?${params.toString()}`);
+  };
+
+  const toggleFilterValue = (value: string, filterKey: string, currentValues: string[]) => {
+    const newValues = currentValues.includes(value)
+      ? currentValues.filter((v) => v !== value)
+      : [...currentValues, value];
+    updateQueryParams({ [filterKey]: newValues.length > 0 ? newValues.join(",") : null, page: 1 });
   };
 
   const renderCell = (notification: DepartmentNotificationListItem, columnId: ColumnId) => {
@@ -346,12 +531,20 @@ export default function DepartmentNotificationsClient({
         </button>
       );
     }
-    if (columnId === "project") return <span className="truncate text-sm text-slate-600">{notification.projectName || "-"}</span>;
-    if (columnId === "createdAt") return <span className="whitespace-nowrap text-sm text-slate-600">{formatDateTime(notification.createdAt, locale)}</span>;
+    if (columnId === "project") return <span className="truncate text-sm text-slate-600">{notification.projectName || ""}</span>;
+    if (columnId === "createdAt") {
+      return (
+        <span className="whitespace-nowrap text-sm text-slate-600" title={formatDateTime(notification.createdAt, locale)}>
+          {formatRelativeTime(notification.createdAt, locale)}
+        </span>
+      );
+    }
     if (columnId === "author") return <span className="truncate text-sm text-slate-600">{notification.authorName}</span>;
-    if (notification.authorId === currentUserId) return <span className="text-sm text-slate-400">{t.notApplicable}</span>;
     if (notification.status === "REVOKED") {
       return <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{t.revoked}</span>;
+    }
+    if (notification.authorId === currentUserId) {
+      return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{t.sent}</span>;
     }
     return (
       <span
@@ -365,112 +558,37 @@ export default function DepartmentNotificationsClient({
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 space-y-4">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-white p-3">
-          <div className={`relative flex items-center gap-2 ${isSearchOpen ? "w-full lg:w-80" : "w-auto"}`}>
-            {isSearchOpen ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (filters.search) updateQueryParams({ search: null, page: 1 });
-                    setIsSearchOpen(false);
-                  }}
-                  className="absolute left-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  aria-label={t.searchPlaceholder}
-                  title={t.searchPlaceholder}
-                >
-                  <Search size={14} />
-                </button>
-                <input
-                  name="search"
-                  defaultValue={filters.search || ""}
-                  autoFocus
-                  placeholder={t.searchPlaceholder}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape" && !filters.search) setIsSearchOpen(false);
-                  }}
-                  className="w-full rounded-md border border-slate-200 py-2 pl-9 pr-9 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                {filters.search ? (
-                  <button
-                    type="button"
-                    onClick={() => updateQueryParams({ search: null, page: 1 })}
-                    className="absolute right-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
-                    title={locale === "zh" ? "清除搜索" : "Clear search"}
-                  >
-                    <X size={14} />
-                  </button>
-                ) : null}
-              </>
-            ) : (
+    <div className="flex flex-col min-h-0 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{t.title}</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative w-72 max-w-[42vw]">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
+            <input
+              type="text"
+              placeholder={t.searchPlaceholder}
+              value={filters.search || ""}
+              onChange={(e) => {
+                updateQueryParams({ search: e.target.value, page: 1 });
+              }}
+              className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+            />
+            {filters.search ? (
               <button
                 type="button"
-                onClick={() => setIsSearchOpen(true)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                aria-label={t.searchPlaceholder}
-                title={t.searchPlaceholder}
+                onClick={() => {
+                  updateQueryParams({ search: null, page: 1 });
+                }}
+                className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
+                title={locale === "zh" ? "清除搜索" : "Clear search"}
               >
-                <Search size={16} />
+                <X size={14} />
               </button>
-            )}
+            ) : null}
           </div>
-
-          <div className="inline-flex h-9 items-center px-2 text-slate-500">
-            <ListFilter size={14} />
-          </div>
-
-          <ToolbarSelect name="level" label={t.level} value={filters.level} options={[
-            { value: "", label: t.level },
-            { value: "DEPARTMENT", label: t.department },
-            { value: "PROJECT", label: t.projectLevel },
-            { value: "SYSTEM", label: t.system },
-          ]} />
-          <ToolbarSelect name="projectId" label={t.project} value={filters.projectId} options={[
-            { value: "", label: t.project },
-            ...projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` })),
-          ]} />
-          <ToolbarSelect name="read" label={t.readState} value={filters.read} options={[
-            { value: "", label: t.readState },
-            { value: "unread", label: t.unread },
-            { value: "read", label: t.read },
-          ]} />
-          <input type="date" name="from" defaultValue={filters.from || ""} title={t.from} className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-sm text-slate-700" />
-          <input type="date" name="to" defaultValue={filters.to || ""} title={t.to} className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-sm text-slate-700" />
-          <button type="submit" className="h-9 rounded-md bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-700">
-            {t.filter}
-          </button>
-          <Link href={`/departments/${departmentId}/notifications`} className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50">
-            {t.reset}
-          </Link>
-          <details className="relative ml-auto">
-            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <Settings2 size={15} />
-              {t.columns}
-              <ChevronDown size={14} className="text-slate-400" />
-            </summary>
-            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-              {Array.from(columnsById.values()).map((column) => (
-                <label key={column.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50">
-                  <input
-                    type="checkbox"
-                    checked={visibleColumns.includes(column.id)}
-                    onChange={() => {
-                      setVisibleColumns((current) =>
-                        current.includes(column.id)
-                          ? current.filter((id) => id !== column.id)
-                          : [...current, column.id],
-                      );
-                    }}
-                    className="h-4 w-4"
-                  />
-                  <span>{column.label}</span>
-                </label>
-              ))}
-            </div>
-          </details>
           {permission.canCreate ? (
             <button
               type="button"
@@ -478,59 +596,204 @@ export default function DepartmentNotificationsClient({
                 setErrorMsg("");
                 setIsCreateOpen(true);
               }}
-              className="flex h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+              className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
             >
               <Plus size={16} />
               {t.newNotification}
             </button>
           ) : null}
-        </form>
+        </div>
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-max table-fixed divide-y divide-slate-200">
-            <colgroup>
-              {columns.map((column) => (
-                <col key={column.id} style={{ width: column.width }} />
-              ))}
-            </colgroup>
-            <thead className="bg-slate-50">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+          <MultiFilter
+            label={t.level}
+            options={[
+              { value: "DEPARTMENT", label: t.department },
+              { value: "PROJECT", label: t.projectLevel },
+              { value: "SYSTEM", label: t.system },
+            ]}
+            selectedValues={filters.level ? filters.level.split(",") : []}
+            onToggle={(value) => toggleFilterValue(value, "level", filters.level ? filters.level.split(",") : [])}
+            onClear={() => updateQueryParams({ level: null, page: 1 })}
+            clearText={t.reset}
+          />
+
+          <MultiFilter
+            label={t.project}
+            options={projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` }))}
+            selectedValues={filters.projectId ? filters.projectId.split(",") : []}
+            onToggle={(value) => toggleFilterValue(value, "projectId", filters.projectId ? filters.projectId.split(",") : [])}
+            onClear={() => updateQueryParams({ projectId: null, page: 1 })}
+            clearText={t.reset}
+          />
+
+          <MultiFilter
+            label={t.readState}
+            options={[
+              { value: "unread", label: t.unread },
+              { value: "read", label: t.read },
+            ]}
+            selectedValues={filters.read ? filters.read.split(",") : []}
+            onToggle={(value) => toggleFilterValue(value, "read", filters.read ? filters.read.split(",") : [])}
+            onClear={() => updateQueryParams({ read: null, page: 1 })}
+            clearText={t.reset}
+          />
+
+          <SingleFilter
+            value={createdFilter}
+            options={createdFilterOptions}
+            onChange={(value) => {
+              updateQueryParams({
+                createdFilter: value,
+                createdDate: value === "ALL" ? null : createdDate,
+                from: null,
+                to: null,
+                page: 1,
+              });
+            }}
+            renderSummary={(label) => (
+              <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
+                <span className="text-slate-500">{t.createdAt}</span>
+                <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+            )}
+          />
+
+          {createdFilter !== "ALL" ? (
+            <LocalizedDateInput
+              locale={locale}
+              aria-label={t.createdAt}
+              value={createdDate}
+              onChange={(e) => updateQueryParams({ createdDate: e.target.value, from: null, to: null, page: 1 })}
+              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : null}
+
+          {(filters.level || filters.projectId || filters.read || hasActiveCreatedFilter || filters.search) ? (
+            <button
+              type="button"
+              onClick={() => updateQueryParams({ level: null, projectId: null, read: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
+              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              {t.reset}
+            </button>
+          ) : null}
+
+          <details ref={columnMenuRef} className="relative">
+            <summary
+              className="list-none h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none"
+              aria-label={t.columns}
+              title={t.columns}
+            >
+              <Eye size={16} className="text-slate-500" />
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+              {DEFAULT_COLUMN_ORDER.map((columnId) => {
+                const column = columnsById.get(columnId);
+                if (!column) return null;
+                const isChecked = visibleColumns.includes(column.id);
+                const isDisabled = isChecked && visibleColumns.length === 1;
+
+                return (
+                  <label
+                    key={column.id}
+                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                      isDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      disabled={isDisabled}
+                      onChange={() => handleToggleColumnVisibility(column.id)}
+                      className="h-4 w-4"
+                    />
+                    <span>{column.label}</span>
+                  </label>
+                );
+              })}
+              <button
+                type="button"
+                onClick={handleResetColumns}
+                className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+              >
+                {t.resetColumns}
+              </button>
+            </div>
+          </details>
+        </div>
+
+      <div className="bg-white overflow-hidden rounded-xl border shadow-sm">
+        <div className="relative overflow-hidden">
+          <table className="w-full text-left text-sm" style={{ tableLayout: "fixed" }}>
+            <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
               <tr>
-                {columns.map((column) => {
+                {columns.map((column, index) => {
                   const isSorted = filters.sort === column.id || (!filters.sort && column.id === "createdAt");
                   const nextDirection = isSorted && filters.direction === "asc" ? "desc" : "asc";
+                  const showLeftLine =
+                    dragOverIndex === index && dragOverSide === "left" && dragSourceIndex !== index;
+                  const showRightLine =
+                    dragOverIndex === index && dragOverSide === "right" && dragSourceIndex !== index;
+                  const isDragging = dragSourceIndex === index;
                   return (
-                    <th key={column.id} className="relative px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th
+                      key={column.id}
+                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                        isDragging ? "opacity-40" : ""
+                      }`}
+                      style={{ width: `${column.width}px` }}
+                      draggable
+                      onDragStart={(event) => handleDragStart(event, index)}
+                      onDragOver={(event) => handleDragOver(event, index)}
+                      onDrop={(event) => handleDrop(event, index)}
+                      onDragEnd={handleDragEnd}
+                      onDragLeave={() => {
+                        if (dragOverIndex === index) {
+                          setDragOverIndex(null);
+                          setDragOverSide(null);
+                        }
+                      }}
+                    >
+                      {showLeftLine ? <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
                       {column.sortable ? (
-                        <Link
-                          href={buildHref(departmentId, currentParams, {
-                            sort: column.id,
-                            direction: nextDirection,
-                            page: 1,
-                          })}
-                          className="inline-flex items-center gap-1 hover:text-slate-900"
+                        <button
+                          type="button"
+                          onClick={() => updateQueryParams({ sort: column.id, direction: nextDirection, page: 1 })}
+                          className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-800"
+                          draggable={false}
                         >
                           {column.label}
                           {isSorted ? (
-                            filters.direction === "asc" ? <ArrowUp size={13} /> : <ArrowDown size={13} />
+                            filters.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
                           ) : null}
-                        </Link>
+                        </button>
                       ) : (
-                        column.label
+                        <span className="inline-flex items-center gap-1 font-semibold text-slate-500">{column.label}</span>
                       )}
-                      <span
-                        role="separator"
-                        onMouseDown={(event) => beginResize(event, column.id)}
-                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-300"
-                      />
+                      {showRightLine ? <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
+                      {columns[index + 1] ? (
+                        <div
+                          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                          onMouseDown={(event) => handleResizeStart(event, index)}
+                          draggable={false}
+                          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                        />
+                      ) : null}
                     </th>
                   );
                 })}
+                <th className="w-36 px-5 py-4 text-left">
+                  <span className="font-semibold text-slate-500">{t.actions}</span>
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-100">
               {notifications.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length || 1} className="px-5 py-16 text-center text-sm text-slate-500">
+                  <td colSpan={(columns.length || 1) + 1} className="px-5 py-16 text-center text-sm text-slate-500">
                     {t.noNotifications}
                   </td>
                 </tr>
@@ -545,6 +808,31 @@ export default function DepartmentNotificationsClient({
                         {renderCell(notification, column.id)}
                       </td>
                     ))}
+                    <td className="px-5 py-3.5 text-right align-middle">
+                      <div className="inline-flex items-center justify-end gap-2">
+                        {notification.canManage && notification.status === "SENT" ? (
+                          <button
+                            type="button"
+                            onClick={() => manage("revoke", notification.id)}
+                            disabled={isPending}
+                            className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                          >
+                            {t.revoke}
+                          </button>
+                        ) : null}
+                        {notification.canDelete ? (
+                          <button
+                            type="button"
+                            onClick={() => manage("delete", notification.id)}
+                            disabled={isPending}
+                            className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                          >
+                            <Trash2 size={13} />
+                            {t.delete}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -554,44 +842,70 @@ export default function DepartmentNotificationsClient({
 
         <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
           <div className="text-slate-500 font-medium">
-            {t.showing}
-            <span className="text-slate-800 font-bold"> {rangeStart} </span>
-            {t.rangeTo}
-            <span className="text-slate-800 font-bold"> {rangeEnd} </span>
-            {t.of}
-            <span className="text-slate-800 font-bold"> {pagination.total} </span>
+            {locale === "zh" ? (
+              <>
+                {t.showing}
+                <span className="text-slate-800 font-bold"> {rangeStart} </span>
+                {t.rangeTo}
+                <span className="text-slate-800 font-bold"> {rangeEnd} </span>
+                {t.of}
+                <span className="text-slate-800 font-bold"> {pagination.total} </span>
+                {t.notificationsUnit}
+              </>
+            ) : (
+              <>
+                {t.showing} <span className="text-slate-800 font-bold">{rangeStart}</span> {t.rangeTo}{" "}
+                <span className="text-slate-800 font-bold">{rangeEnd}</span> {t.of}{" "}
+                <span className="text-slate-800 font-bold">{pagination.total}</span>{" "}
+                {t.notificationsUnit}
+              </>
+            )}
           </div>
+
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
+              <span>{locale === "zh" ? "每页" : "Per page"}</span>
               <span>{t.perPage}</span>
-              <select
-                value={pagination.pageSize}
-                onChange={(event) => router.push(buildHref(departmentId, currentParams, { pageSize: event.target.value, page: 1 }))}
-                className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700"
-              >
-                {[10, 20, 50].map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <InlineSelect
+                value={String(pagination.pageSize)}
+                options={[
+                  { value: "10", label: "10" },
+                  { value: "20", label: "20" },
+                  { value: "50", label: "50" },
+                ]}
+                onChange={(value) => {
+                  updateQueryParams({ pageSize: value, page: 1 });
+                }}
+                renderSummary={(label) => (
+                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    {label}
+                  </span>
+                )}
+              />
+            </div>
+
             <div className="flex items-center gap-2">
-              <Link
-                href={buildHref(departmentId, currentParams, { page: Math.max(1, pagination.page - 1) })}
-                className={`rounded-md p-1 text-slate-500 hover:bg-slate-200 ${pagination.page === 1 ? "pointer-events-none opacity-50" : ""}`}
+              <button
+                onClick={() => updateQueryParams({ page: Math.max(1, pagination.page - 1) })}
+                disabled={pagination.page <= 1}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowLeft size={18} />
-              </Link>
+              </button>
+
               <span className="font-medium text-slate-700 px-2 leading-none">
-                {t.page} {pagination.page} / {totalPages}
+                {locale === "zh"
+                  ? `${t.page}${pagination.page}/${totalPages || 1}页`
+                  : `${t.page} ${pagination.page} of ${totalPages || 1}`}
               </span>
-              <Link
-                href={buildHref(departmentId, currentParams, { page: Math.min(totalPages, pagination.page + 1) })}
-                className={`rounded-md p-1 text-slate-500 hover:bg-slate-200 ${pagination.page >= totalPages ? "pointer-events-none opacity-50" : ""}`}
+
+              <button
+                onClick={() => updateQueryParams({ page: Math.min(totalPages || 1, pagination.page + 1) })}
+                disabled={pagination.page >= totalPages || totalPages === 0}
+                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowRight size={18} />
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -605,52 +919,277 @@ export default function DepartmentNotificationsClient({
           form={form}
           setForm={setForm}
           permission={permission}
-          onClose={() => setIsCreateOpen(false)}
+          editorRef={createContentEditorRef}
+          onClose={closeCreateDialog}
           onSubmit={submitCreate}
         />
       ) : null}
 
       {selected ? (
-        <NotificationDetailDialog
-          t={t}
+        <DepartmentNotificationDetailDialog
           locale={locale}
           notification={selected}
           isPending={isPending}
           errorMsg={errorMsg}
           resendForm={resendForm}
           setResendForm={setResendForm}
-          onClose={() => setSelected(null)}
+          labels={detailDialogLabels(t)}
+          resendEditorRef={resendContentEditorRef}
+          onClose={closeDetailDialog}
           onSubmitResend={submitResend}
           onRevoke={() => manage("revoke", selected.id)}
-          onDelete={() => manage("delete", selected.id)}
         />
       ) : null}
     </div>
   );
 }
 
-function ToolbarSelect({
-  name,
+function MultiFilter({
   label,
+  options,
+  selectedValues,
+  onToggle,
+  onClear,
+  clearText,
+}: {
+  label: string;
+  options: FilterOption[];
+  selectedValues: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  clearText: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedLabels = options
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+  const buttonText =
+    selectedLabels.length === 0
+      ? label
+      : selectedLabels.length === 1
+        ? selectedLabels[0]
+        : `${label} (${selectedLabels.length})`;
+
+  return (
+    <details ref={detailsRef} className="relative">
+      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+        <span className="truncate max-w-40">{buttonText}</span>
+        <ChevronDown size={14} className="text-slate-400" />
+      </summary>
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-50 cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              checked={selectedValues.includes(option.value)}
+              onChange={() => onToggle(option.value)}
+              className="h-4 w-4"
+            />
+            <span className="text-slate-700">{option.label}</span>
+          </label>
+        ))}
+        {selectedValues.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+          >
+            {clearText}
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function SingleFilter({
   value,
   options,
+  onChange,
+  renderSummary,
 }: {
-  name: string;
-  label: string;
-  value?: string;
-  options: Array<{ value: string; label: string }>;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+  };
+
   return (
-    <label className="relative">
-      <span className="sr-only">{label}</span>
-      <select name={name} defaultValue={value || ""} className="h-9 min-w-36 rounded-md border border-slate-200 bg-slate-50 px-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+    <details ref={detailsRef} className="relative">
+      <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
         {options.map((option) => (
-          <option key={option.value || "all"} value={option.value}>
+          <button
+            type="button"
+            key={option.value}
+            onClick={() => handleSelect(option.value)}
+            className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+              option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+            }`}
+          >
             {option.label}
-          </option>
+          </button>
         ))}
-      </select>
-    </label>
+      </div>
+    </details>
+  );
+}
+
+function InlineSelect({
+  value,
+  options,
+  onChange,
+  renderSummary,
+  className = "relative",
+}: {
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
+  className?: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    openingUpward: boolean;
+  }>({ left: 0, width: 0, openingUpward: false });
+
+  const updateMenuPosition = useCallback(() => {
+    const rect = summaryRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openingUpward = spaceBelow < 280;
+
+    if (openingUpward) {
+      setMenuPosition({
+        bottom: window.innerHeight - rect.top + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: true,
+      });
+    } else {
+      setMenuPosition({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <details
+      ref={detailsRef}
+      className={className}
+      onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open) updateMenuPosition();
+      }}
+    >
+      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      {isOpen && (
+        <div
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          style={{
+            top: menuPosition.top,
+            bottom: menuPosition.bottom,
+            left: menuPosition.left,
+            minWidth: menuPosition.width,
+          }}
+        >
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onClick={() => handleSelect(option.value)}
+              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className="block truncate">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -661,6 +1200,7 @@ function NotificationFormDialog({
   form,
   setForm,
   permission,
+  editorRef,
   onClose,
   onSubmit,
 }: {
@@ -670,195 +1210,115 @@ function NotificationFormDialog({
   form: { level: string; projectId: string; title: string; content: string };
   setForm: React.Dispatch<React.SetStateAction<{ level: string; projectId: string; title: string; content: string }>>;
   permission: DepartmentNotificationPermission;
+  editorRef: React.RefObject<RichTextEditorHandle | null>;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
+  const levelOptions = [
+    ...(permission.canCreateDepartment ? [{ value: "DEPARTMENT", label: t.department }] : []),
+    { value: "PROJECT", label: t.projectLevel },
+  ];
+  const projectOptions = [
+    { value: "", label: t.selectProject },
+    ...permission.manageableProjects.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` })),
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-      <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-900">{t.newNotification}</h2>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-            <X size={18} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <h2 className="text-xl font-bold text-slate-800">{t.newNotification}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X size={20} />
           </button>
         </div>
-        <form onSubmit={onSubmit} className="space-y-5 px-6 py-5">
-          {errorMsg ? <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{errorMsg}</div> : null}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-600">{t.level}</span>
-              <select
-                value={form.level}
-                onChange={(event) => setForm((current) => ({ ...current, level: event.target.value }))}
-                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-              >
-                {permission.canCreateDepartment ? <option value="DEPARTMENT">{t.department}</option> : null}
-                <option value="PROJECT">{t.projectLevel}</option>
-              </select>
-            </label>
-            {form.level === "PROJECT" ? (
-              <label className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-600">{t.project}</span>
-                <select
-                  required
-                  value={form.projectId}
-                  onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value }))}
-                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                >
-                  <option value="">{t.selectProject}</option>
-                  {permission.manageableProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name} ({project.key})
-                    </option>
+
+        <form onSubmit={onSubmit} className="flex flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+            {errorMsg ? <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{errorMsg}</div> : null}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium text-slate-700">{t.level}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {levelOptions.map((option) => (
+                    <label
+                      key={option.value}
+                      className={`flex h-10 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium transition-colors ${
+                        form.level === option.value
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="notification-level"
+                        value={option.value}
+                        checked={form.level === option.value}
+                        onChange={(event) => setForm((current) => ({ ...current, level: event.target.value }))}
+                        className="sr-only"
+                      />
+                      {option.label}
+                    </label>
                   ))}
-                </select>
-              </label>
-            ) : null}
+                </div>
+              </div>
+              {form.level === "PROJECT" ? (
+                <DropdownField
+                  id="notification-project"
+                  label={t.project}
+                  value={form.projectId}
+                  onChange={(value) => setForm((current) => ({ ...current, projectId: value }))}
+                  options={projectOptions}
+                />
+              ) : null}
+            </div>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium text-slate-700">
+                {t.titleField} <span className="text-red-500">*</span>
+              </span>
+              <input
+                required
+                autoFocus
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </label>
+            <div className="block space-y-1.5">
+              <span className="text-sm font-medium text-slate-700">
+                {t.content} <span className="text-red-500">*</span>
+              </span>
+              <RichTextEditor
+                ref={editorRef}
+                value={form.content}
+                onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
+                height={220}
+              />
+            </div>
           </div>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-bold text-slate-600">{t.titleField}</span>
-            <input
-              required
-              value={form.title}
-              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-bold text-slate-600">{t.content}</span>
-            <textarea
-              required
-              rows={7}
-              value={form.content}
-              onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm leading-6"
-            />
-          </label>
-          <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-            <button type="button" onClick={onClose} disabled={isPending} className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50">
+          <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isPending}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
               {t.cancel}
             </button>
-            <button type="submit" disabled={isPending || (form.level === "PROJECT" && !form.projectId)} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+            <button
+              type="submit"
+              disabled={isPending || !form.title.trim() || !form.content.trim() || (form.level === "PROJECT" && !form.projectId)}
+              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
               {t.create}
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function NotificationDetailDialog({
-  t,
-  locale,
-  notification,
-  isPending,
-  errorMsg,
-  resendForm,
-  setResendForm,
-  onClose,
-  onSubmitResend,
-  onRevoke,
-  onDelete,
-}: {
-  t: typeof TEXT[Locale];
-  locale: Locale;
-  notification: DepartmentNotificationListItem;
-  isPending: boolean;
-  errorMsg: string;
-  resendForm: { title: string; content: string };
-  setResendForm: React.Dispatch<React.SetStateAction<{ title: string; content: string }>>;
-  onClose: () => void;
-  onSubmitResend: (event: React.FormEvent<HTMLFormElement>) => void;
-  onRevoke: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-      <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-6 py-4">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">
-                {levelLabel(notification.level, t)}
-              </span>
-              {notification.status === "REVOKED" ? (
-                <span className="rounded bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{t.revoked}</span>
-              ) : null}
-            </div>
-            <h2 className="text-xl font-bold text-slate-900">{notification.title}</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              {formatDateTime(notification.createdAt, locale)} · {notification.authorName}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="overflow-y-auto px-6 py-5">
-            {errorMsg ? <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{errorMsg}</div> : null}
-            {notification.status === "REVOKED" && notification.canManage ? (
-              <form onSubmit={onSubmitResend} className="space-y-4">
-                <input
-                  required
-                  value={resendForm.title}
-                  onChange={(event) => setResendForm((current) => ({ ...current, title: event.target.value }))}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                />
-                <textarea
-                  required
-                  rows={10}
-                  value={resendForm.content}
-                  onChange={(event) => setResendForm((current) => ({ ...current, content: event.target.value }))}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm leading-6"
-                />
-                <button type="submit" disabled={isPending} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-                  {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                  {t.resend}
-                </button>
-              </form>
-            ) : (
-              <div>
-                <h3 className="mb-3 text-lg font-bold text-slate-800">{t.content}</h3>
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{notification.content}</p>
-              </div>
-            )}
-          </div>
-          <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0">
-            <h3 className="text-sm font-bold text-slate-800">{t.status}</h3>
-            <div className="mt-4 space-y-4 text-sm">
-              <div>
-                <p className="text-xs font-semibold text-slate-500">{t.project}</p>
-                <p className="mt-1 text-slate-800">{notification.projectName || "-"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500">{t.createdBy}</p>
-                <p className="mt-1 text-slate-800">{notification.authorName}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500">{t.createdAt}</p>
-                <p className="mt-1 text-slate-800">{formatDateTime(notification.createdAt, locale)}</p>
-              </div>
-            </div>
-          </aside>
-        </div>
-        {notification.canManage || notification.canDelete ? (
-          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-            {notification.canManage && notification.status === "SENT" ? (
-              <button type="button" onClick={onRevoke} disabled={isPending} className="rounded-md border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">
-                {t.revoke}
-              </button>
-            ) : null}
-            {notification.canDelete ? (
-              <button type="button" onClick={onDelete} disabled={isPending} className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
-                <Trash2 size={15} />
-                {t.delete}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       </div>
     </div>
   );

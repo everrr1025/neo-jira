@@ -29,6 +29,7 @@ import {
   Clock,
   Eye,
   Folder,
+  Loader2,
   MapPin,
   Paperclip,
   Pencil,
@@ -4582,90 +4583,114 @@ export default function DepartmentItemsClient({
       ) : null}
 
       {isCreateOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
           {activeTab === "schedule" ? (
             renderScheduleCreateDialog()
           ) : (
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <h3 className="text-lg font-semibold text-slate-900">{t.addTask}</h3>
+            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <h3 className="text-xl font-bold text-slate-800">{t.addTask}</h3>
+                  <button
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, isImportant: !current.isImportant }))}
+                    className={`inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors ${
+                      form.isImportant
+                        ? "bg-amber-50 text-amber-500 hover:bg-amber-100"
+                        : "text-slate-300 hover:bg-slate-100 hover:text-amber-400"
+                    }`}
+                    title={t.important}
+                    aria-pressed={form.isImportant}
+                    aria-label={t.important}
+                  >
+                    <Star size={16} className={form.isImportant ? "fill-amber-400 text-amber-400" : ""} />
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setForm((current) => ({ ...current, isImportant: !current.isImportant }))}
-                  className={`inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors ${
-                    form.isImportant
-                      ? "bg-amber-50 text-amber-500 hover:bg-amber-100"
-                      : "text-slate-300 hover:bg-slate-100 hover:text-amber-400"
-                  }`}
-                  title={t.important}
-                  aria-pressed={form.isImportant}
-                  aria-label={t.important}
+                  onClick={() => setIsCreateOpen(false)}
+                  className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                 >
-                  <Star size={16} className={form.isImportant ? "fill-amber-400 text-amber-400" : ""} />
+                  <X size={20} />
                 </button>
               </div>
-              <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">{t.titleField}</label>
-                <input
-                  value={form.title}
-                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                  className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">{t.notes}</label>
-                <textarea
-                  value={form.content}
-                  onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-                  rows={6}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateMoreOpen((current) => !current)}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700"
-              >
-                {isCreateMoreOpen ? t.less : t.more}
-              </button>
-              {isCreateMoreOpen ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {activeTab === "tasks" || form.itemType === "TODO" ? <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
-                    <LocalizedDateInput
-                      locale={locale}
-                      value={form.dueAt}
-                      onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+
+              <form onSubmit={handleCreate} className="flex flex-1 flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                  <label className="block space-y-1.5">
+                    <span className="text-sm font-medium text-slate-700">
+                      {t.titleField} <span className="text-red-500">*</span>
+                    </span>
+                    <input
+                      value={form.title}
+                      onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      required
+                      autoFocus
                     />
-                  </div> : null}
-                  {(activeTab === "tasks" || form.itemType === "TODO") ? <DropdownField
-                    id="taskAssignee"
-                    label={t.assignee}
-                    value={currentTaskAssigneeValue}
-                    onChange={applyTaskAssigneeChoice}
-                    options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
-                    className="flex-1"
-                  /> : null}
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-sm font-medium text-slate-700">{t.notes}</span>
+                    <textarea
+                      value={form.content}
+                      onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
+                      rows={7}
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateMoreOpen((current) => !current)}
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    {isCreateMoreOpen ? t.less : t.more}
+                  </button>
+                  {isCreateMoreOpen ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {activeTab === "tasks" || form.itemType === "TODO" ? (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
+                          <LocalizedDateInput
+                            locale={locale}
+                            value={form.dueAt}
+                            onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          />
+                        </div>
+                      ) : null}
+                      {activeTab === "tasks" || form.itemType === "TODO" ? (
+                        <DropdownField
+                          id="taskAssignee"
+                          label={t.assignee}
+                          value={currentTaskAssigneeValue}
+                          onChange={applyTaskAssigneeChoice}
+                          options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
+                          className="flex-1"
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setIsCreateOpen(false)} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-                  {t.cancel}
-                </button>
-                <button type="submit" disabled={isPending} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                  {t.create}
-                </button>
-              </div>
-            </form>
-          </div>
+                <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateOpen(false)}
+                    disabled={isPending}
+                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {t.cancel}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPending || !form.title.trim()}
+                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {t.create}
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
         </div>
       ) : null}

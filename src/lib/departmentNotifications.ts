@@ -198,9 +198,9 @@ function mapReceiptToListItem(
       ? "系统"
       : "System";
   const canManage =
-    announcement.level !== "SYSTEM" &&
-    (canManageDepartment || (announcement.authorId !== null && announcement.authorId === currentUserId));
-  const canDelete = announcement.authorId !== null && announcement.authorId === currentUserId;
+    canManageDepartment ||
+    (announcement.level !== "SYSTEM" && announcement.authorId !== null && announcement.authorId === currentUserId);
+  const canDelete = canManageDepartment || (announcement.authorId !== null && announcement.authorId === currentUserId);
 
   return {
     receiptId: receipt.id,
@@ -215,7 +215,7 @@ function mapReceiptToListItem(
     authorName,
     authorId: announcement.authorId,
     projectId: announcement.projectId,
-    projectName: announcement.project ? `${announcement.project.name} (${announcement.project.key})` : null,
+    projectName: announcement.project?.name ?? null,
     canManage,
     canDelete,
   } satisfies DepartmentNotificationListItem;
@@ -294,8 +294,15 @@ export async function getDepartmentNotificationsPage({
   if (filters.from) createdAt.gte = filters.from;
   if (filters.to) createdAt.lte = filters.to;
   const hasDateFilter = Boolean(createdAt.gte || createdAt.lte);
+  const readValues = filters.read ? filters.read.split(",") : [];
   const readFilter =
-    filters.read === "read" ? true : filters.read === "unread" ? false : undefined;
+    readValues.length === 2
+      ? undefined
+      : readValues.includes("read")
+        ? true
+        : readValues.includes("unread")
+          ? false
+          : undefined;
   const search = filters.search?.trim();
   const sortDirection: Prisma.SortOrder = filters.direction === "asc" ? "asc" : "desc";
   const orderBy: Prisma.AnnouncementOrderByWithRelationInput[] =
@@ -311,8 +318,8 @@ export async function getDepartmentNotificationsPage({
 
   const baseWhere = {
     departmentId,
-    ...(filters.level ? { level: filters.level } : {}),
-    ...(filters.projectId ? { projectId: filters.projectId } : {}),
+    ...(filters.level ? { level: { in: filters.level.split(",") as DepartmentNotificationLevel[] } } : {}),
+    ...(filters.projectId ? { projectId: { in: filters.projectId.split(",") } } : {}),
     ...(hasDateFilter ? { createdAt } : {}),
     ...(search
       ? {

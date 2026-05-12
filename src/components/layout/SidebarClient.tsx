@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Building2, CalendarDays, ChevronLeft, ListTodo, StickyNote } from "lucide-react";
+import { Bell, Building2, CalendarDays, ChevronLeft, ListTodo, StickyNote } from "lucide-react";
 
 import { getTranslations, type Locale } from "@/lib/i18n";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
@@ -31,6 +31,7 @@ export function SidebarClient({
   const inProjectContext = Boolean(activeProject) && !isDepartmentRoute;
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
+  const notificationsLabel = locale === "zh" ? "通知" : "Notifications";
   const tasksLabel = locale === "zh" ? "任务" : "Tasks";
   const scheduleLabel = locale === "zh" ? "日程" : "Schedule";
   const notesLabel = locale === "zh" ? "笔记" : "Notes";
@@ -93,6 +94,12 @@ export function SidebarClient({
                 href: `/departments/${departmentContext.id}/items?tab=notes`,
                 icon: <StickyNote className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />,
                 label: notesLabel,
+              },
+              {
+                id: "department-notifications",
+                href: `/departments/${departmentContext.id}/notifications`,
+                icon: <Bell className="h-5 w-5 flex-shrink-0 text-slate-400 transition-colors group-hover:text-blue-500" />,
+                label: notificationsLabel,
               },
               {
                 id: "department-members",

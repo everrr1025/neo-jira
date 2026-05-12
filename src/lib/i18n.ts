@@ -663,7 +663,7 @@ const translations: Record<Locale, TranslationBundle> = {
   },
   zh: {
     header: {
-      workspaceOverview: "仪表盘",
+      workspaceOverview: "概览",
       issues: "问题",
       projects: "项目",
       iterations: "迭代",
@@ -675,7 +675,7 @@ const translations: Record<Locale, TranslationBundle> = {
       language: "语言",
     },
     sidebar: {
-      dashboard: "仪表盘",
+      dashboard: "概览",
       issues: "问题",
       iterations: "迭代",
       projects: "项目",
@@ -699,7 +699,7 @@ const translations: Record<Locale, TranslationBundle> = {
       unreadSuffix: "条新通知",
     },
     dashboard: {
-      title: "仪表盘",
+      title: "概览",
       searchResultsFor: "搜索结果：",
       clearSearch: "清除搜索",
       noIssuesFound: "没有找到匹配的问题：",
@@ -747,7 +747,7 @@ const translations: Record<Locale, TranslationBundle> = {
     projectsPage: {
       title: "项目",
       adminSubtitle: "管理并查看所有工作区。",
-      memberSubtitle: "请先选择一个项目，然后访问该项目的仪表盘、问题和迭代。",
+      memberSubtitle: "请先选择一个项目，然后访问该项目的概览、问题和迭代。",
       createProject: "新建项目",
       project: "项目",
       key: "标识",

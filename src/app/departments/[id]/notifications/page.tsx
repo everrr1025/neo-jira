@@ -29,6 +29,24 @@ function parseDate(value: string | undefined, endOfDay = false) {
   return date;
 }
 
+function resolveCreatedDateFilter(createdFilter: string, createdDate: string, from: string, to: string) {
+  if (createdFilter && createdFilter !== "ALL" && createdDate) {
+    if (createdFilter === "EQ") {
+      return { from: parseDate(createdDate), to: parseDate(createdDate, true) };
+    }
+
+    if (createdFilter === "GTE") {
+      return { from: parseDate(createdDate), to: undefined };
+    }
+
+    if (createdFilter === "LTE") {
+      return { from: undefined, to: parseDate(createdDate, true) };
+    }
+  }
+
+  return { from: parseDate(from), to: parseDate(to, true) };
+}
+
 export default async function DepartmentNotificationsPage({
   params,
   searchParams,
@@ -60,11 +78,19 @@ export default async function DepartmentNotificationsPage({
     search: getString(rawParams.search) || "",
     sort: getString(rawParams.sort) || "createdAt",
     direction: getString(rawParams.direction) || "desc",
+    createdFilter: getString(rawParams.createdFilter) || "ALL",
+    createdDate: getString(rawParams.createdDate) || "",
     from: getString(rawParams.from) || "",
     to: getString(rawParams.to) || "",
   };
   const page = parsePositiveInt(getString(rawParams.page), 1);
   const pageSize = Math.min(parsePositiveInt(getString(rawParams.pageSize), 10), 50);
+  const createdDateFilter = resolveCreatedDateFilter(
+    filters.createdFilter,
+    filters.createdDate,
+    filters.from,
+    filters.to,
+  );
 
   const [result, projectOptions] = await Promise.all([
     getDepartmentNotificationsPage({
@@ -79,8 +105,8 @@ export default async function DepartmentNotificationsPage({
         search: filters.search || undefined,
         sort: filters.sort || undefined,
         direction: filters.direction || undefined,
-        from: parseDate(filters.from),
-        to: parseDate(filters.to, true),
+        from: createdDateFilter.from,
+        to: createdDateFilter.to,
         page,
         pageSize,
       },
