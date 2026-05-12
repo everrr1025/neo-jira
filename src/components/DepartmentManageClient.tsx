@@ -473,6 +473,10 @@ export default function DepartmentManageClient({
         .filter((column): column is ProjectColumnConfig => Boolean(column)),
     [projectColumnOrder, projectColumnWidths, projectColumnsById]
   );
+  const projectColumnsTotalWidth = useMemo(
+    () => projectColumns.reduce((total, column) => total + column.width, 0),
+    [projectColumns]
+  );
   const sortedProjects = useMemo(() => {
     const getValue = (project: DepartmentWorkspaceProject, field: ProjectSortField) => {
       if (field === "name") return project.name;
@@ -725,12 +729,12 @@ export default function DepartmentManageClient({
           if (sortField) handleProjectSort(sortField);
         }}
         disabled={!sortField}
-        className={`inline-flex items-center gap-1 font-semibold ${
+        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
           sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : "cursor-default text-slate-500"
         }`}
         draggable={false}
       >
-        <span>{column.label}</span>
+        <span className="truncate">{column.label}</span>
         {sortField && isSorted ? projectSortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}
       </button>
     );
@@ -785,7 +789,7 @@ export default function DepartmentManageClient({
 
     if (column.id === "members") {
       return (
-        <td key={column.id} className="px-5 py-3.5">
+        <td key={column.id} className="overflow-hidden px-5 py-3.5">
           <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
             {project.members.length} {t.members}
           </span>
@@ -795,24 +799,24 @@ export default function DepartmentManageClient({
 
     if (column.id === "createdAt") {
       return (
-        <td key={column.id} className="px-5 py-3.5 text-xs font-medium text-slate-500">
-          {new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+        <td key={column.id} className="overflow-hidden px-5 py-3.5 text-xs font-medium text-slate-500">
+          <span className="block truncate">{new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}</span>
         </td>
       );
     }
 
     return (
-      <td key={column.id} className="px-5 py-3.5">
-        <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+      <td key={column.id} className="overflow-hidden px-5 py-3.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <a
             href={`/projects/select?projectId=${project.id}`}
-            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+            className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
           >
             <span className="whitespace-nowrap">{t.viewProject}</span>
           </a>
           <Link
             href={`/departments/${department.id}/projects/${project.id}/members`}
-            className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+            className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
           >
             <span className="whitespace-nowrap">{t.memberButton}</span>
           </Link>
@@ -831,7 +835,7 @@ export default function DepartmentManageClient({
                   setIsEditProjectOpen(true);
                 }}
                 disabled={isPending}
-                className="inline-flex min-w-fit shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
               >
                 <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
               </button>
@@ -843,7 +847,7 @@ export default function DepartmentManageClient({
                   setDeletingProject(project);
                 }}
                 disabled={isPending}
-                className="inline-flex min-w-fit shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
               >
                 <Trash2 size={12} />
                 <span className="whitespace-nowrap">{t.deleteProject}</span>
@@ -1180,8 +1184,8 @@ export default function DepartmentManageClient({
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full whitespace-nowrap text-left text-sm" style={{ tableLayout: "fixed" }}>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <table className="w-full table-fixed text-left text-sm">
                 <thead className="border-b bg-slate-50 text-xs font-semibold uppercase text-slate-500">
                   <tr>
                     {projectColumns.map((column, index) => {
@@ -1197,7 +1201,7 @@ export default function DepartmentManageClient({
                           className={`group/column relative select-none overflow-hidden py-4 transition-colors ${
                             column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-slate-100 active:cursor-move"
                           } ${isDragging ? "opacity-40" : ""}`}
-                          style={{ width: `${column.width}px` }}
+                          style={{ width: `${(column.width / projectColumnsTotalWidth) * 100}%` }}
                           draggable={column.id !== "actions"}
                           onDragStart={(event) => handleProjectColumnDragStart(event, index)}
                           onDragOver={(event) => handleProjectColumnDragOver(event, index)}
@@ -1262,62 +1266,74 @@ export default function DepartmentManageClient({
 
           {isCreateProjectOpen ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                  <h2 className="text-xl font-bold text-slate-900">{t.createProject}</h2>
+              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                  <h2 className="text-xl font-bold text-slate-800">{t.createProject}</h2>
                   <button
                     type="button"
                     onClick={() => {
                       setIsCreateProjectOpen(false);
                       setCreateProjectErrorMsg("");
                     }}
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                   >
-                    <X size={18} />
+                    <X size={20} />
                   </button>
                 </div>
-                <form onSubmit={handleCreateProject} className="space-y-4 px-6 py-5">
-                  {createProjectErrorMsg ? (
-                    <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                      {createProjectErrorMsg}
+
+                <form onSubmit={handleCreateProject} className="flex flex-1 flex-col overflow-hidden">
+                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                    {createProjectErrorMsg ? (
+                      <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                        {createProjectErrorMsg}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">
+                        {t.projectName} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        autoFocus
+                        value={newProject.name}
+                        onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectNamePlaceholder}
+                      />
                     </div>
-                  ) : null}
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectName}</label>
-                    <input
-                      required
-                      value={newProject.name}
-                      onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                      placeholder={t.projectNamePlaceholder}
-                    />
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">
+                        {t.projectKey} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        maxLength={10}
+                        value={newProject.key}
+                        onChange={(event) =>
+                          setNewProject((current) => ({ ...current, key: event.target.value.toUpperCase() }))
+                        }
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectKeyPlaceholder}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">{t.projectDescription}</label>
+                      <textarea
+                        rows={5}
+                        value={newProject.description}
+                        onChange={(event) =>
+                          setNewProject((current) => ({ ...current, description: event.target.value }))
+                        }
+                        className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectDescriptionPlaceholder}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectKey}</label>
-                    <input
-                      required
-                      maxLength={10}
-                      value={newProject.key}
-                      onChange={(event) =>
-                        setNewProject((current) => ({ ...current, key: event.target.value.toUpperCase() }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
-                      placeholder={t.projectKeyPlaceholder}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectDescription}</label>
-                    <textarea
-                      rows={3}
-                      value={newProject.description}
-                      onChange={(event) =>
-                        setNewProject((current) => ({ ...current, description: event.target.value }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                      placeholder={t.projectDescriptionPlaceholder}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+
+                  <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -1331,8 +1347,8 @@ export default function DepartmentManageClient({
                     </button>
                     <button
                       type="submit"
-                      disabled={isPending}
-                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      disabled={isPending || !newProject.name.trim() || !newProject.key.trim()}
+                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
                       {t.create}
