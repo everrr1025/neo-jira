@@ -12,6 +12,7 @@ import {
   getDepartmentUpcomingItems,
   getManageableReminderProjects,
 } from "@/lib/departmentReminders";
+import { getLatestDepartmentNotifications } from "@/lib/departmentNotifications";
 import prisma from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export default async function DepartmentPage({
   const doneStatusKeys = Array.from(
     new Set(workflowProjects.flatMap((project) => project.workflowStatuses.map((status) => status.key)))
   );
-  const [upcomingItems, reminderIssueOptions] = await Promise.all([
+  const [upcomingItems, reminderIssueOptions, latestNotifications] = await Promise.all([
     getDepartmentUpcomingItems({
       departmentId,
       userId,
@@ -82,6 +83,13 @@ export default async function DepartmentPage({
       locale,
     }),
     getDepartmentReminderIssueOptions(visibleProjectIds),
+    getLatestDepartmentNotifications({
+      departmentId,
+      userId,
+      userRole,
+      locale,
+      take: 5,
+    }),
   ]);
 
   return (
@@ -97,6 +105,8 @@ export default async function DepartmentPage({
         reminderProjectOptions={reminderProjectOptions}
         reminderIssueOptions={reminderIssueOptions}
         canCreateDepartmentReminder={canCreateDepartmentReminder}
+        notifications={latestNotifications.notifications}
+        notificationPermission={latestNotifications.permission}
       />
     </div>
   );

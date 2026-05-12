@@ -8,32 +8,33 @@ generator client {
 }
 
 model User {
-  id                 String            @id @default(cuid())
-  name               String?
-  email              String            @unique
-  password           String?
-  role               String            @default("USER")
-  avatar             String?
-  ownedProjects      Project[]         @relation("ProjectOwner")
-  ownedPlans         Plan[]            @relation("PlanOwner")
-  projectMemberships ProjectMember[]
-  issues             Issue[]           @relation("Assignee")
-  reported           Issue[]           @relation("Reporter")
-  comments           Comment[]
-  notifications      Notification[]    @relation("UserNotifications")
-  actionsTriggered   Notification[]    @relation("NotificationActor")
-  attachments        Attachment[]
-  auditLogs          AuditLog[]        @relation("AuditLogActor")
-  watchedIssues      Issue[]           @relation("IssueWatchers")
-  createdReminders   Reminder[]        @relation("ReminderCreator")
-  assignedReminders  Reminder[]        @relation("ReminderAssignee")
+  id                  String             @id @default(cuid())
+  name                String?
+  email               String             @unique
+  password            String?
+  role                String             @default("USER")
+  avatar              String?
+  ownedProjects       Project[]          @relation("ProjectOwner")
+  ownedPlans          Plan[]             @relation("PlanOwner")
+  projectMemberships  ProjectMember[]
+  issues              Issue[]            @relation("Assignee")
+  reported            Issue[]            @relation("Reporter")
+  comments            Comment[]
+  notifications       Notification[]     @relation("UserNotifications")
+  actionsTriggered    Notification[]     @relation("NotificationActor")
+  attachments         Attachment[]
+  auditLogs           AuditLog[]         @relation("AuditLogActor")
+  watchedIssues       Issue[]            @relation("IssueWatchers")
+  createdReminders    Reminder[]         @relation("ReminderCreator")
+  assignedReminders   Reminder[]         @relation("ReminderAssignee")
   reminderAttendances ReminderAttendee[]
-  reminderComments   ReminderComment[]
-  noteFolders        NoteFolder[]
-  notes              Note[]            @relation("NoteAuthor")
+  reminderComments    ReminderComment[]
+  noteFolders         NoteFolder[]
+  notes               Note[]             @relation("NoteAuthor")
 
-  departmentMembers DepartmentMember[]
-  announcements     Announcement[]     @relation("AnnouncementAuthor")
+  departmentMembers    DepartmentMember[]
+  announcements        Announcement[]        @relation("AnnouncementAuthor")
+  announcementReceipts AnnouncementReceipt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -64,9 +65,10 @@ model Project {
   reminders   Reminder[]
   notes       Note[]
 
-  departmentId  String?
-  department    Department?    @relation(fields: [departmentId], references: [id])
-  announcements Announcement[]
+  departmentId         String?
+  department           Department?           @relation(fields: [departmentId], references: [id])
+  announcements        Announcement[]
+  announcementReceipts AnnouncementReceipt[]
 
   workflowStatuses      ProjectWorkflowStatus[]
   workflowTransitions   ProjectWorkflowTransition[]
@@ -345,8 +347,10 @@ model DepartmentMember {
 
 model Announcement {
   id      String @id @default(cuid())
+  level   String @default("DEPARTMENT")
   title   String
   content String
+  status  String @default("SENT")
 
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
@@ -354,12 +358,39 @@ model Announcement {
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  authorId String
-  author   User   @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  authorId String?
+  author   User?   @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
-  isPinned  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isPinned  Boolean               @default(false)
+  dedupeKey String?               @unique
+  revokedAt DateTime?
+  sentAt    DateTime              @default(now())
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  receipts  AnnouncementReceipt[]
+
+  @@index([departmentId, status, createdAt])
+  @@index([projectId, status, createdAt])
+  @@index([level, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model AnnouncementReceipt {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  read           Boolean      @default(false)
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([userId, read, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
 }
 
 model Reminder {
@@ -394,8 +425,8 @@ model Reminder {
   comments    ReminderComment[]
   notes       Note[]
   completedAt DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   @@index([creatorId, startAt])
   @@index([assigneeId, startAt])

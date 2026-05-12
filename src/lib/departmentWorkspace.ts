@@ -161,7 +161,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
       content: announcement.content,
       isPinned: announcement.isPinned,
       authorName:
-        announcement.author.name || announcement.author.email || (locale === "zh" ? "系统" : "System"),
+        announcement.author?.name || announcement.author?.email || (locale === "zh" ? "系统" : "System"),
       createdAt: announcement.createdAt.toISOString(),
     })),
   } satisfies DepartmentWorkspaceData;
