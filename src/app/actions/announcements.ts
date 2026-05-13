@@ -68,7 +68,7 @@ async function getRecipients(departmentId: string, level: "DEPARTMENT" | "PROJEC
   };
 }
 
-async function assertCanManageAnnouncement(announcementId: string, userId: string, userRole?: string | null) {
+async function assertCanManageAnnouncement(announcementId: string, userId: string) {
   const announcement = await prisma.announcement.findUnique({
     where: { id: announcementId },
     select: {
@@ -82,15 +82,7 @@ async function assertCanManageAnnouncement(announcementId: string, userId: strin
   });
   if (!announcement?.departmentId) throw new Error("Notification not found.");
 
-  const permission = await getDepartmentNotificationPermission(announcement.departmentId, { userId, userRole });
-  if (announcement.level === "SYSTEM" && !permission.canManageDepartment) {
-    throw new Error("System notifications can only be managed by department managers.");
-  }
-  const ownsNotification = announcement.authorId === userId;
-  const canManageProject = announcement.projectId
-    ? permission.manageableProjects.some((project) => project.id === announcement.projectId)
-    : false;
-  const canManage = permission.canManageDepartment || (ownsNotification && canManageProject);
+  const canManage = announcement.level !== "SYSTEM" && announcement.authorId === userId;
   if (!canManage) throw new Error("Unauthorized. Notification management access required.");
 
   return announcement;
@@ -176,10 +168,29 @@ export async function markAnnouncementRead(announcementId: string) {
   }
 }
 
+export async function markSystemNotificationRead(notificationId: string) {
+  try {
+    const user = await getCurrentUser();
+    await prisma.notification.updateMany({
+      where: {
+        id: notificationId,
+        userId: user.id,
+        read: false,
+      },
+      data: {
+        read: true,
+      },
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: getErrorMessage(error, "Failed to mark notification as read.") };
+  }
+}
+
 export async function revokeAnnouncementNotification(announcementId: string) {
   try {
     const user = await getCurrentUser();
-    const announcement = await assertCanManageAnnouncement(announcementId, user.id, user.role);
+    const announcement = await assertCanManageAnnouncement(announcementId, user.id);
     await prisma.announcement.update({
       where: { id: announcementId },
       data: {
@@ -197,13 +208,7 @@ export async function revokeAnnouncementNotification(announcementId: string) {
 export async function deleteAnnouncementNotification(announcementId: string) {
   try {
     const user = await getCurrentUser();
-    const announcement = await assertCanManageAnnouncement(announcementId, user.id, user.role);
-    const permission = announcement.departmentId
-      ? await getDepartmentNotificationPermission(announcement.departmentId, { userId: user.id, userRole: user.role })
-      : null;
-    if (!permission?.canManageDepartment && announcement.authorId !== user.id) {
-      return { success: false, error: "Only the notification creator can delete it." };
-    }
+    const announcement = await assertCanManageAnnouncement(announcementId, user.id);
     await prisma.announcement.delete({ where: { id: announcementId } });
     if (announcement.departmentId) revalidateNotificationPaths(announcement.departmentId);
     return { success: true };
@@ -221,7 +226,7 @@ export async function resendAnnouncementNotification(
 ) {
   try {
     const user = await getCurrentUser();
-    const announcement = await assertCanManageAnnouncement(announcementId, user.id, user.role);
+    const announcement = await assertCanManageAnnouncement(announcementId, user.id);
     const title = data.title.trim();
     const content = data.content.trim();
     if (!title || !content) return { success: false, error: "Notification title and content are required." };

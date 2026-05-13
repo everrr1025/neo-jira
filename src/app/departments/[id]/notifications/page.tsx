@@ -72,9 +72,11 @@ export default async function DepartmentNotificationsPage({
 
   const rawParams = await searchParams;
   const filters = {
-    level: getString(rawParams.level) || "",
+    view: getString(rawParams.view) || "received",
+    category: getString(rawParams.category) || "",
     projectId: getString(rawParams.projectId) || "",
     read: getString(rawParams.read) || "",
+    publishStatus: getString(rawParams.publishStatus) || "",
     search: getString(rawParams.search) || "",
     sort: getString(rawParams.sort) || "createdAt",
     direction: getString(rawParams.direction) || "desc",
@@ -99,9 +101,11 @@ export default async function DepartmentNotificationsPage({
       userRole,
       locale,
       filters: {
-        level: filters.level || undefined,
+        view: filters.view || undefined,
+        category: filters.category || undefined,
         projectId: filters.projectId || undefined,
         read: filters.read || undefined,
+        publishStatus: filters.publishStatus || undefined,
         search: filters.search || undefined,
         sort: filters.sort || undefined,
         direction: filters.direction || undefined,
@@ -127,7 +131,6 @@ export default async function DepartmentNotificationsPage({
       notifications={result.notifications}
       permission={permission}
       projectOptions={projectOptions}
-      currentUserId={userId}
       filters={filters}
       pagination={{
         page,

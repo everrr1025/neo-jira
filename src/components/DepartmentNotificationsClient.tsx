@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Eye,
   Loader2,
+  ListFilter,
   Plus,
   Search,
   Trash2,
@@ -25,6 +26,7 @@ import {
   createAnnouncementNotification,
   deleteAnnouncementNotification,
   markAnnouncementRead,
+  markSystemNotificationRead,
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
@@ -44,9 +46,15 @@ const TEXT = {
     title: "Notifications",
     subtitle: "Search, filter, and manage department notifications.",
     all: "All",
-    level: "Level",
+    level: "Type",
     project: "Project",
     readState: "Read state",
+    publishState: "Publish state",
+    received: "Received",
+    sentByMe: "Sent by me",
+    announcementsTab: "Announcements",
+    remindersTab: "Reminders",
+    updatesTab: "Updates",
     from: "From",
     to: "To",
     allCreated: "All created",
@@ -95,9 +103,15 @@ const TEXT = {
     title: "通知",
     subtitle: "搜索、筛选和管理部门通知。",
     all: "全部",
-    level: "通知级别",
+    level: "类型",
     project: "项目",
     readState: "已读状态",
+    publishState: "发布状态",
+    received: "我收到的",
+    sentByMe: "我发出的",
+    announcementsTab: "公告",
+    remindersTab: "提醒",
+    updatesTab: "动态",
     from: "开始时间",
     to: "结束时间",
     allCreated: "全部创建时间",
@@ -205,7 +219,6 @@ export default function DepartmentNotificationsClient({
   notifications,
   permission,
   projectOptions,
-  currentUserId,
   filters,
   pagination,
 }: {
@@ -214,7 +227,6 @@ export default function DepartmentNotificationsClient({
   notifications: DepartmentNotificationListItem[];
   permission: DepartmentNotificationPermission;
   projectOptions: ProjectOption[];
-  currentUserId: string;
   filters: Record<string, string>;
   pagination: {
     page: number;
@@ -278,6 +290,9 @@ export default function DepartmentNotificationsClient({
   );
   const createdFilter = filters.createdFilter || "ALL";
   const createdDate = filters.createdDate || "";
+  const currentView = filters.view === "sent" && permission.canCreate ? "sent" : "received";
+  const currentCategory = filters.category || "";
+  const showActionColumn = currentView === "sent";
   const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
   const createdFilterOptions = useMemo<FilterOption[]>(
     () => [
@@ -368,7 +383,20 @@ export default function DepartmentNotificationsClient({
   };
 
   const openNotification = (notification: DepartmentNotificationListItem) => {
-    setSelected(notification);
+    if (notification.source === "NOTIFICATION") {
+      startTransition(async () => {
+        if (!notification.read) await markSystemNotificationRead(notification.id);
+        router.refresh();
+        if (notification.targetUrl) router.push(notification.targetUrl);
+      });
+      return;
+    }
+
+    setSelected({
+      ...notification,
+      canManage: currentView === "sent" && notification.canManage,
+      canDelete: currentView === "sent" && notification.canDelete,
+    });
     setResendForm({ title: notification.title, content: notification.content });
     setErrorMsg("");
     if (!notification.read && notification.status === "SENT") {
@@ -516,7 +544,7 @@ export default function DepartmentNotificationsClient({
     if (columnId === "level") {
       return (
         <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-          {levelLabel(notification.level, t)}
+          {notification.typeLabel || levelLabel(notification.level, t)}
         </span>
       );
     }
@@ -540,10 +568,10 @@ export default function DepartmentNotificationsClient({
       );
     }
     if (columnId === "author") return <span className="truncate text-sm text-slate-600">{notification.authorName}</span>;
-    if (notification.status === "REVOKED") {
+    if (currentView === "sent" && notification.status === "REVOKED") {
       return <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{t.revoked}</span>;
     }
-    if (notification.authorId === currentUserId) {
+    if (currentView === "sent") {
       return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{t.sent}</span>;
     }
     return (
@@ -564,6 +592,36 @@ export default function DepartmentNotificationsClient({
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{t.title}</h2>
         </div>
         <div className="flex items-center gap-3">
+          {permission.canCreate ? (
+            <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
+              {[
+                { value: "received", label: t.received },
+                { value: "sent", label: t.sentByMe },
+              ].map((option) => {
+                const isActive = currentView === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      updateQueryParams({
+                        view: option.value === "received" ? null : option.value,
+                        category: null,
+                        read: null,
+                        publishStatus: null,
+                        page: 1,
+                      })
+                    }
+                    className={`h-7 rounded px-3 text-sm font-medium transition-colors ${
+                      isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="relative w-72 max-w-[42vw]">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
             <input
@@ -605,19 +663,35 @@ export default function DepartmentNotificationsClient({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-          <MultiFilter
-            label={t.level}
-            options={[
-              { value: "DEPARTMENT", label: t.department },
-              { value: "PROJECT", label: t.projectLevel },
-              { value: "SYSTEM", label: t.system },
-            ]}
-            selectedValues={filters.level ? filters.level.split(",") : []}
-            onToggle={(value) => toggleFilterValue(value, "level", filters.level ? filters.level.split(",") : [])}
-            onClear={() => updateQueryParams({ level: null, page: 1 })}
-            clearText={t.reset}
-          />
+      <div className="bg-white p-3 rounded-lg border shadow-sm">
+        {currentView === "received" ? (
+          <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-100 pb-3">
+            {[
+              { value: "", label: t.all },
+              { value: "ANNOUNCEMENT", label: t.announcementsTab },
+              { value: "REMINDER", label: t.remindersTab },
+              { value: "UPDATE", label: t.updatesTab },
+            ].map((option) => (
+              <button
+                key={option.value || "ALL"}
+                type="button"
+                onClick={() => updateQueryParams({ category: option.value || null, page: 1 })}
+                className={`h-8 rounded-md px-3 text-sm font-medium transition-colors ${
+                  currentCategory === option.value
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2 w-full">
+          <div className="h-9 px-2 inline-flex items-center text-slate-500">
+            <ListFilter size={14} />
+          </div>
 
           <MultiFilter
             label={t.project}
@@ -628,17 +702,33 @@ export default function DepartmentNotificationsClient({
             clearText={t.reset}
           />
 
-          <MultiFilter
-            label={t.readState}
-            options={[
-              { value: "unread", label: t.unread },
-              { value: "read", label: t.read },
-            ]}
-            selectedValues={filters.read ? filters.read.split(",") : []}
-            onToggle={(value) => toggleFilterValue(value, "read", filters.read ? filters.read.split(",") : [])}
-            onClear={() => updateQueryParams({ read: null, page: 1 })}
-            clearText={t.reset}
-          />
+          {currentView === "sent" ? (
+            <MultiFilter
+              label={t.publishState}
+              options={[
+                { value: "SENT", label: t.sent },
+                { value: "REVOKED", label: t.revoked },
+              ]}
+              selectedValues={filters.publishStatus ? filters.publishStatus.split(",") : []}
+              onToggle={(value) =>
+                toggleFilterValue(value, "publishStatus", filters.publishStatus ? filters.publishStatus.split(",") : [])
+              }
+              onClear={() => updateQueryParams({ publishStatus: null, page: 1 })}
+              clearText={t.reset}
+            />
+          ) : (
+            <MultiFilter
+              label={t.readState}
+              options={[
+                { value: "unread", label: t.unread },
+                { value: "read", label: t.read },
+              ]}
+              selectedValues={filters.read ? filters.read.split(",") : []}
+              onToggle={(value) => toggleFilterValue(value, "read", filters.read ? filters.read.split(",") : [])}
+              onClear={() => updateQueryParams({ read: null, page: 1 })}
+              clearText={t.reset}
+            />
+          )}
 
           <SingleFilter
             value={createdFilter}
@@ -671,10 +761,10 @@ export default function DepartmentNotificationsClient({
             />
           ) : null}
 
-          {(filters.level || filters.projectId || filters.read || hasActiveCreatedFilter || filters.search) ? (
+          {(filters.category || filters.projectId || filters.read || filters.publishStatus || hasActiveCreatedFilter || filters.search) ? (
             <button
               type="button"
-              onClick={() => updateQueryParams({ level: null, projectId: null, read: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
+              onClick={() => updateQueryParams({ category: null, projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
               className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
             >
               {t.reset}
@@ -724,6 +814,7 @@ export default function DepartmentNotificationsClient({
             </div>
           </details>
         </div>
+      </div>
 
       <div className="bg-white overflow-hidden rounded-xl border shadow-sm">
         <div className="relative overflow-hidden">
@@ -785,15 +876,20 @@ export default function DepartmentNotificationsClient({
                     </th>
                   );
                 })}
-                <th className="w-36 px-5 py-4 text-left">
-                  <span className="font-semibold text-slate-500">{t.actions}</span>
-                </th>
+                {showActionColumn ? (
+                  <th className="w-36 px-5 py-4 text-right">
+                    <span className="font-semibold text-slate-500">{t.actions}</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {notifications.length === 0 ? (
                 <tr>
-                  <td colSpan={(columns.length || 1) + 1} className="px-5 py-16 text-center text-sm text-slate-500">
+                  <td
+                    colSpan={(columns.length || 1) + (showActionColumn ? 1 : 0)}
+                    className="px-5 py-16 text-center text-sm text-slate-500"
+                  >
                     {t.noNotifications}
                   </td>
                 </tr>
@@ -801,38 +897,40 @@ export default function DepartmentNotificationsClient({
                 notifications.map((notification) => (
                   <tr
                     key={notification.receiptId}
-                    className={`${notification.read || notification.authorId === currentUserId ? "bg-white" : "bg-blue-50/40"} hover:bg-slate-50`}
+                    className={`${notification.read || currentView === "sent" ? "bg-white" : "bg-blue-50/40"} hover:bg-slate-50`}
                   >
                     {columns.map((column) => (
                       <td key={column.id} className="overflow-hidden px-5 py-3.5 align-middle">
                         {renderCell(notification, column.id)}
                       </td>
                     ))}
-                    <td className="px-5 py-3.5 text-right align-middle">
-                      <div className="inline-flex items-center justify-end gap-2">
-                        {notification.canManage && notification.status === "SENT" ? (
-                          <button
-                            type="button"
-                            onClick={() => manage("revoke", notification.id)}
-                            disabled={isPending}
-                            className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
-                          >
-                            {t.revoke}
-                          </button>
-                        ) : null}
-                        {notification.canDelete ? (
-                          <button
-                            type="button"
-                            onClick={() => manage("delete", notification.id)}
-                            disabled={isPending}
-                            className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
-                          >
-                            <Trash2 size={13} />
-                            {t.delete}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
+                    {showActionColumn ? (
+                      <td className="px-5 py-3.5 text-right align-middle">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {notification.canManage && notification.status === "SENT" ? (
+                            <button
+                              type="button"
+                              onClick={() => manage("revoke", notification.id)}
+                              disabled={isPending}
+                              className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                            >
+                              {t.revoke}
+                            </button>
+                          ) : null}
+                          {notification.canDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => manage("delete", notification.id)}
+                              disabled={isPending}
+                              className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                            >
+                              <Trash2 size={13} />
+                              {t.delete}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}
