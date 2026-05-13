@@ -22,6 +22,8 @@ export type DepartmentWorkspaceProject = {
   ownerId: string | null;
   ownerName: string;
   issuesCount: number;
+  completedIssuesCount: number;
+  incompleteIssuesCount: number;
   createdAt: string;
   members: Array<{
     userId: string;
@@ -97,6 +99,13 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
             },
           },
           _count: { select: { issues: true } },
+          issues: {
+            select: { status: true },
+          },
+          workflowStatuses: {
+            where: { category: "DONE" },
+            select: { key: true },
+          },
         },
         orderBy: { createdAt: "desc" },
       },
@@ -139,22 +148,30 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
         }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     })),
-    projects: department.projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      key: project.key,
-      description: project.description,
-      ownerId: project.owner?.id || null,
-      ownerName: project.owner?.name || project.owner?.email || (locale === "zh" ? "未指派" : "Unassigned"),
-      issuesCount: project._count.issues,
-      createdAt: project.createdAt.toISOString(),
-      members: project.members.map((member) => ({
-        userId: member.userId,
-        role: member.role,
-        userName: member.user.name,
-        userEmail: member.user.email,
-      })),
-    })),
+    projects: department.projects.map((project) => {
+      const doneStatusKeys = new Set(project.workflowStatuses.map((status) => status.key));
+      if (doneStatusKeys.size === 0) doneStatusKeys.add("DONE");
+      const completedIssuesCount = project.issues.filter((issue) => doneStatusKeys.has(issue.status)).length;
+
+      return {
+        id: project.id,
+        name: project.name,
+        key: project.key,
+        description: project.description,
+        ownerId: project.owner?.id || null,
+        ownerName: project.owner?.name || project.owner?.email || (locale === "zh" ? "未指派" : "Unassigned"),
+        issuesCount: project._count.issues,
+        completedIssuesCount,
+        incompleteIssuesCount: project._count.issues - completedIssuesCount,
+        createdAt: project.createdAt.toISOString(),
+        members: project.members.map((member) => ({
+          userId: member.userId,
+          role: member.role,
+          userName: member.user.name,
+          userEmail: member.user.email,
+        })),
+      };
+    }),
     announcements: department.announcements.map((announcement) => ({
       id: announcement.id,
       title: announcement.title,

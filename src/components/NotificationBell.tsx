@@ -117,6 +117,8 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
                   <Link
                     key={notification.id}
                     href={notification.link || "#"}
+                    target={notification.link ? "_blank" : undefined}
+                    rel={notification.link ? "noreferrer" : undefined}
                     onClick={() => setOpen(false)}
                     className={`flex gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 ${
                       notification.read ? "bg-white" : "bg-blue-50/40"

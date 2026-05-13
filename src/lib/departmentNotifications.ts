@@ -187,6 +187,7 @@ function mapReceiptToListItem(
       status: string;
       createdAt: Date;
       revokedAt: Date | null;
+      dedupeKey: string | null;
       authorId: string | null;
       author: { name: string | null; email: string } | null;
       projectId: string | null;
@@ -206,6 +207,9 @@ function mapReceiptToListItem(
   const canManage = announcement.level !== "SYSTEM" && announcement.authorId !== null && announcement.authorId === currentUserId;
   const canDelete = canManage;
   const category = announcement.level === "SYSTEM" ? "REMINDER" : "ANNOUNCEMENT";
+  const dueIssueId = announcement.dedupeKey?.startsWith("issue-due:")
+    ? announcement.dedupeKey.split(":")[1]
+    : null;
 
   return {
     receiptId: receipt.id,
@@ -226,7 +230,7 @@ function mapReceiptToListItem(
     projectName: announcement.project?.name ?? null,
     canManage,
     canDelete,
-    targetUrl: null,
+    targetUrl: dueIssueId ? `/issues/${dueIssueId}` : null,
   } satisfies DepartmentNotificationListItem;
 }
 
@@ -337,6 +341,7 @@ export async function getLatestDepartmentNotifications({
       announcement: {
         departmentId,
         status: "SENT",
+        level: { in: ["DEPARTMENT", "PROJECT"] },
       },
     },
     include: {

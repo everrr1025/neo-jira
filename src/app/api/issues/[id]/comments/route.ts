@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
-import { notifyCommentMentions, notifyIssueWatchers } from "@/lib/notifications";
+import { notifyCommentMentions } from "@/lib/notifications";
 import { createAuditLogs, extractAuditTextPreview } from "@/lib/audit";
 
 export async function GET(
@@ -80,19 +80,12 @@ export async function POST(
       return createdComment;
     });
 
-    const mentionedUserIds = await notifyCommentMentions({
+    await notifyCommentMentions({
       actorId: userId,
       issueId: resolvedParams.id,
       issueKey: issue.key,
       projectId: issue.projectId,
       content,
-    });
-
-    await notifyIssueWatchers({
-      actorId: userId,
-      issueId: resolvedParams.id,
-      message: `commented on ${issue.key}`,
-      excludeUserIds: [...mentionedUserIds],
     });
 
     return NextResponse.json(comment, { status: 201 });
@@ -173,20 +166,13 @@ export async function PATCH(
     });
 
     if (issue) {
-      const mentionedUserIds = await notifyCommentMentions({
+      await notifyCommentMentions({
         actorId: userId,
         issueId: resolvedParams.id,
         issueKey: issue.key,
         projectId: issue.projectId,
         content,
         previousContent: existingComment.content,
-      });
-
-      await notifyIssueWatchers({
-        actorId: userId,
-        issueId: resolvedParams.id,
-        message: `updated a comment on ${issue.key}`,
-        excludeUserIds: [...mentionedUserIds],
       });
     }
 
@@ -252,19 +238,6 @@ export async function DELETE(
         where: { id: commentId },
       });
     });
-
-    const issue = await prisma.issue.findUnique({
-      where: { id: resolvedParams.id },
-      select: { key: true },
-    });
-
-    if (issue) {
-      await notifyIssueWatchers({
-        actorId: userId,
-        issueId: resolvedParams.id,
-        message: `deleted a comment on ${issue.key}`,
-      });
-    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

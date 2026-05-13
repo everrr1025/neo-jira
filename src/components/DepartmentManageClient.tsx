@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Bell, Building2, ChevronLeft, ChevronRight, FolderGit2, Loader2, Plus, Trash2, Users, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -123,7 +123,7 @@ const TEXT = {
     noAnnouncements: "暂无部门通知。",
     noMembers: "暂无部门成员。",
     noProjects: "该部门暂未创建项目。",
-    latestAnnouncements: "最新通知",
+    latestAnnouncements: "最新公告",
     allNotifications: "全部通知",
     newNotification: "新建通知",
     notificationLevel: "通知级别",
@@ -204,6 +204,10 @@ type ProjectColumnConfig = {
   label: string;
   width: number;
 };
+type SelectOption = {
+  value: string;
+  label: string;
+};
 
 const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   name: 260,
@@ -269,6 +273,127 @@ function compareText(left: string | null | undefined, right: string | null | und
   return (left || "").localeCompare(right || "", undefined, { numeric: true, sensitivity: "base" });
 }
 
+function InlineSelect({
+  value,
+  options,
+  onChange,
+  renderSummary,
+  className = "relative",
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  renderSummary: (label: string) => ReactNode;
+  className?: string;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    openingUpward: boolean;
+  }>({ left: 0, width: 0, openingUpward: false });
+
+  const updateMenuPosition = useCallback(() => {
+    const rect = summaryRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openingUpward = spaceBelow < 280;
+
+    if (openingUpward) {
+      setMenuPosition({
+        bottom: window.innerHeight - rect.top + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: true,
+      });
+    } else {
+      setMenuPosition({
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        openingUpward: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    if (detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <details
+      ref={detailsRef}
+      className={className}
+      onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open) updateMenuPosition();
+      }}
+    >
+      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+        {renderSummary(selectedOption?.label || "")}
+      </summary>
+      {isOpen ? (
+        <div
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          style={{
+            top: menuPosition.top,
+            bottom: menuPosition.bottom,
+            left: menuPosition.left,
+            minWidth: menuPosition.width,
+          }}
+        >
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onClick={() => handleSelect(option.value)}
+              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <span className="block truncate">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </details>
+  );
+}
+
 function PaginationFooter({
   locale,
   page,
@@ -295,6 +420,7 @@ function PaginationFooter({
   const of = locale === "zh" ? "共" : "of";
   const perPage = locale === "zh" ? "每页" : "Per page";
   const pageLabel = locale === "zh" ? "第" : "Page";
+  const pageSizeOptions = PAGE_SIZE_OPTIONS.map((option) => ({ value: String(option), label: String(option) }));
 
   return (
     <div className="border-t bg-slate-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -309,20 +435,20 @@ function PaginationFooter({
       </div>
 
       <div className="flex items-center gap-4">
-        <label className="flex items-center gap-2 text-slate-500">
+        <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
           <span>{perPage}</span>
-          <select
-            value={pageSize}
-            onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            {PAGE_SIZE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+          <span>{perPage}</span>
+          <InlineSelect
+            value={String(pageSize)}
+            options={pageSizeOptions}
+            onChange={(value) => onPageSizeChange(Number(value))}
+            renderSummary={(label) => (
+              <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                {label}
+              </span>
+            )}
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -436,15 +562,6 @@ export default function DepartmentManageClient({
     description: "",
   });
 
-  const headName = department.headName || t.member;
-  const currentMember = department.members.find((member) => member.userId === currentUserId) || null;
-  const currentMemberRole = currentMember
-    ? currentMember.role === "HEAD"
-      ? t.head
-      : currentMember.role === "ASSISTANT"
-        ? t.assistant
-        : t.member
-    : null;
   const sortedMembers = [...department.members].sort((a, b) => {
     const order: Record<string, number> = { HEAD: 0, ASSISTANT: 1, MEMBER: 2 };
     return (order[a.role] ?? 3) - (order[b.role] ?? 3) || displayMember(a).localeCompare(displayMember(b));
@@ -498,7 +615,8 @@ export default function DepartmentManageClient({
     });
   }, [department.projects, projectSortDirection, projectSortField]);
 
-  const totalIssues = department.projects.reduce((sum, project) => sum + project.issuesCount, 0);
+  const completedIssues = department.projects.reduce((sum, project) => sum + project.completedIssuesCount, 0);
+  const incompleteIssues = department.projects.reduce((sum, project) => sum + project.incompleteIssuesCount, 0);
   const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / memberPageSize));
   const currentMemberPage = Math.min(memberPage, totalMemberPages);
   const paginatedMembers = sortedMembers.slice(
@@ -513,17 +631,18 @@ export default function DepartmentManageClient({
   );
   const summaryCards = useMemo(
     () => [
-      { label: t.members, value: department.members.length, icon: Users },
-      { label: t.projects, value: department.projects.length, icon: FolderGit2 },
-      { label: t.issues, value: totalIssues, icon: Bell },
+      { label: t.members, value: department.members.length },
+      { label: t.projects, value: department.projects.length },
+      { label: t.issues, value: `${completedIssues}/${incompleteIssues}` },
     ],
     [
+      completedIssues,
       department.members.length,
       department.projects.length,
+      incompleteIssues,
       t.issues,
       t.members,
       t.projects,
-      totalIssues,
     ]
   );
 
@@ -931,36 +1050,76 @@ export default function DepartmentManageClient({
   return (
     <div className="space-y-6">
       {mode === "dashboard" ? (
-        <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(390px,1fr)_minmax(220px,0.55fr)]">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white shadow-sm">
-                <Building2 size={22} />
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <div className="self-start rounded-xl border bg-white p-3 shadow-sm">
+            <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+              <div className="min-w-0">
+                <p className="line-clamp-2 text-base leading-6 text-slate-700">{department.description || t.noDescription}</p>
               </div>
-              <div className="grid min-w-0 gap-3">
-                <p className="text-sm leading-6 text-slate-600">{department.description || t.noDescription}</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{t.head}</span>
-                  <span className="text-base font-semibold text-slate-900">{headName}</span>
-                </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {summaryCards.map((card) => (
+                  <div
+                    key={card.label}
+                    className="flex aspect-square min-h-0 flex-col items-center justify-center rounded-lg bg-slate-50 p-2 text-center"
+                  >
+                    <span className="block max-w-full truncate text-xs font-medium text-slate-500">{card.label}</span>
+                    <div className="mt-1 truncate text-lg font-bold leading-none text-slate-900">{card.value}</div>
+                  </div>
+                ))}
               </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {summaryCards.map((card) => (
-                <div key={card.label} className="rounded-xl bg-slate-50 px-5 py-4">
-                  <span className="text-sm font-medium text-slate-500">{card.label}</span>
-                  <div className="mt-3 text-2xl font-bold text-slate-900">{card.value}</div>
-                </div>
-              ))}
+          <div className="self-start rounded-xl border bg-white p-3 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-slate-900">{t.latestAnnouncements}</h3>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/departments/${department.id}/notifications`}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  {t.allNotifications}
+                </Link>
+              </div>
             </div>
-
-            <div className="rounded-xl bg-slate-50 px-5 py-4">
-              <p className="text-base font-semibold text-slate-900">
-                {currentMember ? displayMember(currentMember) : "-"}
-              </p>
-              {currentMemberRole ? <p className="mt-1 text-sm text-slate-500">{currentMemberRole}</p> : null}
-            </div>
+            {notifications.length === 0 ? (
+              <p className="text-sm text-slate-500">{t.noAnnouncements}</p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.receiptId}
+                    className="grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-1 py-2 text-left transition-colors hover:bg-slate-50"
+                  >
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                      {getNotificationLevelText(notification.level, t)}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        notification.read || readNotificationIds.has(notification.id)
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      {notification.read || readNotificationIds.has(notification.id) ? t.read : t.unread}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openNotification(notification)}
+                      className={`min-w-0 truncate text-left text-sm font-semibold hover:text-blue-700 ${
+                        notification.read || readNotificationIds.has(notification.id) ? "text-slate-700" : "text-blue-900"
+                      }`}
+                    >
+                      {notification.title}
+                    </button>
+                    <span className="whitespace-nowrap text-xs font-medium text-slate-400">
+                      {formatRelativeTime(notification.createdAt, locale)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -968,93 +1127,6 @@ export default function DepartmentManageClient({
       {pageErrorMsg ? (
         <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
           {pageErrorMsg}
-        </div>
-      ) : null}
-
-      {mode === "dashboard" ? (
-        <div className="space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="self-start rounded-2xl border bg-white p-6 shadow-sm">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Bell size={18} className="text-blue-600" />
-                  <h3 className="text-lg font-semibold text-slate-900">{t.latestAnnouncements}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/departments/${department.id}/notifications`}
-                    className="text-sm font-medium text-blue-600 hover:underline"
-                  >
-                    {t.allNotifications}
-                  </Link>
-                </div>
-              </div>
-              {notifications.length === 0 ? (
-                <p className="text-sm text-slate-500">{t.noAnnouncements}</p>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {notifications.map((notification) => (
-                    <div
-                      key={notification.receiptId}
-                      className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1 py-3 text-left transition-colors hover:bg-slate-50 ${
-                        notification.read || readNotificationIds.has(notification.id) ? "bg-white" : "bg-blue-50/50"
-                      }`}
-                    >
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
-                        {getNotificationLevelText(notification.level, t)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => openNotification(notification)}
-                        className={`min-w-0 truncate text-left text-sm font-semibold hover:text-blue-700 ${
-                          notification.read || readNotificationIds.has(notification.id) ? "text-slate-700" : "text-blue-900"
-                        }`}
-                      >
-                        {notification.title}
-                      </button>
-                      <span className="whitespace-nowrap text-xs font-medium text-slate-400">
-                        {formatRelativeTime(notification.createdAt, locale)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border bg-white p-6 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <FolderGit2 size={18} className="text-emerald-600" />
-                <h3 className="text-lg font-semibold text-slate-900">{t.projectOverview}</h3>
-              </div>
-              {department.projects.length === 0 ? (
-                <p className="text-sm text-slate-500">{t.noProjects}</p>
-              ) : (
-                <div className="space-y-3">
-                  {department.projects.map((project) => (
-                    <div key={project.id} className="rounded-xl border border-slate-200 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-slate-900">{project.name}</h4>
-                            <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">
-                              {project.key}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm text-slate-500">{project.description || t.noDescription}</p>
-                          <p className="mt-3 text-xs text-slate-400">
-                            {t.ownerLabel}: {project.ownerName || t.unassignedOwner}
-                          </p>
-                        </div>
-                        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                          {project.issuesCount} {t.issues}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       ) : null}
 

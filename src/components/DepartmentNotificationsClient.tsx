@@ -384,11 +384,24 @@ export default function DepartmentNotificationsClient({
 
   const openNotification = (notification: DepartmentNotificationListItem) => {
     if (notification.source === "NOTIFICATION") {
+      if (notification.targetUrl) {
+        window.open(notification.targetUrl, "_blank", "noreferrer");
+      }
       startTransition(async () => {
         if (!notification.read) await markSystemNotificationRead(notification.id);
         router.refresh();
-        if (notification.targetUrl) router.push(notification.targetUrl);
       });
+      return;
+    }
+
+    if (notification.category === "REMINDER" && notification.targetUrl) {
+      window.open(notification.targetUrl, "_blank", "noreferrer");
+      if (!notification.read && notification.status === "SENT") {
+        startTransition(async () => {
+          await markAnnouncementRead(notification.id);
+          router.refresh();
+        });
+      }
       return;
     }
 

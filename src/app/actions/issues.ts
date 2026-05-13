@@ -114,58 +114,22 @@ const workflowSelect = {
 
 type IssueWatcherSnapshot = IssueAuditSnapshot & { key: string };
 
-function getIssueWatcherMessage(before: IssueWatcherSnapshot, after: IssueWatcherSnapshot) {
-  if (before.status !== after.status) {
-    return `updated the status of ${after.key}`;
+function getIssueWatcherNotificationMessage(
+  before: IssueWatcherSnapshot,
+  after: IssueWatcherSnapshot,
+  workflowStatuses: WorkflowStatusRecord[],
+) {
+  const wasDone = isDoneWorkflowStatus(before.status, workflowStatuses);
+  const isDone = isDoneWorkflowStatus(after.status, workflowStatuses);
+  if (!wasDone && isDone) {
+    return `completed ${after.key}`;
   }
 
-  if (before.assigneeId !== after.assigneeId) {
-    return `reassigned ${after.key}`;
+  if (before.dueDate && after.dueDate && after.dueDate.getTime() > before.dueDate.getTime()) {
+    return `delayed ${after.key}`;
   }
 
-  if (before.planId !== after.planId) {
-    return `updated the plan of ${after.key}`;
-  }
-
-  if (before.iterationId !== after.iterationId) {
-    return `moved ${after.key} to a different sprint`;
-  }
-
-  if (before.priority !== after.priority) {
-    return `updated the priority of ${after.key}`;
-  }
-
-  if (before.type !== after.type) {
-    return `updated the issue type of ${after.key}`;
-  }
-
-  if (before.dueDate?.toString() !== after.dueDate?.toString()) {
-    return `updated the due date of ${after.key}`;
-  }
-
-  if (before.description !== after.description) {
-    return `updated the description of ${after.key}`;
-  }
-
-  if (before.title !== after.title) {
-    return `updated the summary of ${after.key}`;
-  }
-
-  return `updated ${after.key}`;
-}
-
-function hasWatcherRelevantChange(before: IssueAuditSnapshot, after: IssueAuditSnapshot) {
-  return (
-    before.title !== after.title ||
-    before.description !== after.description ||
-    before.status !== after.status ||
-    before.priority !== after.priority ||
-    before.type !== after.type ||
-    before.assigneeId !== after.assigneeId ||
-    before.planId !== after.planId ||
-    before.iterationId !== after.iterationId ||
-    before.dueDate?.toString() !== after.dueDate?.toString()
-  );
+  return null;
 }
 
 export async function updateIssueStatus(issueId: string, status: string) {
@@ -181,7 +145,7 @@ export async function updateIssueStatus(issueId: string, status: string) {
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
 
-    const issue = await prisma.$transaction(async (tx) => {
+    const { issue, watcherMessage } = await prisma.$transaction(async (tx) => {
       const existingIssue = await tx.issue.findUnique({
         where: { id: issueId },
         select: {
@@ -229,18 +193,27 @@ export async function updateIssueStatus(issueId: string, status: string) {
       });
       await createAuditLogs(tx, auditLogs);
 
-      return updatedIssue;
+      return {
+        issue: updatedIssue,
+        watcherMessage: getIssueWatcherNotificationMessage(
+          existingIssue as IssueWatcherSnapshot,
+          updatedIssue as IssueWatcherSnapshot,
+          workflowStatuses,
+        ),
+      };
     });
 
     revalidatePath("/issues");
     revalidatePath("/iterations");
     revalidatePath(`/issues/${issueId}`);
 
-    await notifyIssueWatchers({
-      actorId: userId,
-      issueId,
-      message: `updated the status of ${issue.key}`,
-    });
+    if (watcherMessage) {
+      await notifyIssueWatchers({
+        actorId: userId,
+        issueId,
+        message: watcherMessage,
+      });
+    }
 
     return { success: true, issue };
   } catch (error) {
@@ -890,11 +863,16 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
       });
     }
 
-    if (hasWatcherRelevantChange(existingIssue as IssueAuditSnapshot, updatedIssue as IssueAuditSnapshot)) {
+    const watcherMessage = getIssueWatcherNotificationMessage(
+      existingIssue as IssueWatcherSnapshot,
+      updatedIssue as IssueWatcherSnapshot,
+      existingIssue.project.workflowStatuses as WorkflowStatusRecord[],
+    );
+    if (watcherMessage) {
       await notifyIssueWatchers({
         actorId: userId,
         issueId: existingIssue.id,
-        message: getIssueWatcherMessage(existingIssue as IssueWatcherSnapshot, updatedIssue as IssueWatcherSnapshot),
+        message: watcherMessage,
         excludeUserIds: [...mentionedUserIds],
       });
     }
