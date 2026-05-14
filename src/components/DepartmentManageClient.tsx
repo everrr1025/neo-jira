@@ -3,7 +3,18 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Building2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import {
   createDepartmentProject,
@@ -13,7 +24,6 @@ import {
 } from "@/app/actions/departments";
 import {
   createAnnouncementNotification,
-  markAnnouncementRead,
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
@@ -21,6 +31,7 @@ import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificat
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
+import type { DepartmentItemCenterItem } from "@/lib/departmentReminders";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
@@ -43,6 +54,7 @@ const TEXT = {
     noProjects: "No projects created for this department yet.",
     latestAnnouncements: "Latest announcements",
     allNotifications: "All notifications",
+    allAnnouncements: "All announcements",
     newNotification: "New notification",
     notificationLevel: "Level",
     departmentNotification: "Department",
@@ -109,6 +121,31 @@ const TEXT = {
     typeToConfirm: "Please type the exact project name to confirm:",
     deleteNameMismatch: "Project name confirmation does not match.",
     unassignedOwner: "Unassigned",
+    mySchedule: "My schedule",
+    today: "Today",
+    thisWeek: "This week",
+    noSchedule: "No schedule items.",
+    allSchedule: "All schedule",
+    myProjects: "My projects",
+    noMyProjects: "No projects assigned to you.",
+    unresolved: "Unresolved",
+    noPriorityIssues: "No urgent or high priority unresolved issues.",
+    urgent: "Urgent",
+    high: "High",
+    assignee: "Assignee",
+    dueDate: "Due",
+    noDueDate: "No due date",
+    welcome: "Welcome",
+    participatingProjects: "Projects",
+    position: "Position",
+    progress: "Progress",
+    ownerLabelShort: "Owner",
+    projectMembers: "Project members",
+    openProject: "Open project",
+    due: "Due",
+    allDay: "All day",
+    activeIteration: "Current iteration",
+    noActiveIteration: "No active iteration",
   },
   zh: {
     workspace: "部门工作台",
@@ -125,6 +162,7 @@ const TEXT = {
     noProjects: "该部门暂未创建项目。",
     latestAnnouncements: "最新公告",
     allNotifications: "全部通知",
+    allAnnouncements: "全部公告",
     newNotification: "新建通知",
     notificationLevel: "通知级别",
     departmentNotification: "部门",
@@ -190,6 +228,31 @@ const TEXT = {
     typeToConfirm: "请输入准确的项目名称以确认删除：",
     deleteNameMismatch: "输入的项目名称不正确。",
     unassignedOwner: "未指派",
+    mySchedule: "我的日程",
+    today: "今天",
+    thisWeek: "本周",
+    noSchedule: "暂无日程事项。",
+    allSchedule: "全部日程",
+    myProjects: "我的项目",
+    noMyProjects: "暂无你参与的项目。",
+    unresolved: "待解决",
+    noPriorityIssues: "暂无紧急或高优先级待解决问题。",
+    urgent: "紧急",
+    high: "高",
+    assignee: "经办人",
+    dueDate: "截止",
+    noDueDate: "无截止日期",
+    welcome: "欢迎",
+    participatingProjects: "参与项目",
+    position: "岗位",
+    progress: "进度",
+    ownerLabelShort: "负责人",
+    projectMembers: "项目成员",
+    openProject: "打开项目",
+    due: "截止",
+    allDay: "全天",
+    activeIteration: "当前迭代",
+    noActiveIteration: "无活跃迭代",
   },
 } as const;
 
@@ -227,6 +290,11 @@ const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
 
 function displayMember(member: { userName: string | null; userEmail: string }) {
   return member.userName || member.userEmail;
+}
+function getDepartmentRoleText(role: string | undefined, t: typeof TEXT[Locale]) {
+  if (role === "HEAD") return t.head;
+  if (role === "ASSISTANT") return t.assistant;
+  return t.member;
 }
 function getNotificationLevelText(level: DepartmentNotificationListItem["level"], t: typeof TEXT[Locale]) {
   if (level === "DEPARTMENT") return t.departmentNotification;
@@ -272,6 +340,68 @@ function formatRelativeTime(value: string, locale: Locale) {
 function compareText(left: string | null | undefined, right: string | null | undefined) {
   return (left || "").localeCompare(right || "", undefined, { numeric: true, sensitivity: "base" });
 }
+function startOfLocalDay(date: Date) {
+  const nextDate = new Date(date);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate;
+}
+function endOfLocalDay(date: Date) {
+  const nextDate = new Date(date);
+  nextDate.setHours(23, 59, 59, 999);
+  return nextDate;
+}
+function startOfLocalWeek(date: Date) {
+  const nextDate = startOfLocalDay(date);
+  const day = nextDate.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  nextDate.setDate(nextDate.getDate() + diff);
+  return nextDate;
+}
+function formatScheduleTime(item: DepartmentItemCenterItem, locale: Locale, t: typeof TEXT[Locale]) {
+  const date = new Date(item.date);
+  if (item.itemType === "TODO" || item.itemType === "ISSUE_DUE") return t.due;
+  if (date.getHours() === 0 && date.getMinutes() === 0) return t.allDay;
+  return date.toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" });
+}
+function formatScheduleDay(dateValue: string, locale: Locale) {
+  const date = new Date(dateValue);
+  return {
+    weekday: date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" }),
+    day: date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { day: "2-digit" }),
+  };
+}
+function scheduleAccentClass(item: DepartmentItemCenterItem) {
+  if (item.isOverdue || item.priority === "URGENT") return "bg-red-600";
+  if (item.itemType === "TODO" || item.itemType === "ISSUE_DUE") return "bg-amber-500";
+  if (item.itemType === "EVENT") return "bg-zinc-950";
+  return "bg-zinc-500";
+}
+function formatDateRange(startDate: string, endDate: string, locale: Locale) {
+  const localeKey = locale === "zh" ? "zh-CN" : "en-US";
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return `${start.toLocaleDateString(localeKey, { month: "short", day: "numeric" })} - ${end.toLocaleDateString(localeKey, { month: "short", day: "numeric" })}`;
+}
+function getDaysLeft(endDate: string, locale: Locale) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  const days = Math.max(0, Math.ceil((end.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)));
+  return locale === "zh" ? `剩余 ${days} 天` : `${days}d remaining`;
+}
+function formatIssueDueDate(dueDate: string | null, locale: Locale, fallback: string) {
+  if (!dueDate) return fallback;
+  return new Date(dueDate).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+function isScheduleItemRelatedToUser(item: DepartmentItemCenterItem, userId: string) {
+  if (item.kind === "ISSUE_DUE") return item.assigneeId === userId;
+  if (item.creatorId === userId || item.assigneeId === userId) return true;
+  return item.attendees.some((attendee) => attendee.userId === userId);
+}
 
 function InlineSelect({
   value,
@@ -279,12 +409,14 @@ function InlineSelect({
   onChange,
   renderSummary,
   className = "relative",
+  matchTriggerWidth = true,
 }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
   renderSummary: (label: string) => ReactNode;
   className?: string;
+  matchTriggerWidth?: boolean;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
@@ -368,12 +500,13 @@ function InlineSelect({
       </summary>
       {isOpen ? (
         <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          className="fixed z-50 flex max-w-80 flex-col gap-1 rounded-md border border-[#e2e8f0] bg-white p-1 shadow-md"
           style={{
             top: menuPosition.top,
             bottom: menuPosition.bottom,
             left: menuPosition.left,
-            minWidth: menuPosition.width,
+            minWidth: matchTriggerWidth ? menuPosition.width : undefined,
+            width: matchTriggerWidth ? menuPosition.width : undefined,
           }}
         >
           {options.map((option) => (
@@ -381,8 +514,8 @@ function InlineSelect({
               type="button"
               key={option.value}
               onClick={() => handleSelect(option.value)}
-              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              className={`block w-full rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
+                option.value === value ? "bg-[#f4f4f5] font-medium text-[#09090b]" : "text-[#3f3f46] hover:bg-[#f4f4f5] hover:text-[#09090b]"
               }`}
             >
               <span className="block truncate">{option.label}</span>
@@ -489,6 +622,7 @@ export default function DepartmentManageClient({
     canManageDepartment: false,
     manageableProjects: [],
   },
+  scheduleItems = [],
 }: {
   department: DepartmentWorkspaceData;
   locale: Locale;
@@ -498,9 +632,11 @@ export default function DepartmentManageClient({
   mode: "dashboard" | "members" | "projects";
   notifications?: DepartmentNotificationListItem[];
   notificationPermission?: DepartmentNotificationPermission;
+  scheduleItems?: DepartmentItemCenterItem[];
 }) {
   const t = TEXT[locale];
   const router = useRouter();
+  const myProjectStorageKey = `department:${department.id}:user:${currentUserId}:my-project`;
   const [isPending, startTransition] = useTransition();
   const [pageErrorMsg, setPageErrorMsg] = useState("");
   const [createProjectErrorMsg, setCreateProjectErrorMsg] = useState("");
@@ -509,7 +645,6 @@ export default function DepartmentManageClient({
   const [isCreateNotificationOpen, setIsCreateNotificationOpen] = useState(false);
   const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<DepartmentNotificationListItem | null>(null);
-  const [readNotificationIds, setReadNotificationIds] = useState<Set<string>>(new Set());
   const [notificationErrorMsg, setNotificationErrorMsg] = useState("");
   const [deletingProject, setDeletingProject] = useState<DepartmentWorkspaceProject | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -533,6 +668,10 @@ export default function DepartmentManageClient({
   const [projectDragSourceIndex, setProjectDragSourceIndex] = useState<number | null>(null);
   const [projectDragOverIndex, setProjectDragOverIndex] = useState<number | null>(null);
   const [projectDragOverSide, setProjectDragOverSide] = useState<"left" | "right" | null>(null);
+  const [scheduleView, setScheduleView] = useState<"today" | "week">("week");
+  const [selectedMyProjectId, setSelectedMyProjectId] = useState(() =>
+    typeof window === "undefined" ? "" : window.localStorage.getItem(myProjectStorageKey) || ""
+  );
   const projectResizingRef = useRef<{
     colIndex: number;
     nextColIndex: number;
@@ -614,9 +753,50 @@ export default function DepartmentManageClient({
       return projectSortDirection === "asc" ? result : -result;
     });
   }, [department.projects, projectSortDirection, projectSortField]);
+  const myProjects = useMemo(
+    () => department.projects.filter((project) => project.members.some((member) => member.userId === currentUserId)),
+    [currentUserId, department.projects]
+  );
+  const currentDepartmentMember = useMemo(
+    () => department.members.find((member) => member.userId === currentUserId) || null,
+    [currentUserId, department.members]
+  );
+  const todayLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+      }),
+    [locale]
+  );
+  const selectedMyProject = useMemo(
+    () => myProjects.find((project) => project.id === selectedMyProjectId) || myProjects[0] || null,
+    [myProjects, selectedMyProjectId]
+  );
+  const handleMyProjectChange = (projectId: string) => {
+    setSelectedMyProjectId(projectId);
+    window.localStorage.setItem(myProjectStorageKey, projectId);
+  };
+  const dashboardScheduleItems = useMemo(() => {
+    const todayStart = startOfLocalDay(new Date());
+    const todayEnd = endOfLocalDay(todayStart);
+    const weekStart = startOfLocalWeek(todayStart);
+    const weekEnd = endOfLocalDay(new Date(weekStart));
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const rangeStart = scheduleView === "today" ? todayStart : weekStart;
+    const rangeEnd = scheduleView === "today" ? todayEnd : weekEnd;
 
-  const completedIssues = department.projects.reduce((sum, project) => sum + project.completedIssuesCount, 0);
-  const incompleteIssues = department.projects.reduce((sum, project) => sum + project.incompleteIssuesCount, 0);
+    return scheduleItems
+      .filter((item) => !item.completedAt)
+      .filter((item) => isScheduleItemRelatedToUser(item, currentUserId))
+      .filter((item) => {
+        const itemDate = new Date(item.date);
+        return itemDate >= rangeStart && itemDate <= rangeEnd;
+      })
+      .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+  }, [currentUserId, scheduleItems, scheduleView]);
+
   const totalMemberPages = Math.max(1, Math.ceil(sortedMembers.length / memberPageSize));
   const currentMemberPage = Math.min(memberPage, totalMemberPages);
   const paginatedMembers = sortedMembers.slice(
@@ -629,22 +809,9 @@ export default function DepartmentManageClient({
     (currentProjectPage - 1) * projectPageSize,
     currentProjectPage * projectPageSize
   );
-  const summaryCards = useMemo(
-    () => [
-      { label: t.members, value: department.members.length },
-      { label: t.projects, value: department.projects.length },
-      { label: t.issues, value: `${completedIssues}/${incompleteIssues}` },
-    ],
-    [
-      completedIssues,
-      department.members.length,
-      department.projects.length,
-      incompleteIssues,
-      t.issues,
-      t.members,
-      t.projects,
-    ]
-  );
+  const selectedMyProjectProgress = selectedMyProject && selectedMyProject.issuesCount > 0
+    ? Math.round((selectedMyProject.completedIssuesCount / selectedMyProject.issuesCount) * 100)
+    : 0;
 
   const translateError = (message: string | undefined, fallback: string) => {
     if (!message) return fallback;
@@ -655,21 +822,6 @@ export default function DepartmentManageClient({
     if (message.includes("Project not found")) return t.projectNotFound;
     if (message.includes("Project name confirmation does not match")) return t.deleteNameMismatch;
     return message;
-  };
-
-  const openNotification = (notification: DepartmentNotificationListItem) => {
-    setSelectedNotification(notification);
-    setResendForm({
-      title: notification.title,
-      content: notification.content,
-    });
-    setNotificationErrorMsg("");
-    if (!notification.read && notification.status === "SENT" && !readNotificationIds.has(notification.id)) {
-      setReadNotificationIds((current) => new Set(current).add(notification.id));
-      startTransition(async () => {
-        await markAnnouncementRead(notification.id);
-      });
-    }
   };
 
   const resetNotificationForm = () => {
@@ -1050,76 +1202,269 @@ export default function DepartmentManageClient({
   return (
     <div className="space-y-6">
       {mode === "dashboard" ? (
-        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-          <div className="self-start rounded-xl border bg-white p-3 shadow-sm">
-            <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-              <div className="min-w-0">
-                <p className="line-clamp-2 text-base leading-6 text-slate-700">{department.description || t.noDescription}</p>
+        <div className="space-y-6 text-[#18181b]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="rounded-lg border border-[#e2e8f0] bg-white p-5 md:col-span-2">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold leading-5 text-[#09090b]">{department.name}</h2>
+                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-[#71717a]">{department.description || t.noDescription}</p>
+                </div>
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-[#e2e8f0] bg-white text-[#3f3f46]">
+                  <Building2 size={24} />
+                </div>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#18181b]">{department.key}</span>
+                <span className="rounded bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#18181b]">
+                  {t.head}: {department.headName || t.unassignedOwner}
+                </span>
+              </div>
+            </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                {summaryCards.map((card) => (
-                  <div
-                    key={card.label}
-                    className="flex aspect-square min-h-0 flex-col items-center justify-center rounded-lg bg-slate-50 p-2 text-center"
-                  >
-                    <span className="block max-w-full truncate text-xs font-medium text-slate-500">{card.label}</span>
-                    <div className="mt-1 truncate text-lg font-bold leading-none text-slate-900">{card.value}</div>
-                  </div>
-                ))}
+            <div className="flex flex-col justify-center rounded-lg border border-[#e2e8f0] bg-white p-5">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-[#71717a]">{t.members} / {t.projects}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.members.length}</div>
+                  <div className="mt-1 text-xs font-medium text-[#71717a]">{t.members}</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.projects.length}</div>
+                  <div className="mt-1 text-xs font-medium text-[#71717a]">{t.projects}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-center rounded-lg border border-[#e2e8f0] bg-white p-5">
+              <div className="text-sm font-semibold leading-5 text-[#09090b]">{todayLabel}</div>
+              <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0 truncate text-lg font-semibold leading-6 text-[#09090b]">
+                  {displayMember(currentDepartmentMember || { userName: null, userEmail: t.currentUser })}
+                </div>
+                <div className="flex shrink-0 items-center justify-end gap-2 text-xs font-medium text-[#3f3f46]">
+                  <span className="rounded-md bg-[#f4f4f5] px-2 py-1">
+                    {getDepartmentRoleText(currentDepartmentMember?.role, t)}
+                  </span>
+                  <span className="rounded-md bg-[#f4f4f5] px-2 py-1">
+                    {t.participatingProjects}: {myProjects.length}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="self-start rounded-xl border bg-white p-3 shadow-sm">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-base font-semibold text-slate-900">{t.latestAnnouncements}</h3>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/departments/${department.id}/notifications`}
-                  className="text-xs font-medium text-blue-600 hover:underline"
-                >
-                  {t.allNotifications}
-                </Link>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-1">
+              <div className="flex flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
+                  <h2 className="text-sm font-semibold text-[#18181b]">{t.mySchedule}</h2>
+                  <div className="flex rounded-md bg-[#e2e8f0] p-0.5">
+                    {(["today", "week"] as const).map((view) => (
+                      <button
+                        key={view}
+                        type="button"
+                        onClick={() => setScheduleView(view)}
+                        className={`h-7 rounded-md px-3 text-xs font-medium transition-colors ${
+                          scheduleView === view
+                            ? "bg-white text-[#18181b] ring-1 ring-[#e2e8f0]"
+                            : "text-[#71717a] hover:text-[#18181b]"
+                        }`}
+                      >
+                        {view === "today" ? t.today : t.thisWeek}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className={`min-h-0 flex-1 p-2 ${scheduleView === "week" ? "max-h-[280px] overflow-y-auto" : "overflow-y-auto"}`}>
+                  {dashboardScheduleItems.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-sm text-[#71717a]">{t.noSchedule}</div>
+                  ) : (
+                    <div className="space-y-0.5">
+                      {dashboardScheduleItems.map((item) => {
+                        const scheduleDay = formatScheduleDay(item.date, locale);
+                        const title = item.issueKey ? `${item.issueKey} ${item.title}` : item.title;
+                        const isScheduleEvent = item.itemType === "EVENT" || item.itemType === "REMINDER";
+                        const itemHref = isScheduleEvent
+                          ? `/departments/${department.id}/items?tab=schedule&selected=${item.id}`
+                          : item.link || `/departments/${department.id}/items?tab=schedule`;
+                        return (
+                          <Link
+                            key={`${item.kind}-${item.id}`}
+                            href={itemHref}
+                            target={isScheduleEvent ? "_blank" : undefined}
+                            rel={isScheduleEvent ? "noreferrer" : undefined}
+                            className={`flex min-w-0 items-center gap-3 rounded px-2 py-2 transition-colors hover:bg-[#f4f4f5] ${
+                              item.isOverdue && scheduleView === "today" ? "bg-[#fef2f2]/70" : ""
+                            }`}
+                          >
+                            {scheduleView === "today" ? (
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${scheduleAccentClass(item)}`} />
+                            ) : (
+                              <span className="w-10 shrink-0 rounded-lg border border-[#e2e8f0] bg-[#f4f4f5] py-0.5 text-center">
+                                <span className="block text-[10px] font-semibold uppercase leading-3 text-[#71717a]">{scheduleDay.weekday}</span>
+                                <span className="block text-sm font-semibold leading-4 text-[#18181b]">{scheduleDay.day}</span>
+                              </span>
+                            )}
+                            <span className={`w-14 shrink-0 text-xs font-medium ${item.isOverdue ? "text-[#ba1a1a]" : "text-[#71717a]"}`}>
+                              {formatScheduleTime(item, locale, t)}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#18181b]">{title}</span>
+                            {item.projectKey ? (
+                              <span className="hidden shrink-0 rounded bg-[#f4f4f5] px-2 py-0.5 text-[11px] font-semibold text-[#09090b] sm:inline">
+                                {item.projectKey}
+                              </span>
+                            ) : null}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
+                  <h2 className="text-sm font-semibold text-[#18181b]">{t.latestAnnouncements}</h2>
+                  <Link
+                    href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex rounded-md px-2 py-1 text-xs font-semibold text-[#71717a] hover:bg-[#f4f4f5] hover:text-[#09090b]"
+                  >
+                    {t.allAnnouncements}
+                  </Link>
+                </div>
+                <div className="p-0">
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-sm text-[#71717a]">{t.noAnnouncements}</div>
+                  ) : (
+                    <div>
+                      {notifications.map((notification, index) => {
+                        const isRead = notification.read;
+                        return (
+                          <Link
+                            key={notification.receiptId}
+                            href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT&selected=${notification.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-white ${
+                              index < notifications.length - 1 ? "border-b border-[#f4f4f5]" : ""
+                            }`}
+                          >
+                            <span
+                              className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                isRead
+                                  ? "border border-[#e2e8f0] bg-[#f4f4f5] text-[#3f3f46]"
+                                  : "bg-[#09090b] text-white"
+                              }`}
+                            >
+                              {getNotificationLevelText(notification.level, t)}
+                            </span>
+                            <span className="min-w-0 flex-1 text-sm leading-5 text-[#18181b]">{notification.title}</span>
+                            <span className="shrink-0 whitespace-nowrap text-[10px] text-[#a1a1aa]">
+                              {formatRelativeTime(notification.createdAt, locale)}
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            {notifications.length === 0 ? (
-              <p className="text-sm text-slate-500">{t.noAnnouncements}</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.receiptId}
-                    className="grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-1 py-2 text-left transition-colors hover:bg-slate-50"
-                  >
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
-                      {getNotificationLevelText(notification.level, t)}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        notification.read || readNotificationIds.has(notification.id)
-                          ? "bg-slate-100 text-slate-600"
-                          : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {notification.read || readNotificationIds.has(notification.id) ? t.read : t.unread}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => openNotification(notification)}
-                      className={`min-w-0 truncate text-left text-sm font-semibold hover:text-blue-700 ${
-                        notification.read || readNotificationIds.has(notification.id) ? "text-slate-700" : "text-blue-900"
-                      }`}
-                    >
-                      {notification.title}
-                    </button>
-                    <span className="whitespace-nowrap text-xs font-medium text-slate-400">
-                      {formatRelativeTime(notification.createdAt, locale)}
+
+            <div className="lg:col-span-2">
+              <div className="flex h-[520px] flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-semibold text-[#18181b]">{t.myProjects}</h2>
+                    {myProjects.length > 0 ? (
+                      <InlineSelect
+                        value={selectedMyProject?.id || myProjects[0]?.id || ""}
+                        options={myProjects.map((project) => ({ value: project.id, label: project.name }))}
+                        onChange={handleMyProjectChange}
+                        className="relative max-w-[240px]"
+                        renderSummary={(label) => (
+                          <span className="inline-flex h-8 max-w-[240px] items-center gap-1 rounded-md border border-[#e2e8f0] bg-white px-2 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f4f4f5]">
+                            <span className="min-w-0 truncate">{label}</span>
+                            <ChevronDown size={14} className="shrink-0 text-[#71717a]" />
+                          </span>
+                        )}
+                        matchTriggerWidth={false}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 text-right text-xs text-[#71717a]">
+                    <span className="font-medium text-[#18181b]">
+                      {selectedMyProject?.activeIteration?.name || t.noActiveIteration}
                     </span>
                   </div>
-                ))}
+                </div>
+                {selectedMyProject ? (
+                  <>
+                    <div className="border-b border-[#e2e8f0] bg-white p-4">
+                      <div className="mb-2 flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-[#09090b]">{t.progress}</p>
+                          <p className="mt-0.5 text-xs text-[#71717a]">
+                            {selectedMyProject.activeIteration
+                              ? `${formatDateRange(selectedMyProject.activeIteration.startDate, selectedMyProject.activeIteration.endDate, locale)} · ${getDaysLeft(selectedMyProject.activeIteration.endDate, locale)}`
+                              : t.noActiveIteration}
+                          </p>
+                        </div>
+                        <span className="text-sm font-semibold text-[#09090b]">{selectedMyProjectProgress}%</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-[#e4e4e7]">
+                        <div className="h-full rounded-full bg-[#09090b]" style={{ width: `${selectedMyProjectProgress}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="flex min-h-0 flex-1 flex-col space-y-3 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-[#18181b]">{t.unresolved}</h3>
+                        <span className="text-xs font-medium text-[#71717a]">{selectedMyProject.priorityIssues.length}</span>
+                      </div>
+                      {selectedMyProject.priorityIssues.length > 0 ? (
+                        <div className="min-h-0 max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                          {selectedMyProject.priorityIssues.map((issue) => (
+                            <Link
+                              key={issue.id}
+                              href={`/issues/${issue.id}`}
+                              className="flex items-center justify-between gap-3 rounded-md border border-[#e2e8f0] bg-white px-3 py-2 transition-colors hover:border-[#d4d4d8] hover:bg-[#fafafa]"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium leading-5 text-[#18181b]">{issue.title}</div>
+                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium text-[#71717a]">
+                                  <span>{issue.key}</span>
+                                  <span className="truncate">{t.assignee}: {issue.assigneeName}</span>
+                                  <span>{t.dueDate}: {formatIssueDueDate(issue.dueDate, locale, t.noDueDate)}</span>
+                                </div>
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium ${
+                                  issue.priority === "URGENT"
+                                    ? "bg-[#fef2f2] text-[#ba1a1a]"
+                                    : "bg-[#fff7ed] text-[#c2410c]"
+                                }`}
+                              >
+                                {issue.priority === "URGENT" ? t.urgent : t.high}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-md border border-dashed border-[#e2e8f0] px-3 py-8 text-center text-sm text-[#71717a]">
+                          {t.noPriorityIssues}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-6 text-sm text-[#71717a]">{t.noMyProjects}</div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       ) : null}
@@ -1247,7 +1592,7 @@ export default function DepartmentManageClient({
                   setNewProject({ name: "", key: "", description: "" });
                   setIsCreateProjectOpen(true);
                 }}
-                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-[#09090b] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {t.createProject}

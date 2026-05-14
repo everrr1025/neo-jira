@@ -8,6 +8,10 @@ import {
   getDepartmentWorkspaceData,
 } from "@/lib/departmentWorkspace";
 import { getLatestDepartmentNotifications } from "@/lib/departmentNotifications";
+import {
+  getDepartmentItemCenterItems,
+  getManageableReminderProjects,
+} from "@/lib/departmentReminders";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +48,30 @@ export default async function DepartmentPage({
     userId,
     canViewAllProjects,
   );
-  const latestNotifications = await getLatestDepartmentNotifications({
-    departmentId,
+  const visibleProjectIds = visibleDepartment.projects.map((project) => project.id);
+  const manageableReminderProjects = getManageableReminderProjects({
+    projects: visibleDepartment.projects,
     userId,
-    userRole,
-    locale,
-    take: 5,
+    canManageDepartment: canViewAllProjects,
   });
+  const [latestNotifications, scheduleItems] = await Promise.all([
+    getLatestDepartmentNotifications({
+      departmentId,
+      userId,
+      userRole,
+      locale,
+      take: 5,
+    }),
+    getDepartmentItemCenterItems({
+      departmentId,
+      userId,
+      userRole,
+      visibleProjectIds,
+      manageableProjectIds: manageableReminderProjects.map((project) => project.id),
+      canManageDepartment: canViewAllProjects,
+      locale,
+    }),
+  ]);
 
   return (
     <div className="flex h-full w-full flex-col space-y-6">
@@ -63,6 +84,7 @@ export default async function DepartmentPage({
         mode="dashboard"
         notifications={latestNotifications.notifications}
         notificationPermission={latestNotifications.permission}
+        scheduleItems={scheduleItems}
       />
     </div>
   );

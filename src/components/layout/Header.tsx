@@ -14,7 +14,6 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const { data: session } = useSession();
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const [query, setQuery] = useState(searchParams.get("search") || "");
-  const [departmentTitle, setDepartmentTitle] = useState("");
   const translations = getTranslations(locale);
   const userName = session?.user?.name || translations.sidebar.userFallback;
 
@@ -25,24 +24,6 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   useEffect(() => {
     setLocale(initialLocale);
   }, [initialLocale]);
-
-  useEffect(() => {
-    const handleDepartmentTitle = (event: Event) => {
-      const detail = (event as CustomEvent<{ title?: string | null }>).detail;
-      setDepartmentTitle(detail?.title?.trim() || "");
-    };
-
-    window.addEventListener("department-header-title", handleDepartmentTitle as EventListener);
-    return () => {
-      window.removeEventListener("department-header-title", handleDepartmentTitle as EventListener);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!/^\/departments\/[^/]+$/.test(pathname)) {
-      setDepartmentTitle("");
-    }
-  }, [pathname]);
 
   const handleSearch = useCallback(
     (event: React.FormEvent) => {
@@ -67,7 +48,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
-    if (/^\/departments\/[^/]+$/.test(pathname) && departmentTitle) return departmentTitle;
+    if (/^\/departments\/[^/]+$/.test(pathname)) return locale === "zh" ? "概览" : "Overview";
     if (pathname.startsWith("/admin")) return translations.header.adminSettings;
     if (pathname.startsWith("/settings")) return translations.settingsPage.title;
     if (pathname.startsWith("/login")) return translations.header.login;
@@ -79,7 +60,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b bg-white px-6 shadow-sm">
+    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b border-[#e2e8f0] bg-white px-6">
       <div className="flex items-center gap-4">
         <h1 className="truncate text-lg font-semibold text-slate-800">{getTitle()}</h1>
       </div>
@@ -91,10 +72,10 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={translations.header.searchPlaceholder}
-            className="w-64 rounded-full border bg-slate-50 py-2 pl-9 pr-4 text-sm transition-all focus:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="h-9 w-64 rounded-md border border-[#e2e8f0] bg-white py-1.5 pl-9 pr-3 text-sm text-[#18181b] transition-colors placeholder:text-[#a1a1aa] focus:border-[#09090b] focus:outline-none focus:ring-2 focus:ring-[#09090b]/10"
           />
           <svg
-            className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
+            className="absolute left-3 top-2.5 h-4 w-4 text-[#71717a]"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"

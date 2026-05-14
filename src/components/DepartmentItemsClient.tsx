@@ -1131,6 +1131,7 @@ export default function DepartmentItemsClient({
   noteTaskOptions,
   noteProjectOptions,
   initialTab = "tasks",
+  initialSelectedScheduleItemId = null,
   currentUserId,
   canCreateDepartmentItem,
   projectOptions,
@@ -1145,6 +1146,7 @@ export default function DepartmentItemsClient({
   noteTaskOptions: NoteTaskOption[];
   noteProjectOptions: DepartmentReminderScopeOption[];
   initialTab?: ItemTab;
+  initialSelectedScheduleItemId?: string | null;
   currentUserId: string;
   canCreateDepartmentItem: boolean;
   projectOptions: DepartmentReminderScopeOption[];
@@ -1187,7 +1189,7 @@ export default function DepartmentItemsClient({
   });
   const [scheduleCursor, setScheduleCursor] = useState(() => new Date());
   const [scheduleSearch, setScheduleSearch] = useState("");
-  const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(null);
+  const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(initialSelectedScheduleItemId);
   const [scheduleOverflowDate, setScheduleOverflowDate] = useState<string | null>(null);
   const activeTab = initialTab;
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
@@ -1573,20 +1575,25 @@ export default function DepartmentItemsClient({
   };
   const visibleItems = items.filter((item) => {
     if (activeTab === "tasks") return filteredTaskItems.some((task) => task.id === item.id);
-    if (activeTab === "schedule") return item.itemType === "EVENT" || item.itemType === "REMINDER" || item.itemType === "TODO" || item.itemType === "ISSUE_DUE";
+    if (activeTab === "schedule") {
+      if (item.itemType !== "EVENT" && item.itemType !== "REMINDER" && item.itemType !== "TODO" && item.itemType !== "ISSUE_DUE") return false;
+      if (item.kind === "ISSUE_DUE") return item.assigneeId === currentUserId;
+      if (item.creatorId === currentUserId || item.assigneeId === currentUserId) return true;
+      return item.attendees.some((attendee) => attendee.userId === currentUserId);
+    }
     return false;
   });
   const scheduleItems = items
     .filter((item) => item.itemType === "EVENT" || item.itemType === "REMINDER" || item.itemType === "TODO" || item.itemType === "ISSUE_DUE")
     .filter((item) => item.itemType !== "TODO" || Boolean(item.dueDate))
     .filter((item) => {
+      if (item.kind === "ISSUE_DUE") return item.assigneeId === currentUserId;
+      if (item.creatorId === currentUserId || item.assigneeId === currentUserId) return true;
+      return item.attendees.some((attendee) => attendee.userId === currentUserId);
+    })
+    .filter((item) => {
       const type = getScheduleType(item);
       if (!visibleScheduleTypes[type]) return false;
-      if (type === "meeting") {
-        const isParticipant = item.attendees.some((attendee) => attendee.userId === currentUserId);
-        const isCreator = item.creatorId === currentUserId;
-        if (!isParticipant && !isCreator) return false;
-      }
       const query = scheduleSearch.trim().toLowerCase();
       if (!query) return true;
       return [
@@ -3485,21 +3492,30 @@ export default function DepartmentItemsClient({
           </div>
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
             {detailError ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm text-red-600">{detailError}</div> : null}
-            <div className={`grid gap-x-5 gap-y-2 text-xs text-[#42526E] ${!selectedScheduleIsMemo && selectedScheduleDetails?.location ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className={`grid gap-5 text-xs text-[#42526E] ${selectedScheduleIsMemo || !selectedScheduleDetails?.location ? "grid-cols-2" : "grid-cols-3"}`}>
               <div className="flex min-w-0 gap-2">
-                <Clock size={14} className="mt-0.5 shrink-0 text-[#6B778C]" />
+                <span className="mt-0.5 shrink-0 text-[#6B778C]" title={locale === "zh" ? "时间" : "Time"}>
+                  <Clock size={14} />
+                </span>
                 <div className="min-w-0">
-                  <p>{scheduleDateLabel(selectedScheduleItem, locale)}</p>
+                  <p className="truncate text-[#172B4D]">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
                   <p className="mt-0.5">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
                   {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
                 </div>
               </div>
               {!selectedScheduleIsMemo && selectedScheduleDetails?.location ? (
                 <div className="flex min-w-0 gap-2">
-                  <MapPin size={14} className="mt-0.5 shrink-0 text-[#6B778C]" />
-                  <p className="min-w-0 break-words">{selectedScheduleDetails.location}</p>
+                  <span className="mt-0.5 shrink-0 text-[#6B778C]" title={st.location}>
+                    <MapPin size={14} />
+                  </span>
+                  <p className="min-w-0 break-words text-[#172B4D]">{selectedScheduleDetails.location}</p>
                 </div>
               ) : null}
+              <div className="min-w-0 text-right">
+                <p className="truncate text-[#172B4D]">
+                  {locale === "zh" ? "发起人" : "Organizer"} {selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}
+                </p>
+              </div>
             </div>
             {selectedScheduleDetails?.notes ? (
               <div className="rounded bg-[#FAFBFC] p-3 whitespace-pre-wrap leading-6">

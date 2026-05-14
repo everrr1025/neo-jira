@@ -22,10 +22,10 @@ export default async function DepartmentItemsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; selected?: string }>;
 }) {
   const { id: departmentId } = await params;
-  const { tab } = await searchParams;
+  const { tab, selected } = await searchParams;
   const initialTab = tab === "schedule" || tab === "notes" ? tab : "tasks";
   const locale = await getCurrentLocale();
   const session = await getServerSession(authOptions);
@@ -86,6 +86,7 @@ export default async function DepartmentItemsPage({
       noteTaskOptions={noteTaskOptions}
       noteProjectOptions={visibleDepartment.projects.map((project) => ({ id: project.id, name: project.name, key: project.key }))}
       initialTab={initialTab}
+      initialSelectedScheduleItemId={selected || null}
       currentUserId={userId}
       canCreateDepartmentItem={canCreateDepartmentItem}
       projectOptions={reminderProjectOptions}

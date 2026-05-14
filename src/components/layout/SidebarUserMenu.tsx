@@ -30,7 +30,7 @@ export function SidebarUserMenu({
 
   return (
     <div className="flex items-center justify-between gap-2 w-full">
-      <div className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-[#f4f4f5]">
         <div className="flex-shrink-0">
           <AvatarPicker
             userKey={userId}
@@ -42,7 +42,7 @@ export function SidebarUserMenu({
           />
         </div>
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-white" title={userName}>
+          <span className="truncate text-sm font-medium text-[#18181b]" title={userName}>
             {userName}
           </span>
         </div>
@@ -51,7 +51,7 @@ export function SidebarUserMenu({
       <div className="flex flex-shrink-0 items-center gap-1">
         <Link
           href="/settings"
-          className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-blue-400"
+          className="rounded-lg p-2 text-[#71717a] transition-colors hover:bg-[#f4f4f5] hover:text-[#09090b]"
           title={translations.settingsPage.openSettings}
         >
           <Settings size={16} />
@@ -60,7 +60,7 @@ export function SidebarUserMenu({
         <button
           type="button"
           onClick={() => void handleSignOut()}
-          className="rounded-md p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
+          className="rounded-lg p-2 text-[#71717a] transition-colors hover:bg-red-50 hover:text-red-600"
           title={translations.sidebar.signOut}
         >
           <LogOut size={16} />

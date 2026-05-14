@@ -25,6 +25,20 @@ export type DepartmentWorkspaceProject = {
   completedIssuesCount: number;
   incompleteIssuesCount: number;
   createdAt: string;
+  activeIteration: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+  } | null;
+  priorityIssues: Array<{
+    id: string;
+    key: string;
+    title: string;
+    priority: string;
+    dueDate: string | null;
+    assigneeName: string;
+  }>;
   members: Array<{
     userId: string;
     role: string;
@@ -100,11 +114,26 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
           },
           _count: { select: { issues: true } },
           issues: {
-            select: { status: true },
+            select: {
+              id: true,
+              key: true,
+              title: true,
+              priority: true,
+              status: true,
+              iterationId: true,
+              dueDate: true,
+              assignee: { select: { name: true, email: true } },
+            },
           },
           workflowStatuses: {
             where: { category: "DONE" },
             select: { key: true },
+          },
+          iterations: {
+            where: { status: "ACTIVE" },
+            select: { id: true, name: true, startDate: true, endDate: true },
+            orderBy: { startDate: "desc" },
+            take: 1,
           },
         },
         orderBy: { createdAt: "desc" },
@@ -152,6 +181,23 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
       const doneStatusKeys = new Set(project.workflowStatuses.map((status) => status.key));
       if (doneStatusKeys.size === 0) doneStatusKeys.add("DONE");
       const completedIssuesCount = project.issues.filter((issue) => doneStatusKeys.has(issue.status)).length;
+      const activeIteration = project.iterations[0] || null;
+      const priorityIssues = project.issues
+        .filter((issue) => Boolean(activeIteration) && issue.iterationId === activeIteration?.id)
+        .filter((issue) => !doneStatusKeys.has(issue.status))
+        .filter((issue) => issue.priority === "URGENT" || issue.priority === "HIGH")
+        .sort((left, right) => {
+          const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1 };
+          return (priorityOrder[left.priority] ?? 2) - (priorityOrder[right.priority] ?? 2);
+        })
+        .map((issue) => ({
+          id: issue.id,
+          key: issue.key,
+          title: issue.title,
+          priority: issue.priority,
+          dueDate: issue.dueDate?.toISOString() || null,
+          assigneeName: issue.assignee?.name || issue.assignee?.email || (locale === "zh" ? "未指派" : "Unassigned"),
+        }));
 
       return {
         id: project.id,
@@ -164,6 +210,15 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
         completedIssuesCount,
         incompleteIssuesCount: project._count.issues - completedIssuesCount,
         createdAt: project.createdAt.toISOString(),
+        activeIteration: activeIteration
+          ? {
+              id: activeIteration.id,
+              name: activeIteration.name,
+              startDate: activeIteration.startDate.toISOString(),
+              endDate: activeIteration.endDate.toISOString(),
+            }
+          : null,
+        priorityIssues,
         members: project.members.map((member) => ({
           userId: member.userId,
           role: member.role,

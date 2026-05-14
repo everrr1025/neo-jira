@@ -113,7 +113,6 @@ export async function ensureDueIssueSystemNotifications(departmentId: string, lo
       title: true,
       status: true,
       assigneeId: true,
-      reporterId: true,
       projectId: true,
       project: {
         select: {
@@ -132,8 +131,8 @@ export async function ensureDueIssueSystemNotifications(departmentId: string, lo
     const doneKeys = new Set(issue.project.workflowStatuses.map((status) => status.key));
     if (doneKeys.has(issue.status)) continue;
 
-    const recipientIds = Array.from(new Set([issue.assigneeId, issue.reporterId].filter(Boolean))) as string[];
-    if (recipientIds.length === 0) continue;
+    const assigneeId = issue.assigneeId;
+    if (!assigneeId) continue;
 
     const dedupeKey = `issue-due:${issue.id}:${dateKey}`;
     const existing = await prisma.announcement.findUnique({
@@ -164,11 +163,13 @@ export async function ensureDueIssueSystemNotifications(departmentId: string, lo
       });
 
       await tx.announcementReceipt.createMany({
-        data: recipientIds.map((userId) => ({
+        data: [
+          {
           announcementId: notification.id,
-          userId,
+          userId: assigneeId,
           projectId: issue.projectId,
-        })),
+          },
+        ],
       });
     });
   }

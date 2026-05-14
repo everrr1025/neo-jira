@@ -348,6 +348,7 @@ export async function getDepartmentUpcomingItems({
       ? prisma.issue.findMany({
           where: {
             projectId: { in: visibleProjectIds },
+            assigneeId: userId,
             dueDate: { not: null, lt: windowEnd },
             NOT: { status: { in: doneStatusKeys.length > 0 ? doneStatusKeys : ["DONE"] } },
           },
@@ -529,6 +530,7 @@ export async function getDepartmentItemCenterItems({
       ? prisma.issue.findMany({
           where: {
             projectId: { in: visibleProjectIds },
+            assigneeId: userId,
             dueDate: { not: null },
             NOT: { status: { in: ["DONE"] } },
           },
@@ -550,6 +552,10 @@ export async function getDepartmentItemCenterItems({
   ]);
 
   const reminderItems = reminders.filter((reminder) => {
+    if (reminder.itemType === "EVENT" || reminder.itemType === "REMINDER") {
+      if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
+      return reminder.attendees.some((attendee) => attendee.userId === userId);
+    }
     if (reminder.itemType !== "TODO") return true;
     if (userRole === "ADMIN" || canManageDepartment) return true;
     if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;

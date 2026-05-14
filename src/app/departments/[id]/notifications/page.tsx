@@ -85,6 +85,7 @@ export default async function DepartmentNotificationsPage({
     from: getString(rawParams.from) || "",
     to: getString(rawParams.to) || "",
   };
+  const selectedNotificationId = getString(rawParams.selected) || "";
   const page = parsePositiveInt(getString(rawParams.page), 1);
   const pageSize = Math.min(parsePositiveInt(getString(rawParams.pageSize), 10), 50);
   const createdDateFilter = resolveCreatedDateFilter(
@@ -132,6 +133,7 @@ export default async function DepartmentNotificationsPage({
       permission={permission}
       projectOptions={projectOptions}
       filters={filters}
+      selectedNotificationId={selectedNotificationId}
       pagination={{
         page,
         pageSize,

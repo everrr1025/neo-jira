@@ -220,6 +220,7 @@ export default function DepartmentNotificationsClient({
   permission,
   projectOptions,
   filters,
+  selectedNotificationId = "",
   pagination,
 }: {
   departmentId: string;
@@ -228,6 +229,7 @@ export default function DepartmentNotificationsClient({
   permission: DepartmentNotificationPermission;
   projectOptions: ProjectOption[];
   filters: Record<string, string>;
+  selectedNotificationId?: string;
   pagination: {
     page: number;
     pageSize: number;
@@ -237,7 +239,19 @@ export default function DepartmentNotificationsClient({
   const t = TEXT[locale];
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [selected, setSelected] = useState<DepartmentNotificationListItem | null>(null);
+  const currentView = filters.view === "sent" && permission.canCreate ? "sent" : "received";
+  const initialSelectedNotification = selectedNotificationId
+    ? notifications.find((notification) => notification.id === selectedNotificationId) || null
+    : null;
+  const [selected, setSelected] = useState<DepartmentNotificationListItem | null>(
+    initialSelectedNotification
+      ? {
+          ...initialSelectedNotification,
+          canManage: currentView === "sent" && initialSelectedNotification.canManage,
+          canDelete: currentView === "sent" && initialSelectedNotification.canDelete,
+        }
+      : null,
+  );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [form, setForm] = useState({
@@ -246,7 +260,10 @@ export default function DepartmentNotificationsClient({
     title: "",
     content: "",
   });
-  const [resendForm, setResendForm] = useState({ title: "", content: "" });
+  const [resendForm, setResendForm] = useState({
+    title: initialSelectedNotification?.title || "",
+    content: initialSelectedNotification?.content || "",
+  });
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [columnWidths, setColumnWidths] = useState(DEFAULT_WIDTHS);
@@ -290,7 +307,6 @@ export default function DepartmentNotificationsClient({
   );
   const createdFilter = filters.createdFilter || "ALL";
   const createdDate = filters.createdDate || "";
-  const currentView = filters.view === "sent" && permission.canCreate ? "sent" : "received";
   const currentCategory = filters.category || "";
   const showActionColumn = currentView === "sent";
   const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
