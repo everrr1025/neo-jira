@@ -3,8 +3,10 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
 
 import NotificationBell from "@/components/NotificationBell";
+import { Input } from "@/components/ui/input";
 import { getTranslations, type Locale } from "@/lib/i18n";
 
 export function Header({ initialLocale }: { initialLocale: Locale }) {
@@ -45,6 +47,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     pathname.startsWith("/projects") ||
     pathname.startsWith("/settings") ||
     /^\/departments\/[^/]+\/(projects|members|items|notifications)(?:\/|$)/.test(pathname);
+  const isDepartmentOverview = /^\/departments\/[^/]+$/.test(pathname);
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
@@ -60,39 +63,33 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b border-[#e2e8f0] bg-white px-6">
+    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="flex items-center gap-4">
-        <h1 className="truncate text-lg font-semibold text-slate-800">{getTitle()}</h1>
+        <h1
+          className={`truncate text-foreground ${
+            isDepartmentOverview ? "text-xl font-bold tracking-tight" : "text-lg font-semibold"
+          }`}
+        >
+          {getTitle()}
+        </h1>
       </div>
 
       <div className="flex items-center gap-5">
         <form onSubmit={handleSearch} className="relative">
-          <input
+          <Input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={translations.header.searchPlaceholder}
-            className="h-9 w-64 rounded-md border border-[#e2e8f0] bg-white py-1.5 pl-9 pr-3 text-sm text-[#18181b] transition-colors placeholder:text-[#a1a1aa] focus:border-[#09090b] focus:outline-none focus:ring-2 focus:ring-[#09090b]/10"
+            className="h-9 w-64 bg-background pl-9"
           />
-          <svg
-            className="absolute left-3 top-2.5 h-4 w-4 text-[#71717a]"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
         </form>
 
         <div className="flex items-center gap-3">
-          <div className="text-sm font-medium text-slate-500">
+          <div className="text-sm font-medium text-muted-foreground">
             {translations.header.welcomeBack},{" "}
-            <span className="text-slate-700">{userName}</span>
+            <span className="text-foreground">{userName}</span>
           </div>
           <NotificationBell locale={locale} />
         </div>

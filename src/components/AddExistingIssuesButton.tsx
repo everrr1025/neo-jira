@@ -4,6 +4,9 @@ import { useMemo, useState, useTransition } from "react";
 import { Loader2, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { addBacklogIssuesToSprint } from "@/app/actions/issues";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -140,117 +143,114 @@ export default function AddExistingIssuesButton({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={openModal}
-        className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
       >
         {text.button}
-      </button>
+      </Button>
 
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h2 className="text-xl font-bold text-slate-800">
+      <Dialog open={isOpen} onOpenChange={(open) => (!open ? closeModal() : setIsOpen(true))}>
+        <DialogContent showCloseButton={false} className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>
                 {text.modalTitle} {sprintName}
-              </h2>
-              <button
+              </DialogTitle>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={closeModal}
-                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                disabled={isPending}
+                aria-label={translations.createIssue.cancel}
               >
-                <X size={20} />
-              </button>
+                <X className="size-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 border-b px-6 py-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={text.searchPlaceholder}
+                className="pl-9"
+              />
             </div>
 
-            <div className="space-y-4 border-b border-slate-100 px-6 py-4">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={text.searchPlaceholder}
-                  className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none transition-shadow focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {statusFilters.map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => setStatusFilter(status)}
-                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      statusFilter === status
-                        ? "border-blue-200 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {status === "ALL" ? text.allUnfinished : getWorkflowStatusName(status, workflowStatuses, locale)}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-2">
+              {statusFilters.map((status) => (
+                <Button
+                  key={status}
+                  type="button"
+                  variant={statusFilter === status ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setStatusFilter(status)}
+                  className="h-8"
+                >
+                  {status === "ALL" ? text.allUnfinished : getWorkflowStatusName(status, workflowStatuses, locale)}
+                </Button>
+              ))}
             </div>
+          </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-              {filteredIssues.length > 0 ? (
-                <div className="divide-y divide-slate-100 rounded-md border border-slate-200">
-                  {filteredIssues.map((issue) => {
-                    const assigneeName = issue.assignee?.name || translations.issueList.unassigned;
-                    const checked = selectedIds.includes(issue.id);
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {filteredIssues.length > 0 ? (
+              <div className="divide-y rounded-md border">
+                {filteredIssues.map((issue) => {
+                  const assigneeName = issue.assignee?.name || translations.issueList.unassigned;
+                  const checked = selectedIds.includes(issue.id);
 
-                    return (
-                      <label
-                        key={issue.id}
-                        className="flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleIssue(issue.id)}
-                          className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-500">{issue.key}</span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600">
-                              {getIssueTypeLabel(issue.type, locale)}
-                            </span>
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${getWorkflowStatusBadgeClass(issue.status, workflowStatuses)}`}>
-                              {getWorkflowStatusName(issue.status, workflowStatuses, locale)}
-                            </span>
-                            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
-                              {getPriorityLabel(issue.priority, locale)}
-                            </span>
-                            <span className="text-xs font-medium text-slate-500">{assigneeName}</span>
-                          </div>
-                          <p className="mt-1 truncate text-sm font-medium text-slate-800">{issue.title}</p>
+                  return (
+                    <label
+                      key={issue.id}
+                      className="flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleIssue(issue.id)}
+                        className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-muted-foreground">{issue.key}</span>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
+                            {getIssueTypeLabel(issue.type, locale)}
+                          </span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${getWorkflowStatusBadgeClass(issue.status, workflowStatuses)}`}>
+                            {getWorkflowStatusName(issue.status, workflowStatuses, locale)}
+                          </span>
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                            {getPriorityLabel(issue.priority, locale)}
+                          </span>
+                          <span className="text-xs font-medium text-muted-foreground">{assigneeName}</span>
                         </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed border-slate-200 px-4 text-center text-sm font-medium text-slate-400">
-                  {text.empty}
-                </div>
-              )}
-            </div>
+                        <p className="mt-1 truncate text-sm font-medium text-foreground">{issue.title}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed px-4 text-center text-sm font-medium text-muted-foreground">
+                {text.empty}
+              </div>
+            )}
+          </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <span className="text-sm font-medium text-slate-500">
+          <DialogFooter className="items-center justify-between border-t bg-muted/35 px-6 py-4 sm:justify-between">
+              <span className="text-sm font-medium text-muted-foreground">
                 {text.selected} {selectedIds.length} {text.selectedSuffix}
               </span>
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={isPending}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                >
+                <Button type="button" variant="outline" onClick={closeModal} disabled={isPending}>
                   {translations.createIssue.cancel}
-                </button>
+                </Button>
                 <CreateIssueButton
                   users={users}
                   plans={plans}
@@ -261,21 +261,15 @@ export default function AddExistingIssuesButton({
                   defaultIterationId={sprintId}
                   defaultDueDate={defaultDueDate}
                 />
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={isPending || selectedIds.length === 0}
-                  className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isPending && <Loader2 size={16} className="animate-spin" />}
+                <Button type="button" onClick={handleSubmit} disabled={isPending || selectedIds.length === 0}>
+                  {isPending ? <Loader2 className="animate-spin" /> : null}
                   {isPending ? text.adding : text.addToSprint}
-                </button>
+                </Button>
               </div>
-            </div>
-          </div>
+          </DialogFooter>
           <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -4,10 +4,14 @@ import { useRef, useState, useTransition } from "react";
 import { FileText, Loader2, Paperclip, Trash2, X } from "lucide-react";
 
 import { createIssue } from "@/app/actions/issues";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
-import { DropdownField } from "./DropdownField";
 import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 
@@ -58,6 +62,52 @@ type DropdownOption = {
   value: string;
   label: string;
 };
+
+const emptySelectValue = "__empty__";
+const dateInputClassName =
+  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+function toSelectValue(value: string) {
+  return value || emptySelectValue;
+}
+
+function fromSelectValue(value: string) {
+  return value === emptySelectValue ? "" : value;
+}
+
+function SelectField({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+  className = "",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: DropdownOption[];
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={toSelectValue(value)} onValueChange={(nextValue) => onChange(fromSelectValue(nextValue))}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={`${id}-${option.value || emptySelectValue}`} value={toSelectValue(option.value)}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 function toDateInputValue(dateLike?: string | Date | null) {
   if (!dateLike) return "";
@@ -271,89 +321,89 @@ export default function CreateIssueModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-xl font-bold text-slate-800">{text.modalTitle}</h2>
-          <button
-            onClick={handleCancelAndClose}
-            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <>
+      <Dialog open={isOpen} onOpenChange={(open) => (!open ? void handleCancelAndClose() : undefined)}>
+        <DialogContent showCloseButton={false} className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{text.modalTitle}</DialogTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleCancelAndClose}
+                disabled={isPending}
+                aria-label={text.cancel}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="title" className="text-sm font-medium text-slate-700">
+              <Label htmlFor="title">
                 {text.summary} <span className="text-red-500">*</span>
-              </label>
-              <input
+              </Label>
+              <Input
                 id="title"
                 required
                 autoFocus
                 value={formData.title}
                 onChange={(event) => setFormData((prev) => ({ ...prev, title: event.target.value }))}
                 maxLength={ISSUE_TITLE_MAX_LENGTH}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 placeholder={text.summaryPlaceholder}
               />
             </div>
 
-            <div className="flex gap-4">
-              <DropdownField
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
                 id="type"
                 label={text.issueType}
                 value={formData.type}
                 onChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}
                 options={typeOptions}
-                className="flex-1"
               />
-              <DropdownField
+              <SelectField
                 id="priority"
                 label={text.priority}
                 value={formData.priority}
                 onChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}
                 options={priorityOptions}
-                className="flex-1"
               />
             </div>
 
-            <div className="flex gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               {canManagePlans ? (
-                <DropdownField
+                <SelectField
                   id="plan"
                   label={locale === "zh" ? "计划" : "Plan"}
                   value={formData.planId}
                   onChange={(value) => setFormData((prev) => ({ ...prev, planId: value }))}
                   options={planOptions}
-                  className="flex-1"
                 />
               ) : null}
-              <DropdownField
+              <SelectField
                 id="iteration"
                 label={text.sprint}
                 value={formData.iterationId}
                 onChange={handleSprintChange}
                 options={iterationOptions}
-                className={canManagePlans ? "flex-1" : "w-full"}
+                className={canManagePlans ? "" : "sm:col-span-2"}
               />
             </div>
 
-            <div className="flex gap-4">
-              <DropdownField
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
                 id="assignee"
                 label={text.assignee}
                 value={formData.assigneeId}
                 onChange={(value) => setFormData((prev) => ({ ...prev, assigneeId: value }))}
                 options={assigneeOptions}
-                className="flex-1"
               />
-              <div className="flex flex-1 flex-col gap-1.5">
-                <label htmlFor="dueDate" className="text-sm font-medium text-slate-700">
-                  {text.dueDate}
-                </label>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="dueDate">{text.dueDate}</Label>
                 <LocalizedDateInput
                   id="dueDate"
                   locale={locale}
@@ -362,15 +412,13 @@ export default function CreateIssueModal({
                     setIsDueDateManuallyEdited(true);
                     setFormData((prev) => ({ ...prev, dueDate: event.target.value }));
                   }}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className={dateInputClassName}
                 />
               </div>
             </div>
 
             <div className="relative mb-2 flex flex-col gap-1.5">
-              <label htmlFor="description" className="text-sm font-medium text-slate-700">
-                {text.description}
-              </label>
+              <Label htmlFor="description">{text.description}</Label>
               <div className="rounded-lg">
                 <RichTextEditor
                   ref={descriptionEditorRef}
@@ -386,14 +434,16 @@ export default function CreateIssueModal({
 
             <div className="relative z-0 flex flex-col gap-2 pb-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-slate-700">
+                <Label>
                   {text.attachments} ({formData.attachments.length})
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200">
-                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                </Label>
+                <Button asChild type="button" variant="secondary" size="sm">
+                  <label className="cursor-pointer">
+                  {uploading ? <Loader2 className="animate-spin" /> : <Paperclip />}
                   {uploading ? translations.attachmentSection.uploading : text.addAttachment}
                   <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || isPending} />
-                </label>
+                  </label>
+                </Button>
               </div>
 
               {formData.attachments.length > 0 && (
@@ -403,9 +453,9 @@ export default function CreateIssueModal({
                     return (
                       <div
                         key={file.id}
-                        className="group relative flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 transition-all hover:border-blue-400 hover:shadow-sm"
+                        className="group relative flex flex-col gap-2 rounded-lg border bg-background p-2 transition-all hover:border-ring hover:shadow-sm"
                       >
-                        <div className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50 transition-colors hover:bg-slate-100">
+                        <div className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border bg-muted/50 transition-colors hover:bg-muted">
                           {fileType === "IMAGE" && (
                             <img src={file.fileUrl} alt={file.fileName} className="h-full w-full object-cover" />
                           )}
@@ -415,17 +465,19 @@ export default function CreateIssueModal({
                           {fileType === "OTHER" && <FileText size={24} className="text-slate-400" />}
                         </div>
                         <div className="flex items-center justify-between px-1">
-                          <span className="block w-full truncate pr-2 text-xs font-medium text-slate-700">
+                          <span className="block w-full truncate pr-2 text-xs font-medium text-foreground">
                             {file.fileName}
                           </span>
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon-xs"
                             onClick={() => removeAttachment(file.id, file.fileUrl)}
-                            className="z-10 shrink-0 rounded-md p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-red-500 group-hover:opacity-100"
+                            className="z-10 shrink-0 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                             title={text.removeAttachment}
                           >
-                            <Trash2 size={14} />
-                          </button>
+                            <Trash2 />
+                          </Button>
                         </div>
                       </div>
                     );
@@ -435,33 +487,27 @@ export default function CreateIssueModal({
             </div>
           </div>
 
-          <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-            <button
+          <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
+            <Button
               type="button"
+              variant="outline"
               onClick={handleCancelAndClose}
               disabled={isPending}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
               {text.cancel}
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isPending || !formData.title.trim()}
-              className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isPending ? (
-                <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  {text.creating}
-                </>
-              ) : (
-                text.create
-              )}
-            </button>
-          </div>
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {isPending ? text.creating : text.create}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
+        </DialogContent>
+      </Dialog>
       <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
-    </div>
+    </>
   );
 }

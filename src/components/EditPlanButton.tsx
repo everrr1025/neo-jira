@@ -4,6 +4,11 @@ import { useMemo, useState, useTransition } from "react";
 import { Loader2, Pencil, X } from "lucide-react";
 
 import { updatePlan } from "@/app/actions/plans";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { PLAN_NAME_MAX_LENGTH } from "@/lib/validation";
 
 import AlertPopup from "./AlertPopup";
@@ -24,6 +29,9 @@ type EditPlanButtonProps = {
 function formatDateInputValue(date: Date | string) {
   return new Date(date).toISOString().slice(0, 10);
 }
+
+const dateInputClassName =
+  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 function getEditPlanText(locale: "en" | "zh") {
   if (locale === "zh") {
@@ -113,108 +121,95 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={handleOpen}
-        className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
       >
-        <Pencil size={16} />
+        <Pencil />
         {text.button}
-      </button>
+      </Button>
 
-      {isOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <h2 className="text-xl font-bold text-slate-800">{text.modalTitle}</h2>
-              <button
+      <Dialog open={isOpen} onOpenChange={(open) => (!open ? handleClose() : handleOpen())}>
+        <DialogContent showCloseButton={false} className="max-w-2xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{text.modalTitle}</DialogTitle>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={handleClose}
-                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                disabled={isPending}
+                aria-label={text.cancel}
               >
-                <X size={20} />
-              </button>
+                <X className="size-4" />
+              </Button>
             </div>
+          </DialogHeader>
 
-            <form onSubmit={handleSubmit} className="space-y-5 p-6">
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-5 p-6">
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="edit-plan-name" className="text-sm font-medium text-slate-700">
-                  {text.name}
-                </label>
-                <input
+                <Label htmlFor="edit-plan-name">{text.name}</Label>
+                <Input
                   id="edit-plan-name"
                   value={formData.name}
                   onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))}
                   placeholder={text.namePlaceholder}
                   maxLength={PLAN_NAME_MAX_LENGTH}
                   required
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="edit-plan-description" className="text-sm font-medium text-slate-700">
-                  {text.description}
-                </label>
-                <textarea
+                <Label htmlFor="edit-plan-description">{text.description}</Label>
+                <Textarea
                   id="edit-plan-description"
                   value={formData.description}
                   onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
                   rows={4}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="min-h-24"
                 />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="edit-plan-start-date" className="text-sm font-medium text-slate-700">
-                    {text.startDate}
-                  </label>
+                  <Label htmlFor="edit-plan-start-date">{text.startDate}</Label>
                   <LocalizedDateInput
                     id="edit-plan-start-date"
                     locale={locale}
                     value={formData.startDate}
                     onChange={(event) => setFormData((current) => ({ ...current, startDate: event.target.value }))}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className={dateInputClassName}
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="edit-plan-end-date" className="text-sm font-medium text-slate-700">
-                    {text.endDate}
-                  </label>
+                  <Label htmlFor="edit-plan-end-date">{text.endDate}</Label>
                   <LocalizedDateInput
                     id="edit-plan-end-date"
                     locale={locale}
                     value={formData.endDate}
                     onChange={(event) => setFormData((current) => ({ ...current, endDate: event.target.value }))}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className={dateInputClassName}
                   />
                 </div>
               </div>
+            </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  disabled={isPending}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {text.cancel}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                  {isPending ? text.saving : text.save}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+            <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+              <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>
+                {text.cancel}
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? <Loader2 className="animate-spin" /> : null}
+                {isPending ? text.saving : text.save}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
     </>

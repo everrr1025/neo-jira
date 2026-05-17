@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { deletePlan } from "@/app/actions/plans";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import AlertPopup from "./AlertPopup";
 
@@ -60,50 +62,39 @@ export default function DeletePlanButton({ planId, projectId, locale }: DeletePl
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={() => setIsDialogOpen(true)}
         disabled={isPending}
-        className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+        className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
       >
-        {isPending ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+        {isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
         {text.button}
-      </button>
+      </Button>
 
-      {isDialogOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
-              <h2 className="flex items-center gap-2 text-xl font-bold text-rose-600">
-                <AlertTriangle size={24} />
-                {text.title}
-              </h2>
-            </div>
-            <div className="space-y-4 px-6 py-5">
-              <p className="text-sm font-medium text-slate-700">{text.confirm}</p>
-            </div>
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsDialogOpen(false)}
-                disabled={isPending}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                {text.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isPending}
-                className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                {text.title}
-              </button>
-            </div>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => (!open && !isPending ? setIsDialogOpen(false) : null)}>
+        <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-destructive/5 px-6 py-4">
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="size-5" />
+              {text.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <p className="text-sm font-medium text-foreground">{text.confirm}</p>
           </div>
-        </div>
-      ) : null}
+          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isPending}>
+              {text.cancel}
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDelete} disabled={isPending}>
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {text.title}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
     </>

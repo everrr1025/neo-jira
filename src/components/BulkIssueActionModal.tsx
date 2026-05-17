@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Loader2, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import AlertPopup from "./AlertPopup";
-import { DropdownField } from "./DropdownField";
 
 export type BulkIssueActionType = "assignPlan" | "removePlan" | "assignIteration" | "assignAssignee";
 
@@ -58,6 +62,16 @@ function getBulkIssueActionText(locale: "en" | "zh") {
   };
 }
 
+const emptySelectValue = "__empty__";
+
+function toSelectValue(value: string) {
+  return value || emptySelectValue;
+}
+
+function fromSelectValue(value: string) {
+  return value === emptySelectValue ? "" : value;
+}
+
 export default function BulkIssueActionModal({
   isOpen,
   actionType,
@@ -76,11 +90,12 @@ export default function BulkIssueActionModal({
 
   const currentAction = actionType;
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const handleClose = () => {
+    if (isPending) return;
     setTargetId("");
     setErrorMessage("");
-  }, [currentAction, isOpen]);
+    onClose();
+  };
 
   const title = useMemo(() => {
     if (currentAction === "assignPlan") return text.addToPlan;
@@ -128,29 +143,34 @@ export default function BulkIssueActionModal({
         return;
       }
 
-      onClose();
+      handleClose();
     });
   };
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-        <div className="flex w-full max-w-lg flex-col rounded-xl bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                {text.selectedCount} {selectedCount} {text.itemsSuffix}
-              </p>
+      <Dialog open={isOpen} onOpenChange={(open) => (!open ? handleClose() : null)}>
+        <DialogContent showCloseButton={false} className="max-w-lg gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <DialogTitle>{title}</DialogTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {text.selectedCount} {selectedCount} {text.itemsSuffix}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={handleClose}
+                disabled={isPending}
+                aria-label={text.cancel}
+              >
+                <X className="size-4" />
+              </Button>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          </DialogHeader>
 
           <div className="space-y-5 px-6 py-5">
             {currentAction === "removePlan" ? (
@@ -158,43 +178,41 @@ export default function BulkIssueActionModal({
                 {text.removePlanHint}
               </div>
             ) : (
-              <DropdownField
-                id="bulk-target"
-                label={
-                  currentAction === "assignPlan"
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="bulk-target">
+                  {currentAction === "assignPlan"
                     ? text.plan
                     : currentAction === "assignIteration"
                       ? text.sprint
-                      : text.assignee
-                }
-                value={targetId}
-                onChange={setTargetId}
-                options={options}
-              />
+                      : text.assignee}
+                </Label>
+                <Select value={toSelectValue(targetId)} onValueChange={(value) => setTargetId(fromSelectValue(value))}>
+                  <SelectTrigger id="bulk-target" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {options.map((option) => (
+                      <SelectItem key={option.value || emptySelectValue} value={toSelectValue(option.value)}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
+          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+            <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>
               {text.cancel}
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+            </Button>
+            <Button type="button" onClick={handleConfirm} disabled={isPending}>
+              {isPending ? <Loader2 className="animate-spin" /> : null}
               {text.confirm}
-            </button>
-          </div>
-        </div>
-      </div>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AlertPopup message={errorMessage} onClose={() => setErrorMessage("")} autoCloseMs={5000} />
     </>
   );
