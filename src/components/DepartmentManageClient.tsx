@@ -28,7 +28,6 @@ import {
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
-import ProjectNavIcon from "@/components/ProjectNavIcon";
 import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { DepartmentItemCenterItem } from "@/lib/departmentReminders";
@@ -568,8 +567,7 @@ function PaginationFooter({
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
-          <span>{perPage}</span>
+        <div className="flex items-center gap-2 text-slate-500">
           <span>{perPage}</span>
           <InlineSelect
             value={String(pageSize)}
@@ -1015,13 +1013,10 @@ export default function DepartmentManageClient({
     if (column.id === "name") {
       return (
         <td key={column.id} className="overflow-hidden px-5 py-3.5">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-              <ProjectNavIcon className="h-[18px] w-[18px]" />
-            </div>
+          <div className="min-w-0">
             <Link
               href={`/projects/select?projectId=${project.id}`}
-              className="truncate font-semibold text-slate-800 transition-colors hover:text-emerald-700"
+              className="block truncate font-semibold text-slate-800 transition-colors hover:text-emerald-700"
             >
               {project.name}
             </Link>
@@ -1222,24 +1217,21 @@ export default function DepartmentManageClient({
               </div>
             </div>
 
-            <div className="flex flex-col justify-center rounded-lg border border-[#e2e8f0] bg-white p-5">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-[#71717a]">{t.members} / {t.projects}</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.members.length}</div>
-                  <div className="mt-1 text-xs font-medium text-[#71717a]">{t.members}</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.projects.length}</div>
-                  <div className="mt-1 text-xs font-medium text-[#71717a]">{t.projects}</div>
-                </div>
+            <div className="flex items-center rounded-lg border border-[#e2e8f0] bg-white p-5">
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm font-medium text-[#71717a]">
+                <span>
+                  {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.members.length}</span>
+                </span>
+                <span>
+                  {t.projects} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.projects.length}</span>
+                </span>
               </div>
             </div>
 
             <div className="flex flex-col justify-center rounded-lg border border-[#e2e8f0] bg-white p-5">
-              <div className="text-sm font-semibold leading-5 text-[#09090b]">{todayLabel}</div>
+              <div className="text-right text-lg font-semibold leading-6 text-[#09090b]">{todayLabel}</div>
               <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
-                <div className="min-w-0 truncate text-lg font-semibold leading-6 text-[#09090b]">
+                <div className="min-w-0 truncate text-base font-medium leading-6 text-[#09090b]">
                   {displayMember(currentDepartmentMember || { userName: null, userEmail: t.currentUser })}
                 </div>
                 <div className="flex shrink-0 items-center justify-end gap-2 text-xs font-medium text-[#3f3f46]">
@@ -1247,7 +1239,7 @@ export default function DepartmentManageClient({
                     {getDepartmentRoleText(currentDepartmentMember?.role, t)}
                   </span>
                   <span className="rounded-md bg-[#f4f4f5] px-2 py-1">
-                    {t.participatingProjects}: {myProjects.length}
+                    {locale === "zh" ? `参与 ${myProjects.length} 个项目` : `${myProjects.length} projects`}
                   </span>
                 </div>
               </div>
@@ -1477,8 +1469,8 @@ export default function DepartmentManageClient({
 
       {mode === "members" ? (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-800">{t.members}</h2>
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.members}</h2>
           </div>
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             <table className="w-full text-left text-sm">
@@ -1515,9 +1507,7 @@ export default function DepartmentManageClient({
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap gap-2">
-                            {member.projects.length === 0 ? (
-                              <span className="text-xs text-slate-400">-</span>
-                            ) : (
+                            {member.projects.length > 0 ? (
                               member.projects.map((project) => (
                                 <span
                                   key={project.id}
@@ -1526,7 +1516,7 @@ export default function DepartmentManageClient({
                                   <span>{project.name}</span>
                                 </span>
                               ))
-                            )}
+                            ) : null}
                           </div>
                         </td>
                         {isHead ? (
@@ -1581,8 +1571,8 @@ export default function DepartmentManageClient({
 
       {mode === "projects" ? (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
             {canManageProjects ? (
               <button
                 type="button"
@@ -1778,9 +1768,9 @@ export default function DepartmentManageClient({
 
           {isEditProjectOpen && editingProject ? (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                  <h2 className="text-xl font-bold text-slate-900">{locale === "zh" ? "编辑项目" : "Edit project"}</h2>
+              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                  <h2 className="text-xl font-bold text-slate-800">{locale === "zh" ? "编辑项目" : "Edit project"}</h2>
                   <button
                     type="button"
                     onClick={() => {
@@ -1788,50 +1778,63 @@ export default function DepartmentManageClient({
                       setEditingProject(null);
                       setCreateProjectErrorMsg("");
                     }}
-                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                   >
-                    <X size={18} />
+                    <X size={20} />
                   </button>
                 </div>
-                <form onSubmit={handleEditProject} className="space-y-4 px-6 py-5">
-                  {createProjectErrorMsg ? (
-                    <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                      {createProjectErrorMsg}
+                <form onSubmit={handleEditProject} className="flex flex-1 flex-col overflow-hidden">
+                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                    {createProjectErrorMsg ? (
+                      <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
+                        {createProjectErrorMsg}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">
+                        {t.projectName} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        value={editProjectForm.name}
+                        onChange={(event) => setEditProjectForm((current) => ({ ...current, name: event.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectNamePlaceholder}
+                      />
                     </div>
-                  ) : null}
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectName}</label>
-                    <input
-                      required
-                      value={editProjectForm.name}
-                      onChange={(event) => setEditProjectForm((current) => ({ ...current, name: event.target.value }))}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    />
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">
+                        {t.projectKey} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        maxLength={10}
+                        value={editProjectForm.key}
+                        onChange={(event) =>
+                          setEditProjectForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))
+                        }
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectKeyPlaceholder}
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-medium text-slate-700">{t.projectDescription}</label>
+                      <textarea
+                        rows={5}
+                        value={editProjectForm.description}
+                        onChange={(event) =>
+                          setEditProjectForm((current) => ({ ...current, description: event.target.value }))
+                        }
+                        className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder={t.projectDescriptionPlaceholder}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectKey}</label>
-                    <input
-                      required
-                      maxLength={10}
-                      value={editProjectForm.key}
-                      onChange={(event) =>
-                        setEditProjectForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">{t.projectDescription}</label>
-                    <textarea
-                      rows={3}
-                      value={editProjectForm.description}
-                      onChange={(event) =>
-                        setEditProjectForm((current) => ({ ...current, description: event.target.value }))
-                      }
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+
+                  <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -1846,7 +1849,7 @@ export default function DepartmentManageClient({
                     </button>
                     <button
                       type="submit"
-                      disabled={isPending}
+                      disabled={isPending || !editProjectForm.name.trim() || !editProjectForm.key.trim()}
                       className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
                     >
                       {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
@@ -1871,8 +1874,8 @@ export default function DepartmentManageClient({
                     </div>
                   ) : null}
                   <p className="text-sm font-medium text-slate-700">{t.deleteWarning}</p>
-                  <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
-                    {deletingProject.name} ({deletingProject.key})
+                  <div className="mt-4 select-none rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
+                    {deletingProject.name}
                   </div>
                   <div className="mt-4">
                     <label className="mb-2 block text-sm font-medium text-slate-700">{t.typeToConfirm}</label>

@@ -103,7 +103,7 @@ export default function UserSettingsForm({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-2xl bg-slate-100 p-3 text-slate-600">
             <Settings size={20} />
@@ -130,7 +130,7 @@ export default function UserSettingsForm({
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-2xl bg-blue-50 p-3 text-blue-600">
             <Languages size={20} />
@@ -142,7 +142,7 @@ export default function UserSettingsForm({
         </div>
 
         <div className="mt-6 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-          {(["en", "zh"] as const).map((option) => (
+          {(["zh", "en"] as const).map((option) => (
             <button
               key={option}
               type="button"
@@ -159,7 +159,7 @@ export default function UserSettingsForm({
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-2xl bg-amber-50 p-3 text-amber-600">
             <Shield size={20} />

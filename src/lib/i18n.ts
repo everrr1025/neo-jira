@@ -3,7 +3,7 @@ export const LANGUAGE_COOKIE = "lang";
 export const SUPPORTED_LOCALES = ["en", "zh"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
-export const DEFAULT_LOCALE: Locale = "en";
+export const DEFAULT_LOCALE: Locale = "zh";
 
 export function normalizeLocale(value?: string | null): Locale {
   return value === "zh" ? "zh" : DEFAULT_LOCALE;

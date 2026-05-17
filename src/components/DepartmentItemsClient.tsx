@@ -1003,7 +1003,7 @@ type SavedNoteSnapshot = {
 const WEEK_START_HOUR = 7;
 const WEEK_END_HOUR = 22;
 const WEEK_HOUR_HEIGHT = 64;
-const WEEK_GRID_TOP_PADDING = 18;
+const WEEK_GRID_TOP_PADDING = 0;
 const WEEK_EVENT_INSET = 2;
 const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
 const TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
@@ -1027,7 +1027,7 @@ const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
   creator: 160,
   status: 120,
   assignee: 160,
-  actions: 80,
+  actions: 150,
 };
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
   title: "title",
@@ -1119,6 +1119,33 @@ function splitNoteEditorContent(editorContent: string, fallbackTitle: string) {
     title: rawTitle || fallbackTitle,
     content: wrapper.innerHTML.trim(),
   };
+}
+
+function normalizeNoteComparisonTitle(title: string) {
+  return title.trim();
+}
+
+function normalizeNoteComparisonContent(content: string) {
+  if (typeof document === "undefined") {
+    return content.trim();
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = content.trim();
+  const hasText = Boolean(wrapper.textContent?.replace(/\u00a0/g, " ").trim());
+  const hasMedia = Boolean(wrapper.querySelector("img, video, iframe, table, hr, pre, blockquote, ul, ol"));
+
+  return hasText || hasMedia ? wrapper.innerHTML.trim() : "";
+}
+
+function noteContentHasUnsavedChanges(
+  current: { title: string; content: string },
+  saved: { title: string; content: string },
+) {
+  return (
+    normalizeNoteComparisonTitle(current.title) !== normalizeNoteComparisonTitle(saved.title) ||
+    normalizeNoteComparisonContent(current.content) !== normalizeNoteComparisonContent(saved.content)
+  );
 }
 
 export default function DepartmentItemsClient({
@@ -1225,6 +1252,7 @@ export default function DepartmentItemsClient({
   );
   const [taskVisibleColumnIds, setTaskVisibleColumnIds] = useState<TaskColumnId[]>(TASK_DEFAULT_COLUMN_IDS);
   const [taskColumnWidths, setTaskColumnWidths] = useState<Record<TaskColumnId, number>>(TASK_DEFAULT_COLUMN_WIDTHS);
+  const taskColumnMenuRef = useRef<HTMLDetailsElement>(null);
   const taskConfigurableColumns = useMemo(
     () => taskColumnDefinitions.filter((column) => column.id !== "actions"),
     [taskColumnDefinitions]
@@ -1268,6 +1296,7 @@ export default function DepartmentItemsClient({
   );
   const [noteSavedAt, setNoteSavedAt] = useState(initialNote?.updatedAt || "");
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialNote?.id || null);
+  const [isNoteFullscreen, setIsNoteFullscreen] = useState(false);
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [noteDropTarget, setNoteDropTarget] = useState<string | null>(null);
   const [noteError, setNoteError] = useState("");
@@ -2087,9 +2116,7 @@ export default function DepartmentItemsClient({
       ? savedNoteSnapshotRef.current
       : { id: selectedNote.id, title: selectedNote.title, content: selectedNote.content || "" };
 
-    const hasChanges =
-      splitContent.title !== savedSnapshot.title ||
-      splitContent.content !== savedSnapshot.content;
+    const hasChanges = noteContentHasUnsavedChanges(splitContent, savedSnapshot);
 
     if (!hasChanges) {
       setNoteSaveStatus("saved");
@@ -2168,6 +2195,7 @@ export default function DepartmentItemsClient({
   const openEditNote = (note: NoteListItem) => {
     void saveSelectedNoteNow();
     setSelectedNoteId(note.id);
+    setIsNoteFullscreen(false);
     savedNoteSnapshotRef.current = {
       id: note.id,
       title: note.title,
@@ -2188,12 +2216,18 @@ export default function DepartmentItemsClient({
   };
 
   const handleNoteContentChange = (value: string) => {
-    setNoteForm((current) => ({ ...current, content: value }));
     if (selectedNote) {
       const splitContent = splitNoteEditorContent(value, t.untitledNote);
+      const savedSnapshot = savedNoteSnapshotRef.current?.id === selectedNote.id
+        ? savedNoteSnapshotRef.current
+        : { id: selectedNote.id, title: selectedNote.title, content: selectedNote.content || "" };
+
+      setNoteSaveStatus(noteContentHasUnsavedChanges(splitContent, savedSnapshot) ? "pending" : "saved");
       setNoteTitleOverrides((current) => ({ ...current, [selectedNote.id]: splitContent.title }));
+    } else {
+      setNoteSaveStatus("saved");
     }
-    setNoteSaveStatus("pending");
+    setNoteForm((current) => ({ ...current, content: value }));
   };
 
   const handleDeleteNote = (targetNote = selectedNote) => {
@@ -2382,9 +2416,7 @@ export default function DepartmentItemsClient({
       ? savedNoteSnapshotRef.current
       : { id: selectedNote.id, title: selectedNote.title, content: selectedNote.content || "" };
 
-    const hasChanges =
-      splitContent.title !== savedSnapshot.title ||
-      splitContent.content !== savedSnapshot.content;
+    const hasChanges = noteContentHasUnsavedChanges(splitContent, savedSnapshot);
 
     if (!hasChanges) {
       setNoteSaveStatus("saved");
@@ -2435,6 +2467,17 @@ export default function DepartmentItemsClient({
     startTransition,
     t.untitledNote,
   ]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (taskColumnMenuRef.current && !taskColumnMenuRef.current.contains(event.target as Node)) {
+        taskColumnMenuRef.current.open = false;
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -2488,7 +2531,7 @@ export default function DepartmentItemsClient({
           if (sortField) handleTaskSort(sortField);
         }}
         disabled={!sortField}
-        className={`inline-flex items-center gap-1 font-semibold ${column.id === "actions" ? "w-full justify-start" : ""} ${
+        className={`inline-flex items-center gap-1 font-semibold ${
           sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : column.id === "actions" ? "cursor-default text-slate-500" : "cursor-move text-slate-500"
         }`}
         draggable={false}
@@ -2509,9 +2552,9 @@ export default function DepartmentItemsClient({
     const visibleCount = taskVisibleColumnIds.length;
 
     return (
-      <details className="relative">
+      <details ref={taskColumnMenuRef} className="relative">
         <summary
-          className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-700 transition-colors hover:bg-slate-100"
+          className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
           aria-label={taskTableText.columns}
           title={taskTableText.columns}
         >
@@ -2543,7 +2586,7 @@ export default function DepartmentItemsClient({
           <button
             type="button"
             onClick={resetTaskColumns}
-            className="mt-1 w-full rounded-md border-t border-slate-100 px-2 py-1.5 pt-2 text-left text-sm text-blue-600 hover:bg-blue-50"
+            className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-sm text-blue-600 hover:bg-blue-50"
           >
             {taskTableText.resetColumns}
           </button>
@@ -2625,26 +2668,24 @@ export default function DepartmentItemsClient({
         }
 
         return (
-          <td key={column.id} className="sticky right-0 z-10 bg-white px-2 py-3.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-slate-50">
-            <div className="flex items-center justify-start gap-0.5">
+          <td key={column.id} className="sticky right-0 z-10 bg-white px-3 py-3.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-slate-50">
+            <div className="flex items-center gap-2">
               {item.canEdit ? (
                 <>
                   <button
                     type="button"
                     onClick={() => openTaskEditor(item)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
-                    title={t.edit}
+                    className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                   >
-                    <Pencil size={16} />
+                    {t.edit}
                   </button>
                   <button
                     type="button"
                     disabled={isPending}
                     onClick={() => handleDeleteTask(item)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                    title={t.deleteTask}
+                    className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
                   >
-                    <Trash2 size={16} />
+                    {t.deleteTask}
                   </button>
                 </>
               ) : null}
@@ -3152,8 +3193,8 @@ export default function DepartmentItemsClient({
   );
 
   const renderScheduleWorkspace = () => (
-    <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden border border-[#DFE1E6] bg-white lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 flex-col border-r border-[#DFE1E6] bg-slate-50 p-4 lg:flex">
+    <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden rounded-lg border border-[#e2e8f0] bg-[#f3f3f4] lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="hidden min-h-0 flex-col border-r border-[#e2e8f0] bg-[#f3f3f4] p-4 lg:flex">
         <div className="space-y-2">
           {scheduleTypes.map((type) => (
             <label key={type.id} className="flex cursor-pointer items-center gap-2 text-sm text-[#172B4D]">
@@ -3189,7 +3230,7 @@ export default function DepartmentItemsClient({
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-white">
+      <section className="flex min-h-0 min-w-0 flex-col bg-[#f3f3f4]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
             <h2 className="text-xl font-semibold text-[#172B4D]">{scheduleTitle}</h2>
@@ -3765,8 +3806,14 @@ export default function DepartmentItemsClient({
     };
 
     return (
-      <div className="h-[calc(100vh-100px)] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-slate-50">
+      <div
+        className={`min-h-[520px] overflow-hidden bg-[#f3f3f4] ${
+          isNoteFullscreen
+            ? "h-screen rounded-none border-0"
+            : "h-[calc(100vh-100px)] rounded-lg border border-[#e2e8f0]"
+        } lg:grid lg:grid-cols-[248px_minmax(0,1fr)]`}
+      >
+        <aside className="flex min-h-0 flex-col border-r border-[#e2e8f0] bg-[#f3f3f4]">
           <div className="space-y-0.5 px-2 pt-3">
             <button
               type="button"
@@ -3917,6 +3964,10 @@ export default function DepartmentItemsClient({
                   issueMentionOptions={noteIssueOptions}
                   issueMentionLabel={locale === "zh" ? "插入问题" : "Insert issue"}
                   onIssueLinkClick={(issueId) => setSelectedNoteIssueId(issueId)}
+                  isFullscreen={isNoteFullscreen}
+                  onToggleFullscreen={() => setIsNoteFullscreen((current) => !current)}
+                  fullscreenLabel={t.fullscreen}
+                  exitFullscreenLabel={t.exitFullscreen}
                   toolbarRight={
                     <div className="flex min-w-0 items-center gap-2">
                       {!selectedIsDeleted ? (
@@ -4141,14 +4192,15 @@ export default function DepartmentItemsClient({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-800">
-            {activeTab === "tasks" ? t.tasks : activeTab === "schedule" ? t.schedule : t.notesTab}
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className={activeTab === "notes" && isNoteFullscreen ? "-m-6 h-screen" : "space-y-4"}>
+      {!(activeTab === "notes" && isNoteFullscreen) ? (
+        <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">
+              {activeTab === "tasks" ? t.tasks : activeTab === "schedule" ? t.schedule : t.notesTab}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
           {activeTab === "notes" ? (
             <>
               <div className="relative w-72 max-w-[42vw]">
@@ -4249,8 +4301,9 @@ export default function DepartmentItemsClient({
               </button>
             </>
           ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {error ? <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{error}</div> : null}
 
@@ -4654,38 +4707,29 @@ export default function DepartmentItemsClient({
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateMoreOpen((current) => !current)}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
-                  >
-                    {isCreateMoreOpen ? t.less : t.more}
-                  </button>
-                  {isCreateMoreOpen ? (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {activeTab === "tasks" || form.itemType === "TODO" ? (
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
-                          <LocalizedDateInput
-                            locale={locale}
-                            value={form.dueAt}
-                            onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                          />
-                        </div>
-                      ) : null}
-                      {activeTab === "tasks" || form.itemType === "TODO" ? (
-                        <DropdownField
-                          id="taskAssignee"
-                          label={t.assignee}
-                          value={currentTaskAssigneeValue}
-                          onChange={applyTaskAssigneeChoice}
-                          options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
-                          className="flex-1"
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {activeTab === "tasks" || form.itemType === "TODO" ? (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
+                        <LocalizedDateInput
+                          locale={locale}
+                          value={form.dueAt}
+                          onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         />
-                      ) : null}
-                    </div>
-                  ) : null}
+                      </div>
+                    ) : null}
+                    {activeTab === "tasks" || form.itemType === "TODO" ? (
+                      <DropdownField
+                        id="taskAssignee"
+                        label={t.assignee}
+                        value={currentTaskAssigneeValue}
+                        onChange={applyTaskAssigneeChoice}
+                        options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
+                        className="flex-1"
+                      />
+                    ) : null}
+                  </div>
                 </div>
                 <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                   <button

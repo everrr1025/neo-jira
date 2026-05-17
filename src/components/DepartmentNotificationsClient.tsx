@@ -616,9 +616,9 @@ export default function DepartmentNotificationsClient({
 
   return (
     <div className="flex flex-col min-h-0 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex min-h-9 items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{t.title}</h2>
+          <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.title}</h2>
         </div>
         <div className="flex items-center gap-3">
           {permission.canCreate ? (
