@@ -33,6 +33,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useIssueListFilters } from "./issuelist/useIssueListFilters";
 import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
 import { DropdownField } from "./DropdownField";
@@ -243,15 +244,15 @@ function MultiFilter({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
-        <span className="truncate max-w-40">{buttonText}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+        <span className="max-w-40 truncate">{buttonText}</span>
+        <ChevronDown size={14} className="text-muted-foreground" />
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-50 cursor-pointer"
+            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
           >
             <input
               type="checkbox"
@@ -259,14 +260,14 @@ function MultiFilter({
               onChange={() => onToggle(option.value)}
               className="h-4 w-4"
             />
-            <span className="text-slate-700">{option.label}</span>
+            <span>{option.label}</span>
           </label>
         ))}
         {selectedValues.length > 0 && (
           <button
             type="button"
             onClick={onClear}
-            className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+            className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm text-primary hover:bg-accent hover:text-accent-foreground"
           >
             {clearText}
           </button>
@@ -320,13 +321,13 @@ function ColumnVisibilityMenu({
   return (
     <details ref={detailsRef} className="relative">
       <summary
-        className="list-none h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none"
+        className="inline-flex h-9 w-9 cursor-pointer select-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
         aria-label={buttonLabel}
         title={buttonLabel}
       >
-        <Eye size={16} className="text-slate-500" />
+        <Eye size={16} className="text-muted-foreground" />
       </summary>
-      <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
         {columns.map((column) => {
           const isChecked = visibleColumnIds.includes(column.id);
           const isDisabled = isChecked && visibleCount === 1;
@@ -334,8 +335,8 @@ function ColumnVisibilityMenu({
           return (
             <label
               key={column.id}
-              className={`flex items-center gap-2 px-2 py-1.5 text-sm rounded-md ${
-                isDisabled ? "cursor-not-allowed text-slate-400" : "hover:bg-slate-50 cursor-pointer"
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
               }`}
             >
               <input
@@ -350,11 +351,11 @@ function ColumnVisibilityMenu({
           );
         })}
         {issueFields.length > 0 ? (
-          <div className="mt-1 border-t border-slate-100 pt-1">
+          <div className="mt-1 border-t pt-1">
             {issueFields.map((field) => (
               <label
                 key={field.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
               >
                 <input
                   type="checkbox"
@@ -368,11 +369,11 @@ function ColumnVisibilityMenu({
           </div>
         ) : null}
         {planFields.length > 0 ? (
-          <div className="mt-1 border-t border-slate-100 pt-1">
+          <div className="mt-1 border-t pt-1">
             {planFields.map((field) => (
               <label
                 key={field.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
               >
                 <input
                   type="checkbox"
@@ -388,7 +389,7 @@ function ColumnVisibilityMenu({
         <button
           type="button"
           onClick={onReset}
-          className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+          className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
         >
           {resetLabel}
         </button>
@@ -486,14 +487,14 @@ function AdvancedFieldFilters({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
-        <Settings2 size={14} className="text-slate-400" />
+      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+        <Settings2 size={14} className="text-muted-foreground" />
         <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+        <ChevronDown size={14} className="text-muted-foreground" />
       </summary>
-      <div className="absolute right-0 z-30 mt-2 w-[min(92vw,520px)] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+      <div className="absolute right-0 z-30 mt-2 w-[min(92vw,520px)] rounded-lg border bg-popover p-3 text-popover-foreground shadow-xl">
         {allFields.length === 0 ? (
-          <p className="px-1 py-2 text-sm text-slate-500">{noFieldsLabel}</p>
+          <p className="px-1 py-2 text-sm text-muted-foreground">{noFieldsLabel}</p>
         ) : (
           <div className="max-h-96 space-y-3 overflow-auto pr-1">
             {allFields.map((field) => {
@@ -507,15 +508,15 @@ function AdvancedFieldFilters({
               const needsValue = op && op !== "EMPTY" && op !== "NOT_EMPTY";
 
               return (
-                <div key={`${field.source}-${field.id}`} className="grid gap-2 rounded-md border border-slate-100 bg-slate-50 p-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto] sm:items-center">
+                <div key={`${field.source}-${field.id}`} className="grid gap-2 rounded-md border bg-muted/40 p-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto] sm:items-center">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-slate-700">{field.name}</div>
-                    <div className="text-xs text-slate-400">{field.source === "plan" ? (locale === "zh" ? "计划扩展列" : "Plan field") : (locale === "zh" ? "问题扩展字段" : "Issue field")}</div>
+                    <div className="truncate text-sm font-medium text-foreground">{field.name}</div>
+                    <div className="text-xs text-muted-foreground">{field.source === "plan" ? (locale === "zh" ? "计划扩展列" : "Plan field") : (locale === "zh" ? "问题扩展字段" : "Issue field")}</div>
                   </div>
                   <select
                     value={op}
                     onChange={(event) => updateFieldFilter(field, event.target.value, value)}
-                    className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                     aria-label={field.name}
                   >
                     <option value="">{locale === "zh" ? "不限" : "Any"}</option>
@@ -529,7 +530,7 @@ function AdvancedFieldFilters({
                     <select
                       value={value || "true"}
                       onChange={(event) => updateFieldFilter(field, op, event.target.value)}
-                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       aria-label={valueLabel}
                     >
                       <option value="true">{locale === "zh" ? "是" : "Yes"}</option>
@@ -539,7 +540,7 @@ function AdvancedFieldFilters({
                     <select
                       value={value}
                       onChange={(event) => updateFieldFilter(field, op, event.target.value)}
-                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       aria-label={valueLabel}
                     >
                       <option value="">{locale === "zh" ? "请选择" : "Select"}</option>
@@ -555,7 +556,7 @@ function AdvancedFieldFilters({
                       value={value}
                       onChange={(event) => updateFieldFilter(field, op, event.target.value)}
                       placeholder={valueLabel}
-                      className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700"
+                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                       aria-label={valueLabel}
                     />
                   ) : (
@@ -564,7 +565,7 @@ function AdvancedFieldFilters({
                   <button
                     type="button"
                     onClick={() => clearFieldFilter(field)}
-                    className="h-9 rounded-md px-2 text-sm text-slate-500 hover:bg-white hover:text-slate-700"
+                    className="h-9 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     {clearLabel}
                   </button>
@@ -615,14 +616,14 @@ function SingleFilter({
       <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
         {renderSummary(selectedOption?.label || "")}
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
         {options.map((option) => (
           <button
             type="button"
             key={option.value}
             onClick={() => handleSelect(option.value)}
             className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-              option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
             }`}
           >
             {option.label}
@@ -728,7 +729,7 @@ function InlineSelect({
       </summary>
       {isOpen && (
         <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl"
           style={{
             top: menuPosition.top,
             bottom: menuPosition.bottom,
@@ -742,7 +743,7 @@ function InlineSelect({
               key={option.value}
               onClick={() => handleSelect(option.value)}
               className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+                option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
               }`}
             >
               <span className="block truncate">{option.label}</span>
@@ -820,7 +821,7 @@ function FieldDraftInput({
         onBlur={commitDraft}
         onChange={(event) => setDraft(event.target.value)}
         rows={1}
-        className="block w-full resize-none overflow-hidden rounded-md border border-transparent bg-transparent text-sm font-medium leading-5 text-slate-700 outline-none hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-1 focus:ring-blue-500"
+        className="block w-full resize-none overflow-hidden rounded-md border border-transparent bg-transparent text-sm font-medium leading-5 text-foreground outline-none hover:border-border focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
         aria-label={field.name}
       />
     );
@@ -836,7 +837,7 @@ function FieldDraftInput({
       }}
       onBlur={commitDraft}
       onChange={(event) => setDraft(event.target.value)}
-      className="h-8 w-full rounded-md border border-transparent bg-transparent text-sm font-medium text-slate-700 outline-none hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:ring-1 focus:ring-blue-500"
+      className="h-8 w-full rounded-md border border-transparent bg-transparent text-sm font-medium text-foreground outline-none hover:border-border focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
       aria-label={field.name}
     />
   );
@@ -1959,7 +1960,7 @@ export default function IssueList({
     >
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         {!lockedPlanId ? (
-          <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-100 pb-3">
+          <div className="mb-3 flex flex-wrap items-center gap-1 border-b pb-3">
             {viewOptions.map((option) => {
               const isActive = (view || "all") === option.value || (!view && option.value === "all");
 
@@ -1984,7 +1985,7 @@ export default function IssueList({
                 <button
                   type="button"
                   onClick={() => setIsSearchOpen(false)}
-                  className="absolute left-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  className="absolute left-2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   aria-label={locale === "zh" ? "收起搜索" : "Collapse search"}
                   title={locale === "zh" ? "收起搜索" : "Collapse search"}
                 >
@@ -2012,7 +2013,7 @@ export default function IssueList({
                       setSearch("");
                       updateQueryParams({ search: null });
                     }}
-                    className="absolute right-2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="absolute right-2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
                     title={locale === "zh" ? "清除搜索" : "Clear search"}
                   >
@@ -2121,10 +2122,10 @@ export default function IssueList({
                   updateQueryParams({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue });
                 }}
                 renderSummary={(label) => (
-                  <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
-                    <span className="text-slate-500">{translations.issueList.due}</span>
-                    <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
-                    <ChevronDown size={14} className="text-slate-400" />
+                  <div className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm shadow-xs hover:bg-accent hover:text-accent-foreground">
+                    <span className="text-muted-foreground">{translations.issueList.due}</span>
+                    <span className="border-none bg-transparent p-0 font-medium text-foreground">{label}</span>
+                    <ChevronDown size={14} className="text-muted-foreground" />
                   </div>
                 )}
               />
@@ -2137,7 +2138,7 @@ export default function IssueList({
                   onChange={(e) => {
                     updateQueryParams({ duePreset: null, dueDate: e.target.value });
                   }}
-                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               ) : null}
             </>
@@ -2204,14 +2205,14 @@ export default function IssueList({
 
         {lockedPlanId && planFieldSummary.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase text-slate-400">{planFieldsLabel}</span>
+            <span className="text-xs font-semibold uppercase text-muted-foreground">{planFieldsLabel}</span>
             {planFieldSummary.map((item) => (
               <span
                 key={item.id}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600"
+                className="inline-flex items-center gap-1 rounded-md border bg-muted/45 px-2 py-1 text-xs text-muted-foreground"
               >
                 <span>{item.label}</span>
-                <span className="font-semibold text-slate-900">{item.value}</span>
+                <span className="font-semibold text-foreground">{item.value}</span>
               </span>
             ))}
           </div>
@@ -2264,12 +2265,12 @@ export default function IssueList({
         ) : null}
       </div>
 
-      <div className={`bg-background overflow-hidden flex-1 flex flex-col ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
+      <div className={`flex flex-1 flex-col overflow-hidden bg-card ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
         <div className="relative overflow-x-auto flex-1">
           <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
-            <thead className="sticky top-0 z-10 border-b bg-muted/70 text-xs font-semibold uppercase text-muted-foreground">
+            <thead className="sticky top-0 z-10 border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
-                <th className="w-12 px-4 py-4">
+                <th className="h-12 w-12 px-4 py-0 align-middle">
                   <input
                     type="checkbox"
                     checked={allCurrentPageSelected}
@@ -2290,7 +2291,7 @@ export default function IssueList({
                   return (
                     <th
                       key={col.id}
-                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-muted transition-colors overflow-hidden relative select-none ${
+                      className={`group/column relative h-12 cursor-move select-none overflow-hidden px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={col.width ? { width: `${col.width}px` } : undefined}
@@ -2312,14 +2313,14 @@ export default function IssueList({
                         type="button"
                         onClick={() => handleSortByColumn(col.id)}
                         disabled={!columnSortField}
-                        className={`inline-flex items-center gap-1 font-semibold ${
+                        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
                           columnSortField
-                            ? "cursor-pointer text-foreground hover:text-foreground"
+                            ? "cursor-pointer text-muted-foreground hover:text-foreground"
                             : "cursor-move text-muted-foreground"
                         }`}
                         draggable={false}
                       >
-                        <span>{col.label}</span>
+                        <span className="truncate">{col.label}</span>
                         {columnSortField &&
                           isSortedColumn && (
                             sortDirection === "asc" ? (
@@ -2346,10 +2347,10 @@ export default function IssueList({
                 {visibleIssueFields.map((field) => (
                   <th
                     key={field.id}
-                    className="group/column px-5 py-4 overflow-hidden relative select-none"
+                    className="group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle"
                     style={{ width: `${issueFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
                   >
-                    <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
+                    <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">
                       <span className="truncate">{field.name}</span>
                       {field.required ? <span className="text-red-500">*</span> : null}
                     </span>
@@ -2364,10 +2365,10 @@ export default function IssueList({
                 {visiblePlanFields.map((field) => (
                   <th
                     key={field.id}
-                    className="group/column px-5 py-4 overflow-hidden relative select-none"
+                    className="group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle"
                     style={{ width: `${planFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
                   >
-                    <span className="inline-flex items-center gap-1 font-semibold text-slate-500">
+                    <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">
                       <span className="truncate">{field.name}</span>
                       {field.required ? <span className="text-red-500">*</span> : null}
                     </span>
@@ -2382,7 +2383,7 @@ export default function IssueList({
               </tr>
             </thead>
 
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border">
               {paginatedIssues.map((issue) => (
                 <tr key={issue.id} className="hover:bg-muted/45 transition-colors group">
                   <td className="px-4 py-3.5">
@@ -2431,13 +2432,13 @@ export default function IssueList({
                               className="relative block w-full"
                               onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
                               renderSummary={(label) => (
-                                <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                   {label}
                                 </span>
                               )}
                             />
                           ) : (
-                            <span className="block w-full truncate text-sm font-medium text-slate-700">
+                            <span className="block w-full truncate text-sm font-medium text-foreground">
                               {issue.plan?.name || noPlanLabel}
                             </span>
                           )}
@@ -2454,7 +2455,7 @@ export default function IssueList({
                             className="relative block w-full"
                             onChange={(value) => handleInlineUpdate(issue.id, "iterationId", value || null)}
                             renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                 {label}
                               </span>
                             )}
@@ -2501,7 +2502,7 @@ export default function IssueList({
                             className="relative block w-full"
                             onChange={(value) => handleInlineUpdate(issue.id, "type", value)}
                             renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                 {label}
                               </span>
                             )}
@@ -2531,7 +2532,7 @@ export default function IssueList({
                               className="relative block w-full"
                               onChange={(value) => handleInlineUpdate(issue.id, "priority", value)}
                               renderSummary={(label) => (
-                                <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                   {label}
                                 </span>
                               )}
@@ -2543,7 +2544,7 @@ export default function IssueList({
 
                     if (col.id === "dueDate") {
                       return (
-                        <td key={col.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+                        <td key={col.id} className="px-5 py-3.5 text-sm font-medium text-foreground">
                           {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString(localeDateMap[locale]) : ""}
                         </td>
                       );
@@ -2558,7 +2559,7 @@ export default function IssueList({
                             className="relative block w-full"
                             onChange={(value) => handleInlineUpdate(issue.id, "assigneeId", value || null)}
                             renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                 {label}
                               </span>
                             )}
@@ -2580,7 +2581,7 @@ export default function IssueList({
                             type="checkbox"
                             checked={fieldValue?.valueBoolean || false}
                             onChange={(event) => handleIssueFieldValueUpdate(issue.id, field, event.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                             aria-label={field.name}
                           />
                         </td>
@@ -2613,7 +2614,7 @@ export default function IssueList({
                             className="relative block w-full"
                             onChange={(value) => handleIssueFieldValueUpdate(issue.id, field, value || null)}
                             renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                 {label}
                               </span>
                             )}
@@ -2656,7 +2657,7 @@ export default function IssueList({
                             type="checkbox"
                             checked={fieldValue?.valueBoolean || false}
                             onChange={(event) => handlePlanFieldValueUpdate(issue.id, field, event.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                             aria-label={field.name}
                           />
                         </td>
@@ -2689,7 +2690,7 @@ export default function IssueList({
                             className="relative block w-full"
                             onChange={(value) => handlePlanFieldValueUpdate(issue.id, field, value || null)}
                             renderSummary={(label) => (
-                              <span className="block text-sm font-medium text-slate-700 bg-transparent border-none p-0 outline-none focus:ring-0 cursor-pointer w-full truncate">
+                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
                                 {label}
                               </span>
                             )}
@@ -2735,80 +2736,88 @@ export default function IssueList({
           ) : null}
         </div>
 
-      <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="text-slate-500 font-medium">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+          <div className="font-medium text-muted-foreground">
             {locale === "zh" ? (
               <>
                 {translations.issueList.showing}
-                <span className="text-slate-800 font-bold">
+                <span className="font-bold text-foreground">
                   {" "}
                   {(totalIssues || issues.length) > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}{" "}
                 </span>
                 {translations.issueList.to}
-                <span className="text-slate-800 font-bold">
+                <span className="font-bold text-foreground">
                   {" "}
                   {Math.min(currentPage * itemsPerPage, (totalIssues || issues.length))}{" "}
                 </span>
                 {translations.issueList.of}
-                <span className="text-slate-800 font-bold"> {(totalIssues || issues.length)} </span>
+                <span className="font-bold text-foreground"> {(totalIssues || issues.length)} </span>
                 {translations.issueList.issues}
               </>
             ) : (
               <>
                 {translations.issueList.showing}{" "}
-                <span className="text-slate-800 font-bold">
+                <span className="font-bold text-foreground">
                   {(totalIssues || issues.length) > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}
                 </span>{" "}
                 {translations.issueList.to}{" "}
-                <span className="text-slate-800 font-bold">
+                <span className="font-bold text-foreground">
                   {Math.min(currentPage * itemsPerPage, (totalIssues || issues.length))}
                 </span>{" "}
-                {translations.issueList.of} <span className="text-slate-800 font-bold">{(totalIssues || issues.length)}</span>{" "}
+                {translations.issueList.of} <span className="font-bold text-foreground">{(totalIssues || issues.length)}</span>{" "}
                 {translations.issueList.issues}
               </>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
-              <span>{locale === "zh" ? "每页" : "Per page"}</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
               <span>{translations.issueList.perPage}</span>
-              <InlineSelect
+              <Select
                 value={String(itemsPerPage)}
-                options={perPageOptions}
-                onChange={(value) => {
+                onValueChange={(value) => {
                   updateQueryParams({ pageSize: value, page: "1" });
                 }}
-                renderSummary={(label) => (
-                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    {label}
-                  </span>
-                )}
-              />
+              >
+                <SelectTrigger size="sm" className="w-20 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {perPageOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateQueryParams({ page: String(Math.max(1, currentPage - 1)) })}
                 disabled={currentPage === 1}
-                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowLeft size={18} />
-              </button>
+              </Button>
 
-              <span className="font-medium text-slate-700 px-2 leading-none">
+              <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                 {locale === "zh"
                   ? `${translations.issueList.page} ${currentPage} / ${totalPages || 1}`
                   : `${translations.issueList.page} ${currentPage} of ${totalPages || 1}`}
               </span>
 
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateQueryParams({ page: String(Math.min(totalPages || 1, currentPage + 1)) })}
                 disabled={currentPage === totalPages || totalPages === 0}
-                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowRight size={18} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>

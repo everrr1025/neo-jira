@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPl
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
 
@@ -187,12 +188,12 @@ export default function DepartmentProjectMembersClient({
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="border-b bg-muted/35 text-xs font-semibold uppercase text-muted-foreground">
+            <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
-                <th className="px-5 py-4">{locale === "zh" ? "姓名" : "Name"}</th>
-                <th className="px-5 py-4">{locale === "zh" ? "邮箱" : "Email"}</th>
-                <th className="px-5 py-4">{locale === "zh" ? "角色" : "Role"}</th>
-                <th className="w-56 px-5 py-4">{locale === "zh" ? "操作" : "Actions"}</th>
+                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "姓名" : "Name"}</th>
+                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "邮箱" : "Email"}</th>
+                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "角色" : "Role"}</th>
+                <th className="h-12 w-56 px-5 py-0 align-middle">{locale === "zh" ? "操作" : "Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -257,56 +258,62 @@ export default function DepartmentProjectMembersClient({
           </table>
         </div>
         {projectMembers.length > 0 ? (
-          <div className="border-t bg-slate-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-            <div className="font-medium text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+            <div className="font-medium text-muted-foreground">
               {locale === "zh" ? "显示" : "Showing"}
-              <span className="font-bold text-slate-800"> {memberRangeStart} </span>
+              <span className="font-bold text-foreground"> {memberRangeStart} </span>
               {locale === "zh" ? "至" : "to"}
-              <span className="font-bold text-slate-800"> {memberRangeEnd} </span>
+              <span className="font-bold text-foreground"> {memberRangeEnd} </span>
               {locale === "zh" ? "共" : "of"}
-              <span className="font-bold text-slate-800"> {projectMembers.length} </span>
+              <span className="font-bold text-foreground"> {projectMembers.length} </span>
               {locale === "zh" ? "成员" : "members"}
             </div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-slate-500">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <span>{locale === "zh" ? "每页" : "Per page"}</span>
-                <select
-                  value={memberPageSize}
-                  onChange={(event) => {
-                    setMemberPageSize(Number(event.target.value));
+                <Select
+                  value={String(memberPageSize)}
+                  onValueChange={(value) => {
+                    setMemberPageSize(Number(value));
                     setMemberPage(1);
                   }}
-                  className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                  {PAGE_SIZE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <SelectTrigger size="sm" className="w-20 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
                   disabled={currentMemberPage === 1}
-                  className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
                 >
                   <ChevronLeft size={18} />
-                </button>
-                <span className="px-2 font-medium leading-none text-slate-700">
+                </Button>
+                <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                   {locale === "zh"
                     ? `第 ${currentMemberPage} / ${totalMemberPages || 1} 页`
                     : `Page ${currentMemberPage} of ${totalMemberPages || 1}`}
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="icon-sm"
                   onClick={() => setMemberPage(Math.min(totalMemberPages || 1, currentMemberPage + 1))}
                   disabled={currentMemberPage === totalMemberPages || totalMemberPages === 0}
-                  className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
                 >
                   <ChevronRight size={18} />
-                </button>
+                </Button>
               </div>
             </div>
           </div>

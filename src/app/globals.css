@@ -123,6 +123,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  [class*="shadow-"] {
+    --tw-shadow: 0 0 #0000 !important;
+    --tw-shadow-colored: 0 0 #0000 !important;
+  }
 }
 
 .neo-rich-text-editor__content > * + * {

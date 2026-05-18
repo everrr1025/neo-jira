@@ -866,7 +866,7 @@ export default function DepartmentNotificationsClient({
                   return (
                     <th
                       key={column.id}
-                      className={`group/column relative cursor-move select-none overflow-hidden px-5 py-4 transition-colors hover:bg-muted active:cursor-move ${
+                      className={`group/column relative h-12 cursor-move select-none overflow-hidden px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={{ width: `${column.width}px` }}
@@ -911,7 +911,7 @@ export default function DepartmentNotificationsClient({
                   );
                 })}
                 {showActionColumn ? (
-                  <th className="w-36 px-5 py-4 text-right">
+                  <th className="h-12 w-36 px-5 py-0 text-right align-middle">
                     <span className="font-semibold text-muted-foreground">{t.actions}</span>
                   </th>
                 ) : null}

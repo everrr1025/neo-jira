@@ -1025,7 +1025,7 @@ export default function DepartmentManageClient({
         }}
         disabled={!sortField}
         className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
-          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : "cursor-default text-slate-500"
+          sortField ? "cursor-pointer text-muted-foreground hover:text-foreground" : "cursor-default text-muted-foreground"
         }`}
         draggable={false}
       >
@@ -1225,7 +1225,7 @@ export default function DepartmentManageClient({
       {mode === "dashboard" ? (
         <div className="space-y-6 text-foreground">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div className="rounded-xl border bg-background p-5 shadow-sm md:col-span-2">
+            <div className="rounded-xl border bg-background p-5 md:col-span-2">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold leading-5 text-foreground">{department.name}</h2>
@@ -1243,7 +1243,7 @@ export default function DepartmentManageClient({
               </div>
             </div>
 
-            <div className="flex items-center rounded-xl border bg-background p-5 shadow-sm">
+            <div className="flex items-center rounded-xl border bg-background p-5">
               <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
                 <span>
                   {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.members.length}</span>
@@ -1254,7 +1254,7 @@ export default function DepartmentManageClient({
               </div>
             </div>
 
-            <div className="flex flex-col justify-center rounded-xl border bg-background p-5 shadow-sm">
+            <div className="flex flex-col justify-center rounded-xl border bg-background p-5">
               <div className="text-right text-lg font-semibold leading-6 text-foreground">{todayLabel}</div>
               <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
                 <div className="min-w-0 truncate text-base font-medium leading-6 text-foreground">
@@ -1274,7 +1274,7 @@ export default function DepartmentManageClient({
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-1">
-              <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+              <div className="flex flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <h2 className="text-sm font-semibold text-foreground">{t.mySchedule}</h2>
                   <div className="flex rounded-md bg-muted p-0.5">
@@ -1339,7 +1339,7 @@ export default function DepartmentManageClient({
                 </div>
               </div>
 
-              <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+              <div className="flex flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <h2 className="text-sm font-semibold text-foreground">{t.latestAnnouncements}</h2>
                   <Link
@@ -1391,7 +1391,7 @@ export default function DepartmentManageClient({
             </div>
 
             <div className="lg:col-span-2">
-              <div className="flex h-[520px] flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+              <div className="flex h-[520px] flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold text-foreground">{t.myProjects}</h2>
@@ -1494,23 +1494,23 @@ export default function DepartmentManageClient({
       {mode === "members" ? (
         <div className="space-y-4">
           <div className="flex min-h-9 items-center justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.members}</h2>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">{t.members}</h2>
           </div>
-          <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+              <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                 <tr>
-                  <th className="border-b px-5 py-4">{t.name}</th>
-                  <th className="border-b px-5 py-4">{t.email}</th>
-                  <th className="border-b px-5 py-4">{t.role}</th>
-                  <th className="border-b px-5 py-4">{t.memberProjects}</th>
-                  {isHead ? <th className="border-b px-5 py-4">{t.actions}</th> : null}
+                  <th className="h-12 px-5 py-0 align-middle">{t.name}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{t.email}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{t.role}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{t.memberProjects}</th>
+                  {isHead ? <th className="h-12 px-5 py-0 align-middle">{t.actions}</th> : null}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {sortedMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={isHead ? 5 : 4} className="px-5 py-8 text-center text-slate-500">
+                    <td colSpan={isHead ? 5 : 4} className="px-5 py-8 text-center text-muted-foreground">
                       {t.noMembers}
                     </td>
                   </tr>
@@ -1519,26 +1519,23 @@ export default function DepartmentManageClient({
                     const badge = ROLE_BADGE[member.role] || ROLE_BADGE.MEMBER;
                     const canToggleAssistant = isHead && member.role !== "HEAD" && member.userId !== currentUserId;
                     return (
-                      <tr key={member.userId} className="align-top hover:bg-slate-50">
-                        <td className="px-5 py-4 font-medium text-slate-800">
+                      <tr key={member.userId} className="align-top transition-colors hover:bg-muted/40">
+                        <td className="px-5 py-4 font-medium text-foreground">
                           <span>{displayMember(member)}</span>
                         </td>
-                        <td className="px-5 py-4 text-slate-500">{member.userEmail}</td>
+                        <td className="px-5 py-4 text-muted-foreground">{member.userEmail}</td>
                         <td className="px-5 py-4">
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${badge.bg} ${badge.text}`}>
+                          <Badge variant="secondary" className={`${badge.bg} ${badge.text}`}>
                             {member.role === "HEAD" ? t.head : member.role === "ASSISTANT" ? t.assistant : t.member}
-                          </span>
+                          </Badge>
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap gap-2">
                             {member.projects.length > 0 ? (
                               member.projects.map((project) => (
-                                <span
-                                  key={project.id}
-                                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700"
-                                >
+                                <Badge key={project.id} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
                                   <span>{project.name}</span>
-                                </span>
+                                </Badge>
                               ))
                             ) : null}
                           </div>
@@ -1547,23 +1544,26 @@ export default function DepartmentManageClient({
                           <td className="px-5 py-4">
                             {canToggleAssistant ? (
                               member.role === "ASSISTANT" ? (
-                                <button
+                                <Button
                                   type="button"
+                                  variant="outline"
+                                  size="xs"
                                   onClick={() => handleSetRole(member.userId, "MEMBER")}
                                   disabled={isPending}
-                                  className="text-xs font-medium text-slate-600 hover:text-slate-800 disabled:opacity-50"
                                 >
                                   {t.setMember}
-                                </button>
+                                </Button>
                               ) : (
-                                <button
+                                <Button
                                   type="button"
+                                  variant="outline"
+                                  size="xs"
                                   onClick={() => handleSetRole(member.userId, "ASSISTANT")}
                                   disabled={isPending}
-                                  className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                  className="text-primary"
                                 >
                                   {t.setAssistant}
-                                </button>
+                                </Button>
                               )
                             ) : null}
                           </td>
@@ -1633,7 +1633,7 @@ export default function DepartmentManageClient({
                       return (
                         <th
                           key={column.id}
-                          className={`group/column relative select-none overflow-hidden py-4 transition-colors ${
+                          className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
                             column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${isDragging ? "opacity-40" : ""}`}
                           style={{ width: `${(column.width / projectColumnsTotalWidth) * 100}%` }}

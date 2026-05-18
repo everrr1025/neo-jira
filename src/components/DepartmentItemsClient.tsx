@@ -2443,13 +2443,13 @@ export default function DepartmentItemsClient({
     return (
       <details ref={taskColumnMenuRef} className="relative">
         <summary
-          className="inline-flex h-8 w-8 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="inline-flex h-8 w-8 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={taskTableText.columns}
           title={taskTableText.columns}
         >
           <Eye size={16} className="text-muted-foreground" />
         </summary>
-        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground">
           {taskConfigurableColumns.map((column) => {
             const isChecked = taskVisibleColumnIds.includes(column.id);
             const isDisabled = isChecked && visibleCount === 1;
@@ -2557,7 +2557,7 @@ export default function DepartmentItemsClient({
         }
 
         return (
-          <td key={column.id} className="sticky right-0 z-10 bg-card px-3 py-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-muted">
+          <td key={column.id} className="sticky right-0 z-10 bg-card px-3 py-4 group-hover:bg-muted">
             <div className="flex items-center gap-2">
               {item.canEdit ? (
                 <>
@@ -4084,7 +4084,17 @@ export default function DepartmentItemsClient({
   };
 
   return (
-    <div className={activeTab === "notes" && isNoteFullscreen ? "-m-6 h-screen" : "space-y-4"}>
+    <div
+      className={
+        activeTab === "notes" && isNoteFullscreen
+          ? "-m-6 h-screen"
+          : `space-y-4 ${
+              activeTab === "tasks"
+                ? "[&_button[data-variant='outline']]:shadow-none [&_input[data-slot='input']]:shadow-none [&_textarea[data-slot='textarea']]:shadow-none [&_[data-slot='select-trigger']]:shadow-none"
+                : ""
+            }`
+      }
+    >
       {!(activeTab === "notes" && isNoteFullscreen) ? (
         <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
           <div>
@@ -4222,7 +4232,7 @@ export default function DepartmentItemsClient({
         renderNotesView()
       ) : (
         activeTab === "tasks" ? (
-          <div className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="flex flex-col overflow-hidden rounded-xl border bg-card">
             <div className="relative overflow-x-auto flex-1">
               <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
@@ -4237,8 +4247,8 @@ export default function DepartmentItemsClient({
                       return (
                         <th
                           key={column.id}
-                          className={`group/column relative select-none overflow-hidden py-3 transition-colors ${
-                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-move px-5 hover:bg-muted active:cursor-move"
+                          className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
+                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2" : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${
                             isDragging ? "opacity-40" : ""
                           }`}
@@ -4315,10 +4325,10 @@ export default function DepartmentItemsClient({
                       setTaskPage(1);
                     }}
                   >
-                    <SelectTrigger size="sm" className="w-20 bg-background">
+                    <SelectTrigger size="sm" className="w-20 bg-background shadow-none">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent align="end">
+                    <SelectContent align="end" className="shadow-none">
                       {TASK_PAGE_SIZE_OPTIONS.map((option) => (
                         <SelectItem key={option} value={String(option)}>
                           {option}
@@ -4366,7 +4376,7 @@ export default function DepartmentItemsClient({
       {activeTab !== "notes" && selectedNoteIssue ? (
         <div className="fixed inset-0 z-[80] bg-[#091E42]/25" onClick={() => setSelectedNoteIssueId(null)}>
           <aside
-            className="absolute inset-y-0 right-0 flex w-full max-w-[460px] flex-col border-l border-slate-200 bg-white shadow-2xl"
+            className={`absolute inset-y-0 right-0 flex w-full max-w-[460px] flex-col border-l border-slate-200 bg-white ${activeTab === "tasks" ? "" : "shadow-2xl"}`}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
@@ -4548,7 +4558,7 @@ export default function DepartmentItemsClient({
           {activeTab === "schedule" ? (
             renderScheduleCreateDialog()
           ) : (
-            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
               <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <h3 className="text-xl font-bold text-slate-800">{t.addTask}</h3>
@@ -4647,7 +4657,7 @@ export default function DepartmentItemsClient({
 
       {selectedTask ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-background">
             <div className="flex items-center justify-between gap-3 border-b px-6 py-4">
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold text-foreground">{selectedTask.title}</h3>
@@ -4814,7 +4824,7 @@ export default function DepartmentItemsClient({
           if (!open) setTaskPendingDelete(null);
         }}
       >
-        <DialogContent className="max-w-md p-0">
+        <DialogContent className="max-w-md p-0 shadow-none">
           <DialogHeader className="border-b bg-destructive/10 px-6 py-4">
             <DialogTitle className="text-destructive">{t.deleteTask}</DialogTitle>
             <DialogDescription>{t.deleteConfirm}</DialogDescription>
