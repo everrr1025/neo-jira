@@ -364,3 +364,23 @@ export async function permanentlyDeleteNote(noteId: string, departmentId?: strin
     return { success: false, error: error instanceof Error ? error.message : "Failed to permanently delete note" };
   }
 }
+
+export async function emptyNoteTrash(departmentId?: string | null) {
+  try {
+    const session = await getRequiredSession();
+    const currentUser = getSessionUser(session);
+    if (!currentUser.id) return { success: false, error: "Unauthorized" };
+
+    await prisma.note.deleteMany({
+      where: {
+        authorId: currentUser.id,
+        deletedAt: { not: null },
+      },
+    });
+    revalidateNotes(normalizeOptionalId(departmentId));
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to empty note trash:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to empty trash" };
+  }
+}

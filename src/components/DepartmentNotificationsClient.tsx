@@ -627,7 +627,6 @@ export default function DepartmentNotificationsClient({
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-foreground">{t.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {permission.canCreate ? (
@@ -931,7 +930,7 @@ export default function DepartmentNotificationsClient({
                 notifications.map((notification) => (
                   <tr
                     key={notification.receiptId}
-                    className={`${notification.read || currentView === "sent" ? "" : "bg-primary/5"} hover:bg-muted/40`}
+                    className="hover:bg-muted/40"
                   >
                     {columns.map((column) => (
                       <td key={column.id} className="overflow-hidden px-5 py-3.5 align-middle">

@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 
 import { addReminderComment, createReminder, deleteReminderItem, deleteReminderTask, setReminderCompleted, updateMeetingAttendance, updateReminderItem, updateReminderTask } from "@/app/actions/reminders";
-import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
+import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, emptyNoteTrash, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,6 +114,8 @@ const TEXT = {
     fullscreen: "Fullscreen",
     exitFullscreen: "Exit fullscreen",
     trash: "Trash",
+    emptyTrash: "Empty trash",
+    emptyTrashConfirm: "Permanently delete all notes in trash? This cannot be undone.",
     restoreNote: "Restore",
     permanentlyDeleteNote: "Delete forever",
     permanentlyDeleteConfirm: "Permanently delete this note? This cannot be undone.",
@@ -215,6 +217,8 @@ const TEXT = {
     fullscreen: "全屏编辑",
     exitFullscreen: "退出全屏",
     trash: "垃圾箱",
+    emptyTrash: "清空全部",
+    emptyTrashConfirm: "彻底删除垃圾箱中的全部笔记吗？此操作无法撤销。",
     restoreNote: "恢复",
     permanentlyDeleteNote: "彻底删除",
     permanentlyDeleteConfirm: "彻底删除这条笔记吗？此操作无法撤销。",
@@ -2173,6 +2177,23 @@ export default function DepartmentItemsClient({
     });
   };
 
+  const handleEmptyNoteTrash = () => {
+    if (trashedNotes.length === 0) return;
+    if (!window.confirm(t.emptyTrashConfirm)) return;
+    setNoteError("");
+    startTransition(async () => {
+      const result = await emptyNoteTrash(departmentId);
+      if (!result.success) {
+        setNoteError(result.error || "Failed");
+        return;
+      }
+      savedNoteSnapshotRef.current = null;
+      setSelectedNoteId(null);
+      setNoteSaveStatus("saved");
+      router.refresh();
+    });
+  };
+
   const handleToggleNotePinned = (targetNote = selectedNote) => {
     if (!targetNote || targetNote.deletedAt) return;
 
@@ -3575,13 +3596,15 @@ export default function DepartmentItemsClient({
     const folderButtonClass = (active: boolean, dropTargetId?: string) =>
       `flex h-9 w-full min-w-0 items-center justify-between gap-1.5 rounded-md px-2 text-sm transition-colors ${
         active
-          ? "bg-blue-50/70 font-medium text-blue-700"
-          : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
-      } ${dropTargetId && noteDropTarget === dropTargetId ? "ring-2 ring-blue-300 ring-inset" : ""}`;
+          ? "bg-accent font-medium text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      } ${dropTargetId && noteDropTarget === dropTargetId ? "ring-2 ring-ring ring-inset" : ""}`;
 
     const noteButtonClass = (note: NoteListItem) =>
       `block min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-        selectedNoteId === note.id ? "bg-blue-50 font-medium text-blue-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+        selectedNoteId === note.id
+          ? "bg-accent font-medium text-accent-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       }`;
     const renderNoteName = (note: NoteListItem) => (
       <div
@@ -3699,13 +3722,13 @@ export default function DepartmentItemsClient({
 
     return (
       <div
-        className={`min-h-[520px] overflow-hidden bg-[#f3f3f4] ${
+        className={`min-h-[520px] overflow-hidden bg-background ${
           isNoteFullscreen
             ? "h-screen rounded-none border-0"
-            : "h-[calc(100vh-100px)] rounded-lg border border-[#e2e8f0]"
+            : "h-[calc(100vh-100px)] rounded-lg border"
         } lg:grid lg:grid-cols-[248px_minmax(0,1fr)]`}
       >
-        <aside className="flex min-h-0 flex-col border-r border-[#e2e8f0] bg-[#f3f3f4]">
+        <aside className="flex min-h-0 flex-col border-r bg-muted/30">
           <div className="space-y-0.5 px-2 pt-3">
             <button
               type="button"
@@ -3730,10 +3753,24 @@ export default function DepartmentItemsClient({
               <span className="inline-flex min-w-0 items-center gap-1.5"><Star size={15} />{t.pinnedNotes}</span>
               <span>{activeNotes.filter((note) => isNotePinned(note)).length}</span>
             </button>
-            <button type="button" onClick={() => setNoteFolderFilter("trash")} className={folderButtonClass(noteFolderFilter === "trash")}>
-              <span className="inline-flex min-w-0 items-center gap-1.5"><Trash2 size={15} />{t.trash}</span>
-              <span>{trashedNotes.length}</span>
-            </button>
+            <div className="group/trash flex min-w-0 items-center gap-0.5">
+              <button type="button" onClick={() => setNoteFolderFilter("trash")} className={folderButtonClass(noteFolderFilter === "trash")}>
+                <span className="inline-flex min-w-0 items-center gap-1.5"><Trash2 size={15} />{t.trash}</span>
+                <span>{trashedNotes.length}</span>
+              </button>
+              {trashedNotes.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleEmptyNoteTrash}
+                  disabled={isPending}
+                  className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 group-hover/trash:flex"
+                  title={t.emptyTrash}
+                  aria-label={t.emptyTrash}
+                >
+                  <Trash2 size={13} />
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-2">
             <div className="space-y-1">

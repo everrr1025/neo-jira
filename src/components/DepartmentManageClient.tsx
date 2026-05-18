@@ -1046,7 +1046,6 @@ export default function DepartmentManageClient({
             >
               {project.name}
             </Link>
-            <p className="mt-1 truncate text-xs text-muted-foreground">{project.description || t.noDescription}</p>
           </div>
         </td>
       );
@@ -1282,10 +1281,14 @@ export default function DepartmentManageClient({
                       <Button
                         key={view}
                         type="button"
-                        variant={scheduleView === view ? "secondary" : "ghost"}
+                        variant="ghost"
                         size="sm"
                         onClick={() => setScheduleView(view)}
-                        className="h-7 px-3 text-xs"
+                        className={`h-7 px-3 text-xs ${
+                          scheduleView === view
+                            ? "bg-background text-foreground shadow-xs hover:bg-background"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
                       >
                         {view === "today" ? t.today : t.thisWeek}
                       </Button>
@@ -1598,9 +1601,6 @@ export default function DepartmentManageClient({
           <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight text-foreground">{t.projects}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {department.name} · {sortedProjects.length} {t.projects}
-              </p>
             </div>
             {canManageProjects ? (
               <Button
