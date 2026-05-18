@@ -3,6 +3,10 @@
 import { useState, useTransition } from "react";
 import { updateSprint } from "@/app/actions/sprints";
 import { Loader2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { getTranslations, Locale } from "@/lib/i18n";
 import { ITERATION_NAME_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
@@ -14,6 +18,9 @@ type SprintData = {
   startDate: string;
   endDate: string;
 };
+
+const dateInputClassName =
+  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export function EditSprintModal({
   isOpen,
@@ -52,75 +59,75 @@ export function EditSprintModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-            <h2 className="text-xl font-bold text-slate-800">{locale === "zh" ? "编辑迭代" : "Edit Sprint"}</h2>
-            <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">{translations.createSprint.sprintName}</label>
-              <input
-                required
-                type="text"
-                value={formData.name}
-                onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
-                maxLength={ITERATION_NAME_MAX_LENGTH}
-                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-shadow"
-                placeholder={translations.createSprint.sprintNamePlaceholder}
-              />
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-sm font-medium text-slate-700">{translations.createSprint.startDate}</label>
-                <LocalizedDateInput
-                  required
-                  locale={locale}
-                  value={formData.startDate}
-                  onChange={e => setFormData(p => ({ ...p, startDate: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-sm font-medium text-slate-700">{translations.createSprint.endDate}</label>
-                <LocalizedDateInput
-                  required
-                  locale={locale}
-                  value={formData.endDate}
-                  onChange={e => setFormData(p => ({ ...p, endDate: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5 mt-2">
-              <button
+      <Dialog open={isOpen} onOpenChange={(open) => (!open && !isPending ? onClose() : null)}>
+        <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{locale === "zh" ? "编辑迭代" : "Edit Sprint"}</DialogTitle>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={onClose}
                 disabled={isPending}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50"
+                aria-label={translations.createIssue.cancel}
               >
-                {translations.createIssue.cancel}
-              </button>
-              <button
-                disabled={isPending}
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md transition-colors shadow-sm disabled:opacity-50 flex justify-center items-center gap-2"
-              >
-                {isPending && <Loader2 size={16} className="animate-spin" />} {locale === "zh" ? "保存" : "Save"}
-              </button>
+                <X className="size-4" />
+              </Button>
             </div>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-5 p-6">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-sprint-name">{translations.createSprint.sprintName}</Label>
+                <Input
+                  id="edit-sprint-name"
+                  required
+                  type="text"
+                  value={formData.name}
+                  onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                  maxLength={ITERATION_NAME_MAX_LENGTH}
+                  placeholder={translations.createSprint.sprintNamePlaceholder}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label>{translations.createSprint.startDate}</Label>
+                  <LocalizedDateInput
+                    required
+                    locale={locale}
+                    value={formData.startDate}
+                    onChange={e => setFormData(p => ({ ...p, startDate: e.target.value }))}
+                    className={dateInputClassName}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>{translations.createSprint.endDate}</Label>
+                  <LocalizedDateInput
+                    required
+                    locale={locale}
+                    value={formData.endDate}
+                    onChange={e => setFormData(p => ({ ...p, endDate: e.target.value }))}
+                    className={dateInputClassName}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+                {translations.createIssue.cancel}
+              </Button>
+              <Button disabled={isPending} type="submit">
+                {isPending ? <Loader2 className="animate-spin" /> : null}
+                {locale === "zh" ? "保存" : "Save"}
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
       <AlertPopup message={error} onClose={() => setError("")} autoCloseMs={5000} />
     </>
   );

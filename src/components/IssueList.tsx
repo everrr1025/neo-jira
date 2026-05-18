@@ -30,6 +30,9 @@ import {
   deletePlanFieldDefinition,
   updatePlanIssueFieldValue,
 } from "@/app/actions/plans";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useIssueListFilters } from "./issuelist/useIssueListFilters";
 import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
 import { DropdownField } from "./DropdownField";
@@ -787,24 +790,19 @@ function FieldDraftInput({
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
-  const isFocusedRef = useRef(false);
+  const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!isFocusedRef.current) {
-      setDraft(value);
-    }
-  }, [value]);
+  const displayedDraft = isFocused ? draft : value;
 
   useEffect(() => {
     if (!multiline || !textareaRef.current) return;
 
     textareaRef.current.style.height = "auto";
     textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-  }, [draft, multiline]);
+  }, [displayedDraft, multiline]);
 
   const commitDraft = () => {
-    isFocusedRef.current = false;
+    setIsFocused(false);
     if (draft !== value) {
       onCommit(draft);
     }
@@ -814,9 +812,10 @@ function FieldDraftInput({
     return (
       <textarea
         ref={textareaRef}
-        value={draft}
+        value={displayedDraft}
         onFocus={() => {
-          isFocusedRef.current = true;
+          setDraft(value);
+          setIsFocused(true);
         }}
         onBlur={commitDraft}
         onChange={(event) => setDraft(event.target.value)}
@@ -830,9 +829,10 @@ function FieldDraftInput({
   return (
     <input
       type={field.type === "NUMBER" ? "number" : "text"}
-      value={draft}
+      value={displayedDraft}
       onFocus={() => {
-        isFocusedRef.current = true;
+        setDraft(value);
+        setIsFocused(true);
       }}
       onBlur={commitDraft}
       onChange={(event) => setDraft(event.target.value)}
@@ -951,6 +951,17 @@ export default function IssueList({
   const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
   const { page: currentPage, pageSize: itemsPerPage } = pagination;
   const { sortBy, sortDirection } = sorting;
+  const activeFilterCount =
+    statusFilter.length +
+    typeFilter.length +
+    priorityFilter.length +
+    planFilter.length +
+    sprintFilter.length +
+    assigneeFilter.length +
+    watcherFilter.length +
+    (dueFilter !== "ALL" || duePreset || dueDateValue ? 1 : 0) +
+    (searchParamsSearch ? 1 : 0) +
+    (view && view !== "all" ? 1 : 0);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
@@ -1946,25 +1957,22 @@ export default function IssueList({
         isFullscreen ? "fixed inset-0 z-40 bg-white p-4" : ""
       }`}
     >
-      <div className={`bg-white p-3 sticky top-0 z-20 ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
+      <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         {!lockedPlanId ? (
           <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-100 pb-3">
             {viewOptions.map((option) => {
               const isActive = (view || "all") === option.value || (!view && option.value === "all");
 
               return (
-                <button
+                <Button
                   type="button"
                   key={option.value}
+                  variant={isActive ? "default" : "ghost"}
+                  size="sm"
                   onClick={() => handleViewChange(option.value)}
-                  className={`h-8 rounded-md px-3 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
                 >
                   {option.label}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -1982,7 +1990,7 @@ export default function IssueList({
                 >
                   <Search size={14} />
                 </button>
-                <input
+                <Input
                   type="text"
                   placeholder={translations.issueList.searchPlaceholder}
                   value={search}
@@ -1995,7 +2003,7 @@ export default function IssueList({
                       setIsSearchOpen(false);
                     }
                   }}
-                  className="w-full pl-9 pr-9 py-2 text-sm border-slate-200 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="pr-9 pl-9"
                 />
                 {search ? (
                   <button
@@ -2013,20 +2021,23 @@ export default function IssueList({
                 ) : null}
               </>
             ) : (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="icon"
                 onClick={() => setIsSearchOpen(true)}
-                className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
                 aria-label={translations.issueList.searchPlaceholder}
                 title={translations.issueList.searchPlaceholder}
               >
-                <Search size={16} />
-              </button>
+                <Search />
+              </Button>
             )}
           </div>
 
-          <div className="h-9 px-2 inline-flex items-center text-slate-500">
+          <div className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-muted/45 px-2.5 text-sm font-medium text-muted-foreground">
             <ListFilter size={14} />
+            <span>{locale === "zh" ? "筛选" : "Filters"}</span>
+            {activeFilterCount > 0 ? <Badge variant="secondary">{activeFilterCount}</Badge> : null}
           </div>
 
           {view !== "backlog" ? (
@@ -2141,25 +2152,27 @@ export default function IssueList({
           />
 
           {canManageIssueFields ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setActiveFieldManager("issue")}
-              className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
             >
-              <Settings2 size={14} className="text-slate-400" />
+              <Settings2 />
               <span>{issueFieldsManagerLabel}</span>
-            </button>
+            </Button>
           ) : null}
 
           {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setActiveFieldManager("plan")}
-              className="h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
             >
-              <Settings2 size={14} className="text-slate-400" />
+              <Settings2 />
               <span>{planFieldsManagerLabel}</span>
-            </button>
+            </Button>
           ) : null}
 
           <ColumnVisibilityMenu
@@ -2177,15 +2190,16 @@ export default function IssueList({
             onTogglePlanField={handleTogglePlanFieldVisibility}
           />
 
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon"
             onClick={() => setIsFullscreen((current) => !current)}
-            className="h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors"
             title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
             aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
           >
-            {isFullscreen ? <Minimize2 size={14} className="text-slate-400" /> : <Maximize2 size={14} className="text-slate-400" />}
-          </button>
+            {isFullscreen ? <Minimize2 /> : <Maximize2 />}
+          </Button>
         </div>
 
         {lockedPlanId && planFieldSummary.length > 0 ? (
@@ -2204,52 +2218,56 @@ export default function IssueList({
         ) : null}
 
         {selectedIssueIds.length > 0 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
-            <span className="text-sm font-semibold text-blue-900">
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 shadow-xs">
+            <span className="text-sm font-semibold text-primary">
               {selectedIssuesLabel} {selectedIssueIds.length}
             </span>
             {!lockedPlanId && canManagePlans ? (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => openBulkAction("assignPlan")}
-                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 {bulkAddToPlanLabel}
-              </button>
+              </Button>
             ) : null}
             {canManagePlans ? (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => openBulkAction("removePlan")}
-                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 {bulkRemovePlanLabel}
-              </button>
+              </Button>
             ) : null}
             {!lockedPlanId ? (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => openBulkAction("assignIteration")}
-                className="rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 {bulkAddToSprintLabel}
-              </button>
+              </Button>
             ) : null}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setSelectedIssueIds([])}
-              className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-white hover:text-slate-700"
             >
               {bulkClearLabel}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
 
-      <div className={`bg-white overflow-hidden flex-1 flex flex-col ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
+      <div className={`bg-background overflow-hidden flex-1 flex flex-col ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
         <div className="relative overflow-x-auto flex-1">
           <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
-            <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
+            <thead className="sticky top-0 z-10 border-b bg-muted/70 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 <th className="w-12 px-4 py-4">
                   <input
@@ -2257,7 +2275,7 @@ export default function IssueList({
                     checked={allCurrentPageSelected}
                     onChange={toggleCurrentPageSelection}
                     aria-label={locale === "zh" ? "选择当前页全部问题" : "Select all issues on this page"}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                   />
                 </th>
                 {columns.map((col, index) => {
@@ -2272,7 +2290,7 @@ export default function IssueList({
                   return (
                     <th
                       key={col.id}
-                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-muted transition-colors overflow-hidden relative select-none ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={col.width ? { width: `${col.width}px` } : undefined}
@@ -2296,8 +2314,8 @@ export default function IssueList({
                         disabled={!columnSortField}
                         className={`inline-flex items-center gap-1 font-semibold ${
                           columnSortField
-                            ? "cursor-pointer text-slate-600 hover:text-slate-800"
-                            : "cursor-move text-slate-500"
+                            ? "cursor-pointer text-foreground hover:text-foreground"
+                            : "cursor-move text-muted-foreground"
                         }`}
                         draggable={false}
                       >
@@ -2364,23 +2382,23 @@ export default function IssueList({
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y">
               {paginatedIssues.map((issue) => (
-                <tr key={issue.id} className="hover:bg-slate-50/70 transition-colors group">
+                <tr key={issue.id} className="hover:bg-muted/45 transition-colors group">
                   <td className="px-4 py-3.5">
                     <input
                       type="checkbox"
                       checked={selectedIssueIds.includes(issue.id)}
                       onChange={() => toggleIssueSelection(issue.id)}
                       aria-label={locale === "zh" ? `选择问题 ${issue.key}` : `Select issue ${issue.key}`}
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                     />
                   </td>
                   {columns.map((col) => {
                     if (col.id === "key") {
                       return (
-                        <td key={col.id} className="px-5 py-3.5 text-slate-500 font-medium">
-                          <Link href={`/issues/${issue.id}`} className="hover:text-blue-600 hover:underline">
+                        <td key={col.id} className="px-5 py-3.5 text-muted-foreground font-medium">
+                          <Link href={`/issues/${issue.id}`} className="hover:text-primary hover:underline">
                             {issue.key}
                           </Link>
                         </td>
@@ -2391,11 +2409,11 @@ export default function IssueList({
                       return (
                         <td
                           key={col.id}
-                          className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden text-ellipsis"
+                          className="px-5 py-3.5 font-semibold text-foreground overflow-hidden text-ellipsis"
                         >
                           <Link
                             href={`/issues/${issue.id}`}
-                            className="hover:text-blue-600 block w-full truncate border-b border-transparent"
+                            className="hover:text-primary block w-full truncate border-b border-transparent"
                           >
                             {issue.title}
                           </Link>
@@ -2708,9 +2726,9 @@ export default function IssueList({
             </tbody>
           </table>
           {(totalIssues || issues.length) === 0 ? (
-            <div className="pointer-events-none sticky left-0 flex min-h-52 w-full items-center justify-center px-5 py-16 text-center text-slate-500">
+            <div className="pointer-events-none sticky left-0 flex min-h-52 w-full items-center justify-center px-5 py-16 text-center text-muted-foreground">
               <div>
-                <p className="mb-1 text-base font-medium">{translations.issueList.noMatchTitle}</p>
+                <p className="mb-1 text-base font-medium text-foreground">{translations.issueList.noMatchTitle}</p>
                 <p className="text-sm">{translations.issueList.noMatchDesc}</p>
               </div>
             </div>

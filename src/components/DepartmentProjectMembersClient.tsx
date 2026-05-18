@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
 
@@ -142,23 +144,22 @@ export default function DepartmentProjectMembersClient({
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">{project.name}</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{project.name}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             {project.key} · {t.subtitle}
           </p>
         </div>
         {canManage ? (
-          <button
+          <Button
             type="button"
             onClick={() => {
               setErrorMsg("");
               setIsAddOpen(true);
             }}
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
           >
-            <Plus size={16} />
+            <Plus />
             {t.addMembers}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -168,10 +169,10 @@ export default function DepartmentProjectMembersClient({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
-        <div className="border-b bg-slate-50 px-5 py-4">
-          <h3 className="text-sm font-bold text-slate-800">{t.currentMembers}</h3>
-          <p className="mt-1 text-xs text-slate-500">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+        <div className="border-b bg-muted/50 px-5 py-4">
+          <h3 className="text-sm font-bold text-foreground">{t.currentMembers}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
             {project.ownerId
               ? `${t.owner}: ${
                   displayMember(
@@ -186,7 +187,7 @@ export default function DepartmentProjectMembersClient({
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="border-b bg-white text-xs font-semibold uppercase text-slate-500">
+            <thead className="border-b bg-muted/35 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 <th className="px-5 py-4">{locale === "zh" ? "姓名" : "Name"}</th>
                 <th className="px-5 py-4">{locale === "zh" ? "邮箱" : "Email"}</th>
@@ -194,7 +195,7 @@ export default function DepartmentProjectMembersClient({
                 <th className="w-56 px-5 py-4">{locale === "zh" ? "操作" : "Actions"}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y">
               {paginatedProjectMembers.map((member) => {
                 const isOwner = member.userId === project.ownerId;
                 return (
@@ -203,40 +204,42 @@ export default function DepartmentProjectMembersClient({
                     onClick={() => {
                       if (canManage && !isPending && !isOwner) handleSetOwner(member.userId);
                     }}
-                    className={`transition-colors ${canManage && !isOwner && !isPending ? "cursor-pointer hover:bg-slate-50/70" : ""}`}
+                    className={`transition-colors ${canManage && !isOwner && !isPending ? "cursor-pointer hover:bg-muted/45" : ""}`}
                   >
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                      <div className="flex items-center gap-1.5 font-semibold text-foreground">
                         <span>{displayMember(member)}</span>
                         {isOwner ? <Crown size={14} className="text-amber-500" /> : null}
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-slate-600">{member.userEmail}</td>
+                    <td className="px-5 py-3.5 text-muted-foreground">{member.userEmail}</td>
                     <td className="px-5 py-3.5">
-                      <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                      <Badge variant={isOwner ? "default" : "secondary"}>
                         {isOwner ? t.owner : t.member}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="px-5 py-3.5">
                       {canManage ? (
                         <div className="flex items-center gap-2">
                           {!isOwner ? (
-                            <span className="rounded-md border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-600">
+                            <Badge variant="outline" className="text-primary">
                               {t.setOwner}
-                            </span>
+                            </Badge>
                           ) : null}
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="xs"
                             disabled={isPending}
                             onClick={(event) => {
                               event.stopPropagation();
                               handleRemoveMember(member.userId);
                             }}
-                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                            className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 />
                             {t.remove}
-                          </button>
+                          </Button>
                         </div>
                       ) : null}
                     </td>
@@ -245,7 +248,7 @@ export default function DepartmentProjectMembersClient({
               })}
               {projectMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-16 text-center text-slate-500">
+                  <td colSpan={4} className="px-5 py-16 text-center text-muted-foreground">
                     {t.emptyMembers}
                   </td>
                 </tr>

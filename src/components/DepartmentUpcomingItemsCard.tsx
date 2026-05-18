@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CalendarDays, Check, Link2 } from "lucide-react";
 
 import { setReminderCompleted } from "@/app/actions/reminders";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type {
   DepartmentReminderIssueOption,
   DepartmentReminderScopeOption,
@@ -166,76 +168,77 @@ export default function DepartmentUpcomingItemsCard({
   };
 
   return (
-    <div className="rounded-2xl border bg-white p-6 shadow-sm">
+    <div className="rounded-2xl border bg-background p-6 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <CalendarDays size={18} className="text-violet-600" />
-          <h3 className="text-lg font-semibold text-slate-900">{t.title}</h3>
+          <CalendarDays size={18} className="text-primary" />
+          <h3 className="text-lg font-semibold text-foreground">{t.title}</h3>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/departments/${departmentId}/items`}
-            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            {t.allItems}
-          </Link>
+          <Button asChild variant="outline">
+            <Link href={`/departments/${departmentId}/items`}>{t.allItems}</Link>
+          </Button>
         </div>
       </div>
 
       {error ? <div className="mb-3 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div> : null}
 
       {items.length === 0 ? (
-        <p className="text-sm text-slate-500">{t.empty}</p>
+        <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          {t.empty}
+        </div>
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
-            <div key={`${item.kind}-${item.id}`} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <div key={`${item.kind}-${item.id}`} className="rounded-xl border bg-muted/35 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     {item.isOverdue ? <AlertTriangle size={14} className="text-red-500" /> : null}
-                    <span className="text-xs font-semibold uppercase text-slate-400">{getDayLabel(item.date, locale)}</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">{getDayLabel(item.date, locale)}</span>
+                    <Badge variant="secondary">
                       {itemTypeLabel(item.itemType, locale)}
-                    </span>
+                    </Badge>
                     <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${priorityClass(item.priority)}`}>
                       {priorityLabel(item.priority, locale)}
                     </span>
                     {item.isImportant ? (
-                      <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                      <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
                         {t.important}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                    <Badge variant="outline">
                       {item.scopeLabel}
-                    </span>
+                    </Badge>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {item.link ? (
-                      <Link href={item.link} className="break-words font-semibold text-slate-900 hover:text-blue-700">
+                      <Link href={item.link} className="break-words font-semibold text-foreground hover:text-primary">
                         {item.issueKey ? `${item.issueKey} ${item.title}` : item.title}
                       </Link>
                     ) : (
-                      <h4 className="break-words font-semibold text-slate-900">{item.title}</h4>
+                      <h4 className="break-words font-semibold text-foreground">{item.title}</h4>
                     )}
-                    {item.link ? <Link2 size={13} className="text-slate-400" /> : null}
+                    {item.link ? <Link2 size={13} className="text-muted-foreground" /> : null}
                   </div>
-                  {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.content}</p> : null}
-                  <p className="mt-3 text-xs text-slate-400">
+                  {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{item.content}</p> : null}
+                  <p className="mt-3 text-xs text-muted-foreground">
                     {formatItemDate(item, locale)}
                     {item.projectKey ? ` · ${item.projectKey}` : ""}
                   </p>
                 </div>
                 {item.canComplete ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     disabled={isPending}
                     onClick={() => handleComplete(item)}
-                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50"
+                    className="shrink-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                   >
-                    <Check size={13} />
+                    <Check />
                     {t.done}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

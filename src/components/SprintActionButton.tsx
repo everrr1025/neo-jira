@@ -3,6 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import { AlertTriangle, Loader2, MoreHorizontal, RotateCcw, Trash2, Pencil } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
 import { EditSprintModal } from "./EditSprintModal";
@@ -119,214 +124,180 @@ export function SprintActionButton({
     <>
       <div className="relative flex items-center gap-2">
         {status === "PLANNED" && (
-          <button
+          <Button
             type="button"
             disabled={isPending}
             onClick={() => runAction(() => startSprint(sprintId, locale))}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            {isPending && <Loader2 size={16} className="animate-spin" />}
+            {isPending ? <Loader2 className="animate-spin" /> : null}
             {text.startSprint}
-          </button>
+          </Button>
         )}
 
         {status === "ACTIVE" && (
-          <button
+          <Button
             type="button"
             disabled={isPending}
             onClick={openCompleteDialog}
-            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
           >
-            {isPending && <Loader2 size={16} className="animate-spin" />}
+            {isPending ? <Loader2 className="animate-spin" /> : null}
             {text.completeSprint}
-          </button>
+          </Button>
         )}
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           disabled={isPending || isDeleting}
           onClick={() => setIsEditOpen(true)}
-          className="flex flex-row items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 sm:px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
           title={locale === "zh" ? "编辑" : "Edit Sprint"}
         >
-          <Pencil size={16} />
+          <Pencil />
           <span className="hidden sm:inline">{locale === "zh" ? "编辑" : "Edit Sprint"}</span>
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           disabled={isDeleting}
           onClick={() => setIsDeleteOpen(true)}
-          className="flex items-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+          className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
         >
-          {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+          {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
           {locale === "zh" ? "删除" : text.deleteSprint}
-        </button>
+        </Button>
 
         {status === "ACTIVE" && (
-          <button
-            type="button"
-            disabled={isPending || isDeleting}
-            onClick={() => setIsMenuOpen((open) => !open)}
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
-            title={text.moreActions}
-          >
-            {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}
-          </button>
-        )}
-
-        {isMenuOpen && (
-          <>
-            <button
-              type="button"
-              aria-label={text.moreActions}
-              className="fixed inset-0 z-30 cursor-default bg-transparent"
-              onClick={() => setIsMenuOpen(false)}
-            />
-            <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-md border border-slate-200 bg-white p-1.5 shadow-xl">
-              {status === "ACTIVE" && (
-                <button
-                  type="button"
-                  onClick={() => runAction(() => reopenSprint(sprintId))}
-                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-                >
-                  <RotateCcw size={15} />
-                  {text.moveBackToPlanned}
-                </button>
-              )}
-            </div>
-          </>
+          <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="icon" disabled={isPending || isDeleting} title={text.moreActions}>
+                {isDeleting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => runAction(() => reopenSprint(sprintId))}>
+                <RotateCcw />
+                {text.moveBackToPlanned}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
-      {isCompleteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-slate-100 px-6 py-4">
-              <h2 className="text-xl font-bold text-slate-800">{text.completeTitle}</h2>
-              <p className="mt-1 text-sm text-slate-500">{text.completeDescription}</p>
+      <Dialog open={isCompleteOpen} onOpenChange={(open) => (!open && !isPending ? setIsCompleteOpen(false) : null)}>
+        <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle>{text.completeTitle}</DialogTitle>
+            <p className="text-sm text-muted-foreground">{text.completeDescription}</p>
+          </DialogHeader>
+
+          <div className="space-y-4 px-6 py-5">
+            <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm font-medium text-foreground">
+              {text.unfinishedCount}: {unfinishedIssueCount}
             </div>
 
-            <div className="space-y-4 px-6 py-5">
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
-                {text.unfinishedCount}: {unfinishedIssueCount}
-              </div>
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">{text.moveUnfinishedTo}</p>
+              <Label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors hover:bg-muted/50">
+                <input
+                  type="radio"
+                  name="move-target"
+                  checked={moveTarget === "BACKLOG"}
+                  onChange={() => setMoveTarget("BACKLOG")}
+                  className="mt-1 h-4 w-4 border-input text-primary focus:ring-ring"
+                />
+                <span className="text-sm font-medium text-foreground">{text.moveToBacklog}</span>
+              </Label>
 
-              <div className="space-y-3">
-                <p className="text-sm font-semibold text-slate-700">{text.moveUnfinishedTo}</p>
-                <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 p-3 transition-colors hover:bg-slate-50">
-                  <input
-                    type="radio"
-                    name="move-target"
-                    checked={moveTarget === "BACKLOG"}
-                    onChange={() => setMoveTarget("BACKLOG")}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span className="text-sm font-medium text-slate-700">{text.moveToBacklog}</span>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 rounded-md border p-3 transition-colors ${
-                    plannedSprints.length > 0
-                      ? "cursor-pointer border-slate-200 hover:bg-slate-50"
-                      : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="move-target"
-                    checked={moveTarget === "SPRINT"}
-                    onChange={() => plannedSprints.length > 0 && setMoveTarget("SPRINT")}
-                    disabled={plannedSprints.length === 0}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-sm font-medium text-slate-700">{text.moveToSprint}</span>
-                    {plannedSprints.length > 0 ? (
-                      <select
-                        value={targetSprintId}
-                        onChange={(event) => {
-                          setTargetSprintId(event.target.value);
-                          setMoveTarget("SPRINT");
-                        }}
-                        className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                      >
+              <Label
+                className={`flex items-start gap-3 rounded-md border p-3 transition-colors ${
+                  plannedSprints.length > 0
+                    ? "cursor-pointer hover:bg-muted/50"
+                    : "cursor-not-allowed bg-muted/50 text-muted-foreground"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="move-target"
+                  checked={moveTarget === "SPRINT"}
+                  onChange={() => plannedSprints.length > 0 && setMoveTarget("SPRINT")}
+                  disabled={plannedSprints.length === 0}
+                  className="mt-1 h-4 w-4 border-input text-primary focus:ring-ring"
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-foreground">{text.moveToSprint}</span>
+                  {plannedSprints.length > 0 ? (
+                    <Select
+                      value={targetSprintId}
+                      onValueChange={(value) => {
+                        setTargetSprintId(value);
+                        setMoveTarget("SPRINT");
+                      }}
+                    >
+                      <SelectTrigger className="mt-2 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
                         {plannedSprints.map((sprint) => (
-                          <option key={sprint.id} value={sprint.id}>
+                          <SelectItem key={sprint.id} value={sprint.id}>
                             {sprint.name} · {formatDate(sprint.startDate)} - {formatDate(sprint.endDate)}
                             {sprint.recommended ? ` · ${text.recommended}` : ""}
-                          </option>
+                          </SelectItem>
                         ))}
-                      </select>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-400">{text.noPlannedSprints}</p>
-                    )}
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsCompleteOpen(false)}
-                disabled={isPending}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                {text.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={() => completeWithTarget()}
-                disabled={isPending || (moveTarget === "SPRINT" && !targetSprintId)}
-                className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isPending && <Loader2 size={16} className="animate-spin" />}
-                {isPending ? text.completing : text.confirmComplete}
-              </button>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">{text.noPlannedSprints}</p>
+                  )}
+                </div>
+              </Label>
             </div>
           </div>
-        </div>
-      )}
 
-      {isDeleteOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
-              <h2 className="flex items-center gap-2 text-xl font-bold text-rose-600">
-                <AlertTriangle size={24} />
-                {locale === "zh" ? "删除迭代" : text.deleteSprint}
-              </h2>
-            </div>
-            <div className="space-y-4 px-6 py-5">
-              <p className="text-sm font-medium text-slate-700">
-                {locale === "zh"
-                  ? "确定删除此迭代吗？操作不可撤销，删除迭代不会删除迭代内的 issue，只会取消关联。"
-                  : "Are you sure you want to delete this sprint? This cannot be undone. Issues will be kept and unlinked."}
-              </p>
-            </div>
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsDeleteOpen(false)}
-                disabled={isDeleting}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                {locale === "zh" ? "取消" : "Cancel"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={isDeleting}
-                className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : null}
-                {locale === "zh" ? "删除迭代" : text.deleteSprint}
-              </button>
-            </div>
+          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setIsCompleteOpen(false)} disabled={isPending}>
+              {text.cancel}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => completeWithTarget()}
+              disabled={isPending || (moveTarget === "SPRINT" && !targetSprintId)}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {isPending ? text.completing : text.confirmComplete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteOpen} onOpenChange={(open) => (!open && !isDeleting ? setIsDeleteOpen(false) : null)}>
+        <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-destructive/5 px-6 py-4">
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="size-5" />
+              {locale === "zh" ? "删除迭代" : text.deleteSprint}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <p className="text-sm font-medium text-foreground">
+              {locale === "zh"
+                ? "确定删除此迭代吗？操作不可撤销，删除迭代不会删除迭代内的 issue，只会取消关联。"
+                : "Are you sure you want to delete this sprint? This cannot be undone. Issues will be kept and unlinked."}
+            </p>
           </div>
-        </div>
-      ) : null}
+          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setIsDeleteOpen(false)} disabled={isDeleting}>
+              {locale === "zh" ? "取消" : "Cancel"}
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void handleDelete()} disabled={isDeleting}>
+              {isDeleting ? <Loader2 className="animate-spin" /> : null}
+              {locale === "zh" ? "删除迭代" : text.deleteSprint}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <EditSprintModal 
         key={`${sprintData.id}-${isEditOpen ? "open" : "closed"}`}

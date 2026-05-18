@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
-import { ChevronDown, ListFilter, Search } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
 
 export type FilterOption = {
   value: string;
@@ -48,30 +50,31 @@ export function MultiFilter({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+      <summary className="inline-flex h-9 cursor-pointer select-none list-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
         <span className="truncate max-w-40">{buttonText}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+        {selectedValues.length > 1 ? <Badge variant="secondary">{selectedValues.length}</Badge> : null}
+        <ChevronDown size={14} className="text-muted-foreground" />
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl space-y-1">
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-50 cursor-pointer"
+            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
           >
             <input
               type="checkbox"
               checked={selectedValues.includes(option.value)}
               onChange={() => onToggle(option.value)}
-              className="h-4 w-4"
+              className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
             />
-            <span className="text-slate-700">{option.label}</span>
+            <span>{option.label}</span>
           </label>
         ))}
         {selectedValues.length > 0 && (
           <button
             type="button"
             onClick={onClear}
-            className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+            className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
           >
             {clearText}
           </button>
@@ -118,14 +121,14 @@ export function SingleFilter({
       <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
         {renderSummary(selectedOption?.label || "")}
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl space-y-1">
         {options.map((option) => (
           <button
             type="button"
             key={option.value}
             onClick={() => handleSelect(option.value)}
             className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-              option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
             }`}
           >
             {option.label}
@@ -231,7 +234,7 @@ export function InlineSelect({
       </summary>
       {isOpen && (
         <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl"
           style={{
             top: menuPosition.top,
             bottom: menuPosition.bottom,
@@ -245,7 +248,7 @@ export function InlineSelect({
               key={option.value}
               onClick={() => handleSelect(option.value)}
               className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+                option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
               }`}
             >
               <span className="block truncate">{option.label}</span>
@@ -288,11 +291,11 @@ export function ColumnVisibilityMenu<ColumnId extends string>({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
+      <summary className="inline-flex h-9 cursor-pointer select-none list-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
         <span>{buttonLabel}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+        <ChevronDown size={14} className="text-muted-foreground" />
       </summary>
-      <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute right-0 z-30 mt-2 w-56 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl space-y-1">
         {columns.map((column) => {
           const isChecked = visibleColumnIds.includes(column.id);
           const isDisabled = isChecked && visibleCount === 1;
@@ -300,8 +303,8 @@ export function ColumnVisibilityMenu<ColumnId extends string>({
           return (
             <label
               key={column.id}
-              className={`flex items-center gap-2 px-2 py-1.5 text-sm rounded-md ${
-                isDisabled ? "cursor-not-allowed text-slate-400" : "hover:bg-slate-50 cursor-pointer"
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
               }`}
             >
               <input
@@ -309,7 +312,7 @@ export function ColumnVisibilityMenu<ColumnId extends string>({
                 checked={isChecked}
                 disabled={isDisabled}
                 onChange={() => onToggle(column.id)}
-                className="h-4 w-4"
+                className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
               />
               <span>{column.label}</span>
             </label>
@@ -318,7 +321,7 @@ export function ColumnVisibilityMenu<ColumnId extends string>({
         <button
           type="button"
           onClick={onReset}
-          className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+          className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
         >
           {resetLabel}
         </button>

@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { getPriorityLabel, getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
 import {
   getWorkflowStatusBadgeClass,
@@ -65,11 +67,11 @@ export default function DashboardIssueTabsCard({
         : "hover:border-rose-300 hover:bg-rose-50/40";
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-      <div className="flex flex-col gap-4 border-b border-slate-100 pb-4">
+    <section className="rounded-3xl border bg-background p-5 shadow-sm md:p-6">
+      <div className="flex flex-col gap-4 border-b pb-4">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold text-slate-900">{currentTab.title}</h3>
-          <Link href={currentTab.href} className="text-sm font-medium text-blue-600 hover:underline">
+          <h3 className="text-xl font-semibold text-foreground">{currentTab.title}</h3>
+          <Link href={currentTab.href} className="text-sm font-medium text-primary hover:underline">
             {translations.dashboard.viewAll}
           </Link>
         </div>
@@ -78,25 +80,19 @@ export default function DashboardIssueTabsCard({
           {tabs.map((tab) => {
             const isActive = tab.id === currentTab.id;
             return (
-              <button
+              <Button
                 key={tab.id}
                 type="button"
+                variant={isActive ? "default" : "outline"}
+                size="sm"
                 onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                }`}
+                className="rounded-full"
               >
                 <span>{tab.title}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
-                  }`}
-                >
+                <Badge variant={isActive ? "secondary" : "outline"} className={isActive ? "bg-white/20 text-white" : ""}>
                   {tab.count}
-                </span>
-              </button>
+                </Badge>
+              </Button>
             );
           })}
         </div>
@@ -108,19 +104,21 @@ export default function DashboardIssueTabsCard({
             <Link
               key={issue.id}
               href={`/issues/${issue.id}`}
-              className={`block rounded-xl border border-slate-200 p-3 transition-colors ${accentClass}`}
+              className={`block rounded-xl border p-3 transition-colors ${accentClass}`}
             >
               <div className="flex items-start justify-between gap-3">
-                <span className="text-xs font-semibold text-slate-500">{issue.key}</span>
+                <span className="text-xs font-semibold text-muted-foreground">{issue.key}</span>
                 <span className={getIssueMetaBadge(currentTab.meta, issue, workflowStatusByProject)}>
                   {getIssueMetaText(currentTab.meta, issue, locale, workflowStatusByProject)}
                 </span>
               </div>
-              <h4 className="mt-2 text-sm font-medium text-slate-800 line-clamp-2">{issue.title}</h4>
+              <h4 className="mt-2 text-sm font-medium text-foreground line-clamp-2">{issue.title}</h4>
             </Link>
           ))
         ) : (
-          <div className="py-10 text-center text-sm text-slate-400">{currentTab.emptyText}</div>
+          <div className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">
+            {currentTab.emptyText}
+          </div>
         )}
       </div>
     </section>

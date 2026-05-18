@@ -27,6 +27,8 @@ import {
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
@@ -1197,50 +1199,50 @@ export default function DepartmentManageClient({
   return (
     <div className="space-y-6">
       {mode === "dashboard" ? (
-        <div className="space-y-6 text-[#18181b]">
+        <div className="space-y-6 text-foreground">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div className="rounded-lg border border-[#e2e8f0] bg-white p-5 md:col-span-2">
+            <div className="rounded-xl border bg-background p-5 shadow-sm md:col-span-2">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold leading-5 text-[#09090b]">{department.name}</h2>
-                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-[#71717a]">{department.description || t.noDescription}</p>
+                  <h2 className="text-sm font-semibold leading-5 text-foreground">{department.name}</h2>
+                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{department.description || t.noDescription}</p>
                 </div>
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-[#e2e8f0] bg-white text-[#3f3f46]">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border bg-muted/45 text-muted-foreground">
                   <Building2 size={24} />
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#18181b]">{department.key}</span>
-                <span className="rounded bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#18181b]">
+                <Badge variant="secondary">{department.key}</Badge>
+                <Badge variant="outline">
                   {t.head}: {department.headName || t.unassignedOwner}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex items-center rounded-xl border bg-background p-5 shadow-sm">
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
+                <span>
+                  {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.members.length}</span>
+                </span>
+                <span>
+                  {t.projects} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.projects.length}</span>
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center rounded-lg border border-[#e2e8f0] bg-white p-5">
-              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm font-medium text-[#71717a]">
-                <span>
-                  {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.members.length}</span>
-                </span>
-                <span>
-                  {t.projects} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-[#09090b]">{department.projects.length}</span>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-center rounded-lg border border-[#e2e8f0] bg-white p-5">
-              <div className="text-right text-lg font-semibold leading-6 text-[#09090b]">{todayLabel}</div>
+            <div className="flex flex-col justify-center rounded-xl border bg-background p-5 shadow-sm">
+              <div className="text-right text-lg font-semibold leading-6 text-foreground">{todayLabel}</div>
               <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
-                <div className="min-w-0 truncate text-base font-medium leading-6 text-[#09090b]">
+                <div className="min-w-0 truncate text-base font-medium leading-6 text-foreground">
                   {displayMember(currentDepartmentMember || { userName: null, userEmail: t.currentUser })}
                 </div>
-                <div className="flex shrink-0 items-center justify-end gap-2 text-xs font-medium text-[#3f3f46]">
-                  <span className="rounded-md bg-[#f4f4f5] px-2 py-1">
+                <div className="flex shrink-0 items-center justify-end gap-2">
+                  <Badge variant="secondary">
                     {getDepartmentRoleText(currentDepartmentMember?.role, t)}
-                  </span>
-                  <span className="rounded-md bg-[#f4f4f5] px-2 py-1">
+                  </Badge>
+                  <Badge variant="outline">
                     {locale === "zh" ? `参与 ${myProjects.length} 个项目` : `${myProjects.length} projects`}
-                  </span>
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -1248,29 +1250,27 @@ export default function DepartmentManageClient({
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-1">
-              <div className="flex flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
-                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
-                  <h2 className="text-sm font-semibold text-[#18181b]">{t.mySchedule}</h2>
-                  <div className="flex rounded-md bg-[#e2e8f0] p-0.5">
+              <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                  <h2 className="text-sm font-semibold text-foreground">{t.mySchedule}</h2>
+                  <div className="flex rounded-md bg-muted p-0.5">
                     {(["today", "week"] as const).map((view) => (
-                      <button
+                      <Button
                         key={view}
                         type="button"
+                        variant={scheduleView === view ? "secondary" : "ghost"}
+                        size="sm"
                         onClick={() => setScheduleView(view)}
-                        className={`h-7 rounded-md px-3 text-xs font-medium transition-colors ${
-                          scheduleView === view
-                            ? "bg-white text-[#18181b] ring-1 ring-[#e2e8f0]"
-                            : "text-[#71717a] hover:text-[#18181b]"
-                        }`}
+                        className="h-7 px-3 text-xs"
                       >
                         {view === "today" ? t.today : t.thisWeek}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </div>
                 <div className={`min-h-0 flex-1 p-2 ${scheduleView === "week" ? "max-h-[280px] overflow-y-auto" : "overflow-y-auto"}`}>
                   {dashboardScheduleItems.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-sm text-[#71717a]">{t.noSchedule}</div>
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t.noSchedule}</div>
                   ) : (
                     <div className="space-y-0.5">
                       {dashboardScheduleItems.map((item) => {
@@ -1286,26 +1286,26 @@ export default function DepartmentManageClient({
                             href={itemHref}
                             target={isScheduleEvent ? "_blank" : undefined}
                             rel={isScheduleEvent ? "noreferrer" : undefined}
-                            className={`flex min-w-0 items-center gap-3 rounded px-2 py-2 transition-colors hover:bg-[#f4f4f5] ${
-                              item.isOverdue && scheduleView === "today" ? "bg-[#fef2f2]/70" : ""
+                            className={`flex min-w-0 items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/60 ${
+                              item.isOverdue && scheduleView === "today" ? "bg-destructive/10" : ""
                             }`}
                           >
                             {scheduleView === "today" ? (
                               <span className={`h-2 w-2 shrink-0 rounded-full ${scheduleAccentClass(item)}`} />
                             ) : (
-                              <span className="w-10 shrink-0 rounded-lg border border-[#e2e8f0] bg-[#f4f4f5] py-0.5 text-center">
-                                <span className="block text-[10px] font-semibold uppercase leading-3 text-[#71717a]">{scheduleDay.weekday}</span>
-                                <span className="block text-sm font-semibold leading-4 text-[#18181b]">{scheduleDay.day}</span>
+                              <span className="w-10 shrink-0 rounded-lg border bg-muted/45 py-0.5 text-center">
+                                <span className="block text-[10px] font-semibold uppercase leading-3 text-muted-foreground">{scheduleDay.weekday}</span>
+                                <span className="block text-sm font-semibold leading-4 text-foreground">{scheduleDay.day}</span>
                               </span>
                             )}
-                            <span className={`w-14 shrink-0 text-xs font-medium ${item.isOverdue ? "text-[#ba1a1a]" : "text-[#71717a]"}`}>
+                            <span className={`w-14 shrink-0 text-xs font-medium ${item.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                               {formatScheduleTime(item, locale, t)}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#18181b]">{title}</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{title}</span>
                             {item.projectKey ? (
-                              <span className="hidden shrink-0 rounded bg-[#f4f4f5] px-2 py-0.5 text-[11px] font-semibold text-[#09090b] sm:inline">
+                              <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
                                 {item.projectKey}
-                              </span>
+                              </Badge>
                             ) : null}
                           </Link>
                         );
@@ -1315,21 +1315,21 @@ export default function DepartmentManageClient({
                 </div>
               </div>
 
-              <div className="flex flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
-                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
-                  <h2 className="text-sm font-semibold text-[#18181b]">{t.latestAnnouncements}</h2>
+              <div className="flex flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                  <h2 className="text-sm font-semibold text-foreground">{t.latestAnnouncements}</h2>
                   <Link
                     href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex rounded-md px-2 py-1 text-xs font-semibold text-[#71717a] hover:bg-[#f4f4f5] hover:text-[#09090b]"
+                    className="inline-flex rounded-md px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     {t.allAnnouncements}
                   </Link>
                 </div>
                 <div className="p-0">
                   {notifications.length === 0 ? (
-                    <div className="p-6 text-sm text-[#71717a]">{t.noAnnouncements}</div>
+                    <div className="p-6 text-sm text-muted-foreground">{t.noAnnouncements}</div>
                   ) : (
                     <div>
                       {notifications.map((notification, index) => {
@@ -1340,21 +1340,21 @@ export default function DepartmentManageClient({
                             href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT&selected=${notification.id}`}
                             target="_blank"
                             rel="noreferrer"
-                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-white ${
-                              index < notifications.length - 1 ? "border-b border-[#f4f4f5]" : ""
+                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/45 ${
+                              index < notifications.length - 1 ? "border-b" : ""
                             }`}
                           >
                             <span
                               className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
                                 isRead
-                                  ? "border border-[#e2e8f0] bg-[#f4f4f5] text-[#3f3f46]"
-                                  : "bg-[#09090b] text-white"
+                                  ? "border bg-muted text-muted-foreground"
+                                  : "bg-primary text-primary-foreground"
                               }`}
                             >
                               {getNotificationLevelText(notification.level, t)}
                             </span>
-                            <span className="min-w-0 flex-1 text-sm leading-5 text-[#18181b]">{notification.title}</span>
-                            <span className="shrink-0 whitespace-nowrap text-[10px] text-[#a1a1aa]">
+                            <span className="min-w-0 flex-1 text-sm leading-5 text-foreground">{notification.title}</span>
+                            <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
                               {formatRelativeTime(notification.createdAt, locale)}
                             </span>
                           </Link>
@@ -1367,10 +1367,10 @@ export default function DepartmentManageClient({
             </div>
 
             <div className="lg:col-span-2">
-              <div className="flex h-[520px] flex-col overflow-hidden rounded-lg border border-[#e2e8f0] bg-white">
-                <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white px-4 py-3">
+              <div className="flex h-[520px] flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+                <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-semibold text-[#18181b]">{t.myProjects}</h2>
+                    <h2 className="text-sm font-semibold text-foreground">{t.myProjects}</h2>
                     {myProjects.length > 0 ? (
                       <InlineSelect
                         value={selectedMyProject?.id || myProjects[0]?.id || ""}
@@ -1378,44 +1378,44 @@ export default function DepartmentManageClient({
                         onChange={handleMyProjectChange}
                         className="relative max-w-[240px]"
                         renderSummary={(label) => (
-                          <span className="inline-flex h-8 max-w-[240px] items-center gap-1 rounded-md border border-[#e2e8f0] bg-white px-2 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f4f4f5]">
+                          <span className="inline-flex h-8 max-w-[240px] items-center gap-1 rounded-md border bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent">
                             <span className="min-w-0 truncate">{label}</span>
-                            <ChevronDown size={14} className="shrink-0 text-[#71717a]" />
+                            <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
                           </span>
                         )}
                         matchTriggerWidth={false}
                       />
                     ) : null}
                   </div>
-                  <div className="shrink-0 text-right text-xs text-[#71717a]">
-                    <span className="font-medium text-[#18181b]">
+                  <div className="shrink-0 text-right text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
                       {selectedMyProject?.activeIteration?.name || t.noActiveIteration}
                     </span>
                   </div>
                 </div>
                 {selectedMyProject ? (
                   <>
-                    <div className="border-b border-[#e2e8f0] bg-white p-4">
+                    <div className="border-b bg-background p-4">
                       <div className="mb-2 flex items-end justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-[#09090b]">{t.progress}</p>
-                          <p className="mt-0.5 text-xs text-[#71717a]">
+                          <p className="text-sm font-medium text-foreground">{t.progress}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
                             {selectedMyProject.activeIteration
                               ? `${formatDateRange(selectedMyProject.activeIteration.startDate, selectedMyProject.activeIteration.endDate, locale)} · ${getDaysLeft(selectedMyProject.activeIteration.endDate, locale)}`
                               : t.noActiveIteration}
                           </p>
                         </div>
-                        <span className="text-sm font-semibold text-[#09090b]">{selectedMyProjectProgress}%</span>
+                        <span className="text-sm font-semibold text-foreground">{selectedMyProjectProgress}%</span>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-[#e4e4e7]">
-                        <div className="h-full rounded-full bg-[#09090b]" style={{ width: `${selectedMyProjectProgress}%` }} />
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${selectedMyProjectProgress}%` }} />
                       </div>
                     </div>
 
                     <div className="flex min-h-0 flex-1 flex-col space-y-3 p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <h3 className="text-sm font-semibold text-[#18181b]">{t.unresolved}</h3>
-                        <span className="text-xs font-medium text-[#71717a]">{selectedMyProject.priorityIssues.length}</span>
+                        <h3 className="text-sm font-semibold text-foreground">{t.unresolved}</h3>
+                        <Badge variant="secondary">{selectedMyProject.priorityIssues.length}</Badge>
                       </div>
                       {selectedMyProject.priorityIssues.length > 0 ? (
                         <div className="min-h-0 max-h-[300px] space-y-2 overflow-y-auto pr-1">
@@ -1423,11 +1423,11 @@ export default function DepartmentManageClient({
                             <Link
                               key={issue.id}
                               href={`/issues/${issue.id}`}
-                              className="flex items-center justify-between gap-3 rounded-md border border-[#e2e8f0] bg-white px-3 py-2 transition-colors hover:border-[#d4d4d8] hover:bg-[#fafafa]"
+                              className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 transition-colors hover:bg-muted/45"
                             >
                               <div className="min-w-0">
-                                <div className="truncate text-sm font-medium leading-5 text-[#18181b]">{issue.title}</div>
-                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium text-[#71717a]">
+                                <div className="truncate text-sm font-medium leading-5 text-foreground">{issue.title}</div>
+                                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium text-muted-foreground">
                                   <span>{issue.key}</span>
                                   <span className="truncate">{t.assignee}: {issue.assigneeName}</span>
                                   <span>{t.dueDate}: {formatIssueDueDate(issue.dueDate, locale, t.noDueDate)}</span>
@@ -1436,8 +1436,8 @@ export default function DepartmentManageClient({
                               <span
                                 className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium ${
                                   issue.priority === "URGENT"
-                                    ? "bg-[#fef2f2] text-[#ba1a1a]"
-                                    : "bg-[#fff7ed] text-[#c2410c]"
+                                    ? "bg-destructive/10 text-destructive"
+                                    : "bg-amber-50 text-amber-700"
                                 }`}
                               >
                                 {issue.priority === "URGENT" ? t.urgent : t.high}
@@ -1446,14 +1446,14 @@ export default function DepartmentManageClient({
                           ))}
                         </div>
                       ) : (
-                        <div className="rounded-md border border-dashed border-[#e2e8f0] px-3 py-8 text-center text-sm text-[#71717a]">
+                        <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                           {t.noPriorityIssues}
                         </div>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="p-6 text-sm text-[#71717a]">{t.noMyProjects}</div>
+                  <div className="p-6 text-sm text-muted-foreground">{t.noMyProjects}</div>
                 )}
               </div>
             </div>
