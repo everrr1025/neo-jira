@@ -29,6 +29,24 @@ import {
 } from "@/app/actions/announcements";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
@@ -554,55 +572,61 @@ function PaginationFooter({
   const of = locale === "zh" ? "共" : "of";
   const perPage = locale === "zh" ? "每页" : "Per page";
   const pageLabel = locale === "zh" ? "第" : "Page";
-  const pageSizeOptions = PAGE_SIZE_OPTIONS.map((option) => ({ value: String(option), label: String(option) }));
 
   return (
-    <div className="border-t bg-slate-50 px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-      <div className="font-medium text-slate-500">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+      <div className="font-medium text-muted-foreground">
         {showing}
-        <span className="font-bold text-slate-800"> {rangeStart} </span>
+        <span className="font-bold text-foreground"> {rangeStart} </span>
         {to}
-        <span className="font-bold text-slate-800"> {rangeEnd} </span>
+        <span className="font-bold text-foreground"> {rangeEnd} </span>
         {of}
-        <span className="font-bold text-slate-800"> {totalItems} </span>
+        <span className="font-bold text-foreground"> {totalItems} </span>
         {itemLabel}
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 text-slate-500">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2 text-muted-foreground">
           <span>{perPage}</span>
-          <InlineSelect
+          <Select
             value={String(pageSize)}
-            options={pageSizeOptions}
-            onChange={(value) => onPageSizeChange(Number(value))}
-            renderSummary={(label) => (
-              <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                {label}
-              </span>
-            )}
-          />
+            onValueChange={(value) => onPageSizeChange(Number(value))}
+          >
+            <SelectTrigger size="sm" className="w-20 bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => onPageChange(Math.max(1, page - 1))}
             disabled={page === 1}
-            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <ChevronLeft size={18} />
-          </button>
-          <span className="px-2 font-medium leading-none text-slate-700">
+          </Button>
+          <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
             {locale === "zh" ? `${pageLabel} ${page} / ${totalPages || 1} 页` : `${pageLabel} ${page} of ${totalPages || 1}`}
           </span>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             onClick={() => onPageChange(Math.min(totalPages || 1, page + 1))}
             disabled={page === totalPages || totalPages === 0}
-            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <ChevronRight size={18} />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -1014,14 +1038,15 @@ export default function DepartmentManageClient({
   const renderProjectCell = (project: DepartmentWorkspaceProject, column: ProjectColumnConfig) => {
     if (column.id === "name") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5">
+        <td key={column.id} className="overflow-hidden px-5 py-4">
           <div className="min-w-0">
             <Link
               href={`/projects/select?projectId=${project.id}`}
-              className="block truncate font-semibold text-slate-800 transition-colors hover:text-emerald-700"
+              className="block truncate font-semibold text-foreground transition-colors hover:text-primary"
             >
               {project.name}
             </Link>
+            <p className="mt-1 truncate text-xs text-muted-foreground">{project.description || t.noDescription}</p>
           </div>
         </td>
       );
@@ -1029,27 +1054,29 @@ export default function DepartmentManageClient({
 
     if (column.id === "key") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5">
-          <span className="block truncate font-mono text-xs text-slate-500">{project.key}</span>
+        <td key={column.id} className="overflow-hidden px-5 py-4">
+          <Badge variant="secondary" className="max-w-full font-mono">
+            <span className="truncate">{project.key}</span>
+          </Badge>
         </td>
       );
     }
 
     if (column.id === "description") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5 text-slate-600">
-          <div className="truncate">{project.description || t.noDescription}</div>
+        <td key={column.id} className="overflow-hidden px-5 py-4 text-muted-foreground">
+          <div className="truncate text-sm">{project.description || t.noDescription}</div>
         </td>
       );
     }
 
     if (column.id === "owner") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5">
+        <td key={column.id} className="overflow-hidden px-5 py-4">
           {project.ownerId ? (
-            <span className="block truncate font-medium text-slate-700">{project.ownerName}</span>
+            <span className="block truncate font-medium text-foreground">{project.ownerName}</span>
           ) : (
-            <span className="block truncate text-slate-400">{t.unassignedOwner}</span>
+            <span className="block truncate text-muted-foreground">{t.unassignedOwner}</span>
           )}
         </td>
       );
@@ -1057,41 +1084,37 @@ export default function DepartmentManageClient({
 
     if (column.id === "members") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5">
-          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+        <td key={column.id} className="overflow-hidden px-5 py-4">
+          <Badge variant="outline" className="max-w-full">
             {project.members.length} {t.members}
-          </span>
+          </Badge>
         </td>
       );
     }
 
     if (column.id === "createdAt") {
       return (
-        <td key={column.id} className="overflow-hidden px-5 py-3.5 text-xs font-medium text-slate-500">
+        <td key={column.id} className="overflow-hidden px-5 py-4 text-xs font-medium text-muted-foreground">
           <span className="block truncate">{new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}</span>
         </td>
       );
     }
 
     return (
-      <td key={column.id} className="overflow-hidden px-5 py-3.5">
+      <td key={column.id} className="overflow-hidden px-5 py-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <a
-            href={`/projects/select?projectId=${project.id}`}
-            className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
-          >
-            <span className="whitespace-nowrap">{t.viewProject}</span>
-          </a>
-          <Link
-            href={`/departments/${department.id}/projects/${project.id}/members`}
-            className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
-          >
-            <span className="whitespace-nowrap">{t.memberButton}</span>
-          </Link>
+          <Button asChild size="xs" variant="outline">
+            <Link href={`/projects/select?projectId=${project.id}`}>{t.viewProject}</Link>
+          </Button>
+          <Button asChild size="xs" variant="outline">
+            <Link href={`/departments/${department.id}/projects/${project.id}/members`}>{t.memberButton}</Link>
+          </Button>
           {canManageProjects ? (
             <>
-              <button
+              <Button
                 type="button"
+                size="xs"
+                variant="outline"
                 onClick={() => {
                   setEditingProject(project);
                   setEditProjectForm({
@@ -1103,23 +1126,24 @@ export default function DepartmentManageClient({
                   setIsEditProjectOpen(true);
                 }}
                 disabled={isPending}
-                className="inline-flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
               >
-                <span className="whitespace-nowrap">{locale === "zh" ? "编辑" : "Edit"}</span>
-              </button>
-              <button
+                {locale === "zh" ? "编辑" : "Edit"}
+              </Button>
+              <Button
                 type="button"
+                size="xs"
+                variant="outline"
                 onClick={() => {
                   setDeleteErrorMsg("");
                   setDeleteConfirmText("");
                   setDeletingProject(project);
                 }}
                 disabled={isPending}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 size={12} />
-                <span className="whitespace-nowrap">{t.deleteProject}</span>
-              </button>
+                {t.deleteProject}
+              </Button>
             </>
           ) : null}
         </div>
@@ -1571,10 +1595,15 @@ export default function DepartmentManageClient({
 
       {mode === "projects" ? (
         <div className="space-y-4">
-          <div className="flex min-h-9 items-center justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.projects}</h2>
+          <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">{t.projects}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {department.name} · {sortedProjects.length} {t.projects}
+              </p>
+            </div>
             {canManageProjects ? (
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   setPageErrorMsg("");
@@ -1582,18 +1611,17 @@ export default function DepartmentManageClient({
                   setNewProject({ name: "", key: "", description: "" });
                   setIsCreateProjectOpen(true);
                 }}
-                className="inline-flex h-9 items-center gap-2 rounded-md bg-[#09090b] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {t.createProject}
-              </button>
+              </Button>
             ) : null}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
               <table className="w-full table-fixed text-left text-sm">
-                <thead className="border-b bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     {projectColumns.map((column, index) => {
                       const showLeftLine =
@@ -1606,7 +1634,7 @@ export default function DepartmentManageClient({
                         <th
                           key={column.id}
                           className={`group/column relative select-none overflow-hidden py-4 transition-colors ${
-                            column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-slate-100 active:cursor-move"
+                            column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${isDragging ? "opacity-40" : ""}`}
                           style={{ width: `${(column.width / projectColumnsTotalWidth) * 100}%` }}
                           draggable={column.id !== "actions"}
@@ -1637,15 +1665,15 @@ export default function DepartmentManageClient({
                     })}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {paginatedProjects.map((project) => (
-                    <tr key={project.id} className="transition-colors hover:bg-slate-50/70">
+                    <tr key={project.id} className="transition-colors hover:bg-muted/40">
                       {projectColumns.map((column) => renderProjectCell(project, column))}
                     </tr>
                   ))}
                   {department.projects.length === 0 ? (
                     <tr>
-                      <td colSpan={projectColumns.length} className="px-5 py-16 text-center text-slate-500">
+                      <td colSpan={projectColumns.length} className="px-5 py-16 text-center text-muted-foreground">
                         {t.noProjects}
                       </td>
                     </tr>
@@ -1671,249 +1699,241 @@ export default function DepartmentManageClient({
           </div>
 
 
-          {isCreateProjectOpen ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                  <h2 className="text-xl font-bold text-slate-800">{t.createProject}</h2>
-                  <button
+          <Dialog
+            open={isCreateProjectOpen}
+            onOpenChange={(open) => {
+              setIsCreateProjectOpen(open);
+              if (!open) setCreateProjectErrorMsg("");
+            }}
+          >
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden p-0">
+              <form onSubmit={handleCreateProject} className="flex min-h-0 flex-col">
+                <DialogHeader className="border-b px-6 py-4">
+                  <DialogTitle>{t.createProject}</DialogTitle>
+                  <DialogDescription>
+                    {locale === "zh" ? "为当前部门创建一个新的项目空间。" : "Create a project space for this department."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                  {createProjectErrorMsg ? (
+                    <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                      {createProjectErrorMsg}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="create-project-name">
+                      {t.projectName} <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="create-project-name"
+                      required
+                      autoFocus
+                      value={newProject.name}
+                      onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}
+                      placeholder={t.projectNamePlaceholder}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="create-project-key">
+                      {t.projectKey} <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="create-project-key"
+                      required
+                      maxLength={10}
+                      value={newProject.key}
+                      onChange={(event) =>
+                        setNewProject((current) => ({ ...current, key: event.target.value.toUpperCase() }))
+                      }
+                      className="font-mono"
+                      placeholder={t.projectKeyPlaceholder}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="create-project-description">{t.projectDescription}</Label>
+                    <Textarea
+                      id="create-project-description"
+                      rows={5}
+                      value={newProject.description}
+                      onChange={(event) =>
+                        setNewProject((current) => ({ ...current, description: event.target.value }))
+                      }
+                      className="resize-none"
+                      placeholder={t.projectDescriptionPlaceholder}
+                    />
+                  </div>
+                </div>
+                <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => {
                       setIsCreateProjectOpen(false);
                       setCreateProjectErrorMsg("");
                     }}
-                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                    disabled={isPending}
                   >
-                    <X size={20} />
-                  </button>
+                    {t.cancel}
+                  </Button>
+                  <Button type="submit" disabled={isPending || !newProject.name.trim() || !newProject.key.trim()}>
+                    {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {t.create}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={isEditProjectOpen && Boolean(editingProject)}
+            onOpenChange={(open) => {
+              setIsEditProjectOpen(open);
+              if (!open) {
+                setEditingProject(null);
+                setCreateProjectErrorMsg("");
+              }
+            }}
+          >
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-hidden p-0">
+              <form onSubmit={handleEditProject} className="flex min-h-0 flex-col">
+                <DialogHeader className="border-b px-6 py-4">
+                  <DialogTitle>{locale === "zh" ? "编辑项目" : "Edit project"}</DialogTitle>
+                  <DialogDescription>
+                    {locale === "zh" ? "更新项目名称、标识和描述。" : "Update the project name, key, and description."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+                  {createProjectErrorMsg ? (
+                    <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                      {createProjectErrorMsg}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-project-name">
+                      {t.projectName} <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="edit-project-name"
+                      required
+                      value={editProjectForm.name}
+                      onChange={(event) => setEditProjectForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder={t.projectNamePlaceholder}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-project-key">
+                      {t.projectKey} <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="edit-project-key"
+                      required
+                      maxLength={10}
+                      value={editProjectForm.key}
+                      onChange={(event) =>
+                        setEditProjectForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))
+                      }
+                      className="font-mono"
+                      placeholder={t.projectKeyPlaceholder}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-project-description">{t.projectDescription}</Label>
+                    <Textarea
+                      id="edit-project-description"
+                      rows={5}
+                      value={editProjectForm.description}
+                      onChange={(event) =>
+                        setEditProjectForm((current) => ({ ...current, description: event.target.value }))
+                      }
+                      className="resize-none"
+                      placeholder={t.projectDescriptionPlaceholder}
+                    />
+                  </div>
                 </div>
-
-                <form onSubmit={handleCreateProject} className="flex flex-1 flex-col overflow-hidden">
-                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-                    {createProjectErrorMsg ? (
-                      <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                        {createProjectErrorMsg}
-                      </div>
-                    ) : null}
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">
-                        {t.projectName} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        autoFocus
-                        value={newProject.name}
-                        onChange={(event) => setNewProject((current) => ({ ...current, name: event.target.value }))}
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectNamePlaceholder}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">
-                        {t.projectKey} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        maxLength={10}
-                        value={newProject.key}
-                        onChange={(event) =>
-                          setNewProject((current) => ({ ...current, key: event.target.value.toUpperCase() }))
-                        }
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectKeyPlaceholder}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">{t.projectDescription}</label>
-                      <textarea
-                        rows={5}
-                        value={newProject.description}
-                        onChange={(event) =>
-                          setNewProject((current) => ({ ...current, description: event.target.value }))
-                        }
-                        className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectDescriptionPlaceholder}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreateProjectOpen(false);
-                        setCreateProjectErrorMsg("");
-                      }}
-                      disabled={isPending}
-                      className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {t.cancel}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isPending || !newProject.name.trim() || !newProject.key.trim()}
-                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {t.create}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          ) : null}
-
-          {isEditProjectOpen && editingProject ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                  <h2 className="text-xl font-bold text-slate-800">{locale === "zh" ? "编辑项目" : "Edit project"}</h2>
-                  <button
+                <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => {
                       setIsEditProjectOpen(false);
                       setEditingProject(null);
                       setCreateProjectErrorMsg("");
                     }}
-                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-                <form onSubmit={handleEditProject} className="flex flex-1 flex-col overflow-hidden">
-                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-                    {createProjectErrorMsg ? (
-                      <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                        {createProjectErrorMsg}
-                      </div>
-                    ) : null}
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">
-                        {t.projectName} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        value={editProjectForm.name}
-                        onChange={(event) => setEditProjectForm((current) => ({ ...current, name: event.target.value }))}
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectNamePlaceholder}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">
-                        {t.projectKey} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        maxLength={10}
-                        value={editProjectForm.key}
-                        onChange={(event) =>
-                          setEditProjectForm((current) => ({ ...current, key: event.target.value.toUpperCase() }))
-                        }
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectKeyPlaceholder}
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-sm font-medium text-slate-700">{t.projectDescription}</label>
-                      <textarea
-                        rows={5}
-                        value={editProjectForm.description}
-                        onChange={(event) =>
-                          setEditProjectForm((current) => ({ ...current, description: event.target.value }))
-                        }
-                        className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        placeholder={t.projectDescriptionPlaceholder}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsEditProjectOpen(false);
-                        setEditingProject(null);
-                        setCreateProjectErrorMsg("");
-                      }}
-                      disabled={isPending}
-                      className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {t.cancel}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isPending || !editProjectForm.name.trim() || !editProjectForm.key.trim()}
-                      className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                      {locale === "zh" ? "保存" : "Save"}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          ) : null}
-
-          {deletingProject ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-              <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
-                <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
-                  <h2 className="text-xl font-bold text-rose-600">{t.deleteProject}</h2>
-                </div>
-                <div className="px-6 py-5">
-                  {deleteErrorMsg ? (
-                    <div className="mb-4 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">
-                      {deleteErrorMsg}
-                    </div>
-                  ) : null}
-                  <p className="text-sm font-medium text-slate-700">{t.deleteWarning}</p>
-                  <div className="mt-4 select-none rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
-                    {deletingProject.name}
-                  </div>
-                  <div className="mt-4">
-                    <label className="mb-2 block text-sm font-medium text-slate-700">{t.typeToConfirm}</label>
-                    <input
-                      type="text"
-                      value={deleteConfirmText}
-                      onChange={(event) => setDeleteConfirmText(event.target.value)}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none"
-                      placeholder={deletingProject.name}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteErrorMsg("");
-                      setDeletingProject(null);
-                      setDeleteConfirmText("");
-                    }}
                     disabled={isPending}
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
                   >
                     {t.cancel}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPending || deleteConfirmText !== deletingProject.name}
-                    onClick={handleDeleteProject}
-                    className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
-                  >
+                  </Button>
+                  <Button type="submit" disabled={isPending || !editProjectForm.name.trim() || !editProjectForm.key.trim()}>
                     {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                    {t.deleteProject}
-                  </button>
+                    {locale === "zh" ? "保存" : "Save"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={Boolean(deletingProject)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDeleteErrorMsg("");
+                setDeletingProject(null);
+                setDeleteConfirmText("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-md p-0">
+              <DialogHeader className="border-b bg-destructive/10 px-6 py-4">
+                <DialogTitle className="text-destructive">{t.deleteProject}</DialogTitle>
+                <DialogDescription>{t.deleteWarning}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 px-6 py-5">
+                {deleteErrorMsg ? (
+                  <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                    {deleteErrorMsg}
+                  </div>
+                ) : null}
+                {deletingProject ? (
+                  <div className="select-none rounded-md border bg-muted/50 p-3 text-sm font-bold text-foreground">
+                    {deletingProject.name}
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <Label htmlFor="delete-project-confirm">{t.typeToConfirm}</Label>
+                  <Input
+                    id="delete-project-confirm"
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(event) => setDeleteConfirmText(event.target.value)}
+                    placeholder={deletingProject?.name || ""}
+                  />
                 </div>
               </div>
-            </div>
-          ) : null}
+              <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteErrorMsg("");
+                    setDeletingProject(null);
+                    setDeleteConfirmText("");
+                  }}
+                  disabled={isPending}
+                >
+                  {t.cancel}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isPending || !deletingProject || deleteConfirmText !== deletingProject.name}
+                  onClick={handleDeleteProject}
+                >
+                  {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {t.deleteProject}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       ) : null}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
@@ -45,6 +45,20 @@ import {
 
 import { addReminderComment, createReminder, deleteReminderItem, deleteReminderTask, setReminderCompleted, updateMeetingAttendance, updateReminderItem, updateReminderTask } from "@/app/actions/reminders";
 import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { DropdownField } from "@/components/DropdownField";
 import LocalizedDateInput from "@/components/LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
@@ -853,127 +867,6 @@ function LocalizedTimeInput({
   );
 }
 
-function InlineSelect({
-  value,
-  options,
-  onChange,
-  renderSummary,
-  className = "relative",
-}: {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  renderSummary: (label: string) => ReactNode;
-  className?: string;
-}) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const summaryRef = useRef<HTMLElement>(null);
-  const selectedOption = options.find((option) => option.value === value) || options[0];
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{
-    top?: number;
-    bottom?: number;
-    left: number;
-    width: number;
-    openingUpward: boolean;
-  }>({ left: 0, width: 0, openingUpward: false });
-
-  const updateMenuPosition = useCallback(() => {
-    const rect = summaryRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openingUpward = spaceBelow < 280;
-
-    if (openingUpward) {
-      setMenuPosition({
-        bottom: window.innerHeight - rect.top + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: true,
-      });
-    } else {
-      setMenuPosition({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: false,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [isOpen, updateMenuPosition]);
-
-  const handleSelect = (nextValue: string) => {
-    onChange(nextValue);
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-    setIsOpen(false);
-  };
-
-  return (
-    <details
-      ref={detailsRef}
-      className={className}
-      onToggle={(event) => {
-        const open = event.currentTarget.open;
-        setIsOpen(open);
-        if (open) updateMenuPosition();
-      }}
-    >
-      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-        {renderSummary(selectedOption?.label || "")}
-      </summary>
-      {isOpen ? (
-        <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
-          style={{
-            top: menuPosition.top,
-            bottom: menuPosition.bottom,
-            left: menuPosition.left,
-            minWidth: menuPosition.width,
-          }}
-        >
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              onClick={() => handleSelect(option.value)}
-              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <span className="block truncate">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </details>
-  );
-}
-
 type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
 type TaskSortField = "title" | "dueDate" | "createdAt" | "creator" | "status" | "assignee";
 type TaskSortDirection = "asc" | "desc";
@@ -982,10 +875,6 @@ type TaskColumnConfig = {
   id: TaskColumnId;
   label: string;
   width: number;
-};
-type SelectOption = {
-  value: string;
-  label: string;
 };
 type ItemTab = "tasks" | "schedule" | "notes";
 type ScheduleView = "week" | "month";
@@ -1225,14 +1114,6 @@ export default function DepartmentItemsClient({
   const [taskSortDirection, setTaskSortDirection] = useState<TaskSortDirection>("desc");
   const [taskPage, setTaskPage] = useState(1);
   const [taskPageSize, setTaskPageSize] = useState<number>(TASK_PAGE_SIZE_OPTIONS[0]);
-  const taskPerPageOptions = useMemo<SelectOption[]>(
-    () => [
-      { value: "10", label: "10" },
-      { value: "20", label: "20" },
-      { value: "50", label: "50" },
-    ],
-    []
-  );
   const taskColumnDefinitions = useMemo<TaskColumnConfig[]>(
     () => [
       { id: "title", label: t.titleField, width: TASK_DEFAULT_COLUMN_WIDTHS.title },
@@ -1314,6 +1195,7 @@ export default function DepartmentItemsClient({
   const [editingScheduleItemId, setEditingScheduleItemId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isEditingTask, setIsEditingTask] = useState(false);
+  const [taskPendingDelete, setTaskPendingDelete] = useState<DepartmentItemCenterItem | null>(null);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
   const [replyContent, setReplyContent] = useState("");
@@ -2033,9 +1915,15 @@ export default function DepartmentItemsClient({
     });
   };
 
-  const handleDeleteTask = (targetTask = selectedTask) => {
+  const requestDeleteTask = (targetTask = selectedTask) => {
     if (!targetTask || !targetTask.canEdit) return;
-    if (!window.confirm(t.deleteConfirm)) return;
+    setDetailError("");
+    setTaskPendingDelete(targetTask);
+  };
+
+  const handleDeleteTask = () => {
+    const targetTask = taskPendingDelete;
+    if (!targetTask || !targetTask.canEdit) return;
     if (targetTask.id !== selectedTask?.id) setSelectedTaskId(null);
     setDetailError("");
     startTransition(async () => {
@@ -2044,6 +1932,7 @@ export default function DepartmentItemsClient({
         setDetailError(result.error || "Failed");
         return;
       }
+      setTaskPendingDelete(null);
       setSelectedTaskId((current) => current === targetTask.id ? null : current);
       router.refresh();
     });
@@ -2531,12 +2420,12 @@ export default function DepartmentItemsClient({
           if (sortField) handleTaskSort(sortField);
         }}
         disabled={!sortField}
-        className={`inline-flex items-center gap-1 font-semibold ${
-          sortField ? "cursor-pointer text-slate-600 hover:text-slate-800" : column.id === "actions" ? "cursor-default text-slate-500" : "cursor-move text-slate-500"
+        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
+          sortField ? "cursor-pointer text-muted-foreground hover:text-foreground" : column.id === "actions" ? "cursor-default text-muted-foreground" : "cursor-move text-muted-foreground"
         }`}
         draggable={false}
       >
-        <span>{column.label}</span>
+        <span className="truncate">{column.label}</span>
         {sortField && isSorted ? (
           taskSortDirection === "asc" ? (
             <ArrowUp size={12} />
@@ -2554,13 +2443,13 @@ export default function DepartmentItemsClient({
     return (
       <details ref={taskColumnMenuRef} className="relative">
         <summary
-          className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+          className="inline-flex h-8 w-8 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
           aria-label={taskTableText.columns}
           title={taskTableText.columns}
         >
-          <Eye size={16} className="text-slate-500" />
+          <Eye size={16} className="text-muted-foreground" />
         </summary>
-        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
           {taskConfigurableColumns.map((column) => {
             const isChecked = taskVisibleColumnIds.includes(column.id);
             const isDisabled = isChecked && visibleCount === 1;
@@ -2569,7 +2458,7 @@ export default function DepartmentItemsClient({
               <label
                 key={column.id}
                 className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                  isDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer hover:bg-slate-50"
+                  isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
                 <input
@@ -2586,7 +2475,7 @@ export default function DepartmentItemsClient({
           <button
             type="button"
             onClick={resetTaskColumns}
-            className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left text-sm text-blue-600 hover:bg-blue-50"
+            className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-left text-sm font-medium text-primary hover:bg-accent"
           >
             {taskTableText.resetColumns}
           </button>
@@ -2596,13 +2485,13 @@ export default function DepartmentItemsClient({
   };
 
   const renderTaskRow = (item: DepartmentItemCenterItem) => (
-    <tr key={item.id} className="group transition-colors hover:bg-slate-50/70">
+    <tr key={item.id} className="group transition-colors hover:bg-muted/40">
       {taskColumns.map((column) => {
         if (column.id === "title") {
           return (
-            <td key={column.id} className="px-5 py-3.5 font-semibold text-slate-800 overflow-hidden">
-              <button type="button" onClick={() => openTaskDetail(item)} className="flex w-full min-w-0 items-center gap-2 text-left hover:text-blue-600">
-                <span className={`truncate ${item.completedAt ? "text-slate-400 line-through" : "text-slate-800"}`}>
+            <td key={column.id} className="overflow-hidden px-5 py-4 font-semibold text-foreground">
+              <button type="button" onClick={() => openTaskDetail(item)} className="flex w-full min-w-0 items-center gap-2 text-left hover:text-primary">
+                <span className={`truncate ${item.completedAt ? "text-muted-foreground line-through" : "text-foreground"}`}>
                   {item.title}
                 </span>
                 {item.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
@@ -2613,7 +2502,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "content") {
           return (
-            <td key={column.id} className="px-5 py-3.5 align-top text-slate-500 whitespace-normal">
+            <td key={column.id} className="whitespace-normal px-5 py-4 align-top text-muted-foreground">
               <button type="button" onClick={() => openTaskDetail(item)} className="block w-full text-left">
                 {item.content ? (
                   <span className="block overflow-hidden text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
@@ -2627,7 +2516,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "dueDate") {
           return (
-            <td key={column.id} className={`px-5 py-3.5 text-sm font-medium ${item.isOverdue ? "text-red-600" : "text-slate-700"}`}>
+            <td key={column.id} className={`px-5 py-4 text-sm font-medium ${item.isOverdue ? "text-destructive" : "text-foreground"}`}>
               {item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}
             </td>
           );
@@ -2635,7 +2524,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "createdAt") {
           return (
-            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
               {formatDisplayDateTime(item.createdAt, locale)}
             </td>
           );
@@ -2643,7 +2532,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "creator") {
           return (
-            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
               <span className="block w-full truncate">{item.creatorName || item.creatorEmail || "-"}</span>
             </td>
           );
@@ -2651,42 +2540,45 @@ export default function DepartmentItemsClient({
 
         if (column.id === "status") {
           return (
-            <td key={column.id} className="px-5 py-3.5">
-              <span className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium ${item.completedAt ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
+            <td key={column.id} className="px-5 py-4">
+              <Badge variant={item.completedAt ? "secondary" : "outline"} className={item.completedAt ? "bg-emerald-50 text-emerald-700" : ""}>
                 {taskStatusLabel(item.taskStatus, locale)}
-              </span>
+              </Badge>
             </td>
           );
         }
 
         if (column.id === "assignee") {
           return (
-            <td key={column.id} className="px-5 py-3.5 text-sm font-medium text-slate-700">
+            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
               <span className="block w-full truncate">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
             </td>
           );
         }
 
         return (
-          <td key={column.id} className="sticky right-0 z-10 bg-white px-3 py-3.5 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-slate-50">
+          <td key={column.id} className="sticky right-0 z-10 bg-card px-3 py-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-muted">
             <div className="flex items-center gap-2">
               {item.canEdit ? (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    size="xs"
+                    variant="outline"
                     onClick={() => openTaskEditor(item)}
-                    className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                   >
                     {t.edit}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    size="xs"
+                    variant="outline"
                     disabled={isPending}
-                    onClick={() => handleDeleteTask(item)}
-                    className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                    onClick={() => requestDeleteTask(item)}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     {t.deleteTask}
-                  </button>
+                  </Button>
                 </>
               ) : null}
             </div>
@@ -4204,78 +4096,76 @@ export default function DepartmentItemsClient({
           {activeTab === "notes" ? (
             <>
               <div className="relative w-72 max-w-[42vw]">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
-                <input
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
                   value={noteQuery}
                   onChange={(event) => setNoteQuery(event.target.value)}
                   placeholder={t.searchNotes}
-                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="pl-9 pr-9"
                 />
                 {noteQuery ? (
                   <button
                     type="button"
                     onClick={() => setNoteQuery("")}
-                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     title={t.clearSearch}
                   >
                     <X size={14} />
                   </button>
                 ) : null}
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={openCreateNote}
                 disabled={isPending}
-                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
               >
                 <Plus size={16} />
                 {t.addNote}
-              </button>
+              </Button>
             </>
           ) : null}
           {activeTab === "schedule" ? (
             <>
               <div className="relative w-72 max-w-[42vw]">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
-                <input
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
                   value={scheduleSearch}
                   onChange={(event) => setScheduleSearch(event.target.value)}
                   placeholder={st.search}
-                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="pl-9 pr-9"
                 />
                 {scheduleSearch ? (
                   <button
                     type="button"
                     onClick={() => setScheduleSearch("")}
-                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     title={t.clearSearch}
                   >
                     <X size={14} />
                   </button>
                 ) : null}
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => openCreateScheduleModal()}
-                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {locale === "zh" ? "新建日程" : "New schedule"}
-              </button>
+              </Button>
             </>
           ) : null}
           {activeTab === "tasks" ? (
             <>
               <div className="relative w-72 max-w-[42vw]">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
-                <input
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
                   value={taskQuery}
                   onChange={(event) => {
                     setTaskQuery(event.target.value);
                     setTaskPage(1);
                   }}
                   placeholder={t.searchTasks}
-                  className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+                  className="pl-9 pr-9"
                 />
                 {taskQuery ? (
                   <button
@@ -4284,21 +4174,20 @@ export default function DepartmentItemsClient({
                       setTaskQuery("");
                       setTaskPage(1);
                     }}
-                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     title={t.clearSearch}
                   >
                     <X size={14} />
                   </button>
                 ) : null}
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={openCreateModal}
-                className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
               >
                 <Plus size={16} />
                 {t.addTask}
-              </button>
+              </Button>
             </>
           ) : null}
           </div>
@@ -4310,21 +4199,18 @@ export default function DepartmentItemsClient({
       {activeTab === "tasks" ? (
         <div className="flex flex-wrap items-center gap-2">
           {taskFilters.map((filter) => (
-            <button
+            <Button
               key={filter.id}
               type="button"
+              size="sm"
+              variant={taskFilter === filter.id ? "default" : "outline"}
               onClick={() => {
                 setTaskFilter(filter.id);
                 setTaskPage(1);
               }}
-              className={`h-8 rounded-md border px-3 text-sm font-medium ${
-                taskFilter === filter.id
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
             >
               {filter.label}
-            </button>
+            </Button>
           ))}
           {renderTaskColumnMenu()}
         </div>
@@ -4336,10 +4222,10 @@ export default function DepartmentItemsClient({
         renderNotesView()
       ) : (
         activeTab === "tasks" ? (
-          <div className="bg-white overflow-hidden flex flex-col rounded-xl border shadow-sm">
+          <div className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
             <div className="relative overflow-x-auto flex-1">
               <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
-                <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
+                <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     {taskColumns.map((column, index) => {
                       const showLeftLine =
@@ -4352,7 +4238,7 @@ export default function DepartmentItemsClient({
                         <th
                           key={column.id}
                           className={`group/column relative select-none overflow-hidden py-3 transition-colors ${
-                            column.id === "actions" ? "sticky right-0 z-20 bg-slate-50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-move px-5 hover:bg-slate-100 active:cursor-move"
+                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]" : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${
                             isDragging ? "opacity-40" : ""
                           }`}
@@ -4388,80 +4274,86 @@ export default function DepartmentItemsClient({
                     })}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border">
                   {paginatedTaskItems.map(renderTaskRow)}
                 </tbody>
               </table>
               {paginatedTaskItems.length === 0 ? (
-                <div className="flex min-h-52 items-center justify-center px-5 py-16 text-center text-slate-500">
+                <div className="flex min-h-52 items-center justify-center px-5 py-16 text-center text-muted-foreground">
                   <p className="text-sm">{t.empty}</p>
                 </div>
               ) : null}
             </div>
-            <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-              <div className="font-medium text-slate-500">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+              <div className="font-medium text-muted-foreground">
                 {locale === "zh" ? (
                   <>
                     {taskTableText.showing}
-                    <span className="font-bold text-slate-800"> {taskRangeStart} </span>
+                    <span className="font-bold text-foreground"> {taskRangeStart} </span>
                     {taskTableText.to}
-                    <span className="font-bold text-slate-800"> {taskRangeEnd} </span>
+                    <span className="font-bold text-foreground"> {taskRangeEnd} </span>
                     {taskTableText.of}
-                    <span className="font-bold text-slate-800"> {sortedTaskItems.length} </span>
+                    <span className="font-bold text-foreground"> {sortedTaskItems.length} </span>
                     {taskTableText.tasks}
                   </>
                 ) : (
                   <>
-                    {taskTableText.showing} <span className="font-bold text-slate-800">{taskRangeStart}</span> {taskTableText.to}{" "}
-                    <span className="font-bold text-slate-800">{taskRangeEnd}</span> {taskTableText.of}{" "}
-                    <span className="font-bold text-slate-800">{sortedTaskItems.length}</span> {taskTableText.tasks}
+                    {taskTableText.showing} <span className="font-bold text-foreground">{taskRangeStart}</span> {taskTableText.to}{" "}
+                    <span className="font-bold text-foreground">{taskRangeEnd}</span> {taskTableText.of}{" "}
+                    <span className="font-bold text-foreground">{sortedTaskItems.length}</span> {taskTableText.tasks}
                   </>
                 )}
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
-                  <span>{locale === "zh" ? "\u6bcf\u9875" : "Per page"}</span>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
                   <span>{taskTableText.perPage}</span>
-                  <InlineSelect
+                  <Select
                     value={String(taskPageSize)}
-                    options={taskPerPageOptions}
-                    onChange={(value) => {
+                    onValueChange={(value) => {
                       setTaskPageSize(Number(value));
                       setTaskPage(1);
                     }}
-                    renderSummary={(label) => (
-                      <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        {label}
-                      </span>
-                    )}
-                  />
+                  >
+                    <SelectTrigger size="sm" className="w-20 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      {TASK_PAGE_SIZE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={String(option)}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="icon-sm"
                     onClick={() => setTaskPage(Math.max(1, currentTaskPage - 1))}
                     disabled={currentTaskPage === 1}
-                    className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
                   >
                     <ChevronLeft size={18} />
-                  </button>
+                  </Button>
 
-                  <span className="px-2 font-medium leading-none text-slate-700">
+                  <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                     {locale === "zh"
                       ? `${taskTableText.page} ${currentTaskPage} / ${taskTotalPages || 1} \u9875`
                       : `${taskTableText.page} ${currentTaskPage} of ${taskTotalPages || 1}`}
                   </span>
 
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="icon-sm"
                     onClick={() => setTaskPage(Math.min(taskTotalPages || 1, currentTaskPage + 1))}
                     disabled={currentTaskPage === taskTotalPages || taskTotalPages === 0}
-                    className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
                   >
                     <ChevronRight size={18} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -4686,31 +4578,30 @@ export default function DepartmentItemsClient({
 
               <form onSubmit={handleCreate} className="flex flex-1 flex-col overflow-hidden">
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-                  <label className="block space-y-1.5">
-                    <span className="text-sm font-medium text-slate-700">
+                  <div className="space-y-2">
+                    <Label>
                       {t.titleField} <span className="text-red-500">*</span>
-                    </span>
-                    <input
+                    </Label>
+                    <Input
                       value={form.title}
                       onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                       required
                       autoFocus
                     />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-sm font-medium text-slate-700">{t.notes}</span>
-                    <textarea
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.notes}</Label>
+                    <Textarea
                       value={form.content}
                       onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
                       rows={7}
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="leading-6"
                     />
-                  </label>
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {activeTab === "tasks" || form.itemType === "TODO" ? (
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
+                        <Label>{t.dueDate}</Label>
                         <LocalizedDateInput
                           locale={locale}
                           value={form.dueAt}
@@ -4732,22 +4623,21 @@ export default function DepartmentItemsClient({
                   </div>
                 </div>
                 <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => setIsCreateOpen(false)}
                     disabled={isPending}
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
                   >
                     {t.cancel}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={isPending || !form.title.trim()}
-                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
                     {t.create}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -4756,52 +4646,51 @@ export default function DepartmentItemsClient({
       ) : null}
 
       {selectedTask ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-background shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b px-6 py-4">
               <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold text-slate-900">{selectedTask.title}</h3>
-                <p className="mt-1 text-xs text-slate-500">
+                <h3 className="truncate text-lg font-semibold text-foreground">{selectedTask.title}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
                   {t.openedBy}: {selectedTask.creatorName || selectedTask.creatorEmail || "-"} · {t.assignee}: {selectedTask.assigneeName || selectedTask.assigneeEmail || t.unassigned}
                   {selectedTask.dueDate ? ` · ${t.dueDate}: ${formatDisplayDate(selectedTask.dueDate, locale)}` : ""}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 {selectedTask.canEdit ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setIsEditingTask((current) => !current)}
-                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     {isEditingTask ? t.less : t.edit}
-                  </button>
+                  </Button>
                 ) : null}
-                <button type="button" onClick={() => setSelectedTaskId(null)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setSelectedTaskId(null)}>
                   <X size={18} />
-                </button>
+                </Button>
               </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            {detailError ? <div className="mb-4 rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{detailError}</div> : null}
+            {detailError ? <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{detailError}</div> : null}
 
             {selectedTask.canEdit && isEditingTask ? (
-              <div className="space-y-4 rounded-lg border border-slate-200 p-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">{t.titleField}</label>
-                  <input
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>{t.titleField}</Label>
+                  <Input
                     value={editForm.title}
                     onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))}
-                    className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">{t.notes}</label>
-                  <textarea
+                <div className="space-y-2">
+                  <Label>{t.notes}</Label>
+                  <Textarea
                     value={editForm.content}
                     onChange={(event) => setEditForm((current) => ({ ...current, content: event.target.value }))}
                     rows={6}
-                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -4814,7 +4703,7 @@ export default function DepartmentItemsClient({
                     className="flex-1"
                   />
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium text-slate-700">{t.dueDate}</label>
+                    <Label>{t.dueDate}</Label>
                     <LocalizedDateInput
                       locale={locale}
                       value={editForm.dueAt}
@@ -4825,8 +4714,8 @@ export default function DepartmentItemsClient({
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-slate-200 p-4">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{selectedTask.content || "-"}</p>
+              <div className="rounded-lg border bg-card p-4">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{selectedTask.content || "-"}</p>
               </div>
             )}
 
@@ -4834,74 +4723,118 @@ export default function DepartmentItemsClient({
               <div className="space-y-2">
                 {selectedTask.comments.length > 0 ? (
                   selectedTask.comments.map((comment) => (
-                    <div key={comment.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                      <div className="flex items-start justify-between gap-3 text-xs text-slate-500">
-                        <span className="min-w-0 truncate font-semibold text-slate-700">{comment.authorName || comment.authorEmail}</span>
+                    <div key={comment.id} className="rounded-lg bg-muted/50 px-3 py-2">
+                      <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+                        <span className="min-w-0 truncate font-semibold text-foreground">{comment.authorName || comment.authorEmail}</span>
                         <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>{formatRelativeTime(comment.createdAt, locale)}</span>
                       </div>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{comment.content}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">{comment.content}</p>
                     </div>
                   ))
                 ) : null}
               </div>
               {selectedTask.canComment ? (
                 <div className="mt-4 space-y-2">
-                  <textarea
+                  <Textarea
                     value={replyContent}
                     onChange={(event) => setReplyContent(event.target.value)}
                     placeholder={t.reply}
                     rows={5}
-                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               ) : null}
             </div>
             </div>
-            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col-reverse gap-3 border-t bg-muted/40 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
                 {selectedTask.completedAt ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     disabled={isPending || !selectedTask.canComplete}
                     onClick={() => handleReopen(selectedTask)}
-                    className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                   >
                     <RotateCcw size={14} />
                     {t.reopen}
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     disabled={isPending || !selectedTask.canComplete}
                     onClick={() => handleComplete(selectedTask)}
-                    className="inline-flex h-9 items-center gap-1 rounded-md border border-emerald-200 bg-white px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
                   >
                     <Check size={14} />
                     {t.done}
-                  </button>
+                  </Button>
                 )}
+                {selectedTask.canEdit ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => requestDeleteTask(selectedTask)}
+                    className="border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 size={14} />
+                    {t.deleteTask}
+                  </Button>
+                ) : null}
               </div>
-              <div className="flex items-center gap-3">
-                <button
+              <div className="flex items-center justify-end gap-2">
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => setSelectedTaskId(null)}
-                  className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   {t.cancel}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  size="sm"
                   disabled={isPending || (isEditingTask && !editForm.title.trim()) || (!isEditingTask && !replyContent.trim())}
                   onClick={handleSaveTaskDialog}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   {t.save}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         </div>
       ) : null}
+
+      <Dialog
+        open={Boolean(taskPendingDelete)}
+        onOpenChange={(open) => {
+          if (!open) setTaskPendingDelete(null);
+        }}
+      >
+        <DialogContent className="max-w-md p-0">
+          <DialogHeader className="border-b bg-destructive/10 px-6 py-4">
+            <DialogTitle className="text-destructive">{t.deleteTask}</DialogTitle>
+            <DialogDescription>{t.deleteConfirm}</DialogDescription>
+          </DialogHeader>
+          <div className="px-6 py-5">
+            <div className="rounded-md border bg-muted/50 p-3 text-sm font-semibold text-foreground">
+              {taskPendingDelete?.title}
+            </div>
+          </div>
+          <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setTaskPendingDelete(null)} disabled={isPending}>
+              {t.cancel}
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDeleteTask} disabled={isPending || !taskPendingDelete}>
+              {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+              {t.deleteTask}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -30,8 +30,20 @@ import {
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
-import { DropdownField } from "@/components/DropdownField";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
 import type {
   DepartmentNotificationListItem,
@@ -572,9 +584,9 @@ export default function DepartmentNotificationsClient({
   const renderCell = (notification: DepartmentNotificationListItem, columnId: ColumnId) => {
     if (columnId === "level") {
       return (
-        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+        <Badge variant="secondary" className="max-w-full">
           {notification.typeLabel || levelLabel(notification.level, t)}
-        </span>
+        </Badge>
       );
     }
     if (columnId === "title") {
@@ -582,47 +594,44 @@ export default function DepartmentNotificationsClient({
         <button
           type="button"
           onClick={() => openNotification(notification)}
-          className="block max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-blue-700"
+          className="block max-w-full truncate text-left text-sm font-semibold text-foreground hover:text-primary"
         >
           {notification.title}
         </button>
       );
     }
-    if (columnId === "project") return <span className="truncate text-sm text-slate-600">{notification.projectName || ""}</span>;
+    if (columnId === "project") return <span className="truncate text-sm text-muted-foreground">{notification.projectName || ""}</span>;
     if (columnId === "createdAt") {
       return (
-        <span className="whitespace-nowrap text-sm text-slate-600" title={formatDateTime(notification.createdAt, locale)}>
+        <span className="whitespace-nowrap text-sm text-muted-foreground" title={formatDateTime(notification.createdAt, locale)}>
           {formatRelativeTime(notification.createdAt, locale)}
         </span>
       );
     }
-    if (columnId === "author") return <span className="truncate text-sm text-slate-600">{notification.authorName}</span>;
+    if (columnId === "author") return <span className="truncate text-sm text-muted-foreground">{notification.authorName}</span>;
     if (currentView === "sent" && notification.status === "REVOKED") {
-      return <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">{t.revoked}</span>;
+      return <Badge variant="secondary" className="bg-rose-50 text-rose-700">{t.revoked}</Badge>;
     }
     if (currentView === "sent") {
-      return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{t.sent}</span>;
+      return <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">{t.sent}</Badge>;
     }
     return (
-      <span
-        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-          notification.read ? "bg-slate-100 text-slate-600" : "bg-blue-600 text-white"
-        }`}
-      >
+      <Badge variant={notification.read ? "secondary" : "default"}>
         {notification.read ? t.read : t.unread}
-      </span>
+      </Badge>
     );
   };
 
   return (
-    <div className="flex flex-col min-h-0 space-y-4">
-      <div className="flex min-h-9 items-center justify-between">
+    <div className="flex min-h-0 flex-col space-y-4">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-800">{t.title}</h2>
+          <h2 className="text-xl font-bold tracking-tight text-foreground">{t.title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {permission.canCreate ? (
-            <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
+            <div className="inline-flex rounded-md border bg-muted/45 p-1">
               {[
                 { value: "received", label: t.received },
                 { value: "sent", label: t.sentByMe },
@@ -642,7 +651,7 @@ export default function DepartmentNotificationsClient({
                       })
                     }
                     className={`h-7 rounded px-3 text-sm font-medium transition-colors ${
-                      isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background hover:text-foreground"
                     }`}
                   >
                     {option.label}
@@ -652,15 +661,15 @@ export default function DepartmentNotificationsClient({
             </div>
           ) : null}
           <div className="relative w-72 max-w-[42vw]">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#42526E]" />
-            <input
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               placeholder={t.searchPlaceholder}
               value={filters.search || ""}
               onChange={(e) => {
                 updateQueryParams({ search: e.target.value, page: 1 });
               }}
-              className="h-9 w-full rounded border border-transparent bg-[#F4F5F7] pl-9 pr-9 text-sm text-[#172B4D] outline-none focus:border-[#0052CC] focus:bg-white focus:ring-1 focus:ring-[#0052CC]"
+              className="pl-9 pr-9"
             />
             {filters.search ? (
               <button
@@ -668,7 +677,7 @@ export default function DepartmentNotificationsClient({
                 onClick={() => {
                   updateQueryParams({ search: null, page: 1 });
                 }}
-                className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded text-[#42526E] hover:bg-[#EBECF0]"
+                className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
                 title={locale === "zh" ? "清除搜索" : "Clear search"}
               >
@@ -677,48 +686,44 @@ export default function DepartmentNotificationsClient({
             ) : null}
           </div>
           {permission.canCreate ? (
-            <button
+            <Button
               type="button"
               onClick={() => {
                 setErrorMsg("");
                 setIsCreateOpen(true);
               }}
-              className="inline-flex h-9 items-center gap-2 rounded bg-[#0052CC] px-3 text-sm font-semibold text-white hover:bg-[#003D9B]"
             >
               <Plus size={16} />
               {t.newNotification}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
 
-      <div className="bg-white p-3 rounded-lg border shadow-sm">
+      <div className="rounded-lg border bg-card p-3 shadow-sm">
         {currentView === "received" ? (
-          <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-slate-100 pb-3">
+          <div className="mb-3 flex flex-wrap items-center gap-1 border-b pb-3">
             {[
               { value: "", label: t.all },
               { value: "ANNOUNCEMENT", label: t.announcementsTab },
               { value: "REMINDER", label: t.remindersTab },
               { value: "UPDATE", label: t.updatesTab },
             ].map((option) => (
-              <button
+              <Button
                 key={option.value || "ALL"}
                 type="button"
+                size="sm"
+                variant={currentCategory === option.value ? "default" : "ghost"}
                 onClick={() => updateQueryParams({ category: option.value || null, page: 1 })}
-                className={`h-8 rounded-md px-3 text-sm font-medium transition-colors ${
-                  currentCategory === option.value
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
               >
                 {option.label}
-              </button>
+              </Button>
             ))}
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-2 w-full">
-          <div className="h-9 px-2 inline-flex items-center text-slate-500">
+        <div className="flex w-full flex-wrap items-center gap-2">
+          <div className="inline-flex h-9 items-center px-2 text-muted-foreground">
             <ListFilter size={14} />
           </div>
 
@@ -772,10 +777,10 @@ export default function DepartmentNotificationsClient({
               });
             }}
             renderSummary={(label) => (
-              <div className="h-9 px-3 inline-flex items-center gap-2 text-sm bg-slate-50 border border-slate-200 rounded-md">
-                <span className="text-slate-500">{t.createdAt}</span>
-                <span className="bg-transparent font-medium p-0 border-none text-slate-700">{label}</span>
-                <ChevronDown size={14} className="text-slate-400" />
+              <div className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm shadow-xs hover:bg-accent hover:text-accent-foreground">
+                <span className="text-muted-foreground">{t.createdAt}</span>
+                <span className="border-none bg-transparent p-0 font-medium text-foreground">{label}</span>
+                <ChevronDown size={14} className="text-muted-foreground" />
               </div>
             )}
           />
@@ -786,29 +791,29 @@ export default function DepartmentNotificationsClient({
               aria-label={t.createdAt}
               value={createdDate}
               onChange={(e) => updateQueryParams({ createdDate: e.target.value, from: null, to: null, page: 1 })}
-              className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
             />
           ) : null}
 
           {(filters.category || filters.projectId || filters.read || filters.publishStatus || hasActiveCreatedFilter || filters.search) ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => updateQueryParams({ category: null, projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
-              className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
             >
               {t.reset}
-            </button>
+            </Button>
           ) : null}
 
           <details ref={columnMenuRef} className="relative">
             <summary
-              className="list-none h-9 w-9 inline-flex items-center justify-center text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none"
+              className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
               aria-label={t.columns}
               title={t.columns}
             >
-              <Eye size={16} className="text-slate-500" />
+              <Eye size={16} className="text-muted-foreground" />
             </summary>
-            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
               {DEFAULT_COLUMN_ORDER.map((columnId) => {
                 const column = columnsById.get(columnId);
                 if (!column) return null;
@@ -819,7 +824,7 @@ export default function DepartmentNotificationsClient({
                   <label
                     key={column.id}
                     className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                      isDisabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer hover:bg-slate-50"
+                      isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
                     }`}
                   >
                     <input
@@ -836,7 +841,7 @@ export default function DepartmentNotificationsClient({
               <button
                 type="button"
                 onClick={handleResetColumns}
-                className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+                className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
               >
                 {t.resetColumns}
               </button>
@@ -845,10 +850,10 @@ export default function DepartmentNotificationsClient({
         </div>
       </div>
 
-      <div className="bg-white overflow-hidden rounded-xl border shadow-sm">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="relative overflow-hidden">
           <table className="w-full text-left text-sm" style={{ tableLayout: "fixed" }}>
-            <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b">
+            <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 {columns.map((column, index) => {
                   const isSorted = filters.sort === column.id || (!filters.sort && column.id === "createdAt");
@@ -861,7 +866,7 @@ export default function DepartmentNotificationsClient({
                   return (
                     <th
                       key={column.id}
-                      className={`group/column px-5 py-4 cursor-move active:cursor-move hover:bg-slate-100 transition-colors overflow-hidden relative select-none ${
+                      className={`group/column relative cursor-move select-none overflow-hidden px-5 py-4 transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={{ width: `${column.width}px` }}
@@ -882,16 +887,16 @@ export default function DepartmentNotificationsClient({
                         <button
                           type="button"
                           onClick={() => updateQueryParams({ sort: column.id, direction: nextDirection, page: 1 })}
-                          className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-800"
+                          className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground hover:text-foreground"
                           draggable={false}
                         >
-                          {column.label}
+                          <span className="truncate">{column.label}</span>
                           {isSorted ? (
                             filters.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
                           ) : null}
                         </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 font-semibold text-slate-500">{column.label}</span>
+                        <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">{column.label}</span>
                       )}
                       {showRightLine ? <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
                       {columns[index + 1] ? (
@@ -907,17 +912,17 @@ export default function DepartmentNotificationsClient({
                 })}
                 {showActionColumn ? (
                   <th className="w-36 px-5 py-4 text-right">
-                    <span className="font-semibold text-slate-500">{t.actions}</span>
+                    <span className="font-semibold text-muted-foreground">{t.actions}</span>
                   </th>
                 ) : null}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {notifications.length === 0 ? (
                 <tr>
                   <td
                     colSpan={(columns.length || 1) + (showActionColumn ? 1 : 0)}
-                    className="px-5 py-16 text-center text-sm text-slate-500"
+                    className="px-5 py-16 text-center text-sm text-muted-foreground"
                   >
                     {t.noNotifications}
                   </td>
@@ -926,7 +931,7 @@ export default function DepartmentNotificationsClient({
                 notifications.map((notification) => (
                   <tr
                     key={notification.receiptId}
-                    className={`${notification.read || currentView === "sent" ? "bg-white" : "bg-blue-50/40"} hover:bg-slate-50`}
+                    className={`${notification.read || currentView === "sent" ? "" : "bg-primary/5"} hover:bg-muted/40`}
                   >
                     {columns.map((column) => (
                       <td key={column.id} className="overflow-hidden px-5 py-3.5 align-middle">
@@ -937,25 +942,29 @@ export default function DepartmentNotificationsClient({
                       <td className="px-5 py-3.5 text-right align-middle">
                         <div className="inline-flex items-center justify-end gap-2">
                           {notification.canManage && notification.status === "SENT" ? (
-                            <button
+                            <Button
                               type="button"
+                              size="xs"
+                              variant="outline"
                               onClick={() => manage("revoke", notification.id)}
                               disabled={isPending}
-                              className="rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                              className="text-amber-700 hover:bg-amber-50 hover:text-amber-700"
                             >
                               {t.revoke}
-                            </button>
+                            </Button>
                           ) : null}
                           {notification.canDelete ? (
-                            <button
+                            <Button
                               type="button"
+                              size="xs"
+                              variant="outline"
                               onClick={() => manage("delete", notification.id)}
                               disabled={isPending}
-                              className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                              className="border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             >
                               <Trash2 size={13} />
                               {t.delete}
-                            </button>
+                            </Button>
                           ) : null}
                         </div>
                       </td>
@@ -967,72 +976,76 @@ export default function DepartmentNotificationsClient({
           </table>
         </div>
 
-        <div className="bg-slate-50 border-t px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="text-slate-500 font-medium">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+          <div className="font-medium text-muted-foreground">
             {locale === "zh" ? (
               <>
                 {t.showing}
-                <span className="text-slate-800 font-bold"> {rangeStart} </span>
+                <span className="font-bold text-foreground"> {rangeStart} </span>
                 {t.rangeTo}
-                <span className="text-slate-800 font-bold"> {rangeEnd} </span>
+                <span className="font-bold text-foreground"> {rangeEnd} </span>
                 {t.of}
-                <span className="text-slate-800 font-bold"> {pagination.total} </span>
+                <span className="font-bold text-foreground"> {pagination.total} </span>
                 {t.notificationsUnit}
               </>
             ) : (
               <>
-                {t.showing} <span className="text-slate-800 font-bold">{rangeStart}</span> {t.rangeTo}{" "}
-                <span className="text-slate-800 font-bold">{rangeEnd}</span> {t.of}{" "}
-                <span className="text-slate-800 font-bold">{pagination.total}</span>{" "}
+                {t.showing} <span className="font-bold text-foreground">{rangeStart}</span> {t.rangeTo}{" "}
+                <span className="font-bold text-foreground">{rangeEnd}</span> {t.of}{" "}
+                <span className="font-bold text-foreground">{pagination.total}</span>{" "}
                 {t.notificationsUnit}
               </>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-500 [&>span:first-child]:hidden">
-              <span>{locale === "zh" ? "每页" : "Per page"}</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
               <span>{t.perPage}</span>
-              <InlineSelect
+              <Select
                 value={String(pagination.pageSize)}
-                options={[
-                  { value: "10", label: "10" },
-                  { value: "20", label: "20" },
-                  { value: "50", label: "50" },
-                ]}
-                onChange={(value) => {
+                onValueChange={(value) => {
                   updateQueryParams({ pageSize: value, page: 1 });
                 }}
-                renderSummary={(label) => (
-                  <span className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    {label}
-                  </span>
-                )}
-              />
+              >
+                <SelectTrigger size="sm" className="w-20 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {[10, 20, 50].map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateQueryParams({ page: Math.max(1, pagination.page - 1) })}
                 disabled={pagination.page <= 1}
-                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowLeft size={18} />
-              </button>
+              </Button>
 
-              <span className="font-medium text-slate-700 px-2 leading-none">
+              <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                 {locale === "zh"
                   ? `${t.page}${pagination.page}/${totalPages || 1}页`
                   : `${t.page} ${pagination.page} of ${totalPages || 1}`}
               </span>
 
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateQueryParams({ page: Math.min(totalPages || 1, pagination.page + 1) })}
                 disabled={pagination.page >= totalPages || totalPages === 0}
-                className="p-1 rounded-md text-slate-500 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
               >
                 <ArrowRight size={18} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1111,15 +1124,15 @@ function MultiFilter({
 
   return (
     <details ref={detailsRef} className="relative">
-      <summary className="list-none h-9 px-3 inline-flex items-center gap-2 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md hover:bg-slate-100 transition-colors cursor-pointer select-none">
-        <span className="truncate max-w-40">{buttonText}</span>
-        <ChevronDown size={14} className="text-slate-400" />
+      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
+        <span className="max-w-40 truncate">{buttonText}</span>
+        <ChevronDown size={14} className="text-muted-foreground" />
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-slate-50 cursor-pointer"
+            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
           >
             <input
               type="checkbox"
@@ -1127,14 +1140,14 @@ function MultiFilter({
               onChange={() => onToggle(option.value)}
               className="h-4 w-4"
             />
-            <span className="text-slate-700">{option.label}</span>
+            <span>{option.label}</span>
           </label>
         ))}
         {selectedValues.length > 0 && (
           <button
             type="button"
             onClick={onClear}
-            className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-md border-t border-slate-100 mt-1 pt-2"
+            className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
           >
             {clearText}
           </button>
@@ -1181,141 +1194,20 @@ function SingleFilter({
       <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
         {renderSummary(selectedOption?.label || "")}
       </summary>
-      <div className="absolute z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
         {options.map((option) => (
           <button
             type="button"
             key={option.value}
             onClick={() => handleSelect(option.value)}
             className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-              option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
+              option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
             }`}
           >
             {option.label}
           </button>
         ))}
       </div>
-    </details>
-  );
-}
-
-function InlineSelect({
-  value,
-  options,
-  onChange,
-  renderSummary,
-  className = "relative",
-}: {
-  value: string;
-  options: FilterOption[];
-  onChange: (value: string) => void;
-  renderSummary: (label: string) => ReactNode;
-  className?: string;
-}) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const summaryRef = useRef<HTMLElement>(null);
-  const selectedOption = options.find((option) => option.value === value) || options[0];
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{
-    top?: number;
-    bottom?: number;
-    left: number;
-    width: number;
-    openingUpward: boolean;
-  }>({ left: 0, width: 0, openingUpward: false });
-
-  const updateMenuPosition = useCallback(() => {
-    const rect = summaryRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openingUpward = spaceBelow < 280;
-
-    if (openingUpward) {
-      setMenuPosition({
-        bottom: window.innerHeight - rect.top + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: true,
-      });
-    } else {
-      setMenuPosition({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: false,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [isOpen, updateMenuPosition]);
-
-  const handleSelect = (nextValue: string) => {
-    onChange(nextValue);
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-    setIsOpen(false);
-  };
-
-  return (
-    <details
-      ref={detailsRef}
-      className={className}
-      onToggle={(event) => {
-        const open = event.currentTarget.open;
-        setIsOpen(open);
-        if (open) updateMenuPosition();
-      }}
-    >
-      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-        {renderSummary(selectedOption?.label || "")}
-      </summary>
-      {isOpen && (
-        <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
-          style={{
-            top: menuPosition.top,
-            bottom: menuPosition.bottom,
-            left: menuPosition.left,
-            minWidth: menuPosition.width,
-          }}
-        >
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              onClick={() => handleSelect(option.value)}
-              className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-slate-100 text-blue-700 font-medium" : "text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <span className="block truncate">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </details>
   );
 }
@@ -1351,33 +1243,28 @@ function NotificationFormDialog({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-xl font-bold text-slate-800">{t.newNotification}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
+    <Dialog open onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
+      <DialogContent className="max-h-[90vh] max-w-[calc(100%-2rem)] overflow-hidden p-0 sm:max-w-2xl">
         <form onSubmit={onSubmit} className="flex flex-1 flex-col overflow-hidden">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle>{t.newNotification}</DialogTitle>
+            <DialogDescription>{t.subtitle}</DialogDescription>
+          </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-            {errorMsg ? <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{errorMsg}</div> : null}
+            {errorMsg ? <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">{errorMsg}</div> : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <span className="text-sm font-medium text-slate-700">{t.level}</span>
+                <Label>{t.level}</Label>
                 <div className="grid grid-cols-2 gap-2">
                   {levelOptions.map((option) => (
                     <label
                       key={option.value}
                       className={`flex h-10 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium transition-colors ${
                         form.level === option.value
-                          ? "border-blue-500 bg-blue-50 text-blue-700"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "bg-background text-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
                       <input
@@ -1394,31 +1281,43 @@ function NotificationFormDialog({
                 </div>
               </div>
               {form.level === "PROJECT" ? (
-                <DropdownField
-                  id="notification-project"
-                  label={t.project}
-                  value={form.projectId}
-                  onChange={(value) => setForm((current) => ({ ...current, projectId: value }))}
-                  options={projectOptions}
-                />
+                <div className="space-y-1.5">
+                  <Label htmlFor="notification-project">{t.project}</Label>
+                  <Select
+                    value={form.projectId || undefined}
+                    onValueChange={(value) => setForm((current) => ({ ...current, projectId: value }))}
+                  >
+                    <SelectTrigger id="notification-project" className="w-full">
+                      <SelectValue placeholder={t.selectProject} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projectOptions
+                        .filter((option) => option.value)
+                        .map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               ) : null}
             </div>
-            <label className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">
+            <div className="space-y-2">
+              <Label>
                 {t.titleField} <span className="text-red-500">*</span>
-              </span>
-              <input
+              </Label>
+              <Input
                 required
                 autoFocus
                 value={form.title}
                 onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               />
-            </label>
-            <div className="block space-y-1.5">
-              <span className="text-sm font-medium text-slate-700">
+            </div>
+            <div className="space-y-2">
+              <Label>
                 {t.content} <span className="text-red-500">*</span>
-              </span>
+              </Label>
               <RichTextEditor
                 ref={editorRef}
                 value={form.content}
@@ -1427,26 +1326,25 @@ function NotificationFormDialog({
               />
             </div>
           </div>
-          <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-            <button
+          <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+            <Button
               type="button"
+              variant="outline"
               onClick={onClose}
               disabled={isPending}
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
               {t.cancel}
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isPending || !form.title.trim() || !form.content.trim() || (form.level === "PROJECT" && !form.projectId)}
-              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
               {t.create}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
