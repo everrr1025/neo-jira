@@ -48,6 +48,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     pathname.startsWith("/settings") ||
     /^\/departments\/[^/]+\/(projects|members|items|notifications)(?:\/|$)/.test(pathname);
   const isDepartmentOverview = /^\/departments\/[^/]+$/.test(pathname);
+  const isOverviewPage = pathname === "/" || isDepartmentOverview;
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
@@ -87,10 +88,12 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
         </form>
 
         <div className="flex items-center gap-3">
-          <div className="text-sm font-medium text-muted-foreground">
-            {translations.header.welcomeBack},{" "}
-            <span className="text-foreground">{userName}</span>
-          </div>
+          {!isOverviewPage ? (
+            <div className="text-sm font-medium text-muted-foreground">
+              {translations.header.welcomeBack},{" "}
+              <span className="text-foreground">{userName}</span>
+            </div>
+          ) : null}
           <NotificationBell locale={locale} />
         </div>
       </div>

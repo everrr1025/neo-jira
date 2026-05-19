@@ -12,7 +12,6 @@ import {
   FileText,
   Home,
   ListTodo,
-  PanelLeftClose,
   RefreshCw,
   StickyNote,
   Users,
@@ -67,7 +66,6 @@ export function SidebarClient({
             ? "工作台"
             : "Workspace";
   const sidebarInitial = sidebarTitle.trim().charAt(0).toUpperCase() || "N";
-  const departmentTitleRest = departmentContext ? sidebarTitle.trim().slice(1) : "";
 
   const getNavClass = (href: string) => {
     let isActive = false;
@@ -183,23 +181,31 @@ export function SidebarClient({
         onClick={() => setCollapsed(!collapsed)}
         className="absolute right-0 top-8 z-40 translate-x-1/2 rounded-full border-sidebar-border bg-background text-muted-foreground shadow-sm hover:text-foreground"
       >
-        <PanelLeftClose className={`size-3.5 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
+        <ChevronLeft className={`size-4 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
       </Button>
 
-      <div className={`flex h-20 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6"}`}>
-        <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-bold text-sidebar-primary-foreground">
-          {sidebarInitial}
-        </div>
-        <span
-          className={`truncate text-sm font-semibold text-sidebar-foreground transition-opacity duration-200 ${
-            collapsed ? "hidden w-0 opacity-0" : "opacity-100"
-          }`}
-        >
-          {departmentContext && !inProjectContext ? departmentTitleRest : sidebarTitle}
-        </span>
+      <div className={`flex h-16 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6 pb-4"}`}>
+        {departmentContext && !inProjectContext && !collapsed ? (
+          <span className="truncate text-lg font-semibold leading-6 text-sidebar-foreground transition-opacity duration-200">
+            {sidebarTitle}
+          </span>
+        ) : (
+          <>
+            <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-bold text-sidebar-primary-foreground">
+              {sidebarInitial}
+            </div>
+            <span
+              className={`truncate text-sm font-semibold text-sidebar-foreground transition-opacity duration-200 ${
+                collapsed ? "hidden w-0 opacity-0" : "opacity-100"
+              }`}
+            >
+              {sidebarTitle}
+            </span>
+          </>
+        )}
       </div>
 
-      <nav className="mt-2 w-full flex-1 space-y-1 overflow-hidden px-4">
+      <nav className="w-full flex-1 space-y-1 overflow-hidden px-4">
         {inProjectContext ? (
           <div className="mb-4 space-y-2">
             <a

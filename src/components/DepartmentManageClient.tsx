@@ -1040,12 +1040,12 @@ export default function DepartmentManageClient({
       return (
         <td key={column.id} className="overflow-hidden px-5 py-4">
           <div className="min-w-0">
-            <Link
+            <a
               href={`/projects/select?projectId=${project.id}`}
               className="block truncate font-semibold text-foreground transition-colors hover:text-primary"
             >
               {project.name}
-            </Link>
+            </a>
           </div>
         </td>
       );
@@ -1103,7 +1103,7 @@ export default function DepartmentManageClient({
       <td key={column.id} className="overflow-hidden px-5 py-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button asChild size="xs" variant="outline">
-            <Link href={`/projects/select?projectId=${project.id}`}>{t.viewProject}</Link>
+            <a href={`/projects/select?projectId=${project.id}`}>{t.viewProject}</a>
           </Button>
           <Button asChild size="xs" variant="outline">
             <Link href={`/departments/${department.id}/projects/${project.id}/members`}>{t.memberButton}</Link>
@@ -1242,24 +1242,23 @@ export default function DepartmentManageClient({
               </div>
             </div>
 
-            <div className="flex items-center rounded-xl border bg-background p-5">
-              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm font-medium text-muted-foreground">
-                <span>
+            <div className="flex items-center justify-center rounded-xl border bg-background p-5 text-center">
+              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium text-muted-foreground">
+                <span className="inline-flex items-baseline gap-2">
                   {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.members.length}</span>
                 </span>
-                <span>
+                <span className="inline-flex items-baseline gap-2">
                   {t.projects} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.projects.length}</span>
                 </span>
               </div>
             </div>
 
-            <div className="flex flex-col justify-center rounded-xl border bg-background p-5">
-              <div className="text-right text-lg font-semibold leading-6 text-foreground">{todayLabel}</div>
-              <div className="mt-4 flex min-w-0 items-center justify-between gap-3">
+            <div className="flex items-center justify-center rounded-xl border bg-background p-5">
+              <div className="min-w-0 text-left">
                 <div className="min-w-0 truncate text-base font-medium leading-6 text-foreground">
                   {displayMember(currentDepartmentMember || { userName: null, userEmail: t.currentUser })}
                 </div>
-                <div className="flex shrink-0 items-center justify-end gap-2">
+                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     {getDepartmentRoleText(currentDepartmentMember?.role, t)}
                   </Badge>
@@ -1275,7 +1274,10 @@ export default function DepartmentManageClient({
             <div className="space-y-6 lg:col-span-1">
               <div className="flex flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
-                  <h2 className="text-sm font-semibold text-foreground">{t.mySchedule}</h2>
+                  <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
+                    {t.mySchedule}
+                    <span className="ml-2 text-xs font-medium text-muted-foreground">{todayLabel}</span>
+                  </h2>
                   <div className="flex rounded-md bg-muted p-0.5">
                     {(["today", "week"] as const).map((view) => (
                       <Button
