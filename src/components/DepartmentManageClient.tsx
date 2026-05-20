@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Loader2,
   Plus,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import {
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
+import { addReminderComment, setReminderCompleted } from "@/app/actions/reminders";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +52,7 @@ import { Textarea } from "@/components/ui/textarea";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import type { RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
-import type { DepartmentItemCenterItem } from "@/lib/departmentReminders";
+import type { DepartmentDashboardTask, DepartmentItemCenterItem } from "@/lib/departmentReminders";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
@@ -145,6 +147,17 @@ const TEXT = {
     thisWeek: "This week",
     noSchedule: "No schedule items.",
     allSchedule: "All schedule",
+    myTasks: "My tasks",
+    allTasks: "All tasks",
+    noMyTasks: "No tasks assigned to you.",
+    taskDetail: "Task detail",
+    openedBy: "Opened by",
+    reply: "Reply",
+    replies: "Replies",
+    complete: "Complete",
+    reopen: "Reopen",
+    openIssue: "Open issue",
+    saveReply: "Save reply",
     myProjects: "My projects",
     noMyProjects: "No projects assigned to you.",
     unresolved: "Unresolved",
@@ -252,6 +265,17 @@ const TEXT = {
     thisWeek: "本周",
     noSchedule: "暂无日程事项。",
     allSchedule: "全部日程",
+    myTasks: "我的任务",
+    allTasks: "全部任务",
+    noMyTasks: "暂无你负责的任务。",
+    taskDetail: "任务详情",
+    openedBy: "发起人",
+    reply: "回复",
+    replies: "回复",
+    complete: "完成",
+    reopen: "重新打开",
+    openIssue: "打开问题",
+    saveReply: "保存回复",
     myProjects: "我的项目",
     noMyProjects: "暂无你参与的项目。",
     unresolved: "待解决",
@@ -414,6 +438,15 @@ function formatIssueDueDate(dueDate: string | null, locale: Locale, fallback: st
   return new Date(dueDate).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
     month: "short",
     day: "numeric",
+  });
+}
+function formatDashboardTaskDateTime(value: string | null, locale: Locale) {
+  if (!value) return "";
+  return new Date(value).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 function isScheduleItemRelatedToUser(item: DepartmentItemCenterItem, userId: string) {
@@ -647,6 +680,7 @@ export default function DepartmentManageClient({
     manageableProjects: [],
   },
   scheduleItems = [],
+  myTaskItems = [],
 }: {
   department: DepartmentWorkspaceData;
   locale: Locale;
@@ -657,6 +691,7 @@ export default function DepartmentManageClient({
   notifications?: DepartmentNotificationListItem[];
   notificationPermission?: DepartmentNotificationPermission;
   scheduleItems?: DepartmentItemCenterItem[];
+  myTaskItems?: DepartmentDashboardTask[];
 }) {
   const t = TEXT[locale];
   const router = useRouter();
@@ -693,6 +728,9 @@ export default function DepartmentManageClient({
   const [projectDragOverIndex, setProjectDragOverIndex] = useState<number | null>(null);
   const [projectDragOverSide, setProjectDragOverSide] = useState<"left" | "right" | null>(null);
   const [scheduleView, setScheduleView] = useState<"today" | "week">("week");
+  const [selectedDashboardTaskId, setSelectedDashboardTaskId] = useState<string | null>(null);
+  const [dashboardTaskReply, setDashboardTaskReply] = useState("");
+  const [dashboardTaskError, setDashboardTaskError] = useState("");
   const [selectedMyProjectId, setSelectedMyProjectId] = useState(() =>
     typeof window === "undefined" ? "" : window.localStorage.getItem(myProjectStorageKey) || ""
   );
@@ -785,6 +823,16 @@ export default function DepartmentManageClient({
     () => department.members.find((member) => member.userId === currentUserId) || null,
     [currentUserId, department.members]
   );
+  const selectedDashboardTask = useMemo(
+    () => myTaskItems.find((task) => task.id === selectedDashboardTaskId) || null,
+    [myTaskItems, selectedDashboardTaskId]
+  );
+  const dashboardNotifications = useMemo(() => {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const recentNotifications = notifications.filter((notification) => new Date(notification.createdAt) >= oneMonthAgo);
+    return recentNotifications.length >= 3 ? recentNotifications : notifications.slice(0, 3);
+  }, [notifications]);
   const todayLabel = useMemo(
     () =>
       new Date().toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
@@ -802,6 +850,46 @@ export default function DepartmentManageClient({
     setSelectedMyProjectId(projectId);
     window.localStorage.setItem(myProjectStorageKey, projectId);
   };
+  const openDashboardTaskDetail = (task: DepartmentDashboardTask) => {
+    setSelectedDashboardTaskId(task.id);
+    setDashboardTaskReply("");
+    setDashboardTaskError("");
+  };
+  const openDashboardNotificationDetail = (notification: DepartmentNotificationListItem) => {
+    setNotificationErrorMsg("");
+    setResendForm({ title: notification.title, content: notification.content });
+    setSelectedNotification(notification);
+  };
+  const closeDashboardTaskDetail = () => {
+    setSelectedDashboardTaskId(null);
+    setDashboardTaskReply("");
+    setDashboardTaskError("");
+  };
+  const handleDashboardTaskCompleted = (completed: boolean) => {
+    if (!selectedDashboardTask || selectedDashboardTask.kind !== "REMINDER") return;
+    setDashboardTaskError("");
+    startTransition(async () => {
+      const result = await setReminderCompleted(selectedDashboardTask.id, completed);
+      if (!result.success) {
+        setDashboardTaskError(result.error || "Failed");
+        return;
+      }
+      router.refresh();
+    });
+  };
+  const handleDashboardTaskReply = () => {
+    if (!selectedDashboardTask || selectedDashboardTask.kind !== "REMINDER" || !dashboardTaskReply.trim()) return;
+    setDashboardTaskError("");
+    startTransition(async () => {
+      const result = await addReminderComment(selectedDashboardTask.id, dashboardTaskReply);
+      if (!result.success) {
+        setDashboardTaskError(result.error || "Failed");
+        return;
+      }
+      setDashboardTaskReply("");
+      router.refresh();
+    });
+  };
   const dashboardScheduleItems = useMemo(() => {
     const todayStart = startOfLocalDay(new Date());
     const todayEnd = endOfLocalDay(todayStart);
@@ -813,6 +901,7 @@ export default function DepartmentManageClient({
 
     return scheduleItems
       .filter((item) => !item.completedAt)
+      .filter((item) => item.itemType !== "TODO" && item.itemType !== "ISSUE_DUE")
       .filter((item) => isScheduleItemRelatedToUser(item, currentUserId))
       .filter((item) => {
         const itemDate = new Date(item.date);
@@ -1223,11 +1312,14 @@ export default function DepartmentManageClient({
     <div className="space-y-6">
       {mode === "dashboard" ? (
         <div className="space-y-6 text-foreground">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div className="rounded-xl border bg-background p-5 md:col-span-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-8">
+            <div className="rounded-xl border bg-background p-5 md:col-span-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold leading-5 text-foreground">{department.name}</h2>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-semibold leading-5 text-foreground">{department.name}</h2>
+                    <Badge variant="secondary" className="font-mono">{department.key}</Badge>
+                  </div>
                   <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{department.description || t.noDescription}</p>
                 </div>
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border bg-muted/45 text-muted-foreground">
@@ -1235,37 +1327,56 @@ export default function DepartmentManageClient({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">{department.key}</Badge>
                 <Badge variant="outline">
-                  {t.head}: {department.headName || t.unassignedOwner}
+                  {department.members.length} {t.members}
+                </Badge>
+                <Badge variant="outline">
+                  {department.projects.length} {t.projects}
                 </Badge>
               </div>
             </div>
 
-            <div className="flex items-center justify-center rounded-xl border bg-background p-5 text-center">
-              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium text-muted-foreground">
-                <span className="inline-flex items-baseline gap-2">
-                  {t.members} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.members.length}</span>
-                </span>
-                <span className="inline-flex items-baseline gap-2">
-                  {t.projects} <span className="text-3xl font-semibold leading-none tracking-[-0.02em] text-foreground">{department.projects.length}</span>
-                </span>
+            <div className="flex min-h-[142px] flex-col overflow-hidden rounded-xl border bg-background md:col-span-3">
+              <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                <h2 className="text-sm font-bold text-foreground">{t.latestAnnouncements}</h2>
+                <Link
+                  href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex w-20 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
+                >
+                  {t.allAnnouncements}
+                </Link>
               </div>
-            </div>
-
-            <div className="flex items-center justify-center rounded-xl border bg-background p-5">
-              <div className="min-w-0 text-left">
-                <div className="min-w-0 truncate text-base font-medium leading-6 text-foreground">
-                  {displayMember(currentDepartmentMember || { userName: null, userEmail: t.currentUser })}
-                </div>
-                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant="secondary">
-                    {getDepartmentRoleText(currentDepartmentMember?.role, t)}
-                  </Badge>
-                  <Badge variant="outline">
-                    {locale === "zh" ? `参与 ${myProjects.length} 个项目` : `${myProjects.length} projects`}
-                  </Badge>
-                </div>
+              <div className="max-h-[138px] min-h-0 flex-1 overflow-y-auto">
+                {dashboardNotifications.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">{t.noAnnouncements}</div>
+                ) : (
+                  dashboardNotifications.map((notification, index) => (
+                    <button
+                      type="button"
+                      key={notification.receiptId}
+                      onClick={() => openDashboardNotificationDetail(notification)}
+                      className={`flex w-full items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-muted/45 ${
+                        index < dashboardNotifications.length - 1 ? "border-b" : ""
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          notification.read
+                            ? "border bg-muted text-muted-foreground"
+                            : "bg-primary text-primary-foreground"
+                        }`}
+                      >
+                        {getNotificationLevelText(notification.level, t)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm leading-5 text-foreground">{notification.title}</span>
+                      <span className="w-20 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
+                        {formatRelativeTime(notification.createdAt, locale)}
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -1346,49 +1457,44 @@ export default function DepartmentManageClient({
 
               <div className="flex flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
-                  <h2 className="text-sm font-semibold text-foreground">{t.latestAnnouncements}</h2>
+                  <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">{t.myTasks}</h2>
                   <Link
-                    href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT`}
+                    href={`/departments/${department.id}/items?tab=tasks`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex rounded-md px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    className="inline-flex w-20 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
                   >
-                    {t.allAnnouncements}
+                    {t.allTasks}
                   </Link>
                 </div>
-                <div className="p-0">
-                  {notifications.length === 0 ? (
-                    <div className="p-6 text-sm text-muted-foreground">{t.noAnnouncements}</div>
+                <div className="max-h-[240px] overflow-y-auto p-0">
+                  {myTaskItems.length === 0 ? (
+                    <div className="p-6 text-sm text-muted-foreground">{t.noMyTasks}</div>
                   ) : (
                     <div>
-                      {notifications.map((notification, index) => {
-                        const isRead = notification.read;
-                        return (
-                          <Link
-                            key={notification.receiptId}
-                            href={`/departments/${department.id}/notifications?category=ANNOUNCEMENT&selected=${notification.id}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/45 ${
-                              index < notifications.length - 1 ? "border-b" : ""
-                            }`}
-                          >
-                            <span
-                              className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                isRead
-                                  ? "border bg-muted text-muted-foreground"
-                                  : "bg-primary text-primary-foreground"
-                              }`}
-                            >
-                              {getNotificationLevelText(notification.level, t)}
+                      {myTaskItems.map((task, index) => (
+                        <button
+                          type="button"
+                          key={`${task.kind}-${task.id}`}
+                          onClick={() => openDashboardTaskDetail(task)}
+                          className={`block w-full px-4 py-3 text-left transition-colors hover:bg-muted/45 ${
+                            index < myTaskItems.length - 1 ? "border-b" : ""
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground">
+                              {task.issueKey ? `${task.issueKey} ${task.title}` : task.title}
                             </span>
-                            <span className="min-w-0 flex-1 text-sm leading-5 text-foreground">{notification.title}</span>
-                            <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
-                              {formatRelativeTime(notification.createdAt, locale)}
+                            {task.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
+                            <span className={`w-20 shrink-0 whitespace-nowrap text-right text-xs font-medium ${task.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                              {formatIssueDueDate(task.dueDate, locale, t.noDueDate)}
                             </span>
-                          </Link>
-                        );
-                      })}
+                          </div>
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                            {task.projectKey ? <span className="shrink-0">{task.projectKey}</span> : null}
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1484,6 +1590,143 @@ export default function DepartmentManageClient({
                 ) : (
                   <div className="p-6 text-sm text-muted-foreground">{t.noMyProjects}</div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedDashboardTask ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={closeDashboardTaskDetail}>
+          <div
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-background shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b px-6 py-4">
+              <div className="min-w-0">
+                <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
+                  {selectedDashboardTask.projectKey ? (
+                    <Badge variant="secondary">{selectedDashboardTask.projectKey}</Badge>
+                  ) : null}
+                  {selectedDashboardTask.issueKey ? (
+                    <Badge variant="outline">{selectedDashboardTask.issueKey}</Badge>
+                  ) : null}
+                  {selectedDashboardTask.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
+                </div>
+                <h3 className="break-words text-lg font-semibold text-foreground">{selectedDashboardTask.title}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedDashboardTask.kind === "REMINDER" ? (
+                    <>
+                      {t.openedBy}: {selectedDashboardTask.creatorName || selectedDashboardTask.creatorEmail || "-"} · {t.assignee}:{" "}
+                      {selectedDashboardTask.assigneeName || selectedDashboardTask.assigneeEmail || t.unassignedOwner}
+                    </>
+                  ) : (
+                    <>
+                      {t.assignee}: {selectedDashboardTask.assigneeName || selectedDashboardTask.assigneeEmail || t.unassignedOwner}
+                    </>
+                  )}
+                  {selectedDashboardTask.dueDate ? ` · ${t.dueDate}: ${formatDashboardTaskDateTime(selectedDashboardTask.dueDate, locale)}` : ""}
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={closeDashboardTaskDetail}>
+                <X size={18} />
+              </Button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              {dashboardTaskError ? (
+                <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                  {dashboardTaskError}
+                </div>
+              ) : null}
+
+              <div className="rounded-lg border bg-card p-4">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{selectedDashboardTask.content || "-"}</p>
+              </div>
+
+              {selectedDashboardTask.kind === "REMINDER" ? (
+                <div className="mt-5 space-y-4">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t.replies} ({selectedDashboardTask.comments.length})
+                    </p>
+                    {selectedDashboardTask.comments.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedDashboardTask.comments.map((comment) => (
+                          <div key={comment.id} className="rounded-lg bg-muted/50 px-3 py-2">
+                            <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+                              <span className="min-w-0 truncate font-semibold text-foreground">
+                                {comment.authorName || comment.authorEmail}
+                              </span>
+                              <span className="shrink-0">{formatRelativeTime(comment.createdAt, locale)}</span>
+                            </div>
+                            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">{comment.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {selectedDashboardTask.canComment ? (
+                    <Textarea
+                      value={dashboardTaskReply}
+                      onChange={(event) => setDashboardTaskReply(event.target.value)}
+                      placeholder={t.reply}
+                      rows={4}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 border-t bg-muted/40 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedDashboardTask.kind === "REMINDER" ? (
+                  selectedDashboardTask.completedAt ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending || !selectedDashboardTask.canComplete}
+                      onClick={() => handleDashboardTaskCompleted(false)}
+                    >
+                      {t.reopen}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending || !selectedDashboardTask.canComplete}
+                      onClick={() => handleDashboardTaskCompleted(true)}
+                      className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
+                    >
+                      {t.complete}
+                    </Button>
+                  )
+                ) : (
+                  <Button asChild type="button" variant="outline" size="sm">
+                    <Link href={selectedDashboardTask.link} target="_blank" rel="noreferrer">
+                      {t.openIssue}
+                    </Link>
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={closeDashboardTaskDetail}>
+                  {t.cancel}
+                </Button>
+                {selectedDashboardTask.kind === "REMINDER" && selectedDashboardTask.canComment ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isPending || !dashboardTaskReply.trim()}
+                    onClick={handleDashboardTaskReply}
+                  >
+                    {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {t.saveReply}
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
 } from "@/lib/departmentWorkspace";
 import { getLatestDepartmentNotifications } from "@/lib/departmentNotifications";
 import {
+  getDepartmentDashboardTasks,
   getDepartmentItemCenterItems,
   getManageableReminderProjects,
 } from "@/lib/departmentReminders";
@@ -54,13 +55,13 @@ export default async function DepartmentPage({
     userId,
     canManageDepartment: canViewAllProjects,
   });
-  const [latestNotifications, scheduleItems] = await Promise.all([
+  const [latestNotifications, scheduleItems, myTaskItems] = await Promise.all([
     getLatestDepartmentNotifications({
       departmentId,
       userId,
       userRole,
       locale,
-      take: 5,
+      take: 50,
     }),
     getDepartmentItemCenterItems({
       departmentId,
@@ -70,6 +71,11 @@ export default async function DepartmentPage({
       manageableProjectIds: manageableReminderProjects.map((project) => project.id),
       canManageDepartment: canViewAllProjects,
       locale,
+    }),
+    getDepartmentDashboardTasks({
+      departmentId,
+      userId,
+      visibleProjectIds,
     }),
   ]);
 
@@ -85,6 +91,7 @@ export default async function DepartmentPage({
         notifications={latestNotifications.notifications}
         notificationPermission={latestNotifications.permission}
         scheduleItems={scheduleItems}
+        myTaskItems={myTaskItems}
       />
     </div>
   );

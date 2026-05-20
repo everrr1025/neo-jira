@@ -12,11 +12,13 @@ export function SidebarUserMenu({
   userName,
   userAvatar,
   locale,
+  position,
 }: {
   userId: string;
   userName: string;
   userAvatar?: string | null;
   locale: Locale;
+  position?: string | null;
 }) {
   const translations = getTranslations(locale);
 
@@ -45,6 +47,11 @@ export function SidebarUserMenu({
           <span className="truncate text-sm font-medium text-[#18181b]" title={userName}>
             {userName}
           </span>
+          {position ? (
+            <span className="mt-0.5 truncate text-xs text-[#71717a]" title={position}>
+              {position}
+            </span>
+          ) : null}
         </div>
       </div>
 

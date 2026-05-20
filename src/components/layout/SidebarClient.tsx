@@ -35,7 +35,7 @@ export function SidebarClient({
   activeProject: { id: string; name: string; key: string } | null;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
-  departmentContext?: { id: string; name: string } | null;
+  departmentContext?: { id: string; name: string; role?: string | null } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
@@ -273,6 +273,25 @@ export function SidebarClient({
             userName={user?.name || translations.sidebar.userFallback}
             userAvatar={user?.avatar}
             locale={locale}
+            position={
+              departmentContext?.role
+                ? departmentContext.role === "HEAD"
+                  ? locale === "zh"
+                    ? "负责人"
+                    : "Head"
+                  : departmentContext.role === "ASSISTANT"
+                    ? locale === "zh"
+                      ? "助理"
+                      : "Assistant"
+                    : locale === "zh"
+                      ? "成员"
+                      : "Member"
+                : isAdmin
+                  ? locale === "zh"
+                    ? "系统管理员"
+                    : "Administrator"
+                  : undefined
+            }
           />
         )}
       </div>

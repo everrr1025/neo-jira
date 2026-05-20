@@ -38,7 +38,7 @@ export async function Sidebar({ locale }: { locale: Locale }) {
       locale={locale}
       departmentContext={
         departmentMembership
-          ? { id: departmentMembership.departmentId, name: departmentMembership.departmentName }
+          ? { id: departmentMembership.departmentId, name: departmentMembership.departmentName, role: departmentMembership.role }
           : null
       }
     />

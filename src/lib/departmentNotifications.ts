@@ -353,7 +353,7 @@ export async function getLatestDepartmentNotifications({
         },
       },
     },
-    orderBy: [{ read: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ createdAt: "desc" }],
     take,
   });
 

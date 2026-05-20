@@ -124,6 +124,36 @@ export type DepartmentItemCenterItem = DepartmentUpcomingItem & {
   createdAt: string;
 };
 
+export type DepartmentDashboardTask = {
+  id: string;
+  kind: "REMINDER" | "ISSUE";
+  title: string;
+  content: string | null;
+  projectName: string | null;
+  projectKey: string | null;
+  issueKey: string | null;
+  creatorName: string | null;
+  creatorEmail: string | null;
+  assigneeName: string | null;
+  assigneeEmail: string | null;
+  dueDate: string | null;
+  priority: string;
+  taskStatus: string;
+  link: string;
+  isOverdue: boolean;
+  isImportant: boolean;
+  completedAt: string | null;
+  canComplete: boolean;
+  canComment: boolean;
+  comments: Array<{
+    id: string;
+    content: string;
+    createdAt: string;
+    authorName: string | null;
+    authorEmail: string;
+  }>;
+};
+
 function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -663,4 +693,165 @@ export async function getDepartmentItemCenterItems({
     } satisfies DepartmentItemCenterItem));
 
   return [...reminderItems, ...issueItems];
+}
+
+export async function getDepartmentDashboardTasks({
+  departmentId,
+  userId,
+  visibleProjectIds,
+}: {
+  departmentId: string;
+  userId: string;
+  visibleProjectIds: string[];
+}) {
+  const today = startOfToday();
+  const [reminders, issues] = await Promise.all([
+    prisma.reminder.findMany({
+      where: {
+        itemType: "TODO",
+        completedAt: null,
+        assigneeId: userId,
+        OR: [
+          { scopeType: "PERSONAL" },
+          { scopeType: "DEPARTMENT", departmentId },
+          visibleProjectIds.length > 0
+            ? { scopeType: "PROJECT", projectId: { in: visibleProjectIds } }
+            : { id: "__none__" },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        remindAt: true,
+        startAt: true,
+        priority: true,
+        taskStatus: true,
+        isImportant: true,
+        completedAt: true,
+        creator: { select: { name: true, email: true } },
+        assignee: { select: { name: true, email: true } },
+        project: { select: { name: true, key: true } },
+        issue: { select: { id: true, key: true } },
+        comments: {
+          include: {
+            author: { select: { name: true, email: true } },
+          },
+          orderBy: { createdAt: "asc" },
+          take: 20,
+        },
+      },
+      orderBy: [{ remindAt: "asc" }, { startAt: "asc" }, { priority: "desc" }],
+      take: 20,
+    }),
+    visibleProjectIds.length > 0
+      ? prisma.issue.findMany({
+          where: {
+            projectId: { in: visibleProjectIds },
+            assigneeId: userId,
+          },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            description: true,
+            dueDate: true,
+            priority: true,
+            status: true,
+            updatedAt: true,
+            assignee: { select: { name: true, email: true } },
+            project: {
+              select: {
+                name: true,
+                key: true,
+                workflowStatuses: {
+                  where: { category: "DONE" },
+                  select: { key: true },
+                },
+              },
+            },
+          },
+          orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
+          take: 50,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const reminderItems = reminders.map((reminder) => {
+    const dueDate = reminder.remindAt;
+    return {
+      id: reminder.id,
+      kind: "REMINDER" as const,
+      title: reminder.title,
+      content: reminder.content,
+      projectName: reminder.project?.name || null,
+      projectKey: reminder.project?.key || null,
+      issueKey: reminder.issue?.key || null,
+      creatorName: reminder.creator.name,
+      creatorEmail: reminder.creator.email,
+      assigneeName: reminder.assignee?.name || null,
+      assigneeEmail: reminder.assignee?.email || null,
+      dueDate: dueDate?.toISOString() || null,
+      priority: reminder.priority,
+      taskStatus: reminder.taskStatus,
+      link: reminder.issue ? `/issues/${reminder.issue.id}` : `/departments/${departmentId}/items?tab=tasks&selected=${reminder.id}`,
+      isOverdue: Boolean(dueDate && dueDate < today),
+      isImportant: reminder.isImportant,
+      completedAt: reminder.completedAt?.toISOString() || null,
+      canComplete: true,
+      canComment: true,
+      comments: reminder.comments.map((comment) => ({
+        id: comment.id,
+        content: comment.content,
+        createdAt: comment.createdAt.toISOString(),
+        authorName: comment.author.name,
+        authorEmail: comment.author.email,
+      })),
+    };
+  });
+
+  const issueItems = issues
+    .filter((issue) => {
+      const doneStatusKeys = issue.project.workflowStatuses.map((status) => status.key);
+      return !(doneStatusKeys.length > 0 ? doneStatusKeys : ["DONE"]).includes(issue.status);
+    })
+    .map((issue) => ({
+      id: issue.id,
+      kind: "ISSUE" as const,
+      title: issue.title,
+      content: issue.description,
+      projectName: issue.project.name,
+      projectKey: issue.project.key,
+      issueKey: issue.key,
+      creatorName: null,
+      creatorEmail: null,
+      assigneeName: issue.assignee?.name || null,
+      assigneeEmail: issue.assignee?.email || null,
+      dueDate: issue.dueDate?.toISOString() || null,
+      priority: issue.priority,
+      taskStatus: issue.status,
+      link: `/issues/${issue.id}`,
+      isOverdue: Boolean(issue.dueDate && issue.dueDate < today),
+      isImportant: issue.priority === "URGENT" || issue.priority === "HIGH",
+      completedAt: null,
+      canComplete: false,
+      canComment: false,
+      comments: [],
+    }));
+
+  const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+  return [...reminderItems, ...issueItems]
+    .sort((left, right) => {
+      if (left.isImportant !== right.isImportant) return left.isImportant ? -1 : 1;
+      if (left.isOverdue !== right.isOverdue) return left.isOverdue ? -1 : 1;
+      if (left.dueDate && right.dueDate) {
+        const dateDiff = new Date(left.dueDate).getTime() - new Date(right.dueDate).getTime();
+        if (dateDiff !== 0) return dateDiff;
+      }
+      if (left.dueDate && !right.dueDate) return -1;
+      if (!left.dueDate && right.dueDate) return 1;
+      return (priorityOrder[left.priority] ?? 4) - (priorityOrder[right.priority] ?? 4);
+    })
+    .slice(0, 20) satisfies DepartmentDashboardTask[];
 }
