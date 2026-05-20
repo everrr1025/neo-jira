@@ -25,6 +25,7 @@ import {
 } from "@/app/actions/departments";
 import {
   createAnnouncementNotification,
+  markAnnouncementRead,
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
@@ -151,6 +152,7 @@ const TEXT = {
     allTasks: "All tasks",
     noMyTasks: "No tasks assigned to you.",
     taskDetail: "Task detail",
+    noContent: "No content",
     openedBy: "Opened by",
     reply: "Reply",
     replies: "Replies",
@@ -269,6 +271,7 @@ const TEXT = {
     allTasks: "全部任务",
     noMyTasks: "暂无你负责的任务。",
     taskDetail: "任务详情",
+    noContent: "无内容",
     openedBy: "发起人",
     reply: "回复",
     replies: "回复",
@@ -859,6 +862,12 @@ export default function DepartmentManageClient({
     setNotificationErrorMsg("");
     setResendForm({ title: notification.title, content: notification.content });
     setSelectedNotification(notification);
+    if (!notification.read && notification.status === "SENT") {
+      startTransition(async () => {
+        await markAnnouncementRead(notification.id);
+        router.refresh();
+      });
+    }
   };
   const closeDashboardTaskDetail = () => {
     setSelectedDashboardTaskId(null);
@@ -1640,8 +1649,10 @@ export default function DepartmentManageClient({
                 </div>
               ) : null}
 
-              <div className="rounded-lg border bg-card p-4">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{selectedDashboardTask.content || "-"}</p>
+              <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
+                <p className={`whitespace-pre-wrap text-sm leading-6 ${selectedDashboardTask.content ? "text-foreground" : "text-muted-foreground"}`}>
+                  {selectedDashboardTask.content || t.noContent}
+                </p>
               </div>
 
               {selectedDashboardTask.kind === "REMINDER" ? (

@@ -164,6 +164,7 @@ const TEXT = {
     save: "Save",
     replies: "Replies",
     reply: "Reply",
+    noContent: "No content",
     addReply: "Add reply",
     noReplies: "No replies yet.",
     openedBy: "Opened by",
@@ -267,6 +268,7 @@ const TEXT = {
     save: "保存",
     replies: "回复",
     reply: "回复",
+    noContent: "无内容",
     addReply: "添加回复",
     noReplies: "暂无回复。",
     openedBy: "发起人",
@@ -1100,6 +1102,8 @@ export default function DepartmentItemsClient({
       };
   const router = useRouter();
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
+  const taskContentEditorRef = useRef<RichTextEditorHandle>(null);
+  const editTaskContentEditorRef = useRef<RichTextEditorHandle>(null);
   const [scheduleView, setScheduleView] = useState<ScheduleView>("week");
   const [visibleScheduleTypes, setVisibleScheduleTypes] = useState<Record<ScheduleType, boolean>>({
     meeting: true,
@@ -1787,6 +1791,9 @@ export default function DepartmentItemsClient({
         return;
       }
 
+      if (!isScheduleCreate) {
+        taskContentEditorRef.current?.commitPendingUploads();
+      }
       setIsCreateOpen(false);
       setEditingScheduleItemId(null);
       resetForm();
@@ -1903,6 +1910,7 @@ export default function DepartmentItemsClient({
           setDetailError(taskResult?.error || "Failed");
           return;
         }
+        editTaskContentEditorRef.current?.commitPendingUploads();
       }
 
       if (replyContent.trim()) {
@@ -2527,7 +2535,7 @@ export default function DepartmentItemsClient({
               <button type="button" onClick={() => openTaskDetail(item)} className="block w-full text-left">
                 {item.content ? (
                   <span className="block overflow-hidden text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
-                    {item.content}
+                    {notePreview(item.content)}
                   </span>
                 ) : null}
               </button>
@@ -2636,7 +2644,7 @@ export default function DepartmentItemsClient({
           ) : (
             <h3 className="mt-2 break-words font-semibold text-slate-900">{item.title}</h3>
           )}
-          {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.content}</p> : null}
+          {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{notePreview(item.content)}</p> : null}
           <p className="mt-3 text-xs text-slate-400">
             {item.itemType === "NOTE" ? new Date(item.createdAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US") : new Date(item.date).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}
             {item.projectKey ? ` · ${item.projectKey}` : ""}
@@ -4616,14 +4624,17 @@ export default function DepartmentItemsClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsCreateOpen(false)}
+                  onClick={() => {
+                    void taskContentEditorRef.current?.discardPendingUploads();
+                    setIsCreateOpen(false);
+                  }}
                   className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreate} className="flex flex-1 flex-col overflow-hidden">
+              <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
                   <div className="space-y-2">
                     <Label>
@@ -4638,12 +4649,14 @@ export default function DepartmentItemsClient({
                   </div>
                   <div className="space-y-2">
                     <Label>{t.notes}</Label>
-                    <Textarea
-                      value={form.content}
-                      onChange={(event) => setForm((current) => ({ ...current, content: event.target.value }))}
-                      rows={7}
-                      className="leading-6"
-                    />
+                    <div className="h-72 min-h-0">
+                      <RichTextEditor
+                        ref={taskContentEditorRef}
+                        value={form.content}
+                        onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
+                        height={220}
+                      />
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {activeTab === "tasks" || form.itemType === "TODO" ? (
@@ -4673,7 +4686,10 @@ export default function DepartmentItemsClient({
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setIsCreateOpen(false)}
+                    onClick={() => {
+                      void taskContentEditorRef.current?.discardPendingUploads();
+                      setIsCreateOpen(false);
+                    }}
                     disabled={isPending}
                   >
                     {t.cancel}
@@ -4709,12 +4725,27 @@ export default function DepartmentItemsClient({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setIsEditingTask((current) => !current)}
+                    onClick={() => {
+                      if (isEditingTask) {
+                        void editTaskContentEditorRef.current?.discardPendingUploads();
+                      }
+                      setIsEditingTask((current) => !current);
+                    }}
                   >
                     {isEditingTask ? t.less : t.edit}
                   </Button>
                 ) : null}
-                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setSelectedTaskId(null)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => {
+                    if (isEditingTask) {
+                      void editTaskContentEditorRef.current?.discardPendingUploads();
+                    }
+                    setSelectedTaskId(null);
+                  }}
+                >
                   <X size={18} />
                 </Button>
               </div>
@@ -4734,11 +4765,14 @@ export default function DepartmentItemsClient({
                 </div>
                 <div className="space-y-2">
                   <Label>{t.notes}</Label>
-                  <Textarea
-                    value={editForm.content}
-                    onChange={(event) => setEditForm((current) => ({ ...current, content: event.target.value }))}
-                    rows={6}
-                  />
+                  <div className="h-64 min-h-0">
+                    <RichTextEditor
+                      ref={editTaskContentEditorRef}
+                      value={editForm.content}
+                      onChange={(value) => setEditForm((current) => ({ ...current, content: value || "" }))}
+                      height={190}
+                    />
+                  </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <DropdownField
@@ -4761,8 +4795,14 @@ export default function DepartmentItemsClient({
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border bg-card p-4">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{selectedTask.content || "-"}</p>
+              <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
+                {selectedTask.content ? (
+                  <div className="text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
+                    <RichTextEditor value={selectedTask.content} onChange={() => {}} readOnly />
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{t.noContent}</p>
+                )}
               </div>
             )}
 
@@ -4837,7 +4877,12 @@ export default function DepartmentItemsClient({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedTaskId(null)}
+                  onClick={() => {
+                    if (isEditingTask) {
+                      void editTaskContentEditorRef.current?.discardPendingUploads();
+                    }
+                    setSelectedTaskId(null);
+                  }}
                 >
                   {t.cancel}
                 </Button>

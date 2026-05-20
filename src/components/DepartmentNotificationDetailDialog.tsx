@@ -53,6 +53,10 @@ function metaText(notification: DepartmentNotificationListItem, labels: DetailDi
   return `${prefix} ${createdText} ${formatRelativeTime(notification.createdAt, locale)}`;
 }
 
+function hasContent(content: string) {
+  return content.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+}
+
 export default function DepartmentNotificationDetailDialog({
   locale,
   notification,
@@ -69,6 +73,7 @@ export default function DepartmentNotificationDetailDialog({
   const canResend = notification.status === "REVOKED" && notification.canManage;
   const canRevoke = notification.status === "SENT" && notification.canManage;
   const resendFormId = "department-notification-resend-form";
+  const contentIsEmpty = !hasContent(notification.content);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
@@ -111,10 +116,16 @@ export default function DepartmentNotificationDetailDialog({
               </div>
             </form>
           ) : (
-            <div className="rounded-lg border border-slate-200 p-4">
-              <div className="text-sm leading-6 text-slate-700 [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
-                <RichTextEditor value={notification.content} onChange={() => {}} readOnly />
-              </div>
+            <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
+              {contentIsEmpty ? (
+                <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                  {locale === "zh" ? "无内容" : "No content"}
+                </p>
+              ) : (
+                <div className="text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
+                  <RichTextEditor value={notification.content} onChange={() => {}} readOnly />
+                </div>
+              )}
             </div>
           )}
         </div>

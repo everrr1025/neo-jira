@@ -1245,8 +1245,8 @@ function NotificationFormDialog({
     <Dialog open onOpenChange={(open) => {
       if (!open) onClose();
     }}>
-      <DialogContent className="max-h-[90vh] max-w-[calc(100%-2rem)] overflow-hidden p-0 sm:max-w-2xl">
-        <form onSubmit={onSubmit} className="flex flex-1 flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[90vh] max-w-[calc(100%-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
+        <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>{t.newNotification}</DialogTitle>
             <DialogDescription>{t.subtitle}</DialogDescription>
@@ -1317,12 +1317,14 @@ function NotificationFormDialog({
               <Label>
                 {t.content} <span className="text-red-500">*</span>
               </Label>
-              <RichTextEditor
-                ref={editorRef}
-                value={form.content}
-                onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
-                height={220}
-              />
+              <div className="h-72 min-h-0">
+                <RichTextEditor
+                  ref={editorRef}
+                  value={form.content}
+                  onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
+                  height={220}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter className="border-t bg-muted/40 px-6 py-4">
