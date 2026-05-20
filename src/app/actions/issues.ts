@@ -1,5 +1,6 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { revalidatePath } from "next/cache";
 
@@ -112,6 +113,22 @@ const workflowSelect = {
   },
 } as const;
 
+async function deleteIssueDueSystemNotifications(
+  tx: Pick<Prisma.TransactionClient, "announcement">,
+  issueIds: string[],
+) {
+  const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
+  if (uniqueIssueIds.length === 0) return;
+
+  await tx.announcement.deleteMany({
+    where: {
+      OR: uniqueIssueIds.map((issueId) => ({
+        dedupeKey: { startsWith: `issue-due:${issueId}:` },
+      })),
+    },
+  });
+}
+
 type IssueWatcherSnapshot = IssueAuditSnapshot & { key: string };
 
 function getIssueWatcherNotificationMessage(
@@ -145,13 +162,16 @@ export async function updateIssueStatus(issueId: string, status: string) {
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
 
-    const { issue, watcherMessage } = await prisma.$transaction(async (tx) => {
+    const { issue, departmentId, didCompleteIssue, watcherMessage } = await prisma.$transaction(async (tx) => {
       const existingIssue = await tx.issue.findUnique({
         where: { id: issueId },
         select: {
           ...issueAuditSelect,
           project: {
-            select: workflowSelect,
+            select: {
+              departmentId: true,
+              ...workflowSelect,
+            },
           },
         },
       });
@@ -193,8 +213,14 @@ export async function updateIssueStatus(issueId: string, status: string) {
       });
       await createAuditLogs(tx, auditLogs);
 
+      if (isDoneWorkflowStatus(updatedIssue.status, workflowStatuses)) {
+        await deleteIssueDueSystemNotifications(tx, [updatedIssue.id]);
+      }
+
       return {
         issue: updatedIssue,
+        departmentId: existingIssue.project.departmentId,
+        didCompleteIssue: isDoneWorkflowStatus(updatedIssue.status, workflowStatuses),
         watcherMessage: getIssueWatcherNotificationMessage(
           existingIssue as IssueWatcherSnapshot,
           updatedIssue as IssueWatcherSnapshot,
@@ -206,6 +232,9 @@ export async function updateIssueStatus(issueId: string, status: string) {
     revalidatePath("/issues");
     revalidatePath("/iterations");
     revalidatePath(`/issues/${issueId}`);
+    if (didCompleteIssue && departmentId) {
+      revalidatePath(`/departments/${departmentId}/notifications`);
+    }
 
     if (watcherMessage) {
       await notifyIssueWatchers({
@@ -732,7 +761,10 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         select: {
           ...issueAuditSelect,
           project: {
-            select: workflowSelect,
+            select: {
+              departmentId: true,
+              ...workflowSelect,
+            },
           },
         },
       });
@@ -833,6 +865,10 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
       });
       await createAuditLogs(tx, auditLogs);
 
+      if (isDoneWorkflowStatus(nextIssue.status, previousIssue.project.workflowStatuses as WorkflowStatusRecord[])) {
+        await deleteIssueDueSystemNotifications(tx, [nextIssue.id]);
+      }
+
       return {
         existingIssue: previousIssue,
         updatedIssue: nextIssue,
@@ -880,6 +916,12 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     revalidatePath(`/issues/${issueId}`);
     revalidatePath("/issues");
     revalidatePath("/iterations");
+    if (
+      isDoneWorkflowStatus(updatedIssue.status, existingIssue.project.workflowStatuses as WorkflowStatusRecord[]) &&
+      existingIssue.project.departmentId
+    ) {
+      revalidatePath(`/departments/${existingIssue.project.departmentId}/notifications`);
+    }
 
     return { success: true, issue: updatedIssue };
   } catch (error: unknown) {
@@ -1055,7 +1097,7 @@ export async function deleteIssue(issueId: string) {
 
     const issue = await prisma.issue.findUnique({
       where: { id: issueId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, project: { select: { departmentId: true } } },
     });
 
     if (!issue) {
@@ -1088,11 +1130,16 @@ export async function deleteIssue(issueId: string) {
         },
       });
 
+      await deleteIssueDueSystemNotifications(tx, [issueId]);
+
       await tx.issue.delete({ where: { id: issueId } });
     });
 
     revalidatePath("/issues");
     revalidatePath("/iterations");
+    if (issue.project.departmentId) {
+      revalidatePath(`/departments/${issue.project.departmentId}/notifications`);
+    }
 
     return { success: true };
   } catch (error: unknown) {
