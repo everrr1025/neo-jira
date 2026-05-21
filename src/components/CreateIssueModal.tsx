@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
-import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 
 type CreateIssueModalProps = {
   isOpen: boolean;
@@ -64,8 +64,6 @@ type DropdownOption = {
 };
 
 const emptySelectValue = "__empty__";
-const dateInputClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 function toSelectValue(value: string) {
   return value || emptySelectValue;
@@ -323,7 +321,7 @@ export default function CreateIssueModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => (!open ? void handleCancelAndClose() : undefined)}>
-        <DialogContent showCloseButton={false} className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogContent showCloseButton={false} className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b px-6 py-4">
             <div className="flex items-center justify-between gap-4">
               <DialogTitle>{text.modalTitle}</DialogTitle>
@@ -402,19 +400,16 @@ export default function CreateIssueModal({
                 onChange={(value) => setFormData((prev) => ({ ...prev, assigneeId: value }))}
                 options={assigneeOptions}
               />
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="dueDate">{text.dueDate}</Label>
-                <LocalizedDateInput
-                  id="dueDate"
-                  locale={locale}
-                  value={formData.dueDate}
-                  onChange={(event) => {
-                    setIsDueDateManuallyEdited(true);
-                    setFormData((prev) => ({ ...prev, dueDate: event.target.value }));
-                  }}
-                  className={dateInputClassName}
-                />
-              </div>
+              <ShadcnDatePicker
+                id="dueDate"
+                label={text.dueDate}
+                locale={locale}
+                value={formData.dueDate}
+                onChange={(dueDate) => {
+                  setIsDueDateManuallyEdited(true);
+                  setFormData((prev) => ({ ...prev, dueDate }));
+                }}
+              />
             </div>
 
             <div className="relative mb-2 flex flex-col gap-1.5">

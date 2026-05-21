@@ -13,6 +13,7 @@ import {
   Home,
   ListTodo,
   RefreshCw,
+  Settings,
   StickyNote,
   Users,
 } from "lucide-react";
@@ -27,12 +28,14 @@ import { SidebarUserMenu } from "./SidebarUserMenu";
 export function SidebarClient({
   isAdmin,
   activeProject,
+  canManageActiveProject,
   user,
   locale,
   departmentContext,
 }: {
   isAdmin: boolean;
   activeProject: { id: string; name: string; key: string } | null;
+  canManageActiveProject: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
   departmentContext?: { id: string; name: string; role?: string | null } | null;
@@ -49,6 +52,7 @@ export function SidebarClient({
   const tasksLabel = locale === "zh" ? "任务" : "Tasks";
   const scheduleLabel = locale === "zh" ? "日程" : "Schedule";
   const notesLabel = locale === "zh" ? "笔记" : "Notes";
+  const projectSettingsLabel = locale === "zh" ? "设置" : "Settings";
   const returnHref = departmentContext
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
@@ -166,6 +170,16 @@ export function SidebarClient({
           icon: <ClipboardCheck className={navIconClass} />,
           label: plansLabel,
         },
+        ...(canManageActiveProject && activeProject
+          ? [
+              {
+                id: "project-settings",
+                href: `/projects/${activeProject.id}/settings`,
+                icon: <Settings className={navIconClass} />,
+                label: projectSettingsLabel,
+              },
+            ]
+          : []),
       ];
 
   return (

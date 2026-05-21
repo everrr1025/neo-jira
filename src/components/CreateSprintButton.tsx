@@ -11,12 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getTranslations, Locale } from "@/lib/i18n";
 import { ITERATION_NAME_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
-import LocalizedDateInput from "./LocalizedDateInput";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 
 type ProjectOption = { id: string; name: string; key: string };
-
-const dateInputClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 function getDefaultEndDate(startDate: string) {
   if (!startDate) return "";
@@ -88,7 +85,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
           </DialogHeader>
 
           <form onSubmit={handleSubmit}>
-            <div className="space-y-5 p-6">
+            <div className="space-y-6 p-6">
               <div className="flex flex-col gap-1.5">
                 <Label>{translations.createSprint.project}</Label>
                 <Select
@@ -121,37 +118,32 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label>{translations.createSprint.startDate}</Label>
-                  <LocalizedDateInput
-                    required
-                    locale={locale}
-                    value={formData.startDate}
-                    onChange={(e) => {
-                      const startDate = e.target.value;
-                      setFormData((prev) => ({
-                        ...prev,
-                        startDate,
-                        endDate: isEndDateManuallyEdited ? prev.endDate : getDefaultEndDate(startDate),
-                      }));
-                    }}
-                    className={dateInputClassName}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{translations.createSprint.endDate}</Label>
-                  <LocalizedDateInput
-                    required
-                    locale={locale}
-                    value={formData.endDate}
-                    onChange={(e) => {
-                      setIsEndDateManuallyEdited(true);
-                      setFormData((prev) => ({ ...prev, endDate: e.target.value }));
-                    }}
-                    className={dateInputClassName}
-                  />
-                </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <ShadcnDatePicker
+                  id="sprint-start-date"
+                  label={translations.createSprint.startDate}
+                  required
+                  locale={locale}
+                  value={formData.startDate}
+                  onChange={(startDate) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      startDate,
+                      endDate: isEndDateManuallyEdited ? prev.endDate : getDefaultEndDate(startDate),
+                    }));
+                  }}
+                />
+                <ShadcnDatePicker
+                  id="sprint-end-date"
+                  label={translations.createSprint.endDate}
+                  required
+                  locale={locale}
+                  value={formData.endDate}
+                  onChange={(endDate) => {
+                    setIsEndDateManuallyEdited(true);
+                    setFormData((prev) => ({ ...prev, endDate }));
+                  }}
+                />
               </div>
             </div>
 

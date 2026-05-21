@@ -5,6 +5,7 @@ import { getActiveProjectContextForUser } from "@/lib/activeProject";
 import { SidebarClient } from "./SidebarClient";
 import { Locale } from "@/lib/i18n";
 import { getUserDepartmentMembership } from "@/lib/departmentAccess";
+import { getProjectRole } from "@/lib/permissions";
 
 type SessionUser = {
   id?: string;
@@ -29,11 +30,13 @@ export async function Sidebar({ locale }: { locale: Locale }) {
   const departmentMembership = userId && !isAdmin ? await getUserDepartmentMembership(userId) : null;
 
   const { activeProject } = await getActiveProjectContextForUser(userId, userRole);
+  const activeProjectRole = userId && activeProject ? await getProjectRole(userId, activeProject.id) : null;
 
   return (
     <SidebarClient
       isAdmin={isAdmin}
       activeProject={activeProject}
+      canManageActiveProject={activeProjectRole === "ADMIN"}
       user={dbUser || user}
       locale={locale}
       departmentContext={
