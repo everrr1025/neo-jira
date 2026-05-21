@@ -1498,6 +1498,7 @@ export default function DepartmentItemsClient({
       if (item.itemType !== "EVENT" && item.itemType !== "REMINDER" && item.itemType !== "TODO" && item.itemType !== "ISSUE_DUE") return false;
       if (item.kind === "ISSUE_DUE") return item.assigneeId === currentUserId;
       if (item.creatorId === currentUserId || item.assigneeId === currentUserId) return true;
+      if (item.scopeType === "DEPARTMENT" && (item.itemType === "EVENT" || item.itemType === "REMINDER")) return true;
       return item.attendees.some((attendee) => attendee.userId === currentUserId);
     }
     return false;
@@ -1508,6 +1509,7 @@ export default function DepartmentItemsClient({
     .filter((item) => {
       if (item.kind === "ISSUE_DUE") return item.assigneeId === currentUserId;
       if (item.creatorId === currentUserId || item.assigneeId === currentUserId) return true;
+      if (item.scopeType === "DEPARTMENT" && (item.itemType === "EVENT" || item.itemType === "REMINDER")) return true;
       return item.attendees.some((attendee) => attendee.userId === currentUserId);
     })
     .filter((item) => {
@@ -1767,6 +1769,7 @@ export default function DepartmentItemsClient({
               startAt: scheduleStartAt,
               endAt: scheduleEndAt,
               scopeType: scheduleScopeType,
+              departmentId,
               attendeeIds: form.scheduleKind === "meeting" ? form.attendeeIds : [],
             })
           : await createReminder({

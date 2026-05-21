@@ -613,9 +613,7 @@ export default function DepartmentManageClient({
   const [selectedDashboardTaskId, setSelectedDashboardTaskId] = useState<string | null>(null);
   const [dashboardTaskReply, setDashboardTaskReply] = useState("");
   const [dashboardTaskError, setDashboardTaskError] = useState("");
-  const [selectedMyProjectId, setSelectedMyProjectId] = useState(() =>
-    typeof window === "undefined" ? "" : window.localStorage.getItem(myProjectStorageKey) || ""
-  );
+  const [selectedMyProjectId, setSelectedMyProjectId] = useState("");
   const projectResizingRef = useRef<{
     colIndex: number;
     nextColIndex: number;
@@ -728,6 +726,13 @@ export default function DepartmentManageClient({
     () => myProjects.find((project) => project.id === selectedMyProjectId) || myProjects[0] || null,
     [myProjects, selectedMyProjectId]
   );
+  useEffect(() => {
+    const savedProjectId = window.localStorage.getItem(myProjectStorageKey) || "";
+    if (savedProjectId && myProjects.some((project) => project.id === savedProjectId)) {
+      const timeoutId = window.setTimeout(() => setSelectedMyProjectId(savedProjectId), 0);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [myProjectStorageKey, myProjects]);
   const handleMyProjectChange = (projectId: string) => {
     setSelectedMyProjectId(projectId);
     window.localStorage.setItem(myProjectStorageKey, projectId);

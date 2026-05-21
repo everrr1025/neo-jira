@@ -584,12 +584,11 @@ export async function getDepartmentItemCenterItems({
   const reminderItems = reminders.filter((reminder) => {
     if (reminder.itemType === "EVENT" || reminder.itemType === "REMINDER") {
       if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
+      if (reminder.scopeType === "DEPARTMENT") return true;
       return reminder.attendees.some((attendee) => attendee.userId === userId);
     }
     if (reminder.itemType !== "TODO") return true;
-    if (userRole === "ADMIN" || canManageDepartment) return true;
-    if (reminder.creatorId === userId || reminder.assigneeId === userId) return true;
-    return reminder.projectId ? manageableProjectIds.includes(reminder.projectId) : false;
+    return reminder.creatorId === userId || reminder.assigneeId === userId;
   }).map((reminder) => {
     const canComplete =
       userRole === "ADMIN" ||

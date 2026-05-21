@@ -570,6 +570,7 @@ export async function updateReminderItem(
     endAt?: string;
     itemType?: ReminderItemType;
     scopeType?: ReminderScopeType;
+    departmentId?: string;
     attendeeIds?: string[];
   },
 ) {
@@ -615,10 +616,26 @@ export async function updateReminderItem(
       return { success: false, error: "Invalid reminder scope" };
     }
 
+    const requestedDepartmentId = data.departmentId?.trim() || "";
+    const departmentId = scopeType === "PERSONAL" ? null : reminder.departmentId || requestedDepartmentId || null;
+    if (scopeType !== "PERSONAL" && !departmentId) {
+      return { success: false, error: "Department access required" };
+    }
+    if (departmentId && !reminder.departmentId) {
+      const membership = await getDepartmentMembership(currentUser.id, departmentId);
+      if (currentUser.role !== "ADMIN" && !membership) {
+        return { success: false, error: "Department access required" };
+      }
+    }
+    if (scopeType === "DEPARTMENT" && itemType !== "EVENT" && departmentId) {
+      const canManage = await canManageDepartmentReminder(currentUser.id, currentUser.role, departmentId);
+      if (!canManage) return { success: false, error: "Department reminder permission required" };
+    }
+
     const attendeeIds = Array.from(new Set((data.attendeeIds || []).map((id) => id.trim()).filter(Boolean)));
     if (itemType === "EVENT" && attendeeIds.length > 0) {
-      if (!reminder.departmentId) return { success: false, error: "Department access required" };
-      await assertDepartmentAttendees(attendeeIds, reminder.departmentId);
+      if (!departmentId) return { success: false, error: "Department access required" };
+      await assertDepartmentAttendees(attendeeIds, departmentId);
     }
 
     const updated = await prisma.reminder.update({
@@ -630,7 +647,7 @@ export async function updateReminderItem(
         endAt,
         itemType,
         scopeType,
-        departmentId: scopeType === "PERSONAL" ? null : reminder.departmentId,
+        departmentId,
       },
       select: { departmentId: true },
     });
@@ -652,9 +669,10 @@ export async function updateReminderItem(
       await prisma.reminderAttendee.deleteMany({ where: { reminderId: reminder.id } });
     }
 
-    if (updated.departmentId) {
-      revalidatePath(`/departments/${updated.departmentId}`);
-      revalidatePath(`/departments/${updated.departmentId}/items`);
+    const revalidateDepartmentId = updated.departmentId || reminder.departmentId;
+    if (revalidateDepartmentId) {
+      revalidatePath(`/departments/${revalidateDepartmentId}`);
+      revalidatePath(`/departments/${revalidateDepartmentId}/items`);
     } else {
       revalidatePath("/");
     }
