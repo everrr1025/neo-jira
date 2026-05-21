@@ -145,7 +145,7 @@
 
 .neo-rich-text-editor__content {
   min-height: 100%;
-  white-space: normal;
+  white-space: pre-wrap;
   caret-color: #0f172a;
   margin: 0 !important;
   padding: 0 !important;

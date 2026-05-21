@@ -37,6 +37,7 @@ type Props = {
   onClose: () => void;
   onSubmitResend: (event: React.FormEvent<HTMLFormElement>) => void;
   onRevoke: () => void;
+  showActions?: boolean;
 };
 
 function levelLabel(level: DepartmentNotificationListItem["level"], labels: DetailDialogLabels["level"]) {
@@ -69,9 +70,10 @@ export default function DepartmentNotificationDetailDialog({
   onClose,
   onSubmitResend,
   onRevoke,
+  showActions = true,
 }: Props) {
-  const canResend = notification.status === "REVOKED" && notification.canManage;
-  const canRevoke = notification.status === "SENT" && notification.canManage;
+  const canResend = showActions && notification.status === "REVOKED" && notification.canManage;
+  const canRevoke = showActions && notification.status === "SENT" && notification.canManage;
   const resendFormId = "department-notification-resend-form";
   const contentIsEmpty = !hasContent(notification.content);
 
@@ -88,7 +90,7 @@ export default function DepartmentNotificationDetailDialog({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-6">
           {errorMsg ? <div className="mb-4 rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{errorMsg}</div> : null}
           {canResend ? (
             <form id={resendFormId} onSubmit={onSubmitResend} className="space-y-5">
@@ -130,24 +132,28 @@ export default function DepartmentNotificationDetailDialog({
           )}
         </div>
 
-        <div className="flex min-h-[73px] shrink-0 items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
-          {canRevoke ? (
-            <button type="button" onClick={onRevoke} disabled={isPending} className="rounded-md border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">
-              {labels.revoke}
-            </button>
-          ) : null}
-          {canResend ? (
-            <button
-              type="submit"
-              form={resendFormId}
-              disabled={isPending || !resendForm.title.trim() || !resendForm.content.trim()}
-              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-              {labels.resend}
-            </button>
-          ) : null}
-        </div>
+        {showActions ? (
+          <div className="flex min-h-[73px] shrink-0 items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+            {canRevoke ? (
+              <button type="button" onClick={onRevoke} disabled={isPending} className="rounded-md border border-amber-200 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                {labels.revoke}
+              </button>
+            ) : null}
+            {canResend ? (
+              <button
+                type="submit"
+                form={resendFormId}
+                disabled={isPending || !resendForm.title.trim() || !resendForm.content.trim()}
+                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                {labels.resend}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="h-12 shrink-0 bg-white" />
+        )}
       </div>
     </div>
   );

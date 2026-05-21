@@ -838,6 +838,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       },
     },
     content: contentToHTML(value || ""),
+    parseOptions: {
+      preserveWhitespace: "full",
+    },
     onUpdate: ({ editor: nextEditor }) => {
       const serializedContent = serializeContent(nextEditor);
       cleanupRemovedPendingUploads(serializedContent);
@@ -906,7 +909,10 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       return;
     }
 
-    editor.commands.setContent(contentToHTML(nextValue), { emitUpdate: false });
+    editor.commands.setContent(contentToHTML(nextValue), {
+      emitUpdate: false,
+      parseOptions: { preserveWhitespace: "full" },
+    });
     cleanupRemovedPendingUploads(nextValue);
   }, [value, editor]);
 

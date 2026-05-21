@@ -1401,13 +1401,13 @@ export default function DepartmentManageClient({
                     <h2 className="text-sm font-semibold text-foreground">{t.myProjects}</h2>
                     {selectedMyProject ? (
                       <div className="flex min-w-0 items-center gap-1">
-                        <Link
+                        <a
                           href={`/projects/select?projectId=${selectedMyProject.id}&redirectTo=${encodeURIComponent("/")}`}
                           className="max-w-[240px] truncate rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                           title={selectedMyProject.name}
                         >
                           {selectedMyProject.name}
-                        </Link>
+                        </a>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button type="button" variant="ghost" size="icon-xs" aria-label={t.selectProject}>
@@ -2219,6 +2219,7 @@ export default function DepartmentManageClient({
           }}
           onSubmitResend={handleResendNotification}
           onRevoke={() => handleRevokeNotification(selectedNotification.id)}
+          showActions={false}
         />
       ) : null}
     </div>
