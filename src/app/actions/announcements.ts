@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { getRequiredSession } from "@/lib/permissions";
 import { getDepartmentNotificationPermission } from "@/lib/departmentNotifications";
+import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
 
 type SessionUser = {
   id?: string;
@@ -78,6 +79,7 @@ async function assertCanManageAnnouncement(announcementId: string, userId: strin
       departmentId: true,
       projectId: true,
       authorId: true,
+      content: true,
     },
   });
   if (!announcement?.departmentId) throw new Error("Notification not found.");
@@ -210,6 +212,7 @@ export async function deleteAnnouncementNotification(announcementId: string) {
     const user = await getCurrentUser();
     const announcement = await assertCanManageAnnouncement(announcementId, user.id);
     await prisma.announcement.delete({ where: { id: announcementId } });
+    await deleteLocalUploads(extractUploadUrlsFromContent(announcement.content));
     if (announcement.departmentId) revalidateNotificationPaths(announcement.departmentId);
     return { success: true };
   } catch (error) {
@@ -251,6 +254,8 @@ export async function resendAnnouncementNotification(
         },
       });
     });
+
+    await deleteLocalUploads(getRemovedUploadUrls(announcement.content, content));
 
     if (announcement.departmentId) revalidateNotificationPaths(announcement.departmentId);
     return { success: true };

@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { EditorContent, type Editor, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -28,6 +29,7 @@ import {
   Maximize2,
   Minimize2,
   Strikethrough,
+  X,
 } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { TiptapImageResize } from "@/lib/tiptapImageResize";
@@ -82,6 +84,11 @@ type MentionState = {
 type SelectionSnapshot = {
   from: number;
   to: number;
+} | null;
+
+type PreviewImage = {
+  src: string;
+  alt: string;
 } | null;
 
 type MentionMenuItem =
@@ -216,6 +223,11 @@ function getCurrentTextColor(editor: Editor) {
 
 function getCurrentTextBackgroundColor(editor: Editor) {
   return (editor.getAttributes("textBackgroundColor").color as string | undefined) || null;
+}
+
+function getImageElement(target: HTMLElement | null) {
+  const element = target?.closest("img");
+  return element instanceof HTMLImageElement ? element : null;
 }
 
 type ToolbarButtonProps = {
@@ -611,6 +623,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const [, setUiVersion] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
   const [mentionState, setMentionState] = useState<MentionState>(null);
+  const [previewImage, setPreviewImage] = useState<PreviewImage>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
   const lastSelectionRef = useRef<SelectionSnapshot>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -688,6 +701,25 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     event.preventDefault();
     event.stopPropagation();
     onIssueLinkClick(issueId);
+    return true;
+  };
+
+  const handleImagePreviewEvent = (event: MouseEvent) => {
+    if (!readOnly) {
+      return false;
+    }
+
+    const image = getImageElement(event.target as HTMLElement | null);
+    if (!image?.src) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setPreviewImage({
+      src: image.currentSrc || image.src,
+      alt: image.alt || "",
+    });
     return true;
   };
 
@@ -796,10 +828,13 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         return true;
       },
       handleClick: (_view, _pos, event) => {
+        if (handleImagePreviewEvent(event)) {
+          return true;
+        }
         return handleIssueLinkEvent(event);
       },
       handleDOMEvents: {
-        click: (_view, event) => handleIssueLinkEvent(event),
+        click: (_view, event) => handleImagePreviewEvent(event) || handleIssueLinkEvent(event),
       },
     },
     content: contentToHTML(value || ""),
@@ -1107,7 +1142,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   return (
     <div className={`relative h-full w-full ${mentionState ? "z-50" : "z-10"}`} ref={setContainerElement}>
       <div
-        className={`h-full w-full ${
+        className={`h-full w-full ${readOnly ? "neo-rich-text-editor--readonly" : ""} ${
           readOnly
             ? ""
             : borderless
@@ -1199,6 +1234,30 @@ const RichTextEditor = forwardRef(function RichTextEditor(
           </div>
         </div>
       )}
+
+      {previewImage && typeof document !== "undefined" ? createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-white transition-colors hover:bg-white/20"
+            onClick={() => setPreviewImage(null)}
+            aria-label="Close image preview"
+            title="Close image preview"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={previewImage.src}
+            alt={previewImage.alt}
+            className="h-[90vh] w-[90vw] rounded-md object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>,
+        document.body
+      ) : null}
     </div>
   );
 });

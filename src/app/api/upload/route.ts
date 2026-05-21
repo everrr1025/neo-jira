@@ -6,6 +6,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { createAuditLogs } from "@/lib/audit";
+import { deleteLocalUpload } from "@/lib/uploadCleanup";
 
 export async function POST(request: Request) {
   try {
@@ -96,16 +97,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Invalid file URL" }, { status: 400 });
     }
 
-    const fileName = fileUrl.substring("/uploads/".length);
-    const filePath = path.join(process.cwd(), "public/uploads", fileName);
-
-    try {
-      await fs.unlink(filePath);
-      return NextResponse.json({ success: true });
-    } catch (err) {
-      console.error("Failed to delete local file:", err);
-      return NextResponse.json({ error: "File not found or already deleted" }, { status: 404 });
-    }
+    await deleteLocalUpload(fileUrl);
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Delete error:", error);
     return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });

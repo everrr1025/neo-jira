@@ -58,7 +58,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
-import type { RichTextEditorHandle } from "@/components/RichTextEditor";
+import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
 import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { DepartmentDashboardTask, DepartmentItemCenterItem } from "@/lib/departmentReminders";
 import type {
@@ -1545,10 +1545,12 @@ export default function DepartmentManageClient({
                 </div>
               ) : null}
 
-              <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
-                <p className={`whitespace-pre-wrap text-sm leading-6 ${selectedDashboardTask.content ? "text-foreground" : "text-muted-foreground"}`}>
-                  {selectedDashboardTask.content || t.noContent}
-                </p>
+              <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2 text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
+                {selectedDashboardTask.content ? (
+                  <RichTextEditor value={selectedDashboardTask.content} onChange={() => {}} readOnly />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t.noContent}</p>
+                )}
               </div>
 
               {selectedDashboardTask.kind === "REMINDER" ? (

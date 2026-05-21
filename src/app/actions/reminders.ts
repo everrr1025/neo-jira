@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
 import { notifyMeetingAttendees } from "@/lib/notifications";
 import { getRequiredSession, getProjectRole } from "@/lib/permissions";
+import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
 
 type SessionUser = {
   id?: string;
@@ -464,6 +465,8 @@ export async function updateReminderTask(
       select: { departmentId: true },
     });
 
+    await deleteLocalUploads(getRemovedUploadUrls(reminder.content, content));
+
     if (updated.departmentId) {
       revalidatePath(`/departments/${updated.departmentId}`);
       revalidatePath(`/departments/${updated.departmentId}/items`);
@@ -491,6 +494,8 @@ export async function deleteReminderTask(reminderId: string) {
         itemType: true,
         creatorId: true,
         departmentId: true,
+        content: true,
+        comments: { select: { content: true } },
       },
     });
 
@@ -499,10 +504,22 @@ export async function deleteReminderTask(reminderId: string) {
       return { success: false, error: "Task delete permission required" };
     }
 
+    const uploadUrlsToDelete = new Set<string>();
+    for (const url of extractUploadUrlsFromContent(reminder.content)) {
+      uploadUrlsToDelete.add(url);
+    }
+    for (const comment of reminder.comments) {
+      for (const url of extractUploadUrlsFromContent(comment.content)) {
+        uploadUrlsToDelete.add(url);
+      }
+    }
+
     await prisma.$transaction([
       prisma.reminderComment.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminder.delete({ where: { id: reminder.id } }),
     ]);
+
+    await deleteLocalUploads(uploadUrlsToDelete);
 
     if (reminder.departmentId) {
       revalidatePath(`/departments/${reminder.departmentId}`);
@@ -531,6 +548,8 @@ export async function deleteReminderItem(reminderId: string) {
         itemType: true,
         creatorId: true,
         departmentId: true,
+        content: true,
+        comments: { select: { content: true } },
       },
     });
 
@@ -541,11 +560,23 @@ export async function deleteReminderItem(reminderId: string) {
       return { success: false, error: "Item delete permission required" };
     }
 
+    const uploadUrlsToDelete = new Set<string>();
+    for (const url of extractUploadUrlsFromContent(reminder.content)) {
+      uploadUrlsToDelete.add(url);
+    }
+    for (const comment of reminder.comments) {
+      for (const url of extractUploadUrlsFromContent(comment.content)) {
+        uploadUrlsToDelete.add(url);
+      }
+    }
+
     await prisma.$transaction([
       prisma.reminderAttendee.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminderComment.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminder.delete({ where: { id: reminder.id } }),
     ]);
+
+    await deleteLocalUploads(uploadUrlsToDelete);
 
     if (reminder.departmentId) {
       revalidatePath(`/departments/${reminder.departmentId}`);
@@ -651,6 +682,8 @@ export async function updateReminderItem(
       },
       select: { departmentId: true },
     });
+
+    await deleteLocalUploads(getRemovedUploadUrls(reminder.content, content));
 
     if (itemType === "EVENT" && attendeeIds.length > 0) {
       await syncReminderAttendees(reminder.id, attendeeIds, reminder.creatorId);

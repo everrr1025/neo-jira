@@ -271,6 +271,10 @@
   cursor: pointer;
 }
 
+.neo-rich-text-editor--readonly .neo-rich-text-editor__content img {
+  cursor: zoom-in;
+}
+
 .tiptap code,
 .neo-rich-text-editor__content code {
   border-radius: 0.375rem;

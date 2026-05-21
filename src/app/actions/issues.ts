@@ -18,6 +18,7 @@ import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/
 import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
 import { ISSUE_TITLE_MAX_LENGTH, normalizeNameOrThrow } from "@/lib/validation";
 import {
   canTransitionWorkflowStatus,
@@ -929,6 +930,10 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
       });
     }
 
+    if (nextDescription !== null) {
+      await deleteLocalUploads(getRemovedUploadUrls(existingIssue.description, nextDescription));
+    }
+
     revalidatePath(`/issues/${issueId}`);
     revalidatePath("/issues");
     revalidatePath("/iterations");
@@ -1113,7 +1118,14 @@ export async function deleteIssue(issueId: string) {
 
     const issue = await prisma.issue.findUnique({
       where: { id: issueId },
-      select: { id: true, projectId: true, project: { select: { departmentId: true } } },
+      select: {
+        id: true,
+        projectId: true,
+        description: true,
+        attachments: { select: { fileUrl: true } },
+        comments: { select: { content: true } },
+        project: { select: { departmentId: true } },
+      },
     });
 
     if (!issue) {
@@ -1127,6 +1139,19 @@ export async function deleteIssue(issueId: string) {
     await checkProjectAdmin(issue.projectId);
 
     const issuePath = `/issues/${issueId}`;
+
+    const uploadUrlsToDelete = new Set<string>();
+    for (const url of extractUploadUrlsFromContent(issue.description)) {
+      uploadUrlsToDelete.add(url);
+    }
+    for (const comment of issue.comments) {
+      for (const url of extractUploadUrlsFromContent(comment.content)) {
+        uploadUrlsToDelete.add(url);
+      }
+    }
+    for (const attachment of issue.attachments) {
+      uploadUrlsToDelete.add(attachment.fileUrl);
+    }
 
     await prisma.$transaction(async (tx) => {
       await createAuditLogs(tx, [
@@ -1150,6 +1175,8 @@ export async function deleteIssue(issueId: string) {
 
       await tx.issue.delete({ where: { id: issueId } });
     });
+
+    await deleteLocalUploads(uploadUrlsToDelete);
 
     revalidatePath("/issues");
     revalidatePath("/iterations");

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { notifyCommentMentions } from "@/lib/notifications";
 import { createAuditLogs, extractAuditTextPreview } from "@/lib/audit";
+import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
 
 export async function GET(
   request: Request,
@@ -176,6 +177,8 @@ export async function PATCH(
       });
     }
 
+    await deleteLocalUploads(getRemovedUploadUrls(existingComment.content, updatedComment.content));
+
     return NextResponse.json(updatedComment);
   } catch (error) {
     console.error("Failed to update comment:", error);
@@ -238,6 +241,8 @@ export async function DELETE(
         where: { id: commentId },
       });
     });
+
+    await deleteLocalUploads(extractUploadUrlsFromContent(existingComment.content));
 
     return NextResponse.json({ success: true });
   } catch (error) {
