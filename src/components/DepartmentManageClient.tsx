@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDown,
@@ -42,6 +42,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -313,10 +320,6 @@ type ProjectColumnConfig = {
   label: string;
   width: number;
 };
-type SelectOption = {
-  value: string;
-  label: string;
-};
 
 const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   name: 260,
@@ -456,130 +459,6 @@ function isScheduleItemRelatedToUser(item: DepartmentItemCenterItem, userId: str
   if (item.kind === "ISSUE_DUE") return item.assigneeId === userId;
   if (item.creatorId === userId || item.assigneeId === userId) return true;
   return item.attendees.some((attendee) => attendee.userId === userId);
-}
-
-function InlineSelect({
-  value,
-  options,
-  onChange,
-  renderSummary,
-  className = "relative",
-  matchTriggerWidth = true,
-}: {
-  value: string;
-  options: SelectOption[];
-  onChange: (value: string) => void;
-  renderSummary: (label: string) => ReactNode;
-  className?: string;
-  matchTriggerWidth?: boolean;
-}) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const summaryRef = useRef<HTMLElement>(null);
-  const selectedOption = options.find((option) => option.value === value) || options[0];
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{
-    top?: number;
-    bottom?: number;
-    left: number;
-    width: number;
-    openingUpward: boolean;
-  }>({ left: 0, width: 0, openingUpward: false });
-
-  const updateMenuPosition = useCallback(() => {
-    const rect = summaryRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openingUpward = spaceBelow < 280;
-
-    if (openingUpward) {
-      setMenuPosition({
-        bottom: window.innerHeight - rect.top + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: true,
-      });
-    } else {
-      setMenuPosition({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-        openingUpward: false,
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [isOpen, updateMenuPosition]);
-
-  const handleSelect = (nextValue: string) => {
-    onChange(nextValue);
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-    setIsOpen(false);
-  };
-
-  return (
-    <details
-      ref={detailsRef}
-      className={className}
-      onToggle={(event) => {
-        const open = event.currentTarget.open;
-        setIsOpen(open);
-        if (open) updateMenuPosition();
-      }}
-    >
-      <summary ref={summaryRef} className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-        {renderSummary(selectedOption?.label || "")}
-      </summary>
-      {isOpen ? (
-        <div
-          className="fixed z-50 flex max-w-80 flex-col gap-1 rounded-md border border-[#e2e8f0] bg-white p-1 shadow-md"
-          style={{
-            top: menuPosition.top,
-            bottom: menuPosition.bottom,
-            left: menuPosition.left,
-            minWidth: matchTriggerWidth ? menuPosition.width : undefined,
-            width: matchTriggerWidth ? menuPosition.width : undefined,
-          }}
-        >
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              onClick={() => handleSelect(option.value)}
-              className={`block w-full rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
-                option.value === value ? "bg-[#f4f4f5] font-medium text-[#09090b]" : "text-[#3f3f46] hover:bg-[#f4f4f5] hover:text-[#09090b]"
-              }`}
-            >
-              <span className="block truncate">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </details>
-  );
 }
 
 function PaginationFooter({
@@ -931,8 +810,8 @@ export default function DepartmentManageClient({
     (currentProjectPage - 1) * projectPageSize,
     currentProjectPage * projectPageSize
   );
-  const selectedMyProjectProgress = selectedMyProject && selectedMyProject.issuesCount > 0
-    ? Math.round((selectedMyProject.completedIssuesCount / selectedMyProject.issuesCount) * 100)
+  const selectedMyProjectProgress = selectedMyProject && selectedMyProject.activeIterationIssuesCount > 0
+    ? Math.round((selectedMyProject.activeIterationCompletedIssuesCount / selectedMyProject.activeIterationIssuesCount) * 100)
     : 0;
 
   const translateError = (message: string | undefined, fallback: string) => {
@@ -1515,20 +1394,32 @@ export default function DepartmentManageClient({
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold text-foreground">{t.myProjects}</h2>
-                    {myProjects.length > 0 ? (
-                      <InlineSelect
-                        value={selectedMyProject?.id || myProjects[0]?.id || ""}
-                        options={myProjects.map((project) => ({ value: project.id, label: project.name }))}
-                        onChange={handleMyProjectChange}
-                        className="relative max-w-[240px]"
-                        renderSummary={(label) => (
-                          <span className="inline-flex h-8 max-w-[240px] items-center gap-1 rounded-md border bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent">
-                            <span className="min-w-0 truncate">{label}</span>
-                            <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-                          </span>
-                        )}
-                        matchTriggerWidth={false}
-                      />
+                    {selectedMyProject ? (
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Link
+                          href={`/projects/select?projectId=${selectedMyProject.id}&redirectTo=${encodeURIComponent("/")}`}
+                          className="max-w-[240px] truncate rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                          title={selectedMyProject.name}
+                        >
+                          {selectedMyProject.name}
+                        </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="ghost" size="icon-xs" aria-label={t.selectProject}>
+                              <ChevronDown className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="max-h-72 w-64">
+                            <DropdownMenuRadioGroup value={selectedMyProject.id} onValueChange={handleMyProjectChange}>
+                              {myProjects.map((project) => (
+                                <DropdownMenuRadioItem key={project.id} value={project.id}>
+                                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     ) : null}
                   </div>
                   <div className="shrink-0 text-right text-xs text-muted-foreground">

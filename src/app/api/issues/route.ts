@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from "@prisma/client";
+import { getNextIssueKey, isIssueKeyUniqueConstraintError } from "@/lib/issueKeys";
 import {
   createDefaultWorkflowForProject,
   getInitialWorkflowStatusKey,
@@ -116,30 +117,46 @@ export async function POST(request: Request) {
       }
     }
     
-    const count = await prisma.issue.count({ where: { projectId } });
-    const issueKey = `${project.key}-${count + 1}`;
-    
     const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
     const resolvedStatus = status || initialStatus;
     if (!project.workflowStatuses.some((workflowStatus) => workflowStatus.key === resolvedStatus)) {
       return NextResponse.json({ error: "Invalid workflow status" }, { status: 400 });
     }
 
-    const issue = await prisma.issue.create({
-      data: {
-        key: issueKey,
-        title,
-        description,
-        status: resolvedStatus,
-        priority: priority || 'MEDIUM',
-        type: type || 'TASK',
-        projectId,
-        planId,
-        iterationId,
-        assigneeId,
-        reporterId,
+    let issue: Awaited<ReturnType<typeof prisma.issue.create>> | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        issue = await prisma.$transaction(async (tx) => {
+          const issueKey = await getNextIssueKey(tx, projectId, project.key);
+          return tx.issue.create({
+            data: {
+              key: issueKey,
+              title,
+              description,
+              status: resolvedStatus,
+              priority: priority || 'MEDIUM',
+              type: type || 'TASK',
+              projectId,
+              planId,
+              iterationId,
+              assigneeId,
+              reporterId,
+            }
+          });
+        });
+        break;
+      } catch (error) {
+        if (attempt < 4 && isIssueKeyUniqueConstraintError(error)) {
+          continue;
+        }
+
+        throw error;
       }
-    });
+    }
+
+    if (!issue) {
+      return NextResponse.json({ error: "Failed to create issue" }, { status: 500 });
+    }
     
     return NextResponse.json(issue, { status: 201 });
   } catch (error) {

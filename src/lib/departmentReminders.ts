@@ -126,7 +126,7 @@ export type DepartmentItemCenterItem = DepartmentUpcomingItem & {
 
 export type DepartmentDashboardTask = {
   id: string;
-  kind: "REMINDER" | "ISSUE";
+  kind: "REMINDER";
   title: string;
   content: string | null;
   projectName: string | null;
@@ -705,77 +705,44 @@ export async function getDepartmentDashboardTasks({
   visibleProjectIds: string[];
 }) {
   const today = startOfToday();
-  const [reminders, issues] = await Promise.all([
-    prisma.reminder.findMany({
-      where: {
-        itemType: "TODO",
-        completedAt: null,
-        assigneeId: userId,
-        OR: [
-          { scopeType: "PERSONAL" },
-          { scopeType: "DEPARTMENT", departmentId },
-          visibleProjectIds.length > 0
-            ? { scopeType: "PROJECT", projectId: { in: visibleProjectIds } }
-            : { id: "__none__" },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        content: true,
-        remindAt: true,
-        startAt: true,
-        priority: true,
-        taskStatus: true,
-        isImportant: true,
-        completedAt: true,
-        creator: { select: { name: true, email: true } },
-        assignee: { select: { name: true, email: true } },
-        project: { select: { name: true, key: true } },
-        issue: { select: { id: true, key: true } },
-        comments: {
-          include: {
-            author: { select: { name: true, email: true } },
-          },
-          orderBy: { createdAt: "asc" },
-          take: 20,
+  const reminders = await prisma.reminder.findMany({
+    where: {
+      itemType: "TODO",
+      completedAt: null,
+      assigneeId: userId,
+      OR: [
+        { scopeType: "PERSONAL" },
+        { scopeType: "DEPARTMENT", departmentId },
+        visibleProjectIds.length > 0
+          ? { scopeType: "PROJECT", projectId: { in: visibleProjectIds } }
+          : { id: "__none__" },
+      ],
+    },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      remindAt: true,
+      startAt: true,
+      priority: true,
+      taskStatus: true,
+      isImportant: true,
+      completedAt: true,
+      creator: { select: { name: true, email: true } },
+      assignee: { select: { name: true, email: true } },
+      project: { select: { name: true, key: true } },
+      issue: { select: { id: true, key: true } },
+      comments: {
+        include: {
+          author: { select: { name: true, email: true } },
         },
+        orderBy: { createdAt: "asc" },
+        take: 20,
       },
-      orderBy: [{ remindAt: "asc" }, { startAt: "asc" }, { priority: "desc" }],
-      take: 20,
-    }),
-    visibleProjectIds.length > 0
-      ? prisma.issue.findMany({
-          where: {
-            projectId: { in: visibleProjectIds },
-            assigneeId: userId,
-          },
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            description: true,
-            dueDate: true,
-            priority: true,
-            status: true,
-            updatedAt: true,
-            assignee: { select: { name: true, email: true } },
-            project: {
-              select: {
-                name: true,
-                key: true,
-                workflowStatuses: {
-                  where: { category: "DONE" },
-                  select: { key: true },
-                },
-              },
-            },
-          },
-          orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
-          take: 50,
-        })
-      : Promise.resolve([]),
-  ]);
+    },
+    orderBy: [{ remindAt: "asc" }, { startAt: "asc" }, { priority: "desc" }],
+    take: 20,
+  });
 
   const reminderItems = reminders.map((reminder) => {
     const dueDate = reminder.remindAt;
@@ -810,38 +777,9 @@ export async function getDepartmentDashboardTasks({
     };
   });
 
-  const issueItems = issues
-    .filter((issue) => {
-      const doneStatusKeys = issue.project.workflowStatuses.map((status) => status.key);
-      return !(doneStatusKeys.length > 0 ? doneStatusKeys : ["DONE"]).includes(issue.status);
-    })
-    .map((issue) => ({
-      id: issue.id,
-      kind: "ISSUE" as const,
-      title: issue.title,
-      content: issue.description,
-      projectName: issue.project.name,
-      projectKey: issue.project.key,
-      issueKey: issue.key,
-      creatorName: null,
-      creatorEmail: null,
-      assigneeName: issue.assignee?.name || null,
-      assigneeEmail: issue.assignee?.email || null,
-      dueDate: issue.dueDate?.toISOString() || null,
-      priority: issue.priority,
-      taskStatus: issue.status,
-      link: `/issues/${issue.id}`,
-      isOverdue: Boolean(issue.dueDate && issue.dueDate < today),
-      isImportant: issue.priority === "URGENT" || issue.priority === "HIGH",
-      completedAt: null,
-      canComplete: false,
-      canComment: false,
-      comments: [],
-    }));
-
   const priorityOrder: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-  return [...reminderItems, ...issueItems]
+  return reminderItems
     .sort((left, right) => {
       if (left.isImportant !== right.isImportant) return left.isImportant ? -1 : 1;
       if (left.isOverdue !== right.isOverdue) return left.isOverdue ? -1 : 1;

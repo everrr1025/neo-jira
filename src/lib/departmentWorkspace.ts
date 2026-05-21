@@ -24,6 +24,8 @@ export type DepartmentWorkspaceProject = {
   issuesCount: number;
   completedIssuesCount: number;
   incompleteIssuesCount: number;
+  activeIterationIssuesCount: number;
+  activeIterationCompletedIssuesCount: number;
   createdAt: string;
   activeIteration: {
     id: string;
@@ -182,6 +184,12 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
       if (doneStatusKeys.size === 0) doneStatusKeys.add("DONE");
       const completedIssuesCount = project.issues.filter((issue) => doneStatusKeys.has(issue.status)).length;
       const activeIteration = project.iterations[0] || null;
+      const activeIterationIssues = activeIteration
+        ? project.issues.filter((issue) => issue.iterationId === activeIteration.id)
+        : [];
+      const activeIterationCompletedIssuesCount = activeIterationIssues.filter((issue) =>
+        doneStatusKeys.has(issue.status),
+      ).length;
       const priorityIssues = project.issues
         .filter((issue) => Boolean(activeIteration) && issue.iterationId === activeIteration?.id)
         .filter((issue) => !doneStatusKeys.has(issue.status))
@@ -209,6 +217,8 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
         issuesCount: project._count.issues,
         completedIssuesCount,
         incompleteIssuesCount: project._count.issues - completedIssuesCount,
+        activeIterationIssuesCount: activeIterationIssues.length,
+        activeIterationCompletedIssuesCount,
         createdAt: project.createdAt.toISOString(),
         activeIteration: activeIteration
           ? {

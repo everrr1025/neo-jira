@@ -13,6 +13,7 @@ import {
 } from "@/lib/activeProjectUtils";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import { authOptions } from "@/lib/authOptions";
+import { getNextIssueKey, isIssueKeyUniqueConstraintError } from "@/lib/issueKeys";
 import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
 import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
@@ -382,8 +383,6 @@ export async function createIssue(data: {
     if (!project) throw new Error("Project not found or no access");
     await assertAssignableAssignee(project.id, data.assigneeId);
 
-    const count = await prisma.issue.count({ where: { projectId: project.id } });
-    const issueKey = `${project.key}-${count + 1}`;
     const dueDateValue = data.dueDate
       ? (() => {
           const normalized = /^\d{4}-\d{2}-\d{2}$/.test(data.dueDate)
@@ -399,69 +398,86 @@ export async function createIssue(data: {
     const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
     const watcherIds = Array.from(new Set([userId, data.assigneeId].filter((value): value is string => Boolean(value))));
 
-    const newIssue = await prisma.$transaction(async (tx) => {
-      const createdIssue = await tx.issue.create({
-        data: {
-          key: issueKey,
-          title,
-          description: data.description,
-          status: initialStatus,
-          priority: data.priority,
-          type: data.type,
-          projectId: project.id,
-          planId: data.planId ?? null,
-          iterationId: data.iterationId ?? null,
-          assigneeId: data.assigneeId,
-          reporterId: userId,
-          dueDate: dueDateValue,
-          watchers:
-            watcherIds.length > 0
-              ? {
-                  connect: watcherIds.map((watcherId) => ({ id: watcherId })),
-                }
-              : undefined,
-          attachments:
-            data.attachments && data.attachments.length > 0
-              ? {
-                  create: data.attachments.map((attachment) => ({
-                    fileName: attachment.fileName,
-                    fileUrl: attachment.fileUrl,
-                    uploaderId: userId,
-                  })),
-                }
-              : undefined,
-        },
-        include: {
-          attachments: {
-            select: { id: true, fileName: true },
-          },
-        },
-      });
+    let newIssue: Awaited<ReturnType<typeof prisma.issue.create>> | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        newIssue = await prisma.$transaction(async (tx) => {
+          const issueKey = await getNextIssueKey(tx, project.id, project.key);
+          const createdIssue = await tx.issue.create({
+            data: {
+              key: issueKey,
+              title,
+              description: data.description,
+              status: initialStatus,
+              priority: data.priority,
+              type: data.type,
+              projectId: project.id,
+              planId: data.planId ?? null,
+              iterationId: data.iterationId ?? null,
+              assigneeId: data.assigneeId,
+              reporterId: userId,
+              dueDate: dueDateValue,
+              watchers:
+                watcherIds.length > 0
+                  ? {
+                      connect: watcherIds.map((watcherId) => ({ id: watcherId })),
+                    }
+                  : undefined,
+              attachments:
+                data.attachments && data.attachments.length > 0
+                  ? {
+                      create: data.attachments.map((attachment) => ({
+                        fileName: attachment.fileName,
+                        fileUrl: attachment.fileUrl,
+                        uploaderId: userId,
+                      })),
+                    }
+                  : undefined,
+            },
+            include: {
+              attachments: {
+                select: { id: true, fileName: true },
+              },
+            },
+          });
 
-      const auditLogs = [
-        {
-          issueId: createdIssue.id,
-          projectId: createdIssue.projectId,
-          entityType: "ISSUE" as const,
-          entityId: createdIssue.id,
-          action: "CREATE" as const,
-          actorId: userId,
-        },
-        ...createdIssue.attachments.map((attachment) => ({
-          issueId: createdIssue.id,
-          projectId: createdIssue.projectId,
-          entityType: "ATTACHMENT" as const,
-          entityId: attachment.id,
-          action: "CREATE" as const,
-          actorId: userId,
-          metadata: { fileName: attachment.fileName },
-        })),
-      ];
+          const auditLogs = [
+            {
+              issueId: createdIssue.id,
+              projectId: createdIssue.projectId,
+              entityType: "ISSUE" as const,
+              entityId: createdIssue.id,
+              action: "CREATE" as const,
+              actorId: userId,
+            },
+            ...createdIssue.attachments.map((attachment) => ({
+              issueId: createdIssue.id,
+              projectId: createdIssue.projectId,
+              entityType: "ATTACHMENT" as const,
+              entityId: attachment.id,
+              action: "CREATE" as const,
+              actorId: userId,
+              metadata: { fileName: attachment.fileName },
+            })),
+          ];
 
-      await createAuditLogs(tx, auditLogs);
+          await createAuditLogs(tx, auditLogs);
 
-      return createdIssue;
-    });
+          return createdIssue;
+        });
+        break;
+      } catch (error) {
+        if (attempt < 4 && isIssueKeyUniqueConstraintError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (!newIssue) {
+      throw new Error("Failed to create issue");
+    }
 
     if (typeof data.description === "string" && data.description.trim()) {
       await notifyIssueMentions({
