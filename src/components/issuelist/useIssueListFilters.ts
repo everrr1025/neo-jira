@@ -1,12 +1,42 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+
+const ISSUE_LIST_FILTER_KEYS = [
+  "status",
+  "type",
+  "priority",
+  "plan",
+  "sprint",
+  "assignee",
+  "watcher",
+  "view",
+  "dueFilter",
+  "dueDate",
+  "duePreset",
+  "search",
+  "pageSize",
+  "sortBy",
+  "sortDirection",
+];
+
+function buildStoredParams(params: URLSearchParams) {
+  const stored = new URLSearchParams();
+  ISSUE_LIST_FILTER_KEYS.forEach((key) => {
+    const value = params.get(key);
+    if (value) stored.set(key, value);
+  });
+  return stored.toString();
+}
 
 export function useIssueListFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const storageKey = `neo-jira:issue-list-filters:${pathname}:v1`;
+  const didAttemptRestoreRef = useRef(false);
+  const didRestoreStoredFiltersRef = useRef(false);
 
   const getCsv = (key: string) => {
     const val = searchParams.get(key);
@@ -33,6 +63,31 @@ export function useIssueListFilters() {
   
   const sortBy = searchParams.get("sortBy") || "createdAt";
   const sortDirection = searchParams.get("sortDirection") || "desc";
+
+  useEffect(() => {
+    if (didAttemptRestoreRef.current || typeof window === "undefined") return;
+    didAttemptRestoreRef.current = true;
+
+    if (searchParams.toString()) return;
+
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) {
+      didRestoreStoredFiltersRef.current = true;
+      router.replace(`${pathname}?${stored}`);
+    }
+  }, [pathname, router, searchParams, storageKey]);
+
+  useEffect(() => {
+    if (!didAttemptRestoreRef.current || typeof window === "undefined") return;
+    if (didRestoreStoredFiltersRef.current && !searchParams.toString()) return;
+    didRestoreStoredFiltersRef.current = false;
+    const stored = buildStoredParams(searchParams);
+    if (stored) {
+      window.localStorage.setItem(storageKey, stored);
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+  }, [searchParams, storageKey]);
 
   const updateQueryParams = useCallback((updates: Record<string, string | string[] | null>) => {
     const params = new URLSearchParams(searchParams.toString());

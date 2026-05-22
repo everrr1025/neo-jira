@@ -20,6 +20,7 @@ import {
   AlignRight,
   Bold,
   CaseSensitive,
+  ChevronDown,
   Highlighter,
   Italic,
   Link2,
@@ -267,7 +268,7 @@ const PRESET_COLORS = [
 ];
 
 const PRESET_BACKGROUND_COLORS = [
-  { label: "Clear", value: "transparent" },
+  { label: "White", value: "#ffffff" },
   { label: "Yellow", value: "#fef08a" },
   { label: "Green", value: "#bbf7d0" },
   { label: "Blue", value: "#bfdbfe" },
@@ -278,12 +279,16 @@ const PRESET_BACKGROUND_COLORS = [
 
 function ColorPickerButton({
   value,
+  fallbackValue,
+  onApplyLast,
   onSelectPreset,
   title = "Text color",
   colors = PRESET_COLORS,
   icon,
 }: {
   value: string | null;
+  fallbackValue: string;
+  onApplyLast: () => void;
   onSelectPreset: (color: string) => void;
   title?: string;
   colors?: Array<{ label: string; value: string }>;
@@ -308,22 +313,37 @@ function ColorPickerButton({
   }, [isOpen]);
 
   return (
-    <div className="relative" ref={containerRef}>
-      <ToolbarButton
-        active={isOpen}
+    <div className="relative inline-flex h-7 rounded-md" ref={containerRef}>
+      <button
+        type="button"
         title={title}
         onMouseDown={(e) => {
           e.preventDefault();
-          setIsOpen(!isOpen);
+          onApplyLast();
         }}
+        className="inline-flex h-7 min-w-7 items-center justify-center rounded-l-md px-1.5 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
       >
         {icon || (
           <div
             className="h-4 w-4 rounded border border-slate-300 shadow-sm transition-transform active:scale-90"
-            style={{ backgroundColor: value || "#0f172a" }}
+            style={{ backgroundColor: value || fallbackValue }}
           />
         )}
-      </ToolbarButton>
+      </button>
+      <button
+        type="button"
+        title={`${title} options`}
+        aria-label={`${title} options`}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setIsOpen(!isOpen);
+        }}
+        className={`inline-flex h-7 w-4 items-center justify-center rounded-r-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 ${
+          isOpen ? "bg-slate-100 text-slate-900" : ""
+        }`}
+      >
+        <ChevronDown size={12} />
+      </button>
 
       {isOpen && (
         <div className="absolute left-1/2 top-full z-[70] mt-1.5 flex -translate-x-1/2 gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl animate-in fade-in zoom-in-95 duration-100">
@@ -349,12 +369,25 @@ function ColorPickerButton({
   );
 }
 
+function ColorToolIcon({ children, color }: { children: ReactNode; color: string }) {
+  return (
+    <span className="inline-flex h-5 w-5 flex-col items-center justify-center gap-px">
+      <span className="flex h-3.5 items-center justify-center">{children}</span>
+      <span className="h-1 w-4 rounded-sm border border-slate-300" style={{ backgroundColor: color }} />
+    </span>
+  );
+}
+
 function MenuBar({
   editor,
   onInsertLink,
   onInsertImage,
   currentTextColor,
   currentTextBackgroundColor,
+  lastTextColor,
+  lastTextBackgroundColor,
+  onApplyLastColor,
+  onApplyLastBackgroundColor,
   onSelectPresetColor,
   onSelectPresetBackgroundColor,
   borderless = false,
@@ -369,6 +402,10 @@ function MenuBar({
   onInsertImage: () => void;
   currentTextColor: string | null;
   currentTextBackgroundColor: string | null;
+  lastTextColor: string;
+  lastTextBackgroundColor: string;
+  onApplyLastColor: () => void;
+  onApplyLastBackgroundColor: () => void;
   onSelectPresetColor: (color: string) => void;
   onSelectPresetBackgroundColor: (color: string) => void;
   borderless?: boolean;
@@ -519,30 +556,26 @@ function MenuBar({
 
       <ColorPickerButton
         value={currentTextColor}
+        fallbackValue={lastTextColor}
+        onApplyLast={onApplyLastColor}
         onSelectPreset={onSelectPresetColor}
         icon={
-          <span className="relative inline-flex h-5 w-5 items-center justify-center">
+          <ColorToolIcon color={currentTextColor || lastTextColor}>
             <CaseSensitive size={17} />
-            <span
-              className="absolute bottom-0 h-1 w-4 rounded-sm"
-              style={{ backgroundColor: currentTextColor || "#0f172a" }}
-            />
-          </span>
+          </ColorToolIcon>
         }
       />
       <ColorPickerButton
-        value={currentTextBackgroundColor}
+        value={lastTextBackgroundColor}
+        fallbackValue={lastTextBackgroundColor}
+        onApplyLast={onApplyLastBackgroundColor}
         title="Text background"
         colors={PRESET_BACKGROUND_COLORS}
         onSelectPreset={onSelectPresetBackgroundColor}
         icon={
-          <span className="relative inline-flex h-5 w-5 items-center justify-center">
+          <ColorToolIcon color={lastTextBackgroundColor}>
             <Highlighter size={16} />
-            <span
-              className="absolute bottom-0 h-1 w-4 rounded-sm"
-              style={{ backgroundColor: currentTextBackgroundColor || "#fef08a" }}
-            />
-          </span>
+          </ColorToolIcon>
         }
       />
       <div className="ml-auto flex h-full items-center gap-1 px-3">
@@ -625,6 +658,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const [mentionState, setMentionState] = useState<MentionState>(null);
   const [previewImage, setPreviewImage] = useState<PreviewImage>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
+  const [lastTextColor, setLastTextColor] = useState(PRESET_COLORS[0].value);
+  const [lastTextBackgroundColor, setLastTextBackgroundColor] = useState(PRESET_BACKGROUND_COLORS[1].value);
   const lastSelectionRef = useRef<SelectionSnapshot>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadedImageUrlsRef = useRef(new Set<string>());
@@ -1119,6 +1154,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       return;
     }
 
+    setLastTextColor(color);
     const chain = editor.chain().focus();
     if (lastSelectionRef.current) {
       chain.setTextSelection(lastSelectionRef.current);
@@ -1132,6 +1168,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       return;
     }
 
+    if (color !== "transparent") {
+      setLastTextBackgroundColor(color);
+    }
     const chain = editor.chain().focus();
     if (lastSelectionRef.current) {
       chain.setTextSelection(lastSelectionRef.current);
@@ -1143,6 +1182,14 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     }
 
     chain.setTextBackgroundColor(color).run();
+  };
+
+  const handleApplyLastTextColor = () => {
+    handleSelectPresetColor(lastTextColor);
+  };
+
+  const handleApplyLastTextBackgroundColor = () => {
+    handleSelectPresetBackgroundColor(lastTextBackgroundColor);
   };
 
   return (
@@ -1163,6 +1210,10 @@ const RichTextEditor = forwardRef(function RichTextEditor(
             onInsertImage={handleInsertImageClick}
             currentTextColor={currentTextColor}
             currentTextBackgroundColor={currentTextBackgroundColor}
+            lastTextColor={lastTextColor}
+            lastTextBackgroundColor={lastTextBackgroundColor}
+            onApplyLastColor={handleApplyLastTextColor}
+            onApplyLastBackgroundColor={handleApplyLastTextBackgroundColor}
             onSelectPresetColor={handleSelectPresetColor}
             onSelectPresetBackgroundColor={handleSelectPresetBackgroundColor}
             borderless={borderless}

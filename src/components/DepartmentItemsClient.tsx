@@ -28,6 +28,10 @@ import {
   ChevronRight,
   Clock,
   Eye,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
   Folder,
   Loader2,
   MapPin,
@@ -417,6 +421,100 @@ const SCHEDULE_TEXT = {
     noEvents: "暂无日程",
   },
 } as const;
+
+type StoredTaskListFilters = {
+  taskFilter?: TaskFilter;
+  taskQuery?: string;
+  taskSortField?: TaskSortField;
+  taskSortDirection?: TaskSortDirection;
+  taskPageSize?: number;
+  taskVisibleColumnIds?: TaskColumnId[];
+  taskColumnWidths?: Partial<Record<TaskColumnId, number>>;
+};
+
+type TaskAttachment = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number;
+};
+
+const TASK_ATTACHMENT_MARKER_PATTERN = /<!--neo-task-attachments:([\s\S]*?)-->/g;
+
+function readStoredTaskListFilters(storageKey: string): StoredTaskListFilters {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as StoredTaskListFilters;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseTaskAttachmentsFromContent(content?: string | null): TaskAttachment[] {
+  if (!content) return [];
+
+  const attachments: TaskAttachment[] = [];
+  for (const match of content.matchAll(TASK_ATTACHMENT_MARKER_PATTERN)) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1])) as TaskAttachment[];
+      if (Array.isArray(parsed)) {
+        attachments.push(
+          ...parsed.filter(
+            (attachment) =>
+              attachment &&
+              typeof attachment.id === "string" &&
+              typeof attachment.fileName === "string" &&
+              typeof attachment.fileUrl === "string" &&
+              (attachment.fileSize === undefined || typeof attachment.fileSize === "number")
+          )
+        );
+      }
+    } catch {
+      // Ignore malformed legacy markers.
+    }
+  }
+
+  return attachments;
+}
+
+function stripTaskAttachmentsFromContent(content?: string | null) {
+  return (content || "").replace(TASK_ATTACHMENT_MARKER_PATTERN, "").trim();
+}
+
+function appendTaskAttachmentsToContent(content: string, attachments: TaskAttachment[]) {
+  if (attachments.length === 0) return content;
+  return `${content || ""}<!--neo-task-attachments:${encodeURIComponent(JSON.stringify(attachments))}-->`;
+}
+
+function formatAttachmentSize(fileSize?: number) {
+  if (!Number.isFinite(fileSize) || !fileSize || fileSize <= 0) return "";
+  if (fileSize < 1024) return `${fileSize} B`;
+  if (fileSize < 1024 * 1024) return `${(fileSize / 1024).toFixed(1)} KB`;
+  return `${(fileSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getTaskAttachmentIcon(fileName: string) {
+  if (/\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName)) {
+    return <FileImage size={14} className="shrink-0 text-blue-500" />;
+  }
+  if (/\.(xls|xlsx|csv)$/i.test(fileName)) {
+    return <FileSpreadsheet size={14} className="shrink-0 text-emerald-600" />;
+  }
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(fileName)) {
+    return <FileArchive size={14} className="shrink-0 text-amber-600" />;
+  }
+  if (/\.(pdf)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-red-500" />;
+  }
+  if (/\.(doc|docx|txt|md)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-sky-600" />;
+  }
+  return <Paperclip size={14} className="shrink-0 text-slate-400" />;
+}
 
 function formatDateTimeLocal(date = new Date()) {
   const next = new Date(date);
@@ -1101,6 +1199,7 @@ export default function DepartmentItemsClient({
         resetColumns: "Reset columns",
       };
   const router = useRouter();
+  const taskFilterStorageKey = `neo-jira:task-list-filters:${departmentId}:v1`;
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
   const taskContentEditorRef = useRef<RichTextEditorHandle>(null);
   const editTaskContentEditorRef = useRef<RichTextEditorHandle>(null);
@@ -1122,6 +1221,7 @@ export default function DepartmentItemsClient({
   const [taskSortDirection, setTaskSortDirection] = useState<TaskSortDirection>("desc");
   const [taskPage, setTaskPage] = useState(1);
   const [taskPageSize, setTaskPageSize] = useState<number>(TASK_PAGE_SIZE_OPTIONS[0]);
+  const [hasLoadedTaskPreferences, setHasLoadedTaskPreferences] = useState(false);
   const taskColumnDefinitions = useMemo<TaskColumnConfig[]>(
     () => [
       { id: "title", label: t.titleField, width: TASK_DEFAULT_COLUMN_WIDTHS.title },
@@ -1165,6 +1265,50 @@ export default function DepartmentItemsClient({
     },
     [taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
   );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedTaskFilters = readStoredTaskListFilters(taskFilterStorageKey);
+    if (storedTaskFilters.taskFilter) setTaskFilter(storedTaskFilters.taskFilter);
+    if (typeof storedTaskFilters.taskQuery === "string") setTaskQuery(storedTaskFilters.taskQuery);
+    if (storedTaskFilters.taskSortField) setTaskSortField(storedTaskFilters.taskSortField);
+    if (storedTaskFilters.taskSortDirection) setTaskSortDirection(storedTaskFilters.taskSortDirection);
+    if (TASK_PAGE_SIZE_OPTIONS.some((option) => option === storedTaskFilters.taskPageSize)) {
+      setTaskPageSize(storedTaskFilters.taskPageSize!);
+    }
+    const validVisibleColumnIds = storedTaskFilters.taskVisibleColumnIds?.filter((columnId) =>
+      taskConfigurableColumns.some((column) => column.id === columnId)
+    );
+    if (validVisibleColumnIds?.length) {
+      setTaskVisibleColumnIds(validVisibleColumnIds);
+    }
+    const validColumnWidths = Object.entries(storedTaskFilters.taskColumnWidths || {}).reduce(
+      (acc, [columnId, width]) => {
+        if (TASK_DEFAULT_COLUMN_IDS.includes(columnId as TaskColumnId) && typeof width === "number" && width >= 80) {
+          acc[columnId as TaskColumnId] = width;
+        }
+        return acc;
+      },
+      {} as Partial<Record<TaskColumnId, number>>
+    );
+    setTaskColumnWidths({ ...TASK_DEFAULT_COLUMN_WIDTHS, ...validColumnWidths });
+    setHasLoadedTaskPreferences(true);
+  }, [taskConfigurableColumns, taskFilterStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasLoadedTaskPreferences) return;
+    window.localStorage.setItem(
+      taskFilterStorageKey,
+      JSON.stringify({
+        taskFilter,
+        taskQuery,
+        taskSortField,
+        taskSortDirection,
+        taskPageSize,
+        taskVisibleColumnIds,
+        taskColumnWidths,
+      } satisfies StoredTaskListFilters)
+    );
+  }, [hasLoadedTaskPreferences, taskColumnWidths, taskFilter, taskFilterStorageKey, taskPageSize, taskQuery, taskSortDirection, taskSortField, taskVisibleColumnIds]);
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [collapsedNoteFolderIds, setCollapsedNoteFolderIds] = useState<Record<string, boolean>>({});
   const [noteQuery, setNoteQuery] = useState("");
@@ -1234,6 +1378,8 @@ export default function DepartmentItemsClient({
     reminderRule: "15",
     meetingMinutes: "",
   });
+  const [taskAttachments, setTaskAttachments] = useState<TaskAttachment[]>([]);
+  const [isTaskAttachmentUploading, setIsTaskAttachmentUploading] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     content: "",
@@ -1558,6 +1704,8 @@ export default function DepartmentItemsClient({
   });
   const selectedNote = selectedNoteId ? notes.find((note) => note.id === selectedNoteId) || null : null;
   const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
+  const selectedTaskAttachments = parseTaskAttachmentsFromContent(selectedTask?.content);
+  const selectedTaskContent = stripTaskAttachmentsFromContent(selectedTask?.content);
   const selectedScheduleItem = selectedScheduleItemId ? items.find((item) => item.id === selectedScheduleItemId) || null : null;
   const editingScheduleItem = editingScheduleItemId ? items.find((item) => item.id === editingScheduleItemId) || null : null;
   const selectedNoteIssue = selectedNoteIssueId
@@ -1669,6 +1817,7 @@ export default function DepartmentItemsClient({
   const openCreateModal = () => {
     setEditingScheduleItemId(null);
     resetForm();
+    setTaskAttachments([]);
     setError("");
     setIsCreateMoreOpen(false);
     setIsCreateOpen(true);
@@ -1781,7 +1930,7 @@ export default function DepartmentItemsClient({
           : await createReminder({
               departmentId,
               title: form.title,
-              content: isScheduleCreate ? scheduleContent : form.content,
+              content: isScheduleCreate ? scheduleContent : buildTaskContentWithAttachments(),
               itemType: isScheduleCreate ? scheduleItemType : form.itemType,
               startAt: isScheduleCreate ? scheduleStartAt : form.itemType === "TODO" ? undefined : form.startAt,
               endAt: isScheduleCreate ? scheduleEndAt : undefined,
@@ -1802,6 +1951,7 @@ export default function DepartmentItemsClient({
 
       if (!isScheduleCreate) {
         taskContentEditorRef.current?.commitPendingUploads();
+        setTaskAttachments([]);
       }
       setIsCreateOpen(false);
       setEditingScheduleItemId(null);
@@ -1879,7 +2029,7 @@ export default function DepartmentItemsClient({
     setReplyContent("");
     setEditForm({
       title: item.title,
-      content: item.content || "",
+      content: stripTaskAttachmentsFromContent(item.content),
       dueAt: formatDateTimeLocalFromIso(item.dueDate),
       scopeType: item.scopeType === "PROJECT" ? "PROJECT" : item.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL",
       projectId: item.scopeType === "PROJECT" ? taskAssigneeChoices.find((choice) => choice.assigneeId === item.assigneeId && choice.scopeType === "PROJECT")?.projectId || "" : "",
@@ -1896,7 +2046,7 @@ export default function DepartmentItemsClient({
     if (!selectedTask) return;
     return updateReminderTask(selectedTask.id, {
       title: editForm.title,
-      content: editForm.content,
+      content: appendTaskAttachmentsToContent(editForm.content, selectedTaskAttachments),
       dueAt: editForm.dueAt || undefined,
       assigneeId: editForm.assigneeId,
       scopeType: editForm.scopeType,
@@ -2101,6 +2251,90 @@ export default function DepartmentItemsClient({
       router.refresh();
     });
   };
+
+  const cleanupTaskAttachments = async () => {
+    if (taskAttachments.length === 0) return;
+
+    try {
+      await Promise.all(
+        taskAttachments.map((attachment) =>
+          fetch("/api/upload", {
+            method: "DELETE",
+            body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+            headers: { "Content-Type": "application/json" },
+          })
+        )
+      );
+    } catch (error) {
+      console.error("Failed to cleanup task attachments:", error);
+    }
+  };
+
+  const closeCreateTaskDialog = async () => {
+    await taskContentEditorRef.current?.discardPendingUploads();
+    await cleanupTaskAttachments();
+    setTaskAttachments([]);
+    setIsCreateOpen(false);
+  };
+
+  const handleTaskAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      setError(locale === "zh" ? "附件大小不能超过 50 MB" : "File size cannot exceed 50 MB");
+      event.target.value = "";
+      return;
+    }
+
+    setError("");
+    setIsTaskAttachmentUploading(true);
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: data,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setError(errorData?.error || (locale === "zh" ? "上传附件失败" : "Failed to upload attachment"));
+        return;
+      }
+
+      const result = await response.json();
+      setTaskAttachments((current) => [
+        ...current,
+        { id: `${Date.now()}-${result.fileUrl}`, fileName: result.fileName, fileUrl: result.fileUrl, fileSize: file.size },
+      ]);
+    } catch (error) {
+      console.error("Failed to upload task attachment:", error);
+      setError(locale === "zh" ? "上传附件失败" : "Failed to upload attachment");
+    } finally {
+      setIsTaskAttachmentUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeTaskAttachment = async (attachmentId: string) => {
+    const attachment = taskAttachments.find((item) => item.id === attachmentId);
+    if (!attachment) return;
+
+    setTaskAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    try {
+      await fetch("/api/upload", {
+        method: "DELETE",
+        body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Failed to delete task attachment:", error);
+    }
+  };
+
+  const buildTaskContentWithAttachments = () => appendTaskAttachmentsToContent(form.content, taskAttachments);
 
   const openEditNote = (note: NoteListItem) => {
     void saveSelectedNoteNow();
@@ -3789,8 +4023,18 @@ export default function DepartmentItemsClient({
               ) : null}
             </div>
           </div>
-          <div className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-2">
-            <div className="space-y-1">
+          <div
+            className="mt-2 min-h-0 flex-1 overflow-y-auto border-t border-slate-200 px-2 py-2"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setNoteFolderFilter("all");
+            }}
+          >
+            <div
+              className="min-h-full space-y-1"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setNoteFolderFilter("all");
+              }}
+            >
               {noteFolderFilter !== "trash" ? (
                 <>
                   <div className="mb-1 flex items-center justify-between px-2">
@@ -4633,10 +4877,7 @@ export default function DepartmentItemsClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    void taskContentEditorRef.current?.discardPendingUploads();
-                    setIsCreateOpen(false);
-                  }}
+                  onClick={() => void closeCreateTaskDialog()}
                   className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                 >
                   <X size={20} />
@@ -4667,6 +4908,52 @@ export default function DepartmentItemsClient({
                       />
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>{locale === "zh" ? `附件 (${taskAttachments.length})` : `Attachments (${taskAttachments.length})`}</Label>
+                      <Button asChild type="button" variant="secondary" size="sm" disabled={isTaskAttachmentUploading || isPending}>
+                        <label className="cursor-pointer">
+                          {isTaskAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                          {isTaskAttachmentUploading ? (locale === "zh" ? "上传中" : "Uploading") : (locale === "zh" ? "添加附件" : "Add attachment")}
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={handleTaskAttachmentUpload}
+                            disabled={isTaskAttachmentUploading || isPending}
+                          />
+                        </label>
+                      </Button>
+                    </div>
+                    {taskAttachments.length > 0 ? (
+                      <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                        {taskAttachments.map((attachment) => (
+                          <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
+                            <span className="inline-flex min-w-0 items-center gap-2.5">
+                              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                                {getTaskAttachmentIcon(attachment.fileName)}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium">{attachment.fileName}</span>
+                                {formatAttachmentSize(attachment.fileSize) ? (
+                                  <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                                ) : null}
+                              </span>
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => void removeTaskAttachment(attachment.id)}
+                              disabled={isPending}
+                              title={locale === "zh" ? "移除附件" : "Remove attachment"}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {activeTab === "tasks" || form.itemType === "TODO" ? (
                       <div className="flex flex-col gap-1.5">
@@ -4695,17 +4982,14 @@ export default function DepartmentItemsClient({
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      void taskContentEditorRef.current?.discardPendingUploads();
-                      setIsCreateOpen(false);
-                    }}
+                    onClick={() => void closeCreateTaskDialog()}
                     disabled={isPending}
                   >
                     {t.cancel}
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isPending || !form.title.trim()}
+                    disabled={isPending || isTaskAttachmentUploading || !form.title.trim()}
                   >
                     {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
                     {t.create}
@@ -4804,14 +5088,42 @@ export default function DepartmentItemsClient({
                 </div>
               </div>
             ) : (
-              <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
-                {selectedTask.content ? (
-                  <div className="text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
-                    <RichTextEditor value={selectedTask.content} onChange={() => {}} readOnly />
+              <div className="space-y-3">
+                <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2">
+                  {selectedTaskContent ? (
+                    <div className="text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
+                      <RichTextEditor value={selectedTaskContent} onChange={() => {}} readOnly />
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{t.noContent}</p>
+                  )}
+                </div>
+                {selectedTaskAttachments.length > 0 ? (
+                  <div className="space-y-2 pt-3">
+                    <Label>{locale === "zh" ? `附件 (${selectedTaskAttachments.length})` : `Attachments (${selectedTaskAttachments.length})`}</Label>
+                    <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                      {selectedTaskAttachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex min-w-0 items-center gap-2.5 border-b px-3 py-2.5 text-sm text-foreground last:border-b-0 hover:bg-accent/50"
+                        >
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                            {getTaskAttachmentIcon(attachment.fileName)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{attachment.fileName}</span>
+                            {formatAttachmentSize(attachment.fileSize) ? (
+                              <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                            ) : null}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{t.noContent}</p>
-                )}
+                ) : null}
               </div>
             )}
 

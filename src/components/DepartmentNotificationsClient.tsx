@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition, useEffect, useCallback, type ReactNode } from "react";
-
-type FilterOption = {
-  value: string;
-  label: string;
-};
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowDown,
   ArrowLeft,
@@ -52,6 +47,55 @@ import type {
 import type { Locale } from "@/lib/i18n";
 import { formatRelativeTime } from "@/lib/timeFormat";
 import LocalizedDateInput from "./LocalizedDateInput";
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
+
+type StoredNotificationColumnPreferences = {
+  columnOrder?: ColumnId[];
+  visibleColumns?: ColumnId[];
+  columnWidths?: Partial<Record<ColumnId, number>>;
+};
+
+const NOTIFICATION_FILTER_KEYS = [
+  "view",
+  "category",
+  "projectId",
+  "read",
+  "publishStatus",
+  "search",
+  "sort",
+  "direction",
+  "createdFilter",
+  "createdDate",
+  "from",
+  "to",
+  "pageSize",
+];
+
+function buildStoredNotificationParams(params: URLSearchParams) {
+  const stored = new URLSearchParams();
+  NOTIFICATION_FILTER_KEYS.forEach((key) => {
+    const value = params.get(key);
+    if (value) stored.set(key, value);
+  });
+  return stored.toString();
+}
+
+function readStoredNotificationColumnPreferences(storageKey: string): StoredNotificationColumnPreferences | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredNotificationColumnPreferences;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 const TEXT = {
   en: {
@@ -250,6 +294,11 @@ export default function DepartmentNotificationsClient({
 }) {
   const t = TEXT[locale];
   const router = useRouter();
+  const pathname = usePathname();
+  const filterStorageKey = `neo-jira:notification-list-filters:${pathname}:v1`;
+  const columnStorageKey = `neo-jira:notification-list-columns:${pathname}:v1`;
+  const didAttemptFilterRestoreRef = useRef(false);
+  const didRestoreStoredFiltersRef = useRef(false);
   const [isPending, startTransition] = useTransition();
   const currentView = filters.view === "sent" && permission.canCreate ? "sent" : "received";
   const initialSelectedNotification = selectedNotificationId
@@ -279,6 +328,7 @@ export default function DepartmentNotificationsClient({
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [columnWidths, setColumnWidths] = useState(DEFAULT_WIDTHS);
+  const [hasLoadedColumnPreferences, setHasLoadedColumnPreferences] = useState(false);
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverSide, setDragOverSide] = useState<"left" | "right" | null>(null);
@@ -317,6 +367,33 @@ export default function DepartmentNotificationsClient({
     () => ({ ...filters, pageSize: String(pagination.pageSize) }),
     [filters, pagination.pageSize],
   );
+  useEffect(() => {
+    if (didAttemptFilterRestoreRef.current || typeof window === "undefined") return;
+    didAttemptFilterRestoreRef.current = true;
+
+    if (window.location.search) return;
+
+    const stored = window.localStorage.getItem(filterStorageKey);
+    if (stored) {
+      didRestoreStoredFiltersRef.current = true;
+      router.replace(`${pathname}?${stored}`);
+    }
+  }, [filterStorageKey, pathname, router]);
+
+  useEffect(() => {
+    if (!didAttemptFilterRestoreRef.current || typeof window === "undefined") return;
+    if (didRestoreStoredFiltersRef.current && !window.location.search) return;
+    didRestoreStoredFiltersRef.current = false;
+
+    const params = new URLSearchParams(currentParams);
+    params.delete("page");
+    const stored = buildStoredNotificationParams(params);
+    if (stored) {
+      window.localStorage.setItem(filterStorageKey, stored);
+    } else {
+      window.localStorage.removeItem(filterStorageKey);
+    }
+  }, [currentParams, filterStorageKey]);
   const createdFilter = filters.createdFilter || "ALL";
   const createdDate = filters.createdDate || "";
   const currentCategory = filters.category || "";
@@ -331,6 +408,43 @@ export default function DepartmentNotificationsClient({
     ],
     [t.allCreated, t.dateEquals, t.dateOnOrAfter, t.dateOnOrBefore],
   );
+
+  useEffect(() => {
+    const storedPreferences = readStoredNotificationColumnPreferences(columnStorageKey);
+    const validOrder = storedPreferences?.columnOrder?.filter((columnId) => DEFAULT_COLUMN_ORDER.includes(columnId));
+    const validVisibleColumns = storedPreferences?.visibleColumns?.filter((columnId) => DEFAULT_COLUMN_ORDER.includes(columnId));
+    const validColumnWidths = Object.entries(storedPreferences?.columnWidths || {}).reduce(
+      (acc, [columnId, width]) => {
+        if (DEFAULT_COLUMN_ORDER.includes(columnId as ColumnId) && typeof width === "number" && width >= 60) {
+          acc[columnId as ColumnId] = width;
+        }
+        return acc;
+      },
+      {} as Partial<Record<ColumnId, number>>
+    );
+
+    setColumnOrder(
+      validOrder?.length
+        ? [...validOrder, ...DEFAULT_COLUMN_ORDER.filter((columnId) => !validOrder.includes(columnId))]
+        : DEFAULT_COLUMN_ORDER
+    );
+    setVisibleColumns(validVisibleColumns?.length ? validVisibleColumns : DEFAULT_COLUMN_ORDER);
+    setColumnWidths({ ...DEFAULT_WIDTHS, ...validColumnWidths });
+    setHasLoadedColumnPreferences(true);
+  }, [columnStorageKey]);
+
+  useEffect(() => {
+    if (!hasLoadedColumnPreferences || typeof window === "undefined") return;
+
+    window.localStorage.setItem(
+      columnStorageKey,
+      JSON.stringify({
+        columnOrder,
+        visibleColumns,
+        columnWidths,
+      } satisfies StoredNotificationColumnPreferences)
+    );
+  }, [columnOrder, columnStorageKey, columnWidths, hasLoadedColumnPreferences, visibleColumns]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
