@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import prisma from "@/lib/prisma";
-import { notifyMeetingAttendees } from "@/lib/notifications";
+import { notifyMeetingAttendees, notifyMeetingCancelled, notifyMeetingUpdated } from "@/lib/notifications";
 import { getRequiredSession, getProjectRole } from "@/lib/permissions";
 import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
 
@@ -198,6 +198,38 @@ async function syncReminderAttendees(reminderId: string, attendeeIds: string[], 
   );
 }
 
+function extractMeetingLocation(content: string | null) {
+  const lines = (content || "").split(/\r?\n/);
+  const locationLine = lines.find((line) => /^\s*(Location|地点)\s*[:：]/i.test(line));
+  return (locationLine?.replace(/^\s*(Location|地点)\s*[:：]\s*/i, "") || "").trim();
+}
+
+function getMeetingChangedFields({
+  previousStartAt,
+  previousEndAt,
+  nextStartAt,
+  nextEndAt,
+  previousContent,
+  nextContent,
+}: {
+  previousStartAt: Date;
+  previousEndAt: Date | null;
+  nextStartAt: Date;
+  nextEndAt: Date | null;
+  previousContent: string | null;
+  nextContent: string | null;
+}) {
+  const changedFields: Array<"time" | "location"> = [];
+  const timeChanged =
+    previousStartAt.getTime() !== nextStartAt.getTime() ||
+    (previousEndAt?.getTime() || null) !== (nextEndAt?.getTime() || null);
+  if (timeChanged) changedFields.push("time");
+  if (extractMeetingLocation(previousContent) !== extractMeetingLocation(nextContent)) {
+    changedFields.push("location");
+  }
+  return changedFields;
+}
+
 export async function createReminder(data: {
   departmentId: string;
   title: string;
@@ -333,6 +365,7 @@ export async function createReminder(data: {
         attendeeIds,
         title,
         departmentId,
+        reminderId: reminder.id,
       });
     }
 
@@ -546,10 +579,12 @@ export async function deleteReminderItem(reminderId: string) {
       select: {
         id: true,
         itemType: true,
+        title: true,
         creatorId: true,
         departmentId: true,
         content: true,
         comments: { select: { content: true } },
+        attendees: { select: { userId: true } },
       },
     });
 
@@ -570,6 +605,8 @@ export async function deleteReminderItem(reminderId: string) {
       }
     }
 
+    const attendeeIds = reminder.attendees.map((attendee) => attendee.userId);
+
     await prisma.$transaction([
       prisma.reminderAttendee.deleteMany({ where: { reminderId: reminder.id } }),
       prisma.reminderComment.deleteMany({ where: { reminderId: reminder.id } }),
@@ -577,6 +614,15 @@ export async function deleteReminderItem(reminderId: string) {
     ]);
 
     await deleteLocalUploads(uploadUrlsToDelete);
+
+    if (reminder.itemType === "EVENT" && reminder.departmentId && attendeeIds.length > 0) {
+      await notifyMeetingCancelled({
+        actorId: currentUser.id,
+        attendeeIds,
+        title: reminder.title,
+        departmentId: reminder.departmentId,
+      });
+    }
 
     if (reminder.departmentId) {
       revalidatePath(`/departments/${reminder.departmentId}`);
@@ -622,6 +668,7 @@ export async function updateReminderItem(
         creatorId: true,
         departmentId: true,
         scopeType: true,
+        attendees: { select: { userId: true } },
       },
     });
 
@@ -685,6 +732,19 @@ export async function updateReminderItem(
 
     await deleteLocalUploads(getRemovedUploadUrls(reminder.content, content));
 
+    const meetingChangedFields = itemType === "EVENT"
+      ? getMeetingChangedFields({
+          previousStartAt: reminder.startAt,
+          previousEndAt: reminder.endAt,
+          nextStartAt: startAt,
+          nextEndAt: endAt,
+          previousContent: reminder.content,
+          nextContent: content,
+        })
+      : [];
+    const previousAttendeeIds = reminder.attendees.map((attendee) => attendee.userId);
+    const notificationAttendeeIds = attendeeIds.length > 0 ? attendeeIds : previousAttendeeIds;
+
     if (itemType === "EVENT" && attendeeIds.length > 0) {
       await syncReminderAttendees(reminder.id, attendeeIds, reminder.creatorId);
       const coreChanged =
@@ -696,6 +756,16 @@ export async function updateReminderItem(
         await prisma.reminderAttendee.updateMany({
           where: { reminderId: reminder.id, userId: { not: reminder.creatorId } },
           data: { status: "PENDING", note: null, respondedAt: null },
+        });
+      }
+      if (meetingChangedFields.length > 0 && departmentId && notificationAttendeeIds.length > 0) {
+        await notifyMeetingUpdated({
+          actorId: currentUser.id,
+          attendeeIds: notificationAttendeeIds,
+          title,
+          departmentId,
+          reminderId: reminder.id,
+          changedFields: meetingChangedFields,
         });
       }
     } else if (itemType !== "EVENT" || data.attendeeIds !== undefined) {

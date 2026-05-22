@@ -1565,6 +1565,12 @@ export default function DepartmentItemsClient({
     : null;
 
   useEffect(() => {
+    if (!selectedScheduleItem) return;
+    const selectedDate = new Date(selectedScheduleItem.date);
+    if (!Number.isNaN(selectedDate.getTime())) setScheduleCursor(selectedDate);
+  }, [selectedScheduleItem]);
+
+  useEffect(() => {
     setIsNoteIssuePropertiesExpanded(false);
   }, [selectedNoteIssueId]);
 

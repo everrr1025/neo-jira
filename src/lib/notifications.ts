@@ -239,6 +239,61 @@ export async function notifyMeetingAttendees({
   attendeeIds,
   title,
   departmentId,
+  reminderId,
+  locale = "zh",
+}: {
+  actorId: string;
+  attendeeIds: string[];
+  title: string;
+  departmentId: string;
+  reminderId: string;
+  locale?: "en" | "zh";
+}) {
+  const targetIds = attendeeIds.filter((userId) => userId !== actorId);
+  await createLinkNotifications(targetIds, {
+    type: "MEETING",
+    message: locale === "zh" ? `邀请你参加会议：${title}` : `invited you to meeting: ${title}`,
+    link: `/departments/${departmentId}/items?tab=schedule&selected=${reminderId}`,
+    actorId,
+  });
+}
+
+export async function notifyMeetingUpdated({
+  actorId,
+  attendeeIds,
+  title,
+  departmentId,
+  reminderId,
+  changedFields,
+  locale = "zh",
+}: {
+  actorId: string;
+  attendeeIds: string[];
+  title: string;
+  departmentId: string;
+  reminderId: string;
+  changedFields: Array<"time" | "location">;
+  locale?: "en" | "zh";
+}) {
+  const targetIds = attendeeIds.filter((userId) => userId !== actorId);
+  const fieldLabel =
+    locale === "zh"
+      ? changedFields.map((field) => (field === "time" ? "时间" : "地点")).join("和")
+      : changedFields.map((field) => (field === "time" ? "time" : "location")).join(" and ");
+
+  await createLinkNotifications(targetIds, {
+    type: "MEETING",
+    message: locale === "zh" ? `会议${fieldLabel}已修改：${title}` : `meeting ${fieldLabel} changed: ${title}`,
+    link: `/departments/${departmentId}/items?tab=schedule&selected=${reminderId}`,
+    actorId,
+  });
+}
+
+export async function notifyMeetingCancelled({
+  actorId,
+  attendeeIds,
+  title,
+  departmentId,
   locale = "zh",
 }: {
   actorId: string;
@@ -249,9 +304,9 @@ export async function notifyMeetingAttendees({
 }) {
   const targetIds = attendeeIds.filter((userId) => userId !== actorId);
   await createLinkNotifications(targetIds, {
-    type: "MEETING",
-    message: locale === "zh" ? `邀请你参加会议：${title}` : `invited you to meeting: ${title}`,
-    link: `/departments/${departmentId}/items?tab=schedule`,
+    type: "MEETING_CANCELLED",
+    message: locale === "zh" ? `会议已取消：${title}` : `meeting cancelled: ${title}`,
+    link: `/departments/${departmentId}/items?tab=schedule&cancelled=1`,
     actorId,
   });
 }

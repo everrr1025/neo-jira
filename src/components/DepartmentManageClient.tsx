@@ -26,6 +26,7 @@ import {
 import {
   createAnnouncementNotification,
   markAnnouncementRead,
+  markSystemNotificationRead,
   resendAnnouncementNotification,
   revokeAnnouncementNotification,
 } from "@/app/actions/announcements";
@@ -744,6 +745,19 @@ export default function DepartmentManageClient({
   };
   const openDashboardNotificationDetail = (notification: DepartmentNotificationListItem) => {
     setNotificationErrorMsg("");
+    if (notification.source === "NOTIFICATION") {
+      if (notification.targetUrl) {
+        window.open(notification.targetUrl, "_blank", "noreferrer");
+      }
+      if (!notification.read) {
+        startTransition(async () => {
+          await markSystemNotificationRead(notification.id);
+          router.refresh();
+        });
+      }
+      return;
+    }
+
     setResendForm({ title: notification.title, content: notification.content });
     setSelectedNotification(notification);
     if (!notification.read && notification.status === "SENT") {

@@ -249,6 +249,7 @@ function getNotificationTypeLabel(
 
 function getSystemNotificationType(type: string, locale: Locale) {
   if (type === "MEETING") return locale === "zh" ? "会议提醒" : "Meeting";
+  if (type === "MEETING_CANCELLED") return locale === "zh" ? "会议取消" : "Meeting cancelled";
   if (type === "MENTION") return locale === "zh" ? "提及" : "Mention";
   if (type === "ASSIGNMENT") return locale === "zh" ? "Issue 指派" : "Issue assignment";
   if (type === "WATCHER") return locale === "zh" ? "Issue 动态" : "Issue update";
@@ -256,7 +257,7 @@ function getSystemNotificationType(type: string, locale: Locale) {
 }
 
 function getSystemNotificationCategory(type: string): DepartmentNotificationCategory {
-  return type === "MEETING" ? "REMINDER" : "UPDATE";
+  return type === "MEETING" || type === "MEETING_CANCELLED" ? "REMINDER" : "UPDATE";
 }
 
 function mapSystemNotificationToListItem(
@@ -301,7 +302,7 @@ function mapSystemNotificationToListItem(
     projectName: issueProject?.name ?? null,
     canManage: false,
     canDelete: false,
-    targetUrl: notification.link,
+    targetUrl: notification.type === "MEETING_CANCELLED" ? null : notification.link,
   };
 }
 
@@ -336,32 +337,53 @@ export async function getLatestDepartmentNotifications({
 }) {
   await ensureDueIssueSystemNotifications(departmentId, locale);
   const permission = await getDepartmentNotificationPermission(departmentId, { userId, userRole });
-  const receipts = await prisma.announcementReceipt.findMany({
-    where: {
-      userId,
-      announcement: {
-        departmentId,
-        status: "SENT",
-        level: { in: ["DEPARTMENT", "PROJECT"] },
-      },
-    },
-    include: {
-      announcement: {
-        include: {
-          author: { select: { name: true, email: true } },
-          project: { select: { name: true, key: true } },
+  const [receipts, systemNotifications] = await Promise.all([
+    prisma.announcementReceipt.findMany({
+      where: {
+        userId,
+        announcement: {
+          departmentId,
+          status: "SENT",
+          level: { in: ["DEPARTMENT", "PROJECT"] },
         },
       },
-    },
-    orderBy: [{ createdAt: "desc" }],
-    take,
-  });
+      include: {
+        announcement: {
+          include: {
+            author: { select: { name: true, email: true } },
+            project: { select: { name: true, key: true } },
+          },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take,
+    }),
+    prisma.notification.findMany({
+      where: {
+        userId,
+        type: { in: ["MEETING", "MEETING_CANCELLED"] },
+        link: { startsWith: `/departments/${departmentId}/items` },
+      },
+      include: {
+        actor: { select: { name: true, email: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+      take,
+    }),
+  ]);
+
+  const notifications = [
+    ...receipts.map((receipt) =>
+      mapReceiptToListItem(receipt, locale, permission.canManageDepartment, userId),
+    ),
+    ...systemNotifications.map((notification) =>
+      mapSystemNotificationToListItem(notification, locale, new Map()),
+    ),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, take);
 
   return {
     permission,
-    notifications: receipts.map((receipt) =>
-      mapReceiptToListItem(receipt, locale, permission.canManageDepartment, userId),
-    ),
+    notifications,
   };
 }
 
@@ -512,7 +534,7 @@ export async function getDepartmentNotificationsPage({
         ? [{ link: { in: notificationLinks }, type: { not: "MEETING" } }]
         : []),
       ...(includeReminders && includeMeetings
-        ? [{ link: { startsWith: `/departments/${departmentId}/items` }, type: "MEETING" }]
+        ? [{ link: { startsWith: `/departments/${departmentId}/items` }, type: { in: ["MEETING", "MEETING_CANCELLED"] } }]
         : []),
     ],
   };
