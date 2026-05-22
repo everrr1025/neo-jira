@@ -141,7 +141,7 @@ export async function notifyCommentMentions({
 
   await createNotifications(mentionedUserIds, {
     type: "MENTION",
-    message: `mentioned you in a comment on ${issueKey}`,
+    message: `在 ${issueKey} 的评论中提到了你`,
     issueId,
     actorId,
   });
@@ -168,7 +168,7 @@ export async function notifyIssueMentions({
 
   await createNotifications(mentionedUserIds, {
     type: "MENTION",
-    message: `mentioned you in ${issueKey}`,
+    message: `在 ${issueKey} 中提到了你`,
     issueId,
     actorId,
   });
@@ -228,7 +228,7 @@ export async function notifyAssignedUser({
 
   await createNotifications([assigneeId], {
     type: "ASSIGNMENT",
-    message: `assigned you to ${issueKey}`,
+    message: `将 ${issueKey} 指派给你`,
     issueId,
     actorId,
   });

@@ -141,11 +141,11 @@ function getIssueWatcherNotificationMessage(
   const wasDone = isDoneWorkflowStatus(before.status, workflowStatuses);
   const isDone = isDoneWorkflowStatus(after.status, workflowStatuses);
   if (!wasDone && isDone) {
-    return `completed ${after.key}`;
+    return `完成了 ${after.key}`;
   }
 
   if (before.dueDate && after.dueDate && after.dueDate.getTime() > before.dueDate.getTime()) {
-    return `delayed ${after.key}`;
+    return `延期了 ${after.key}`;
   }
 
   return null;

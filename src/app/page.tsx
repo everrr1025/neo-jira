@@ -426,6 +426,49 @@ export default async function Dashboard({
   const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
   const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
 
+  if (query) {
+    return (
+      <div className="space-y-6">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-500">{translations.dashboard.searchResultsFor}</p>
+              <h3 className="text-lg font-semibold text-slate-900">{query}</h3>
+            </div>
+            <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
+              {translations.dashboard.clearSearch}
+            </Link>
+          </div>
+          <div className="space-y-3 p-4">
+            {searchResults.length > 0 ? (
+              searchResults.map((issue) => (
+                <Link
+                  key={issue.id}
+                  href={`/issues/${issue.id}`}
+                  className="group block rounded-xl border p-4 transition-colors hover:border-blue-300 hover:bg-slate-50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-xs font-semibold text-slate-500 group-hover:text-blue-600">
+                      {issue.key}
+                    </span>
+                    <span className={getStatusBadgeClass(issue.status, workflowStatusByProjectId.get(issue.projectId) || [])}>
+                      {getWorkflowStatusName(issue.status, workflowStatusByProjectId.get(issue.projectId) || [], locale)}
+                    </span>
+                  </div>
+                  <h4 className="mt-2 text-sm font-medium text-slate-800">{issue.title}</h4>
+                </Link>
+              ))
+            ) : (
+              <div className="py-8 text-center text-sm text-slate-400">
+                {translations.dashboard.noIssuesFound} <span>&quot;{query}&quot;</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!activeProject && isGlobalAdmin) {
     const [adminUserCount, adminDeptCount, adminProjectCount] = await Promise.all([
       prisma.user.count(),

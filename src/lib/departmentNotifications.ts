@@ -260,6 +260,44 @@ function getSystemNotificationCategory(type: string): DepartmentNotificationCate
   return type === "MEETING" || type === "MEETING_CANCELLED" ? "REMINDER" : "UPDATE";
 }
 
+export function localizeSystemNotificationMessage(type: string, message: string, locale: Locale) {
+  if (locale !== "zh") return message;
+
+  const mentionCommentMatch = message.match(/^mentioned you in a comment on (.+)$/);
+  if (mentionCommentMatch) return `在 ${mentionCommentMatch[1]} 的评论中提到了你`;
+
+  const mentionIssueMatch = message.match(/^mentioned you in (.+)$/);
+  if (mentionIssueMatch) return `在 ${mentionIssueMatch[1]} 中提到了你`;
+
+  const assignmentMatch = message.match(/^assigned you to (.+)$/);
+  if (assignmentMatch) return `将 ${assignmentMatch[1]} 指派给你`;
+
+  const completedMatch = message.match(/^completed (.+)$/);
+  if (completedMatch) return `完成了 ${completedMatch[1]}`;
+
+  const delayedMatch = message.match(/^delayed (.+)$/);
+  if (delayedMatch) return `延期了 ${delayedMatch[1]}`;
+
+  const invitedMeetingMatch = message.match(/^invited you to meeting: (.+)$/);
+  if (invitedMeetingMatch) return `邀请你参加会议：${invitedMeetingMatch[1]}`;
+
+  const updatedMeetingMatch = message.match(/^meeting (time|location|time and location) changed: (.+)$/);
+  if (updatedMeetingMatch) {
+    const fieldLabel =
+      updatedMeetingMatch[1] === "time"
+        ? "时间"
+        : updatedMeetingMatch[1] === "location"
+          ? "地点"
+          : "时间和地点";
+    return `会议${fieldLabel}已修改：${updatedMeetingMatch[2]}`;
+  }
+
+  const cancelledMeetingMatch = message.match(/^meeting cancelled: (.+)$/);
+  if (cancelledMeetingMatch) return `会议已取消：${cancelledMeetingMatch[1]}`;
+
+  return message;
+}
+
 function mapSystemNotificationToListItem(
   notification: {
     id: string;
@@ -282,6 +320,7 @@ function mapSystemNotificationToListItem(
       : "System";
 
   const issueProject = notification.link ? issueProjects.get(notification.link) : undefined;
+  const localizedMessage = localizeSystemNotificationMessage(notification.type, notification.message, locale);
 
   return {
     receiptId: `notification-${notification.id}`,
@@ -290,8 +329,8 @@ function mapSystemNotificationToListItem(
     category,
     level: "SYSTEM",
     typeLabel: getSystemNotificationType(notification.type, locale),
-    title: notification.message,
-    content: notification.message,
+    title: localizedMessage,
+    content: localizedMessage,
     status: "SENT",
     read: notification.read,
     createdAt: notification.createdAt.toISOString(),
