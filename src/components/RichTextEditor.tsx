@@ -369,11 +369,16 @@ function ColorPickerButton({
   );
 }
 
-function ColorToolIcon({ children, color }: { children: ReactNode; color: string }) {
+function ColorToolIcon({ children, color, iconOffsetClass = "" }: { children: ReactNode; color: string; iconOffsetClass?: string }) {
   return (
-    <span className="inline-flex h-5 w-5 flex-col items-center justify-center gap-px">
-      <span className="flex h-3.5 items-center justify-center">{children}</span>
-      <span className="h-1 w-4 rounded-sm border border-slate-300" style={{ backgroundColor: color }} />
+    <span className="relative block h-5 w-5">
+      <span className={`absolute left-1/2 top-0 flex h-[14px] -translate-x-1/2 items-center justify-center leading-none ${iconOffsetClass}`}>
+        {children}
+      </span>
+      <span
+        className="absolute bottom-0 left-1/2 block h-[3px] w-4 -translate-x-1/2 rounded-none border-0"
+        style={{ backgroundColor: color }}
+      />
     </span>
   );
 }
@@ -560,8 +565,8 @@ function MenuBar({
         onApplyLast={onApplyLastColor}
         onSelectPreset={onSelectPresetColor}
         icon={
-          <ColorToolIcon color={currentTextColor || lastTextColor}>
-            <CaseSensitive size={17} />
+          <ColorToolIcon color={currentTextColor || lastTextColor} iconOffsetClass="translate-y-px">
+            <CaseSensitive size={16} />
           </ColorToolIcon>
         }
       />
