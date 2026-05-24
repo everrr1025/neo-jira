@@ -49,6 +49,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     /^\/departments\/[^/]+\/(projects|members|items|notifications)(?:\/|$)/.test(pathname);
   const isDepartmentOverview = /^\/departments\/[^/]+$/.test(pathname);
   const isOverviewPage = pathname === "/" || isDepartmentOverview;
+  const showNotificationBell = pathname !== "/";
 
   const getTitle = () => {
     if (pathname === "/") return translations.header.workspaceOverview;
@@ -94,7 +95,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
               <span className="text-foreground">{userName}</span>
             </div>
           ) : null}
-          <NotificationBell locale={locale} />
+          {showNotificationBell ? <NotificationBell locale={locale} /> : null}
         </div>
       </div>
     </header>

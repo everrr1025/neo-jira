@@ -2,7 +2,6 @@ import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getActiveProjectForUser, getVisibleProjectsForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
@@ -10,11 +9,18 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import {
   getTranslations,
   localeDateMap,
-  type Locale,
 } from "@/lib/i18n";
-import { formatActivityEntry, type ActivityLogEntry } from "@/lib/activityLogFormatter";
-import { getDefaultAvatar } from "@/lib/avatar";
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { getUserDepartmentMembership } from "@/lib/departmentAccess";
 import {
   getWorkflowStatusBadgeClass,
@@ -43,26 +49,6 @@ type ActiveIterationSummary = {
 type SessionUser = {
   id?: string;
   role?: string | null;
-};
-
-type DashboardActivityLog = ActivityLogEntry & {
-  issueId: string | null;
-  projectId: string | null;
-  actor: {
-    id: string;
-    name: string | null;
-    avatar: string | null;
-  } | null;
-};
-
-type DashboardActivityIssue = {
-  id: string;
-  key: string;
-  title: string;
-  project: {
-    key: string;
-    name: string;
-  };
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -123,7 +109,6 @@ export default async function Dashboard({
     dueSoonIssuesRaw,
     activeIteration,
     searchResults,
-    recentActivity,
     workflowProjects,
   ] = await Promise.all([
     prisma.issue.findMany({
@@ -246,27 +231,6 @@ export default async function Dashboard({
           },
         })
       : Promise.resolve([]),
-    isGlobalAdmin && !activeProject
-      ? prisma.auditLog.findMany({
-          where: { entityType: { in: ["USER", "DEPARTMENT"] } },
-          include: {
-            actor: {
-              select: { id: true, name: true, avatar: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        })
-      : prisma.auditLog.findMany({
-          where: projectFilter,
-          include: {
-            actor: {
-              select: { id: true, name: true, avatar: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
-        }),
     prisma.project.findMany({
       where: activeProject ? { id: activeProject.id } : { id: { in: visibleProjects.map((p) => p.id) } },
       select: {
@@ -305,73 +269,6 @@ export default async function Dashboard({
   const highPriorityIssuesTotal = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const overdueIssuesTotal = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const dueSoonIssuesTotal = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
-
-  const typedRecentActivity = recentActivity as DashboardActivityLog[];
-  const recentActivityIssueIds = [...new Set(typedRecentActivity.map((entry) => entry.issueId).filter(Boolean))] as string[];
-  const assigneeIds = [
-    ...new Set(
-      typedRecentActivity.flatMap((entry) =>
-        entry.field === "assigneeId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
-      ),
-    ),
-  ] as string[];
-  const iterationIds = [
-    ...new Set(
-      typedRecentActivity.flatMap((entry) =>
-        entry.field === "iterationId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
-      ),
-    ),
-  ] as string[];
-  const planIds = [
-    ...new Set(
-      typedRecentActivity.flatMap((entry) =>
-        entry.field === "planId" ? [entry.oldValue, entry.newValue].filter(Boolean) : [],
-      ),
-    ),
-  ] as string[];
-
-  const [activityIssues, activityUsers, activityIterations, activityPlans] = await Promise.all([
-    recentActivityIssueIds.length > 0
-      ? prisma.issue.findMany({
-          where: { id: { in: recentActivityIssueIds } },
-          select: {
-            id: true,
-            key: true,
-            title: true,
-            project: { select: { key: true, name: true } },
-          },
-        })
-      : Promise.resolve([]),
-    assigneeIds.length > 0
-      ? prisma.user.findMany({
-          where: { id: { in: assigneeIds } },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([]),
-    iterationIds.length > 0
-      ? prisma.iteration.findMany({
-          where: { id: { in: iterationIds } },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([]),
-    planIds.length > 0
-      ? prisma.plan.findMany({
-          where: { id: { in: planIds } },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([]),
-  ]);
-
-  const activityIssueMap = new Map(activityIssues.map((issue) => [issue.id, issue as DashboardActivityIssue]));
-  const activityAssigneeNameById = Object.fromEntries(
-    activityUsers.map((user) => [user.id, user.name || user.id]),
-  );
-  const activityIterationNameById = Object.fromEntries(
-    activityIterations.map((iteration) => [iteration.id, iteration.name]),
-  );
-  const activityPlanNameById = Object.fromEntries(
-    activityPlans.map((plan) => [plan.id, plan.name]),
-  );
 
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
   const sprintIssueCount = typedActiveIteration?.issues.length ?? 0;
@@ -518,9 +415,6 @@ export default async function Dashboard({
             </div>
           </div>
         </section>
-        <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <RecentActivityCard activity={typedRecentActivity} issuesById={activityIssueMap} assigneeNameById={activityAssigneeNameById} planNameById={activityPlanNameById} iterationNameById={activityIterationNameById} locale={locale} isGlobalAdmin={isGlobalAdmin} />
-        </section>
       </div>
     );
   }
@@ -559,7 +453,7 @@ export default async function Dashboard({
           </div>
         </section>
 
-        <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <section>
           <DashboardIssueTabsCard
             locale={locale}
             workflowProjects={workflowProjects.map((project) => ({
@@ -598,15 +492,6 @@ export default async function Dashboard({
                 count: watchedIssuesTotal,
               },
             ]}
-          />
-          <RecentActivityCard
-            activity={typedRecentActivity}
-            issuesById={activityIssueMap}
-            assigneeNameById={activityAssigneeNameById}
-            planNameById={activityPlanNameById}
-            iterationNameById={activityIterationNameById}
-            locale={locale}
-            isGlobalAdmin={isGlobalAdmin}
           />
         </section>
       </div>
@@ -655,97 +540,101 @@ export default async function Dashboard({
       ) : (
         <>
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <Card>
               {typedActiveIteration ? (
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-4">
+                <>
+                  <CardHeader>
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-2xl font-semibold tracking-tight text-slate-900">
+                        <CardTitle className="text-2xl tracking-tight">
                           {typedActiveIteration.name}
-                        </h3>
-                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                        </CardTitle>
+                        <Badge variant="secondary" className="text-blue-700">
                           {translations.dashboard.activeStatus}
-                        </span>
+                        </Badge>
                       </div>
                       {isGlobalAdmin && (
-                        <p className="mt-1 text-sm text-slate-500">
+                        <CardDescription className="mt-1">
                           {typedActiveIteration.project.name} ({typedActiveIteration.project.key})
-                        </p>
+                        </CardDescription>
                       )}
                     </div>
-                    <Link
-                      href={`/iterations/${typedActiveIteration.id}`}
-                      className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-                    >
-                      {translations.dashboard.viewBoard}
-                    </Link>
-                  </div>
+                    <CardAction>
+                      <Button asChild>
+                        <Link href={`/iterations/${typedActiveIteration.id}`}>
+                          {translations.dashboard.viewBoard}
+                        </Link>
+                      </Button>
+                    </CardAction>
+                  </CardHeader>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <SprintMetric
-                      label={translations.dashboard.daysLeft}
-                      value={String(sprintDaysLeft ?? 0)}
-                    />
-                    <SprintMetric
-                      label={translations.dashboard.issuesInSprint}
-                      value={String(sprintIssueCount)}
-                    />
-                    <SprintMetric
-                      label={translations.dashboard.completedIssues}
-                      value={String(sprintCompletedCount)}
-                    />
-                  </div>
-
-                  <div className="pt-3 space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">{translations.dashboard.sprintProgress}</span>
-                      <span className="font-semibold text-slate-900">{sprintProgress}%</span>
-                    </div>
-                    <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500"
-                        style={{ width: `${sprintProgress}%` }}
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <SprintMetric
+                        label={translations.dashboard.daysLeft}
+                        value={String(sprintDaysLeft ?? 0)}
+                      />
+                      <SprintMetric
+                        label={translations.dashboard.issuesInSprint}
+                        value={String(sprintIssueCount)}
+                      />
+                      <SprintMetric
+                        label={translations.dashboard.completedIssues}
+                        value={String(sprintCompletedCount)}
                       />
                     </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
-                    <span className="font-medium text-slate-700">
-                      {typedActiveIteration.startDate.toLocaleDateString(localeDateMap[locale])}
-                    </span>
-                    <span className="text-slate-300">-</span>
-                    <span className="font-medium text-slate-700">
-                      {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
-                    </span>
-                  </div>
-                </div>
+                    <div className="space-y-2 pt-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{translations.dashboard.sprintProgress}</span>
+                        <span className="font-semibold text-foreground">{sprintProgress}%</span>
+                      </div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary"
+                          style={{ width: `${sprintProgress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {typedActiveIteration.startDate.toLocaleDateString(localeDateMap[locale])}
+                      </span>
+                      <span>-</span>
+                      <span className="font-medium text-foreground">
+                        {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
+                      </span>
+                    </div>
+                  </CardContent>
+                </>
               ) : (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-2xl font-semibold tracking-tight text-slate-900">
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-2xl tracking-tight">
                       {translations.dashboard.noActiveSprint}
-                    </h3>
-                  </div>
-                  <p className="text-sm text-slate-600">{translations.iterationsPage.subtitle}</p>
-                  <Link
-                    href="/iterations"
-                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-                  >
-                    {translations.sidebar.iterations}
-                  </Link>
-                </div>
+                    </CardTitle>
+                    <CardDescription>{translations.iterationsPage.subtitle}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button asChild>
+                      <Link href="/iterations">
+                        {translations.sidebar.iterations}
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </>
               )}
-            </div>
+            </Card>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">
                   {translations.issuesPage.title}
-                </h3>
-              </div>
+                </CardTitle>
+              </CardHeader>
 
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {stats.map((stat) => (
                   <IssueOverviewStat
                     key={stat.id}
@@ -757,20 +646,11 @@ export default async function Dashboard({
                     total={totalIssues}
                   />
                 ))}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
-            <RecentActivityCard
-              activity={typedRecentActivity}
-              issuesById={activityIssueMap}
-              assigneeNameById={activityAssigneeNameById}
-              planNameById={activityPlanNameById}
-              iterationNameById={activityIterationNameById}
-              locale={locale}
-              isGlobalAdmin={isGlobalAdmin}
-            />
+          <section>
             <DashboardIssueTabsCard
               locale={locale}
               workflowProjects={workflowProjects.map((project) => ({
@@ -855,13 +735,13 @@ function IssueOverviewStat({
   const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
+    <div className="rounded-lg border bg-muted/40 p-4">
+      <p className="text-sm font-medium text-muted-foreground">{label}</p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <span className={`text-3xl font-bold ${tone}`}>{value}</span>
-        <span className="text-xs font-medium text-slate-400">{percentage}%</span>
+        <span className="text-xs font-medium text-muted-foreground">{percentage}%</span>
       </div>
-      <div className={`mt-4 h-2 rounded-full ${rail}`}>
+      <div className={`mt-4 h-2 overflow-hidden rounded-full ${rail}`}>
         <div
           className={`h-full rounded-full ${fill}`}
           style={{ width: `${percentage}%` }}
@@ -873,102 +753,10 @@ function IssueOverviewStat({
 
 function SprintMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 px-3 py-3 border border-slate-100">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
+    <div className="rounded-lg border bg-muted/40 px-3 py-3">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
     </div>
-  );
-}
-
-function RecentActivityCard({
-  activity,
-  issuesById,
-  assigneeNameById,
-  planNameById,
-  iterationNameById,
-  locale,
-  isGlobalAdmin,
-}: {
-  activity: DashboardActivityLog[];
-  issuesById: Map<string, DashboardActivityIssue>;
-  assigneeNameById: Record<string, string>;
-  planNameById: Record<string, string>;
-  iterationNameById: Record<string, string>;
-  locale: Locale;
-  isGlobalAdmin: boolean;
-}) {
-  const translations = getTranslations(locale);
-
-  return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-xl font-semibold text-slate-900">{translations.dashboard.recentActivity}</h3>
-        </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
-          {activity.length}
-        </span>
-      </div>
-
-      {activity.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-          {translations.dashboard.noRecentActivity}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {activity.map((entry) => {
-            const issue = entry.issueId ? issuesById.get(entry.issueId) : undefined;
-            const message = formatActivityEntry(entry, locale, {
-              assigneeNameById,
-              planNameById,
-              iterationNameById,
-            });
-            const avatarUrl = entry.actor?.avatar || getDefaultAvatar(entry.actor?.id || entry.id);
-
-            return (
-              <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition-colors hover:border-slate-300 hover:bg-slate-50">
-                <div className="flex gap-3">
-                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-white">
-                    <Image
-                      src={avatarUrl}
-                      alt={entry.actor?.name || translations.activitySection.unknownUser}
-                      width={40}
-                      height={40}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="text-sm font-medium leading-6 text-slate-800">{message.primary}</div>
-                      <div className="shrink-0 text-xs text-slate-400">
-                        {new Date(entry.createdAt).toLocaleString(localeDateMap[locale])}
-                      </div>
-                    </div>
-                    {message.secondary ? (
-                      <div className="mt-1 line-clamp-2 text-sm text-slate-500">{message.secondary}</div>
-                    ) : null}
-                    {issue ? (
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="font-medium text-slate-400">{translations.dashboard.activityForIssue}</span>
-                        <Link href={`/issues/${issue.id}`} className="font-semibold text-blue-600 hover:underline">
-                          {issue.key}
-                        </Link>
-                        <span className="truncate text-slate-600">{issue.title}</span>
-                        {isGlobalAdmin ? (
-                          <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-600">
-                            {issue.project.key}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
 

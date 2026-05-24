@@ -199,7 +199,7 @@ export function SidebarClient({
       </Button>
 
       <div className={`flex h-16 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6 pb-4"}`}>
-        {departmentContext && !inProjectContext && !collapsed ? (
+        {((departmentContext && !inProjectContext) || inProjectContext) && !collapsed ? (
           <span className="truncate text-lg font-semibold leading-6 text-sidebar-foreground transition-opacity duration-200">
             {sidebarTitle}
           </span>
@@ -221,20 +221,18 @@ export function SidebarClient({
 
       <nav className="w-full flex-1 space-y-1 overflow-hidden px-4">
         {inProjectContext ? (
-          <div className="mb-4 space-y-2">
-            <a
-              href={returnHref}
-              className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
-                collapsed ? "mx-3 justify-center" : "gap-3 px-3"
-              }`}
-              title={returnLabel}
-            >
-              <ChevronLeft className={navIconClass} />
-              <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {returnLabel}
-              </span>
-            </a>
-          </div>
+          <a
+            href={returnHref}
+            className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
+              collapsed ? "mx-3 justify-center" : "gap-3 px-3"
+            }`}
+            title={returnLabel}
+          >
+            <ChevronLeft className={navIconClass} />
+            <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+              {returnLabel}
+            </span>
+          </a>
         ) : null}
 
         {topLevelItems
