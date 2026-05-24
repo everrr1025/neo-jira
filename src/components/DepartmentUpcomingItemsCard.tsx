@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CalendarDays, Check, Link2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, FileArchive, FileImage, FileSpreadsheet, FileText, Link2, Paperclip } from "lucide-react";
 
 import { setReminderCompleted } from "@/app/actions/reminders";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +91,72 @@ const TEXT = {
     important: "重要",
   },
 } as const;
+
+type TaskAttachment = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number;
+};
+
+const TASK_ATTACHMENT_MARKER_PATTERN = /<!--neo-task-attachments:([\s\S]*?)-->/g;
+
+function parseTaskAttachmentsFromContent(content?: string | null): TaskAttachment[] {
+  if (!content) return [];
+
+  const attachments: TaskAttachment[] = [];
+  for (const match of content.matchAll(TASK_ATTACHMENT_MARKER_PATTERN)) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1])) as TaskAttachment[];
+      if (Array.isArray(parsed)) {
+        attachments.push(
+          ...parsed.filter(
+            (attachment) =>
+              attachment &&
+              typeof attachment.id === "string" &&
+              typeof attachment.fileName === "string" &&
+              typeof attachment.fileUrl === "string" &&
+              (attachment.fileSize === undefined || typeof attachment.fileSize === "number")
+          )
+        );
+      }
+    } catch {
+      // Ignore malformed markers.
+    }
+  }
+
+  return attachments;
+}
+
+function stripTaskAttachmentsFromContent(content?: string | null) {
+  return (content || "").replace(TASK_ATTACHMENT_MARKER_PATTERN, "").trim();
+}
+
+function formatAttachmentSize(fileSize?: number) {
+  if (!Number.isFinite(fileSize) || !fileSize || fileSize <= 0) return "";
+  if (fileSize < 1024) return `${fileSize} B`;
+  if (fileSize < 1024 * 1024) return `${(fileSize / 1024).toFixed(1)} KB`;
+  return `${(fileSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getTaskAttachmentIcon(fileName: string) {
+  if (/\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName)) {
+    return <FileImage size={14} className="shrink-0 text-blue-500" />;
+  }
+  if (/\.(xls|xlsx|csv)$/i.test(fileName)) {
+    return <FileSpreadsheet size={14} className="shrink-0 text-emerald-600" />;
+  }
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(fileName)) {
+    return <FileArchive size={14} className="shrink-0 text-amber-600" />;
+  }
+  if (/\.(pdf)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-red-500" />;
+  }
+  if (/\.(doc|docx|txt|md)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-sky-600" />;
+  }
+  return <Paperclip size={14} className="shrink-0 text-slate-400" />;
+}
 
 function getDayLabel(dateValue: string, locale: Locale) {
   const t = TEXT[locale];
@@ -189,60 +255,88 @@ export default function DepartmentUpcomingItemsCard({
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((item) => (
-            <div key={`${item.kind}-${item.id}`} className="rounded-xl border bg-muted/35 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {item.isOverdue ? <AlertTriangle size={14} className="text-red-500" /> : null}
-                    <span className="text-xs font-semibold uppercase text-muted-foreground">{getDayLabel(item.date, locale)}</span>
-                    <Badge variant="secondary">
-                      {itemTypeLabel(item.itemType, locale)}
-                    </Badge>
-                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${priorityClass(item.priority)}`}>
-                      {priorityLabel(item.priority, locale)}
-                    </span>
-                    {item.isImportant ? (
-                      <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
-                        {t.important}
+          {items.map((item) => {
+            const content = stripTaskAttachmentsFromContent(item.content);
+            const attachments = parseTaskAttachmentsFromContent(item.content);
+
+            return (
+              <div key={`${item.kind}-${item.id}`} className="rounded-xl border bg-muted/35 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.isOverdue ? <AlertTriangle size={14} className="text-red-500" /> : null}
+                      <span className="text-xs font-semibold uppercase text-muted-foreground">{getDayLabel(item.date, locale)}</span>
+                      <Badge variant="secondary">
+                        {itemTypeLabel(item.itemType, locale)}
+                      </Badge>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${priorityClass(item.priority)}`}>
+                        {priorityLabel(item.priority, locale)}
                       </span>
+                      {item.isImportant ? (
+                        <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                          {t.important}
+                        </span>
+                      ) : null}
+                      <Badge variant="outline">
+                        {item.scopeLabel}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {item.link ? (
+                        <Link href={item.link} className="break-words font-semibold text-foreground hover:text-primary">
+                          {item.issueKey ? `${item.issueKey} ${item.title}` : item.title}
+                        </Link>
+                      ) : (
+                        <h4 className="break-words font-semibold text-foreground">{item.title}</h4>
+                      )}
+                      {item.link ? <Link2 size={13} className="text-muted-foreground" /> : null}
+                    </div>
+                    {content ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{content}</p> : null}
+                    {attachments.length > 0 ? (
+                      <div className="mt-3 overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                        {attachments.map((attachment) => (
+                          <a
+                            key={attachment.id}
+                            href={attachment.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex min-w-0 items-center gap-2.5 border-b px-3 py-2.5 text-sm text-foreground last:border-b-0 hover:bg-accent/50"
+                          >
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                              {getTaskAttachmentIcon(attachment.fileName)}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{attachment.fileName}</span>
+                              {formatAttachmentSize(attachment.fileSize) ? (
+                                <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                              ) : null}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
                     ) : null}
-                    <Badge variant="outline">
-                      {item.scopeLabel}
-                    </Badge>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {formatItemDate(item, locale)}
+                      {item.projectKey ? ` · ${item.projectKey}` : ""}
+                    </p>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {item.link ? (
-                      <Link href={item.link} className="break-words font-semibold text-foreground hover:text-primary">
-                        {item.issueKey ? `${item.issueKey} ${item.title}` : item.title}
-                      </Link>
-                    ) : (
-                      <h4 className="break-words font-semibold text-foreground">{item.title}</h4>
-                    )}
-                    {item.link ? <Link2 size={13} className="text-muted-foreground" /> : null}
-                  </div>
-                  {item.content ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{item.content}</p> : null}
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {formatItemDate(item, locale)}
-                    {item.projectKey ? ` · ${item.projectKey}` : ""}
-                  </p>
+                  {item.canComplete ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      onClick={() => handleComplete(item)}
+                      className="shrink-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    >
+                      <Check />
+                      {t.done}
+                    </Button>
+                  ) : null}
                 </div>
-                {item.canComplete ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isPending}
-                    onClick={() => handleComplete(item)}
-                    className="shrink-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                  >
-                    <Check />
-                    {t.done}
-                  </Button>
-                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

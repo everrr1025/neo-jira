@@ -374,51 +374,31 @@ export async function getLatestDepartmentNotifications({
   locale: Locale;
   take?: number;
 }) {
-  await ensureDueIssueSystemNotifications(departmentId, locale);
   const permission = await getDepartmentNotificationPermission(departmentId, { userId, userRole });
-  const [receipts, systemNotifications] = await Promise.all([
-    prisma.announcementReceipt.findMany({
-      where: {
-        userId,
-        announcement: {
-          departmentId,
-          status: "SENT",
-          level: { in: ["DEPARTMENT", "PROJECT"] },
+  const receipts = await prisma.announcementReceipt.findMany({
+    where: {
+      userId,
+      announcement: {
+        departmentId,
+        status: "SENT",
+        level: { in: ["DEPARTMENT", "PROJECT"] },
+      },
+    },
+    include: {
+      announcement: {
+        include: {
+          author: { select: { name: true, email: true } },
+          project: { select: { name: true, key: true } },
         },
       },
-      include: {
-        announcement: {
-          include: {
-            author: { select: { name: true, email: true } },
-            project: { select: { name: true, key: true } },
-          },
-        },
-      },
-      orderBy: [{ createdAt: "desc" }],
-      take,
-    }),
-    prisma.notification.findMany({
-      where: {
-        userId,
-        type: { in: ["MEETING", "MEETING_CANCELLED"] },
-        link: { startsWith: `/departments/${departmentId}/items` },
-      },
-      include: {
-        actor: { select: { name: true, email: true } },
-      },
-      orderBy: [{ createdAt: "desc" }],
-      take,
-    }),
-  ]);
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take,
+  });
 
-  const notifications = [
-    ...receipts.map((receipt) =>
-      mapReceiptToListItem(receipt, locale, permission.canManageDepartment, userId),
-    ),
-    ...systemNotifications.map((notification) =>
-      mapSystemNotificationToListItem(notification, locale, new Map()),
-    ),
-  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, take);
+  const notifications = receipts.map((receipt) =>
+    mapReceiptToListItem(receipt, locale, permission.canManageDepartment, userId),
+  );
 
   return {
     permission,

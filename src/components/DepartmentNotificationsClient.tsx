@@ -9,8 +9,13 @@ import {
   ArrowUp,
   ChevronDown,
   Eye,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   ListFilter,
+  Paperclip,
   Plus,
   Search,
   Trash2,
@@ -45,6 +50,13 @@ import type {
   DepartmentNotificationPermission,
 } from "@/lib/departmentNotifications";
 import type { Locale } from "@/lib/i18n";
+import {
+  appendNotificationAttachmentsToContent,
+  formatNotificationAttachmentSize,
+  parseNotificationAttachmentsFromContent,
+  stripNotificationAttachmentsFromContent,
+  type NotificationAttachment,
+} from "@/lib/notificationAttachments";
 import { formatRelativeTime } from "@/lib/timeFormat";
 import LocalizedDateInput from "./LocalizedDateInput";
 
@@ -129,6 +141,9 @@ const TEXT = {
     newNotification: "New notification",
     titleField: "Title",
     content: "Content",
+    attachments: "Attachments",
+    addAttachment: "Add attachment",
+    uploading: "Uploading",
     selectProject: "Select project",
     create: "Create",
     cancel: "Cancel",
@@ -186,6 +201,9 @@ const TEXT = {
     newNotification: "新建通知",
     titleField: "标题",
     content: "内容",
+    attachments: "附件",
+    addAttachment: "添加附件",
+    uploading: "上传中",
     selectProject: "选择项目",
     create: "创建",
     cancel: "取消",
@@ -256,6 +274,9 @@ function detailDialogLabels(t: typeof TEXT[Locale]) {
     status: t.status,
     resend: t.resend,
     revoke: t.revoke,
+    attachments: t.attachments,
+    addAttachment: t.addAttachment,
+    uploading: t.uploading,
   };
 }
 
@@ -263,6 +284,66 @@ function levelLabel(level: DepartmentNotificationListItem["level"], t: typeof TE
   if (level === "DEPARTMENT") return t.department;
   if (level === "PROJECT") return t.projectLevel;
   return t.system;
+}
+
+function notificationAttachmentIcon(fileName: string) {
+  if (/\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName)) {
+    return <FileImage size={14} className="shrink-0 text-blue-500" />;
+  }
+  if (/\.(xls|xlsx|csv)$/i.test(fileName)) {
+    return <FileSpreadsheet size={14} className="shrink-0 text-emerald-600" />;
+  }
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(fileName)) {
+    return <FileArchive size={14} className="shrink-0 text-amber-600" />;
+  }
+  if (/\.(pdf)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-red-500" />;
+  }
+  if (/\.(doc|docx|txt|md)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-sky-600" />;
+  }
+  return <Paperclip size={14} className="shrink-0 text-slate-400" />;
+}
+
+function NotificationAttachmentList({
+  attachments,
+  onRemove,
+  isPending,
+}: {
+  attachments: NotificationAttachment[];
+  onRemove: (attachmentId: string) => void;
+  isPending: boolean;
+}) {
+  if (attachments.length === 0) return null;
+
+  return (
+    <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
+          <a href={attachment.fileUrl} target="_blank" rel="noreferrer" className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-foreground">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+              {notificationAttachmentIcon(attachment.fileName)}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{attachment.fileName}</span>
+              {formatNotificationAttachmentSize(attachment.fileSize) ? (
+                <span className="block text-xs text-muted-foreground">{formatNotificationAttachmentSize(attachment.fileSize)}</span>
+              ) : null}
+            </span>
+          </a>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onRemove(attachment.id)}
+            disabled={isPending}
+          >
+            <Trash2 size={14} />
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function formatDateTime(value: string, locale: Locale) {
@@ -323,8 +404,17 @@ export default function DepartmentNotificationsClient({
   });
   const [resendForm, setResendForm] = useState({
     title: initialSelectedNotification?.title || "",
-    content: initialSelectedNotification?.content || "",
+    content: stripNotificationAttachmentsFromContent(initialSelectedNotification?.content),
   });
+  const [createAttachments, setCreateAttachments] = useState<NotificationAttachment[]>([]);
+  const [isCreateAttachmentUploading, setIsCreateAttachmentUploading] = useState(false);
+  const [resendAttachments, setResendAttachments] = useState<NotificationAttachment[]>(
+    parseNotificationAttachmentsFromContent(initialSelectedNotification?.content)
+  );
+  const [resendOriginalAttachments, setResendOriginalAttachments] = useState<NotificationAttachment[]>(
+    parseNotificationAttachmentsFromContent(initialSelectedNotification?.content)
+  );
+  const [isResendAttachmentUploading, setIsResendAttachmentUploading] = useState(false);
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(DEFAULT_COLUMN_ORDER);
   const [columnWidths, setColumnWidths] = useState(DEFAULT_WIDTHS);
@@ -552,7 +642,10 @@ export default function DepartmentNotificationsClient({
       canManage: currentView === "sent" && notification.canManage,
       canDelete: currentView === "sent" && notification.canDelete,
     });
-    setResendForm({ title: notification.title, content: notification.content });
+    const attachments = parseNotificationAttachmentsFromContent(notification.content);
+    setResendForm({ title: notification.title, content: stripNotificationAttachmentsFromContent(notification.content) });
+    setResendAttachments(attachments);
+    setResendOriginalAttachments(attachments);
     setErrorMsg("");
     if (!notification.read && notification.status === "SENT") {
       startTransition(async () => {
@@ -571,13 +664,14 @@ export default function DepartmentNotificationsClient({
         level: form.level as "DEPARTMENT" | "PROJECT",
         projectId: form.level === "PROJECT" ? form.projectId : null,
         title: form.title,
-        content: form.content,
+        content: appendNotificationAttachmentsToContent(form.content, createAttachments),
       });
       if (!result.success) {
         setErrorMsg(result.error || t.createFailed);
         return;
       }
       createContentEditorRef.current?.commitPendingUploads();
+      setCreateAttachments([]);
       setIsCreateOpen(false);
       setForm({
         level: permission.canCreateDepartment ? "DEPARTMENT" : "PROJECT",
@@ -594,24 +688,115 @@ export default function DepartmentNotificationsClient({
     if (!selected) return;
     setErrorMsg("");
     startTransition(async () => {
-      const result = await resendAnnouncementNotification(selected.id, resendForm);
+      const result = await resendAnnouncementNotification(selected.id, {
+        ...resendForm,
+        content: appendNotificationAttachmentsToContent(resendForm.content, resendAttachments),
+      });
       if (!result.success) {
         setErrorMsg(result.error || t.manageFailed);
         return;
       }
       resendContentEditorRef.current?.commitPendingUploads();
+      setResendOriginalAttachments(resendAttachments);
       setSelected(null);
       router.refresh();
     });
   };
 
+  const deleteUploadedAttachment = async (attachment: NotificationAttachment) => {
+    try {
+      await fetch("/api/upload", {
+        method: "DELETE",
+        body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Failed to delete notification attachment:", error);
+    }
+  };
+
+  const handleNotificationAttachmentUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    target: "create" | "resend"
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorMsg(locale === "zh" ? "附件大小不能超过 50 MB" : "File size cannot exceed 50 MB");
+      event.target.value = "";
+      return;
+    }
+
+    setErrorMsg("");
+    const setUploading = target === "create" ? setIsCreateAttachmentUploading : setIsResendAttachmentUploading;
+    const setAttachments = target === "create" ? setCreateAttachments : setResendAttachments;
+    setUploading(true);
+
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const response = await fetch("/api/upload", { method: "POST", body: data });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setErrorMsg(errorData?.error || (locale === "zh" ? "上传附件失败" : "Failed to upload attachment"));
+        return;
+      }
+
+      const result = await response.json();
+      setAttachments((current) => [
+        ...current,
+        { id: `${Date.now()}-${result.fileUrl}`, fileName: result.fileName, fileUrl: result.fileUrl, fileSize: file.size },
+      ]);
+    } catch (error) {
+      console.error("Failed to upload notification attachment:", error);
+      setErrorMsg(locale === "zh" ? "上传附件失败" : "Failed to upload attachment");
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeCreateAttachment = (attachmentId: string) => {
+    const attachment = createAttachments.find((item) => item.id === attachmentId);
+    if (!attachment) return;
+    setCreateAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    void deleteUploadedAttachment(attachment);
+  };
+
+  const removeResendAttachment = (attachmentId: string) => {
+    const attachment = resendAttachments.find((item) => item.id === attachmentId);
+    if (!attachment) return;
+    setResendAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    if (!resendOriginalAttachments.some((item) => item.fileUrl === attachment.fileUrl)) {
+      void deleteUploadedAttachment(attachment);
+    }
+  };
+
+  const cleanupCreateAttachments = async () => {
+    if (createAttachments.length === 0) return;
+    await Promise.all(createAttachments.map((attachment) => deleteUploadedAttachment(attachment)));
+    setCreateAttachments([]);
+  };
+
+  const cleanupPendingResendAttachments = async () => {
+    const originalUrls = new Set(resendOriginalAttachments.map((attachment) => attachment.fileUrl));
+    const uploadedDuringEdit = resendAttachments.filter((attachment) => !originalUrls.has(attachment.fileUrl));
+    if (uploadedDuringEdit.length === 0) return;
+    await Promise.all(uploadedDuringEdit.map((attachment) => deleteUploadedAttachment(attachment)));
+    setResendAttachments(resendOriginalAttachments);
+  };
+
   const closeCreateDialog = () => {
     void createContentEditorRef.current?.discardPendingUploads();
+    void cleanupCreateAttachments();
     setIsCreateOpen(false);
   };
 
   const closeDetailDialog = () => {
     void resendContentEditorRef.current?.discardPendingUploads();
+    void cleanupPendingResendAttachments();
     setSelected(null);
   };
 
@@ -1173,6 +1358,10 @@ export default function DepartmentNotificationsClient({
           setForm={setForm}
           permission={permission}
           editorRef={createContentEditorRef}
+          attachments={createAttachments}
+          isAttachmentUploading={isCreateAttachmentUploading}
+          onUploadAttachment={(event) => void handleNotificationAttachmentUpload(event, "create")}
+          onRemoveAttachment={removeCreateAttachment}
           onClose={closeCreateDialog}
           onSubmit={submitCreate}
         />
@@ -1191,6 +1380,10 @@ export default function DepartmentNotificationsClient({
           onClose={closeDetailDialog}
           onSubmitResend={submitResend}
           onRevoke={() => manage("revoke", selected.id)}
+          resendAttachments={resendAttachments}
+          isResendAttachmentUploading={isResendAttachmentUploading}
+          onUploadResendAttachment={(event) => void handleNotificationAttachmentUpload(event, "resend")}
+          onRemoveResendAttachment={removeResendAttachment}
         />
       ) : null}
     </div>
@@ -1333,6 +1526,10 @@ function NotificationFormDialog({
   setForm,
   permission,
   editorRef,
+  attachments,
+  isAttachmentUploading,
+  onUploadAttachment,
+  onRemoveAttachment,
   onClose,
   onSubmit,
 }: {
@@ -1343,6 +1540,10 @@ function NotificationFormDialog({
   setForm: React.Dispatch<React.SetStateAction<{ level: string; projectId: string; title: string; content: string }>>;
   permission: DepartmentNotificationPermission;
   editorRef: React.RefObject<RichTextEditorHandle | null>;
+  attachments: NotificationAttachment[];
+  isAttachmentUploading: boolean;
+  onUploadAttachment: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
@@ -1440,6 +1641,19 @@ function NotificationFormDialog({
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label>{`${t.attachments} (${attachments.length})`}</Label>
+                <Button asChild type="button" variant="secondary" size="sm" disabled={isAttachmentUploading || isPending}>
+                  <label className="cursor-pointer">
+                    {isAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                    {isAttachmentUploading ? t.uploading : t.addAttachment}
+                    <input type="file" className="hidden" onChange={onUploadAttachment} disabled={isAttachmentUploading || isPending} />
+                  </label>
+                </Button>
+              </div>
+              <NotificationAttachmentList attachments={attachments} onRemove={onRemoveAttachment} isPending={isPending} />
+            </div>
           </div>
           <DialogFooter className="border-t bg-muted/40 px-6 py-4">
             <Button
@@ -1452,7 +1666,7 @@ function NotificationFormDialog({
             </Button>
             <Button
               type="submit"
-              disabled={isPending || !form.title.trim() || !form.content.trim() || (form.level === "PROJECT" && !form.projectId)}
+              disabled={isPending || isAttachmentUploading || !form.title.trim() || !form.content.trim() || (form.level === "PROJECT" && !form.projectId)}
             >
               {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
               {t.create}

@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 
 const UPLOAD_PREFIX = "/uploads/";
 const TASK_ATTACHMENT_MARKER_PATTERN = /<!--neo-task-attachments:([\s\S]*?)-->/g;
+const NOTIFICATION_ATTACHMENT_MARKER_PATTERN = /<!--neo-notification-attachments:([\s\S]*?)-->/g;
 
 export function extractUploadUrlsFromContent(content?: string | null) {
   const uploadUrls = new Set<string>();
@@ -27,6 +28,21 @@ export function extractUploadUrlsFromContent(content?: string | null) {
   }
 
   for (const match of content.matchAll(TASK_ATTACHMENT_MARKER_PATTERN)) {
+    try {
+      const attachments = JSON.parse(decodeURIComponent(match[1])) as Array<{ fileUrl?: unknown }>;
+      if (Array.isArray(attachments)) {
+        attachments.forEach((attachment) => {
+          if (typeof attachment.fileUrl === "string" && attachment.fileUrl.startsWith(UPLOAD_PREFIX)) {
+            uploadUrls.add(attachment.fileUrl);
+          }
+        });
+      }
+    } catch {
+      // Ignore malformed markers; they should not block cleanup for valid uploads.
+    }
+  }
+
+  for (const match of content.matchAll(NOTIFICATION_ATTACHMENT_MARKER_PATTERN)) {
     try {
       const attachments = JSON.parse(decodeURIComponent(match[1])) as Array<{ fileUrl?: unknown }>;
       if (Array.isArray(attachments)) {

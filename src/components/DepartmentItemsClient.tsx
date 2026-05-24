@@ -1346,6 +1346,7 @@ export default function DepartmentItemsClient({
   const [isCreateMoreOpen, setIsCreateMoreOpen] = useState(false);
   const [editingScheduleItemId, setEditingScheduleItemId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<DepartmentItemCenterItem | null>(null);
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [taskPendingDelete, setTaskPendingDelete] = useState<DepartmentItemCenterItem | null>(null);
   const [error, setError] = useState("");
@@ -1380,6 +1381,9 @@ export default function DepartmentItemsClient({
   });
   const [taskAttachments, setTaskAttachments] = useState<TaskAttachment[]>([]);
   const [isTaskAttachmentUploading, setIsTaskAttachmentUploading] = useState(false);
+  const [editTaskAttachments, setEditTaskAttachments] = useState<TaskAttachment[]>([]);
+  const [editTaskOriginalAttachments, setEditTaskOriginalAttachments] = useState<TaskAttachment[]>([]);
+  const [isEditTaskAttachmentUploading, setIsEditTaskAttachmentUploading] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     content: "",
@@ -1703,7 +1707,11 @@ export default function DepartmentItemsClient({
     ].filter(Boolean).some((value) => value!.toLowerCase().includes(query));
   });
   const selectedNote = selectedNoteId ? notes.find((note) => note.id === selectedNoteId) || null : null;
-  const selectedTask = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
+  const selectedTaskFromItems = selectedTaskId ? items.find((item) => item.id === selectedTaskId) || null : null;
+  const selectedTask =
+    selectedTaskSnapshot?.id === selectedTaskId
+      ? ({ ...(selectedTaskFromItems || selectedTaskSnapshot), content: selectedTaskSnapshot.content } as DepartmentItemCenterItem)
+      : selectedTaskFromItems;
   const selectedTaskAttachments = parseTaskAttachmentsFromContent(selectedTask?.content);
   const selectedTaskContent = stripTaskAttachmentsFromContent(selectedTask?.content);
   const selectedScheduleItem = selectedScheduleItemId ? items.find((item) => item.id === selectedScheduleItemId) || null : null;
@@ -2023,10 +2031,14 @@ export default function DepartmentItemsClient({
     )?.value || taskAssigneeChoices[0]?.value || "";
 
   const openTaskDetail = (item: DepartmentItemCenterItem) => {
+    const attachments = parseTaskAttachmentsFromContent(item.content);
     setSelectedTaskId(item.id);
+    setSelectedTaskSnapshot(item);
     setIsEditingTask(false);
     setDetailError("");
     setReplyContent("");
+    setEditTaskAttachments(attachments);
+    setEditTaskOriginalAttachments(attachments);
     setEditForm({
       title: item.title,
       content: stripTaskAttachmentsFromContent(item.content),
@@ -2042,11 +2054,54 @@ export default function DepartmentItemsClient({
     setIsEditingTask(true);
   };
 
+  const beginTaskEdit = () => {
+    if (!selectedTask) return;
+    const attachments = parseTaskAttachmentsFromContent(selectedTask.content);
+    setEditTaskAttachments(attachments);
+    setEditTaskOriginalAttachments(attachments);
+    setEditForm({
+      title: selectedTask.title,
+      content: stripTaskAttachmentsFromContent(selectedTask.content),
+      dueAt: formatDateTimeLocalFromIso(selectedTask.dueDate),
+      scopeType: selectedTask.scopeType === "PROJECT" ? "PROJECT" : selectedTask.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL",
+      projectId: selectedTask.scopeType === "PROJECT" ? taskAssigneeChoices.find((choice) => choice.assigneeId === selectedTask.assigneeId && choice.scopeType === "PROJECT")?.projectId || "" : "",
+      assigneeId: selectedTask.assigneeId || currentUserId,
+    });
+    setIsEditingTask(true);
+  };
+
+  const cleanupPendingEditTaskAttachments = async () => {
+    const originalUrls = new Set(editTaskOriginalAttachments.map((attachment) => attachment.fileUrl));
+    const uploadedDuringEdit = editTaskAttachments.filter((attachment) => !originalUrls.has(attachment.fileUrl));
+    if (uploadedDuringEdit.length === 0) return;
+
+    try {
+      await Promise.all(
+        uploadedDuringEdit.map((attachment) =>
+          fetch("/api/upload", {
+            method: "DELETE",
+            body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+            headers: { "Content-Type": "application/json" },
+          })
+        )
+      );
+    } catch (error) {
+      console.error("Failed to cleanup edit task attachments:", error);
+    }
+  };
+
+  const cancelTaskEdit = async () => {
+    await editTaskContentEditorRef.current?.discardPendingUploads();
+    await cleanupPendingEditTaskAttachments();
+    setEditTaskAttachments(editTaskOriginalAttachments);
+    setIsEditingTask(false);
+  };
+
   const saveTaskEdits = async () => {
     if (!selectedTask) return;
     return updateReminderTask(selectedTask.id, {
       title: editForm.title,
-      content: appendTaskAttachmentsToContent(editForm.content, selectedTaskAttachments),
+      content: appendTaskAttachmentsToContent(editForm.content, editTaskAttachments),
       dueAt: editForm.dueAt || undefined,
       assigneeId: editForm.assigneeId,
       scopeType: editForm.scopeType,
@@ -2064,12 +2119,19 @@ export default function DepartmentItemsClient({
     setDetailError("");
     startTransition(async () => {
       if (isEditingTask) {
+        const nextContent = appendTaskAttachmentsToContent(editForm.content, editTaskAttachments);
         const taskResult = await saveTaskEdits();
         if (!taskResult?.success) {
           setDetailError(taskResult?.error || "Failed");
           return;
         }
         editTaskContentEditorRef.current?.commitPendingUploads();
+        setEditTaskOriginalAttachments(editTaskAttachments);
+        setSelectedTaskSnapshot((current) =>
+          current && current.id === selectedTask.id
+            ? { ...current, title: editForm.title, content: nextContent, dueDate: editForm.dueAt || null }
+            : current
+        );
       }
 
       if (replyContent.trim()) {
@@ -2095,7 +2157,10 @@ export default function DepartmentItemsClient({
   const handleDeleteTask = () => {
     const targetTask = taskPendingDelete;
     if (!targetTask || !targetTask.canEdit) return;
-    if (targetTask.id !== selectedTask?.id) setSelectedTaskId(null);
+    if (targetTask.id !== selectedTask?.id) {
+      setSelectedTaskId(null);
+      setSelectedTaskSnapshot(null);
+    }
     setDetailError("");
     startTransition(async () => {
       const result = await deleteReminderTask(targetTask.id);
@@ -2331,6 +2396,67 @@ export default function DepartmentItemsClient({
       });
     } catch (error) {
       console.error("Failed to delete task attachment:", error);
+    }
+  };
+
+  const handleEditTaskAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      setDetailError(locale === "zh" ? "附件大小不能超过 50 MB" : "File size cannot exceed 50 MB");
+      event.target.value = "";
+      return;
+    }
+
+    setDetailError("");
+    setIsEditTaskAttachmentUploading(true);
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: data,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setDetailError(errorData?.error || (locale === "zh" ? "上传附件失败" : "Failed to upload attachment"));
+        return;
+      }
+
+      const result = await response.json();
+      setEditTaskAttachments((current) => [
+        ...current,
+        { id: `${Date.now()}-${result.fileUrl}`, fileName: result.fileName, fileUrl: result.fileUrl, fileSize: file.size },
+      ]);
+    } catch (error) {
+      console.error("Failed to upload edit task attachment:", error);
+      setDetailError(locale === "zh" ? "上传附件失败" : "Failed to upload attachment");
+    } finally {
+      setIsEditTaskAttachmentUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeEditTaskAttachment = async (attachmentId: string) => {
+    const attachment = editTaskAttachments.find((item) => item.id === attachmentId);
+    if (!attachment) return;
+
+    setEditTaskAttachments((current) => current.filter((item) => item.id !== attachmentId));
+
+    const isOriginalAttachment = editTaskOriginalAttachments.some((item) => item.fileUrl === attachment.fileUrl);
+    if (isOriginalAttachment) return;
+
+    try {
+      await fetch("/api/upload", {
+        method: "DELETE",
+        body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Failed to delete edit task attachment:", error);
     }
   };
 
@@ -5020,9 +5146,10 @@ export default function DepartmentItemsClient({
                     size="sm"
                     onClick={() => {
                       if (isEditingTask) {
-                        void editTaskContentEditorRef.current?.discardPendingUploads();
+                        void cancelTaskEdit();
+                      } else {
+                        beginTaskEdit();
                       }
-                      setIsEditingTask((current) => !current);
                     }}
                   >
                     {isEditingTask ? t.less : t.edit}
@@ -5034,9 +5161,10 @@ export default function DepartmentItemsClient({
                   size="icon-sm"
                   onClick={() => {
                     if (isEditingTask) {
-                      void editTaskContentEditorRef.current?.discardPendingUploads();
+                      void cancelTaskEdit();
                     }
                     setSelectedTaskId(null);
+                    setSelectedTaskSnapshot(null);
                   }}
                 >
                   <X size={18} />
@@ -5066,6 +5194,52 @@ export default function DepartmentItemsClient({
                       height={190}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>{locale === "zh" ? `附件 (${editTaskAttachments.length})` : `Attachments (${editTaskAttachments.length})`}</Label>
+                    <Button asChild type="button" variant="secondary" size="sm" disabled={isEditTaskAttachmentUploading || isPending}>
+                      <label className="cursor-pointer">
+                        {isEditTaskAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                        {isEditTaskAttachmentUploading ? (locale === "zh" ? "上传中" : "Uploading") : (locale === "zh" ? "添加附件" : "Add attachment")}
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={handleEditTaskAttachmentUpload}
+                          disabled={isEditTaskAttachmentUploading || isPending}
+                        />
+                      </label>
+                    </Button>
+                  </div>
+                  {editTaskAttachments.length > 0 ? (
+                    <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                      {editTaskAttachments.map((attachment) => (
+                        <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
+                          <span className="inline-flex min-w-0 items-center gap-2.5">
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                              {getTaskAttachmentIcon(attachment.fileName)}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{attachment.fileName}</span>
+                              {formatAttachmentSize(attachment.fileSize) ? (
+                                <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                              ) : null}
+                            </span>
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => void removeEditTaskAttachment(attachment.id)}
+                            disabled={isPending}
+                            title={locale === "zh" ? "移除附件" : "Remove attachment"}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <DropdownField
@@ -5200,9 +5374,10 @@ export default function DepartmentItemsClient({
                   size="sm"
                   onClick={() => {
                     if (isEditingTask) {
-                      void editTaskContentEditorRef.current?.discardPendingUploads();
+                      void cancelTaskEdit();
                     }
                     setSelectedTaskId(null);
+                    setSelectedTaskSnapshot(null);
                   }}
                 >
                   {t.cancel}
@@ -5210,7 +5385,7 @@ export default function DepartmentItemsClient({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={isPending || (isEditingTask && !editForm.title.trim()) || (!isEditingTask && !replyContent.trim())}
+                  disabled={isPending || isEditTaskAttachmentUploading || (isEditingTask && !editForm.title.trim()) || (!isEditingTask && !replyContent.trim())}
                   onClick={handleSaveTaskDialog}
                 >
                   {t.save}

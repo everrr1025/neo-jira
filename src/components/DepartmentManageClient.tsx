@@ -10,7 +10,12 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
   Loader2,
+  Paperclip,
   Plus,
   Star,
   Trash2,
@@ -67,6 +72,10 @@ import type {
   DepartmentNotificationPermission,
 } from "@/lib/departmentNotifications";
 import type { Locale } from "@/lib/i18n";
+import {
+  appendNotificationAttachmentsToContent,
+  type NotificationAttachment,
+} from "@/lib/notificationAttachments";
 
 const TEXT = {
   en: {
@@ -92,6 +101,9 @@ const TEXT = {
     systemNotification: "System",
     notificationTitle: "Title",
     notificationContent: "Content",
+    notificationAttachments: "Attachments",
+    addAttachment: "Add attachment",
+    uploading: "Uploading",
     notificationProject: "Project",
     selectProject: "Select project",
     notificationTitlePlaceholder: "Notification title",
@@ -212,6 +224,9 @@ const TEXT = {
     systemNotification: "系统",
     notificationTitle: "通知标题",
     notificationContent: "通知内容",
+    notificationAttachments: "附件",
+    addAttachment: "添加附件",
+    uploading: "上传中",
     notificationProject: "项目",
     selectProject: "选择项目",
     notificationTitlePlaceholder: "请输入通知标题",
@@ -316,11 +331,76 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50];
 type ProjectColumnId = "name" | "key" | "description" | "owner" | "members" | "createdAt" | "actions";
 type ProjectSortField = Exclude<ProjectColumnId, "actions">;
 type SortDirection = "asc" | "desc";
+type TaskAttachment = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number;
+};
 type ProjectColumnConfig = {
   id: ProjectColumnId;
   label: string;
   width: number;
 };
+
+const TASK_ATTACHMENT_MARKER_PATTERN = /<!--neo-task-attachments:([\s\S]*?)-->/g;
+
+function parseTaskAttachmentsFromContent(content?: string | null): TaskAttachment[] {
+  if (!content) return [];
+
+  const attachments: TaskAttachment[] = [];
+  for (const match of content.matchAll(TASK_ATTACHMENT_MARKER_PATTERN)) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(match[1])) as TaskAttachment[];
+      if (Array.isArray(parsed)) {
+        attachments.push(
+          ...parsed.filter(
+            (attachment) =>
+              attachment &&
+              typeof attachment.id === "string" &&
+              typeof attachment.fileName === "string" &&
+              typeof attachment.fileUrl === "string" &&
+              (attachment.fileSize === undefined || typeof attachment.fileSize === "number")
+          )
+        );
+      }
+    } catch {
+      // Ignore malformed task attachment markers.
+    }
+  }
+
+  return attachments;
+}
+
+function stripTaskAttachmentsFromContent(content?: string | null) {
+  return (content || "").replace(TASK_ATTACHMENT_MARKER_PATTERN, "").trim();
+}
+
+function formatAttachmentSize(fileSize?: number) {
+  if (!Number.isFinite(fileSize) || !fileSize || fileSize <= 0) return "";
+  if (fileSize < 1024) return `${fileSize} B`;
+  if (fileSize < 1024 * 1024) return `${(fileSize / 1024).toFixed(1)} KB`;
+  return `${(fileSize / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getTaskAttachmentIcon(fileName: string) {
+  if (/\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName)) {
+    return <FileImage size={14} className="shrink-0 text-blue-500" />;
+  }
+  if (/\.(xls|xlsx|csv)$/i.test(fileName)) {
+    return <FileSpreadsheet size={14} className="shrink-0 text-emerald-600" />;
+  }
+  if (/\.(zip|rar|7z|tar|gz)$/i.test(fileName)) {
+    return <FileArchive size={14} className="shrink-0 text-amber-600" />;
+  }
+  if (/\.(pdf)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-red-500" />;
+  }
+  if (/\.(doc|docx|txt|md)$/i.test(fileName)) {
+    return <FileText size={14} className="shrink-0 text-sky-600" />;
+  }
+  return <Paperclip size={14} className="shrink-0 text-slate-400" />;
+}
 
 const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   name: 260,
@@ -368,6 +448,9 @@ function detailDialogLabels(t: typeof TEXT[Locale], locale: Locale) {
     status: locale === "zh" ? "状态" : "Status",
     resend: t.resendNotification,
     revoke: t.revokeNotification,
+    attachments: t.notificationAttachments,
+    addAttachment: t.addAttachment,
+    uploading: t.uploading,
   };
 }
 function formatRelativeTime(value: string, locale: Locale) {
@@ -634,6 +717,8 @@ export default function DepartmentManageClient({
     title: "",
     content: "",
   });
+  const [notificationAttachments, setNotificationAttachments] = useState<NotificationAttachment[]>([]);
+  const [isNotificationAttachmentUploading, setIsNotificationAttachmentUploading] = useState(false);
   const [resendForm, setResendForm] = useState({
     title: "",
     content: "",
@@ -708,11 +793,19 @@ export default function DepartmentManageClient({
     () => myTaskItems.find((task) => task.id === selectedDashboardTaskId) || null,
     [myTaskItems, selectedDashboardTaskId]
   );
+  const selectedDashboardTaskContent = stripTaskAttachmentsFromContent(selectedDashboardTask?.content);
+  const selectedDashboardTaskAttachments = parseTaskAttachmentsFromContent(selectedDashboardTask?.content);
   const dashboardNotifications = useMemo(() => {
     const oneMonthAgo = new Date();
     oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    const recentNotifications = notifications.filter((notification) => new Date(notification.createdAt) >= oneMonthAgo);
-    return recentNotifications.length >= 3 ? recentNotifications : notifications.slice(0, 3);
+    const announcements = notifications.filter(
+      (notification) =>
+        notification.source === "ANNOUNCEMENT" &&
+        notification.category === "ANNOUNCEMENT" &&
+        (notification.level === "DEPARTMENT" || notification.level === "PROJECT")
+    );
+    const recentNotifications = announcements.filter((notification) => new Date(notification.createdAt) >= oneMonthAgo);
+    return recentNotifications.length >= 3 ? recentNotifications : announcements.slice(0, 3);
   }, [notifications]);
   const todayLabel = useMemo(
     () =>
@@ -851,6 +944,70 @@ export default function DepartmentManageClient({
       title: "",
       content: "",
     });
+    setNotificationAttachments([]);
+  };
+
+  const deleteNotificationAttachmentUpload = async (attachment: NotificationAttachment) => {
+    try {
+      await fetch("/api/upload", {
+        method: "DELETE",
+        body: JSON.stringify({ fileUrl: attachment.fileUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Failed to delete notification attachment:", error);
+    }
+  };
+
+  const handleNotificationAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      setNotificationErrorMsg(locale === "zh" ? "附件大小不能超过 50 MB" : "File size cannot exceed 50 MB");
+      event.target.value = "";
+      return;
+    }
+
+    setNotificationErrorMsg("");
+    setIsNotificationAttachmentUploading(true);
+    const data = new FormData();
+    data.append("file", file);
+
+    try {
+      const response = await fetch("/api/upload", { method: "POST", body: data });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setNotificationErrorMsg(errorData?.error || (locale === "zh" ? "上传附件失败" : "Failed to upload attachment"));
+        return;
+      }
+
+      const result = await response.json();
+      setNotificationAttachments((current) => [
+        ...current,
+        { id: `${Date.now()}-${result.fileUrl}`, fileName: result.fileName, fileUrl: result.fileUrl, fileSize: file.size },
+      ]);
+    } catch (error) {
+      console.error("Failed to upload notification attachment:", error);
+      setNotificationErrorMsg(locale === "zh" ? "上传附件失败" : "Failed to upload attachment");
+    } finally {
+      setIsNotificationAttachmentUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const removeNotificationAttachment = (attachmentId: string) => {
+    const attachment = notificationAttachments.find((item) => item.id === attachmentId);
+    if (!attachment) return;
+    setNotificationAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    void deleteNotificationAttachmentUpload(attachment);
+  };
+
+  const closeCreateNotificationDialog = () => {
+    void Promise.all(notificationAttachments.map((attachment) => deleteNotificationAttachmentUpload(attachment)));
+    setIsCreateNotificationOpen(false);
+    setNotificationErrorMsg("");
+    resetNotificationForm();
   };
 
   const handleCreateNotification = (event: React.FormEvent<HTMLFormElement>) => {
@@ -862,12 +1019,13 @@ export default function DepartmentManageClient({
         level: notificationForm.level as "DEPARTMENT" | "PROJECT",
         projectId: notificationForm.level === "PROJECT" ? notificationForm.projectId : null,
         title: notificationForm.title,
-        content: notificationForm.content,
+        content: appendNotificationAttachmentsToContent(notificationForm.content, notificationAttachments),
       });
       if (!result.success) {
         setNotificationErrorMsg(translateError(result.error, t.notificationCreateFailed));
         return;
       }
+      setNotificationAttachments([]);
       setIsCreateNotificationOpen(false);
       resetNotificationForm();
       router.refresh();
@@ -1560,12 +1718,43 @@ export default function DepartmentManageClient({
               ) : null}
 
               <div className="min-h-28 rounded-lg bg-muted/50 px-3 py-2 text-sm leading-6 text-foreground [&_.neo-rich-text-editor__content]:text-sm [&_.neo-rich-text-editor__content_h1]:!text-sm [&_.neo-rich-text-editor__content_h2]:!text-sm [&_.neo-rich-text-editor__content_p]:text-sm [&_img]:max-w-full [&_img]:rounded-md">
-                {selectedDashboardTask.content ? (
-                  <RichTextEditor value={selectedDashboardTask.content} onChange={() => {}} readOnly />
+                {selectedDashboardTaskContent ? (
+                  <RichTextEditor value={selectedDashboardTaskContent} onChange={() => {}} readOnly />
                 ) : (
                   <p className="text-sm text-muted-foreground">{t.noContent}</p>
                 )}
               </div>
+
+              {selectedDashboardTaskAttachments.length > 0 ? (
+                <div className="mt-6 space-y-2">
+                  <Label>
+                    {locale === "zh"
+                      ? `附件 (${selectedDashboardTaskAttachments.length})`
+                      : `Attachments (${selectedDashboardTaskAttachments.length})`}
+                  </Label>
+                  <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                    {selectedDashboardTaskAttachments.map((attachment) => (
+                      <a
+                        key={attachment.id}
+                        href={attachment.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex min-w-0 items-center gap-2.5 border-b px-3 py-2.5 text-sm text-foreground last:border-b-0 hover:bg-accent/50"
+                      >
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          {getTaskAttachmentIcon(attachment.fileName)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{attachment.fileName}</span>
+                          {formatAttachmentSize(attachment.fileSize) ? (
+                            <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                          ) : null}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {selectedDashboardTask.kind === "REMINDER" ? (
                 <div className="mt-5 space-y-4">
@@ -2112,10 +2301,7 @@ export default function DepartmentManageClient({
               <h2 className="text-xl font-bold text-slate-900">{t.newNotification}</h2>
               <button
                 type="button"
-                onClick={() => {
-                  setIsCreateNotificationOpen(false);
-                  setNotificationErrorMsg("");
-                }}
+                onClick={closeCreateNotificationDialog}
                 className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 <X size={18} />
@@ -2190,13 +2376,55 @@ export default function DepartmentManageClient({
                   placeholder={t.notificationContentPlaceholder}
                 />
               </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-xs font-bold text-slate-700">{`${t.notificationAttachments} (${notificationAttachments.length})`}</label>
+                  <Button asChild type="button" variant="secondary" size="sm" disabled={isNotificationAttachmentUploading || isPending}>
+                    <label className="cursor-pointer">
+                      {isNotificationAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                      {isNotificationAttachmentUploading ? t.uploading : t.addAttachment}
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleNotificationAttachmentUpload}
+                        disabled={isNotificationAttachmentUploading || isPending}
+                      />
+                    </label>
+                  </Button>
+                </div>
+                {notificationAttachments.length > 0 ? (
+                  <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                    {notificationAttachments.map((attachment) => (
+                      <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
+                        <a href={attachment.fileUrl} target="_blank" rel="noreferrer" className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-foreground">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                            {getTaskAttachmentIcon(attachment.fileName)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{attachment.fileName}</span>
+                            {formatAttachmentSize(attachment.fileSize) ? (
+                              <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                            ) : null}
+                          </span>
+                        </a>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeNotificationAttachment(attachment.id)}
+                          disabled={isPending}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsCreateNotificationOpen(false);
-                    setNotificationErrorMsg("");
-                  }}
+                  onClick={closeCreateNotificationDialog}
                   disabled={isPending}
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -2204,7 +2432,7 @@ export default function DepartmentManageClient({
                 </button>
                 <button
                   type="submit"
-                  disabled={isPending || (notificationForm.level === "PROJECT" && !notificationForm.projectId)}
+                  disabled={isPending || isNotificationAttachmentUploading || (notificationForm.level === "PROJECT" && !notificationForm.projectId)}
                   className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
