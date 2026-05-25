@@ -134,43 +134,23 @@ export async function ensureDueIssueSystemNotifications(departmentId: string, lo
     const assigneeId = issue.assigneeId;
     if (!assigneeId) continue;
 
-    const dedupeKey = `issue-due:${issue.id}:${dateKey}`;
-    const existing = await prisma.announcement.findUnique({
+    const dedupeKey = `issue-due:${issue.id}:${dateKey}:${assigneeId}`;
+    const existing = await prisma.notification.findUnique({
       where: { dedupeKey },
       select: { id: true },
     });
     if (existing) continue;
 
     const title = locale === "zh" ? `任务今日到期：${issue.key} ${issue.title}` : `Task due today: ${issue.key} ${issue.title}`;
-    const content =
-      locale === "zh"
-        ? `任务 ${issue.key}（${issue.title}）今日到期且尚未完成。\n项目：${issue.project.name}`
-        : `Issue ${issue.key} (${issue.title}) is due today and is not complete.\nProject: ${issue.project.name}`;
-
-    await prisma.$transaction(async (tx) => {
-      const notification = await tx.announcement.create({
-        data: {
-          level: "SYSTEM",
-          title,
-          content,
-          status: "SENT",
-          departmentId,
-          projectId: issue.projectId,
-          authorId: null,
-          dedupeKey,
-        },
-        select: { id: true },
-      });
-
-      await tx.announcementReceipt.createMany({
-        data: [
-          {
-          announcementId: notification.id,
-          userId: assigneeId,
-          projectId: issue.projectId,
-          },
-        ],
-      });
+    await prisma.notification.create({
+      data: {
+        type: "ISSUE_DUE",
+        message: title,
+        link: `/issues/${issue.id}`,
+        dedupeKey,
+        userId: assigneeId,
+        actorId: null,
+      },
     });
   }
 }
@@ -250,6 +230,7 @@ function getNotificationTypeLabel(
 function getSystemNotificationType(type: string, locale: Locale) {
   if (type === "MEETING") return locale === "zh" ? "会议提醒" : "Meeting";
   if (type === "MEETING_CANCELLED") return locale === "zh" ? "会议取消" : "Meeting cancelled";
+  if (type === "ISSUE_DUE") return locale === "zh" ? "任务到期" : "Task due";
   if (type === "MENTION") return locale === "zh" ? "提及" : "Mention";
   if (type === "ASSIGNMENT") return locale === "zh" ? "Issue 指派" : "Issue assignment";
   if (type === "WATCHER") return locale === "zh" ? "Issue 动态" : "Issue update";
@@ -257,7 +238,7 @@ function getSystemNotificationType(type: string, locale: Locale) {
 }
 
 function getSystemNotificationCategory(type: string): DepartmentNotificationCategory {
-  return type === "MEETING" || type === "MEETING_CANCELLED" ? "REMINDER" : "UPDATE";
+  return type === "MEETING" || type === "MEETING_CANCELLED" || type === "ISSUE_DUE" ? "REMINDER" : "UPDATE";
 }
 
 export function localizeSystemNotificationMessage(type: string, message: string, locale: Locale) {
@@ -294,6 +275,9 @@ export function localizeSystemNotificationMessage(type: string, message: string,
 
   const cancelledMeetingMatch = message.match(/^meeting cancelled: (.+)$/);
   if (cancelledMeetingMatch) return `会议已取消：${cancelledMeetingMatch[1]}`;
+
+  const issueDueMatch = message.match(/^Task due today: (.+)$/);
+  if (issueDueMatch) return `任务今日到期：${issueDueMatch[1]}`;
 
   return message;
 }
@@ -475,7 +459,7 @@ export async function getDepartmentNotificationsPage({
         : categoryValues.includes("ANNOUNCEMENT")
           ? { level: { in: ["DEPARTMENT", "PROJECT"] as DepartmentNotificationLevel[] } }
           : categoryValues.includes("REMINDER")
-            ? { level: "SYSTEM" }
+            ? { level: "SYSTEM", dedupeKey: { not: { startsWith: "issue-due:" } } }
             : { id: "__none__" };
 
   if (view === "sent") {
@@ -530,6 +514,7 @@ export async function getDepartmentNotificationsPage({
     ...baseWhere,
     ...announcementCategoryWhere,
     status: "SENT",
+    NOT: { dedupeKey: { startsWith: "issue-due:" } },
     receipts: {
       some: {
         userId,
@@ -550,7 +535,10 @@ export async function getDepartmentNotificationsPage({
     ...(search ? { message: { contains: search } } : {}),
     OR: [
       ...(includeUpdates && notificationLinks.length > 0
-        ? [{ link: { in: notificationLinks }, type: { not: "MEETING" } }]
+        ? [{ link: { in: notificationLinks }, type: { notIn: ["MEETING", "MEETING_CANCELLED", "ISSUE_DUE"] } }]
+        : []),
+      ...(includeReminders && notificationLinks.length > 0
+        ? [{ link: { in: notificationLinks }, type: "ISSUE_DUE" }]
         : []),
       ...(includeReminders && includeMeetings
         ? [{ link: { startsWith: `/departments/${departmentId}/items` }, type: { in: ["MEETING", "MEETING_CANCELLED"] } }]

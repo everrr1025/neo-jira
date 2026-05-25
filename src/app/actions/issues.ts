@@ -116,13 +116,13 @@ const workflowSelect = {
 } as const;
 
 async function deleteIssueDueSystemNotifications(
-  tx: Pick<Prisma.TransactionClient, "announcement">,
+  tx: Pick<Prisma.TransactionClient, "notification">,
   issueIds: string[],
 ) {
   const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
   if (uniqueIssueIds.length === 0) return;
 
-  await tx.announcement.deleteMany({
+  await tx.notification.deleteMany({
     where: {
       OR: uniqueIssueIds.map((issueId) => ({
         dedupeKey: { startsWith: `issue-due:${issueId}:` },

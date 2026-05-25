@@ -12,21 +12,20 @@ function getDueIssueId(dedupeKey: string | null) {
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
 
-  const dueAnnouncements = await prisma.announcement.findMany({
+  const dueNotifications = await prisma.notification.findMany({
     where: {
-      level: "SYSTEM",
       dedupeKey: { startsWith: "issue-due:" },
     },
     select: {
       id: true,
       dedupeKey: true,
-      title: true,
+      message: true,
     },
     orderBy: { createdAt: "asc" },
   });
 
   const issueIds = Array.from(
-    new Set(dueAnnouncements.map((announcement) => getDueIssueId(announcement.dedupeKey)).filter(Boolean)),
+    new Set(dueNotifications.map((notification) => getDueIssueId(notification.dedupeKey)).filter(Boolean)),
   ) as string[];
 
   const existingIssues = await prisma.issue.findMany({
@@ -34,21 +33,21 @@ async function main() {
     select: { id: true },
   });
   const existingIssueIds = new Set(existingIssues.map((issue) => issue.id));
-  const orphanAnnouncements = dueAnnouncements.filter((announcement) => {
-    const issueId = getDueIssueId(announcement.dedupeKey);
+  const orphanNotifications = dueNotifications.filter((notification) => {
+    const issueId = getDueIssueId(notification.dedupeKey);
     return issueId && !existingIssueIds.has(issueId);
   });
 
-  console.log(`Found ${dueAnnouncements.length} due issue notification(s).`);
-  console.log(`Found ${orphanAnnouncements.length} orphan due issue notification(s).`);
+  console.log(`Found ${dueNotifications.length} due issue notification(s).`);
+  console.log(`Found ${orphanNotifications.length} orphan due issue notification(s).`);
 
-  if (orphanAnnouncements.length === 0) return;
+  if (orphanNotifications.length === 0) return;
 
-  for (const announcement of orphanAnnouncements.slice(0, 20)) {
-    console.log(`- ${announcement.id} ${announcement.dedupeKey} ${announcement.title}`);
+  for (const notification of orphanNotifications.slice(0, 20)) {
+    console.log(`- ${notification.id} ${notification.dedupeKey} ${notification.message}`);
   }
-  if (orphanAnnouncements.length > 20) {
-    console.log(`...and ${orphanAnnouncements.length - 20} more.`);
+  if (orphanNotifications.length > 20) {
+    console.log(`...and ${orphanNotifications.length - 20} more.`);
   }
 
   if (dryRun) {
@@ -56,9 +55,9 @@ async function main() {
     return;
   }
 
-  const result = await prisma.announcement.deleteMany({
+  const result = await prisma.notification.deleteMany({
     where: {
-      id: { in: orphanAnnouncements.map((announcement) => announcement.id) },
+      id: { in: orphanNotifications.map((notification) => notification.id) },
     },
   });
 
