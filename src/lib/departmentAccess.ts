@@ -4,6 +4,9 @@ export type UserDepartmentMembership = {
   departmentId: string;
   departmentName: string;
   role: string;
+  isDepartmentAdmin: boolean;
+  projectScopeType: string;
+  positionName: string | null;
 };
 
 export async function getUserDepartmentMembership(userId?: string | null): Promise<UserDepartmentMembership | null> {
@@ -13,6 +16,9 @@ export async function getUserDepartmentMembership(userId?: string | null): Promi
     where: { userId },
     select: {
       role: true,
+      isDepartmentAdmin: true,
+      projectScopeType: true,
+      position: { select: { name: true } },
       department: {
         select: {
           id: true,
@@ -28,5 +34,8 @@ export async function getUserDepartmentMembership(userId?: string | null): Promi
     departmentId: membership.department.id,
     departmentName: membership.department.name,
     role: membership.role,
+    isDepartmentAdmin: membership.isDepartmentAdmin,
+    projectScopeType: membership.projectScopeType,
+    positionName: membership.position?.name || null,
   };
 }

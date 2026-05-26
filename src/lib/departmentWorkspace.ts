@@ -4,6 +4,12 @@ import type { Locale } from "@/lib/i18n";
 export type DepartmentWorkspaceMember = {
   userId: string;
   role: string;
+  isDepartmentAdmin: boolean;
+  positionId: string | null;
+  positionName: string | null;
+  projectScopeType: string;
+  managedProjectIds: string[];
+  taskAssigneeIds: string[];
   userName: string | null;
   userEmail: string;
   projects: Array<{
@@ -64,6 +70,11 @@ export type DepartmentWorkspaceData = {
   key: string;
   description: string | null;
   headName: string | null;
+  positions: Array<{
+    id: string;
+    name: string;
+    sortOrder: number;
+  }>;
   members: DepartmentWorkspaceMember[];
   projects: DepartmentWorkspaceProject[];
   announcements: DepartmentWorkspaceAnnouncement[];
@@ -76,9 +87,14 @@ export function filterDepartmentWorkspaceProjectsForUser(
 ): DepartmentWorkspaceData {
   if (canViewAllProjects) return department;
 
+  const currentMember = department.members.find((member) => member.userId === userId);
+  const managedProjectIds = new Set(currentMember?.managedProjectIds || []);
+
   return {
     ...department,
     projects: department.projects.filter((project) =>
+      project.ownerId === userId ||
+      managedProjectIds.has(project.id) ||
       project.members.some((member) => member.userId === userId),
     ),
   };
@@ -90,6 +106,9 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
     include: {
       members: {
         include: {
+          position: { select: { id: true, name: true } },
+          managedProjects: { select: { projectId: true } },
+          taskAssigneeScopes: { select: { assigneeUserId: true } },
           user: {
             select: {
               id: true,
@@ -105,6 +124,10 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
             },
           },
         },
+      },
+      positions: {
+        select: { id: true, name: true, sortOrder: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       },
       projects: {
         include: {
@@ -156,7 +179,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
     return null;
   }
 
-  const head = department.members.find((member) => member.role === "HEAD");
+  const head = department.members.find((member) => member.isDepartmentAdmin);
 
   return {
     id: department.id,
@@ -164,9 +187,16 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
     key: department.key,
     description: department.description,
     headName: head ? head.user.name || head.user.email : null,
+    positions: department.positions,
     members: department.members.map((member) => ({
       userId: member.userId,
       role: member.role,
+      isDepartmentAdmin: member.isDepartmentAdmin,
+      positionId: member.positionId,
+      positionName: member.position?.name || null,
+      projectScopeType: member.projectScopeType,
+      managedProjectIds: member.managedProjects.map((project) => project.projectId),
+      taskAssigneeIds: member.taskAssigneeScopes.map((scope) => scope.assigneeUserId),
       userName: member.user.name,
       userEmail: member.user.email,
       projects: member.user.projectMemberships

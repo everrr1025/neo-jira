@@ -7,7 +7,7 @@ import { Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import {
   addMembersToDepartment,
   removeMemberFromDepartment,
-  setDepartmentMemberRole,
+  setDepartmentMemberAdmin,
 } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import type { Locale } from "@/lib/i18n";
 type MemberRecord = {
   userId: string;
   role: string;
+  isDepartmentAdmin: boolean;
   userName: string | null;
   userEmail: string;
 };
@@ -40,9 +41,10 @@ const TEXT = {
     subtitle: "Manage department members.",
     addMembers: "Add members",
     currentMembers: "Current members",
-    head: "Head",
+    head: "Department admin",
     member: "Member",
-    setHead: "Set head",
+    setHead: "Set admin",
+    unsetHead: "Unset admin",
     remove: "Remove",
     emptyMembers: "No members in this department yet.",
     searchUsers: "Search users",
@@ -57,9 +59,10 @@ const TEXT = {
     subtitle: "管理部门成员。",
     addMembers: "添加成员",
     currentMembers: "当前成员",
-    head: "负责人",
+    head: "部门管理员",
     member: "成员",
-    setHead: "设为负责人",
+    setHead: "设为管理员",
+    unsetHead: "取消管理员",
     remove: "移除",
     emptyMembers: "当前部门还没有成员。",
     searchUsers: "搜索用户",
@@ -100,12 +103,12 @@ export default function AdminDepartmentMembersClient({
     if (!normalizedSearch) return true;
     return `${user.name || ""} ${user.email}`.toLowerCase().includes(normalizedSearch);
   });
-  const head = department.members.find((member) => member.role === "HEAD") || null;
+  const admins = department.members.filter((member) => member.isDepartmentAdmin);
 
-  const handleSetHead = (userId: string) => {
+  const handleSetAdmin = (userId: string, isDepartmentAdmin: boolean) => {
     setErrorMsg("");
     startTransition(async () => {
-      const res = await setDepartmentMemberRole(department.id, userId, "HEAD");
+      const res = await setDepartmentMemberAdmin(department.id, userId, isDepartmentAdmin);
       if (!res.success) {
         setErrorMsg(res.error || t.assignFailed);
         return;
@@ -173,7 +176,9 @@ export default function AdminDepartmentMembersClient({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="border-b bg-muted/50 px-5 py-4">
           <h3 className="text-sm font-bold text-foreground">{t.currentMembers}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">{head ? `${t.head}: ${displayMember(head)}` : t.emptyMembers}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {admins.length > 0 ? `${t.head}: ${admins.map(displayMember).join(", ")}` : t.emptyMembers}
+          </p>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-left text-sm">
@@ -187,47 +192,44 @@ export default function AdminDepartmentMembersClient({
             </thead>
             <tbody className="divide-y">
               {department.members.map((member) => {
-                const isHead = member.role === "HEAD";
+                const isAdmin = member.isDepartmentAdmin;
                 return (
                   <tr
                     key={member.userId}
-                    onClick={() => {
-                      if (!isPending && !isHead) handleSetHead(member.userId);
-                    }}
-                    className={`transition-colors ${isHead || isPending ? "" : "cursor-pointer hover:bg-muted/45"}`}
+                    className="transition-colors hover:bg-muted/45"
                   >
                     <td className="px-5 py-3.5">
                       <div className="font-semibold text-foreground">{displayMember(member)}</div>
                     </td>
                     <td className="px-5 py-3.5 text-muted-foreground">{member.userEmail}</td>
                     <td className="px-5 py-3.5">
-                      <Badge variant={isHead ? "default" : "secondary"}>
-                        {isHead ? t.head : t.member}
+                      <Badge variant={isAdmin ? "default" : "secondary"}>
+                        {isAdmin ? t.head : t.member}
                       </Badge>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        {!isHead ? (
-                          <>
-                            <Badge variant="outline" className="text-primary">
-                              {t.setHead}
-                            </Badge>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="xs"
-                              disabled={isPending}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemoveMember(member.userId);
-                              }}
-                              className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 />
-                              {t.remove}
-                            </Button>
-                          </>
-                        ) : null}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          disabled={isPending}
+                          onClick={() => handleSetAdmin(member.userId, !isAdmin)}
+                          className={isAdmin ? "" : "text-primary"}
+                        >
+                          {isAdmin ? t.unsetHead : t.setHead}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          disabled={isPending}
+                          onClick={() => handleRemoveMember(member.userId)}
+                          className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 />
+                          {t.remove}
+                        </Button>
                       </div>
                     </td>
                   </tr>

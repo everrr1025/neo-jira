@@ -30,15 +30,14 @@ export default async function DepartmentProjectMembersPage({
   if (!department) redirect("/");
 
   const myMembership = department.members.find((member) => member.userId === userId);
-  const isHead = myMembership?.role === "HEAD";
-  const isAssistant = myMembership?.role === "ASSISTANT";
+  const isDepartmentAdmin = Boolean(myMembership?.isDepartmentAdmin);
   const isDepartmentMember = Boolean(myMembership);
 
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
-  const canManage = Boolean(isGlobalAdmin || isHead || isAssistant);
-  const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(department, userId, canManage);
+  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
+  const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(department, userId, canViewAllProjects);
 
   const project = visibleDepartment.projects.find((item) => item.id === projectId);
   if (!project) {
@@ -52,7 +51,7 @@ export default async function DepartmentProjectMembersPage({
         project={project}
         departmentMembers={visibleDepartment.members}
         locale={locale}
-        canManage={canManage}
+        canManage={isDepartmentAdmin}
       />
     </div>
   );

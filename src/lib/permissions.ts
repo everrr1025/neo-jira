@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { buildDepartmentProjectAccessWhere } from "@/lib/activeProjectUtils";
+import { canManageDepartment } from "@/lib/departmentPermissions";
 import prisma from "@/lib/prisma";
 
 type SessionUser = {
@@ -50,7 +51,11 @@ export async function getProjectRole(userId: string, projectId: string): Promise
   const canViewAsDepartmentManager = await prisma.project.findFirst({
     where: {
       id: projectId,
-      ...buildDepartmentProjectAccessWhere(userId),
+      OR: [
+        buildDepartmentProjectAccessWhere(userId),
+        { managedByDepartmentMembers: { some: { userId } } },
+        { ownerId: userId },
+      ],
     },
     select: { id: true },
   });
@@ -86,22 +91,26 @@ export async function canConfigureProjectFields(userId: string, projectId: strin
       OR: [
         { ownerId: userId },
         { members: { some: { userId, role: "ADMIN" } } },
-        {
-          department: {
-            members: {
-              some: {
-                userId,
-                role: "HEAD",
-              },
-            },
-          },
-        },
+        buildDepartmentProjectAccessWhere(userId),
       ],
     },
     select: { id: true },
   });
 
   return Boolean(project);
+}
+
+export async function checkDepartmentAdmin(departmentId: string) {
+  const session = await getRequiredSession();
+  const sessionUser = session.user as SessionUser;
+  const userId = sessionUser.id;
+  if (!userId) {
+    throw new Error("Unauthorized. Please log in.");
+  }
+  if (!(await canManageDepartment(userId, departmentId, sessionUser.role))) {
+    throw new Error("Unauthorized. Department admin access required.");
+  }
+  return session;
 }
 
 export async function canManageProjectPlanning(userId: string, projectId: string): Promise<boolean> {

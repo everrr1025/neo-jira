@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import prisma from "@/lib/prisma";
+import { canAssignDepartmentTask } from "@/lib/departmentPermissions";
 import { notifyMeetingAttendees, notifyMeetingCancelled, notifyMeetingUpdated } from "@/lib/notifications";
 import { getRequiredSession, getProjectRole } from "@/lib/permissions";
 import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
@@ -47,14 +48,14 @@ function isValidAttendanceStatus(value: string): value is ReminderAttendanceStat
 async function getDepartmentMembership(userId: string, departmentId: string) {
   return prisma.departmentMember.findUnique({
     where: { departmentId_userId: { departmentId, userId } },
-    select: { role: true },
+    select: { id: true, role: true, isDepartmentAdmin: true, projectScopeType: true },
   });
 }
 
 async function canManageDepartmentReminder(userId: string, userRole: string, departmentId: string) {
   if (userRole === "ADMIN") return true;
   const membership = await getDepartmentMembership(userId, departmentId);
-  return membership?.role === "HEAD" || membership?.role === "ASSISTANT";
+  return Boolean(membership?.isDepartmentAdmin);
 }
 
 async function canManageProjectReminder(userId: string, userRole: string, projectId: string) {
@@ -68,16 +69,9 @@ async function canManageProjectReminder(userId: string, userRole: string, projec
       id: projectId,
       OR: [
         { ownerId: userId },
-        {
-          department: {
-            members: {
-              some: {
-                userId,
-                role: { in: ["HEAD", "ASSISTANT"] },
-              },
-            },
-          },
-        },
+        { managedByDepartmentMembers: { some: { userId } } },
+        { department: { members: { some: { userId, isDepartmentAdmin: true } } } },
+        { department: { members: { some: { userId, projectScopeType: "ALL_PROJECTS" } } } },
       ],
     },
     select: { id: true },
@@ -136,12 +130,14 @@ async function assertReminderAssignee({
   departmentId,
   projectId,
   currentUserId,
+  currentUserRole,
 }: {
   assigneeId: string;
   scopeType: ReminderScopeType;
   departmentId: string;
   projectId: string | null;
   currentUserId: string;
+  currentUserRole: string;
 }) {
   if (scopeType === "PERSONAL" && assigneeId !== currentUserId) {
     throw new Error("Personal items can only be assigned to yourself");
@@ -160,6 +156,14 @@ async function assertReminderAssignee({
     });
     if (!projectMember) throw new Error("Assignee must belong to this project");
   }
+
+  const canAssign = await canAssignDepartmentTask({
+    assignerId: currentUserId,
+    assigneeId,
+    departmentId,
+    userRole: currentUserRole,
+  });
+  if (!canAssign) throw new Error("Task assignee permission required");
 }
 
 async function assertDepartmentAttendees(attendeeIds: string[], departmentId: string) {
@@ -329,6 +333,7 @@ export async function createReminder(data: {
         departmentId,
         projectId,
         currentUserId: currentUser.id,
+        currentUserRole: currentUser.role,
       });
       assigneeId = requestedAssigneeId;
     }
@@ -472,6 +477,7 @@ export async function updateReminderTask(
       departmentId: nextDepartmentId || "",
       projectId: nextProjectId,
       currentUserId: currentUser.id,
+      currentUserRole: currentUser.role,
     });
 
     const content = data.content?.trim() || null;

@@ -71,7 +71,7 @@ export default async function AdminUsersPage({
             select: { id: true, name: true },
           },
         },
-        orderBy: { role: "asc" },
+        orderBy: { isDepartmentAdmin: "desc" },
       },
     },
     orderBy: [{ createdAt: "desc" }],
@@ -89,7 +89,7 @@ export default async function AdminUsersPage({
       id: member.department.id,
       name: member.department.name,
     })),
-    headDepartmentsCount: user.departmentMembers.filter((member) => member.role === "HEAD").length,
+    headDepartmentsCount: user.departmentMembers.filter((member) => member.isDepartmentAdmin).length,
   }));
 
   return (

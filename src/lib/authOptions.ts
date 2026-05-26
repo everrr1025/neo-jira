@@ -9,6 +9,8 @@ type SessionCallbackUser = {
   role?: string | null;
   departmentRole?: string | null;
   departmentId?: string | null;
+  isDepartmentAdmin?: boolean | null;
+  departmentPosition?: string | null;
 };
 
 async function getAuthUserDepartmentFields(userId: string) {
@@ -16,6 +18,8 @@ async function getAuthUserDepartmentFields(userId: string) {
   return {
     departmentRole: membership?.role || null,
     departmentId: membership?.departmentId || null,
+    isDepartmentAdmin: membership?.isDepartmentAdmin || false,
+    departmentPosition: membership?.positionName || null,
   };
 }
 
@@ -62,6 +66,8 @@ export const authOptions: NextAuthOptions = {
         token.id = authUser.id;
         token.departmentRole = authUser.departmentRole;
         token.departmentId = authUser.departmentId;
+        token.isDepartmentAdmin = authUser.isDepartmentAdmin;
+        token.departmentPosition = authUser.departmentPosition;
       }
       return token;
     },
@@ -72,6 +78,8 @@ export const authOptions: NextAuthOptions = {
         sessionUser.id = typeof token.id === "string" ? token.id : undefined;
         sessionUser.departmentRole = typeof token.departmentRole === "string" ? token.departmentRole : null;
         sessionUser.departmentId = typeof token.departmentId === "string" ? token.departmentId : null;
+        sessionUser.isDepartmentAdmin = typeof token.isDepartmentAdmin === "boolean" ? token.isDepartmentAdmin : null;
+        sessionUser.departmentPosition = typeof token.departmentPosition === "string" ? token.departmentPosition : null;
       }
       return session;
     }

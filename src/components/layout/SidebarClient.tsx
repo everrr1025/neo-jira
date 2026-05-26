@@ -38,7 +38,7 @@ export function SidebarClient({
   canManageActiveProject: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
-  departmentContext?: { id: string; name: string; role?: string | null } | null;
+  departmentContext?: { id: string; name: string; role?: string | null; isDepartmentAdmin?: boolean; positionName?: string | null } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
@@ -223,7 +223,7 @@ export function SidebarClient({
         {inProjectContext ? (
           <a
             href={returnHref}
-            className={`group flex w-full items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
+            className={`group flex items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
               collapsed ? "mx-3 justify-center" : "gap-3 px-3"
             }`}
             title={returnLabel}
@@ -286,18 +286,12 @@ export function SidebarClient({
             userAvatar={user?.avatar}
             locale={locale}
             position={
-              departmentContext?.role
-                ? departmentContext.role === "HEAD"
+              departmentContext
+                ? departmentContext.isDepartmentAdmin
                   ? locale === "zh"
-                    ? "负责人"
-                    : "Head"
-                  : departmentContext.role === "ASSISTANT"
-                    ? locale === "zh"
-                      ? "助理"
-                      : "Assistant"
-                    : locale === "zh"
-                      ? "成员"
-                      : "Member"
+                    ? `部门管理员${departmentContext.positionName ? ` · ${departmentContext.positionName}` : ""}`
+                    : `Department admin${departmentContext.positionName ? ` · ${departmentContext.positionName}` : ""}`
+                  : departmentContext.positionName || (locale === "zh" ? "成员" : "Member")
                 : isAdmin
                   ? locale === "zh"
                     ? "系统管理员"

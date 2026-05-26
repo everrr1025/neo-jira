@@ -1,25 +1,15 @@
+import {
+  buildDepartmentProjectAccessWhere,
+  buildVisibleDepartmentProjectsWhere,
+} from "@/lib/departmentPermissions";
+
 export type BasicProject = {
   id: string;
   name: string;
   key: string;
 };
 
-export const DEPARTMENT_PROJECT_ACCESS_ROLES = ["HEAD", "ASSISTANT"] as const;
-
-export function buildDepartmentProjectAccessWhere(userId: string) {
-  return {
-    department: {
-      members: {
-        some: {
-          userId,
-          role: {
-            in: [...DEPARTMENT_PROJECT_ACCESS_ROLES],
-          },
-        },
-      },
-    },
-  };
-}
+export { buildDepartmentProjectAccessWhere };
 
 export function findProjectById(
   projects: BasicProject[],
@@ -40,14 +30,7 @@ export function buildActiveProjectWhere(
 
   return {
     id: projectId,
-    OR: [
-      {
-        members: {
-          some: { userId },
-        },
-      },
-      buildDepartmentProjectAccessWhere(userId),
-    ],
+    ...buildVisibleDepartmentProjectsWhere(userId),
   };
 }
 
@@ -60,16 +43,7 @@ export function buildVisibleProjectsWhere(userId: string, userRole: string | und
     return {};
   }
 
-  return {
-    OR: [
-      {
-        members: {
-          some: { userId },
-        },
-      },
-      buildDepartmentProjectAccessWhere(userId),
-    ],
-  };
+  return buildVisibleDepartmentProjectsWhere(userId);
 }
 
 export function buildProjectEntityWhere(entityId: string, projectId: string) {

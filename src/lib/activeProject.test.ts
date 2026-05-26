@@ -28,8 +28,14 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "ADMIN", "project-a"), {
 assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
   id: "project-a",
   OR: [
+    { ownerId: "user-1" },
     {
       members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      managedByDepartmentMembers: {
         some: { userId: "user-1" },
       },
     },
@@ -38,9 +44,7 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
         members: {
           some: {
             userId: "user-1",
-            role: {
-              in: ["HEAD", "ASSISTANT"],
-            },
+            OR: [{ isDepartmentAdmin: true }, { projectScopeType: "ALL_PROJECTS" }],
           },
         },
       },
@@ -50,8 +54,14 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
 
 assert.deepEqual(buildVisibleProjectsWhere("user-1", "USER"), {
   OR: [
+    { ownerId: "user-1" },
     {
       members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      managedByDepartmentMembers: {
         some: { userId: "user-1" },
       },
     },
@@ -60,9 +70,7 @@ assert.deepEqual(buildVisibleProjectsWhere("user-1", "USER"), {
         members: {
           some: {
             userId: "user-1",
-            role: {
-              in: ["HEAD", "ASSISTANT"],
-            },
+            OR: [{ isDepartmentAdmin: true }, { projectScopeType: "ALL_PROJECTS" }],
           },
         },
       },

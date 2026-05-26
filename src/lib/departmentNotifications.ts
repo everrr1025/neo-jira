@@ -72,16 +72,20 @@ export async function getDepartmentNotificationPermission(
   const isGlobalAdmin = userRole === "ADMIN";
   const membership = await prisma.departmentMember.findUnique({
     where: { departmentId_userId: { departmentId, userId } },
-    select: { role: true },
+    select: { isDepartmentAdmin: true, projectScopeType: true },
   });
-  const canManageDepartment = Boolean(isGlobalAdmin || membership?.role === "HEAD" || membership?.role === "ASSISTANT");
+  const canManageDepartment = Boolean(isGlobalAdmin || membership?.isDepartmentAdmin);
 
   const projects = await prisma.project.findMany({
     where: canManageDepartment
       ? { departmentId }
       : {
           departmentId,
-          ownerId: userId,
+          OR: [
+            { ownerId: userId },
+            { managedByDepartmentMembers: { some: { userId } } },
+            ...(membership?.projectScopeType === "ALL_PROJECTS" ? [{}] : []),
+          ],
         },
     select: { id: true, name: true, key: true },
     orderBy: { name: "asc" },

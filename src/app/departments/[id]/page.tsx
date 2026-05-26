@@ -35,15 +35,13 @@ export default async function DepartmentPage({
 
   if (!department) redirect("/");
 
-  // Check authorization: must be HEAD, ASSISTANT, or global admin
   const myMembership = department.members.find((m) => m.userId === userId);
-  const isHead = myMembership?.role === "HEAD";
-  const isAssistant = myMembership?.role === "ASSISTANT";
+  const isDepartmentAdmin = Boolean(myMembership?.isDepartmentAdmin);
   const isDepartmentMember = Boolean(myMembership);
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
-  const canViewAllProjects = Boolean(isGlobalAdmin || isHead || isAssistant);
+  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
   const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(
     department,
     userId,
@@ -85,8 +83,8 @@ export default async function DepartmentPage({
         department={visibleDepartment}
         locale={locale}
         currentUserId={userId}
-        isHead={isHead}
-        canManageProjects={canViewAllProjects}
+        isHead={isDepartmentAdmin}
+        canManageProjects={isDepartmentAdmin}
         mode="dashboard"
         notifications={latestNotifications.notifications}
         notificationPermission={latestNotifications.permission}

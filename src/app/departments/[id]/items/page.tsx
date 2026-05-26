@@ -10,8 +10,8 @@ import {
 import {
   getDepartmentItemCenterItems,
   getDepartmentReminderIssueOptions,
-  getManageableReminderProjects,
 } from "@/lib/departmentReminders";
+import { canAssignDepartmentTask } from "@/lib/departmentPermissions";
 import { getNoteFoldersForUser, getNotesForUser, getNoteTaskOptionsForUser } from "@/lib/notes";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
@@ -39,25 +39,33 @@ export default async function DepartmentItemsPage({
   if (!department) redirect("/");
 
   const myMembership = department.members.find((member) => member.userId === userId);
-  const isHead = myMembership?.role === "HEAD";
-  const isAssistant = myMembership?.role === "ASSISTANT";
   if (!isGlobalAdmin && !myMembership) redirect("/");
 
-  const canViewAllProjects = Boolean(isGlobalAdmin || isHead || isAssistant);
-  const canCreateDepartmentItem = Boolean(isGlobalAdmin || isHead || isAssistant);
+  const isDepartmentAdmin = Boolean(myMembership?.isDepartmentAdmin);
+  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
+  const canCreateDepartmentItem = Boolean(isGlobalAdmin || myMembership);
   const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(department, userId, canViewAllProjects);
   const visibleProjectIds = visibleDepartment.projects.map((project) => project.id);
-  const reminderProjectOptions = getManageableReminderProjects({
-    projects: visibleDepartment.projects,
-    userId,
-    canManageDepartment: canCreateDepartmentItem,
-  });
-  const assigneeOptions = visibleDepartment.members.map((member) => ({
-    id: member.userId,
-    name: member.userName || member.userEmail,
-    email: member.userEmail,
-    projectIds: member.projects.map((project) => project.id),
-  }));
+  const reminderProjectOptions = visibleDepartment.projects.map((project) => ({ id: project.id, name: project.name, key: project.key }));
+  const assignableMembers = await Promise.all(
+    visibleDepartment.members.map(async (member) => ({
+      member,
+      canAssign: await canAssignDepartmentTask({
+        assignerId: userId,
+        assigneeId: member.userId,
+        departmentId,
+        userRole,
+      }),
+    })),
+  );
+  const assigneeOptions = assignableMembers
+    .filter((entry) => entry.canAssign)
+    .map(({ member }) => ({
+      id: member.userId,
+      name: member.userName || member.userEmail,
+      email: member.userEmail,
+      projectIds: member.projects.map((project) => project.id),
+    }));
 
   const [items, noteFolders, notes, noteIssueOptions, noteTaskOptions] = await Promise.all([
     getDepartmentItemCenterItems({

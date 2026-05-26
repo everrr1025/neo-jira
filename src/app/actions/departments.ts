@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { checkGlobalAdmin, getRequiredSession } from "@/lib/permissions";
+import { isProjectScopeType } from "@/lib/departmentPermissions";
 import { createAuditLogs } from "@/lib/audit";
 import { createDefaultWorkflowForProject } from "@/lib/workflows";
 import { deleteProjectData } from "@/lib/projectDataCleanup";
@@ -92,6 +93,7 @@ export async function createDepartment(data: {
             departmentId: dept.id,
             userId: data.headUserId,
             role: "HEAD",
+            isDepartmentAdmin: true,
           },
         });
       }
@@ -229,43 +231,33 @@ export async function setDepartmentMemberRole(
   userId: string,
   role: "HEAD" | "ASSISTANT" | "MEMBER"
 ) {
+  return setDepartmentMemberAdmin(departmentId, userId, role === "HEAD" || role === "ASSISTANT");
+}
+
+export async function setDepartmentMemberAdmin(
+  departmentId: string,
+  userId: string,
+  isDepartmentAdmin: boolean
+) {
   try {
-    const session = await getRequiredSession();
-    const currentUser = getSessionUser(session);
-    const currentUserId = currentUser.id;
-    const isGlobalAdmin = currentUser.role === "ADMIN";
-    if (!isGlobalAdmin) {
-      const membership = await prisma.departmentMember.findUnique({
-        where: { departmentId_userId: { departmentId, userId: currentUserId } },
-        select: { role: true },
-      });
-      if (membership?.role !== "HEAD") {
-        throw new Error("Unauthorized. Must be Admin or Department Head.");
-      }
-      if (role === "HEAD") {
-        return { success: false, error: "Only system admin can assign department head." };
-      }
-    }
+    const session = await checkGlobalAdmin();
+    const currentUserId = getSessionUser(session).id;
 
     const targetMembership = await prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId } },
       select: { id: true },
     });
     if (!targetMembership) {
-      return { success: false, error: "Department head must be selected from current department members." };
+      return { success: false, error: "Department admin must be selected from current department members." };
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      if (role === "HEAD") {
-        await tx.departmentMember.updateMany({
-          where: { departmentId, role: "HEAD", userId: { not: userId } },
-          data: { role: "MEMBER" },
-        });
-      }
-
       const member = await tx.departmentMember.update({
         where: { departmentId_userId: { departmentId, userId } },
-        data: { role },
+        data: {
+          isDepartmentAdmin,
+          role: isDepartmentAdmin ? "HEAD" : "MEMBER",
+        },
       });
 
       await createAuditLogs(tx, [
@@ -273,8 +265,8 @@ export async function setDepartmentMemberRole(
           entityType: "DEPARTMENT",
           entityId: departmentId,
           action: "UPDATE",
-          field: "memberRole",
-          newValue: role,
+          field: "departmentAdmin",
+          newValue: String(isDepartmentAdmin),
           metadata: { userId },
           actorId: currentUserId,
         },
@@ -290,7 +282,7 @@ export async function setDepartmentMemberRole(
     revalidatePath(`/admin`);
     return { success: true, member: updated };
   } catch (error: unknown) {
-    return { success: false, error: getErrorMessage(error, "Failed to set member role") };
+    return { success: false, error: getErrorMessage(error, "Failed to set department admin") };
   }
 }
 
@@ -336,20 +328,19 @@ export async function deleteDepartment(departmentId: string, confirmName?: strin
   }
 }
 
-async function checkDeptHeadOrAdmin(departmentId: string) {
+async function checkDepartmentAdminOnly(departmentId: string) {
   const session = await getRequiredSession();
   const currentUser = getSessionUser(session);
   const currentUserId = currentUser.id;
-  const isGlobalAdmin = currentUser.role === "ADMIN";
-  if (isGlobalAdmin) return { currentUserId, isGlobalAdmin };
 
   const membership = await prisma.departmentMember.findUnique({
     where: { departmentId_userId: { departmentId, userId: currentUserId } },
+    select: { isDepartmentAdmin: true },
   });
-  if (membership?.role === "HEAD" || membership?.role === "ASSISTANT") {
-    return { currentUserId, isGlobalAdmin: false };
+  if (membership?.isDepartmentAdmin) {
+    return { currentUserId };
   }
-  throw new Error("Unauthorized. Must be Admin, Department Head or Assistant.");
+  throw new Error("Unauthorized. Department admin access required.");
 }
 
 function normalizeProjectMemberIds(memberIds: unknown) {
@@ -375,8 +366,8 @@ export async function addMemberToDepartment(departmentId: string, userId: string
 
     await prisma.departmentMember.upsert({
       where: { departmentId_userId: { departmentId, userId } },
-      update: { role },
-      create: { departmentId, userId, role },
+      update: { role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
+      create: { departmentId, userId, role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -425,8 +416,8 @@ export async function addMembersToDepartment(departmentId: string, userIds: stri
       uniqueUserIds.map((userId) =>
         prisma.departmentMember.upsert({
           where: { departmentId_userId: { departmentId, userId } },
-          update: { role },
-          create: { departmentId, userId, role },
+          update: { role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
+          create: { departmentId, userId, role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
         })
       )
     );
@@ -447,12 +438,10 @@ export async function removeMemberFromDepartment(departmentId: string, userId: s
   try {
     await checkGlobalAdmin();
 
-    // Prevent removing the HEAD
     const membership = await prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId } },
     });
     if (!membership) return { success: false, error: "User is not in this department" };
-    if (membership.role === "HEAD") return { success: false, error: "Cannot remove department head" };
 
     await prisma.departmentMember.delete({
       where: { departmentId_userId: { departmentId, userId } },
@@ -481,7 +470,7 @@ export async function createDepartmentProject(
   }
 ) {
   try {
-    await checkDeptHeadOrAdmin(departmentId);
+    await checkDepartmentAdminOnly(departmentId);
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
     const description = typeof data?.description === "string" ? data.description.trim() : "";
@@ -568,7 +557,7 @@ export async function updateDepartmentProjectMembers(
   }
 ) {
   try {
-    await checkDeptHeadOrAdmin(departmentId);
+    await checkDepartmentAdminOnly(departmentId);
     const ownerId = typeof data.ownerId === "string" ? data.ownerId.trim() : "";
     const uniqueMemberIds = Array.from(new Set(data.memberIds.map((id) => id.trim()).filter(Boolean)));
     if (ownerId && !uniqueMemberIds.includes(ownerId)) {
@@ -662,7 +651,7 @@ export async function updateDepartmentProject(
   }
 ) {
   try {
-    await checkDeptHeadOrAdmin(departmentId);
+    await checkDepartmentAdminOnly(departmentId);
 
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
@@ -714,7 +703,7 @@ export async function updateDepartmentProject(
 
 export async function deleteDepartmentProject(departmentId: string, projectId: string, confirmName?: string) {
   try {
-    await checkDeptHeadOrAdmin(departmentId);
+    await checkDepartmentAdminOnly(departmentId);
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -740,5 +729,186 @@ export async function deleteDepartmentProject(departmentId: string, projectId: s
     return { success: true };
   } catch (error: unknown) {
     return { success: false, error: getErrorMessage(error, "Failed to delete project") };
+  }
+}
+
+export async function createDepartmentPosition(departmentId: string, data: { name?: string }) {
+  try {
+    await checkDepartmentAdminOnly(departmentId);
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    if (!name) return { success: false, error: "Position name is required." };
+
+    const count = await prisma.departmentPosition.count({ where: { departmentId } });
+    const position = await prisma.departmentPosition.create({
+      data: { departmentId, name, sortOrder: count },
+    });
+
+    revalidatePath(`/departments/${departmentId}`);
+    revalidatePath(`/departments/${departmentId}/members`);
+    return { success: true, position };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "Failed to create position") };
+  }
+}
+
+export async function updateDepartmentPosition(departmentId: string, positionId: string, data: { name?: string }) {
+  try {
+    await checkDepartmentAdminOnly(departmentId);
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    if (!name) return { success: false, error: "Position name is required." };
+
+    const position = await prisma.departmentPosition.findUnique({ where: { id: positionId }, select: { departmentId: true } });
+    if (!position || position.departmentId !== departmentId) return { success: false, error: "Position not found." };
+
+    const updated = await prisma.departmentPosition.update({
+      where: { id: positionId },
+      data: { name },
+    });
+
+    revalidatePath(`/departments/${departmentId}`);
+    revalidatePath(`/departments/${departmentId}/members`);
+    return { success: true, position: updated };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "Failed to update position") };
+  }
+}
+
+export async function deleteDepartmentPosition(departmentId: string, positionId: string) {
+  try {
+    await checkDepartmentAdminOnly(departmentId);
+    const position = await prisma.departmentPosition.findUnique({ where: { id: positionId }, select: { departmentId: true } });
+    if (!position || position.departmentId !== departmentId) return { success: false, error: "Position not found." };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.departmentMember.updateMany({
+        where: { departmentId, positionId },
+        data: { positionId: null },
+      });
+      await tx.departmentPosition.delete({ where: { id: positionId } });
+    });
+
+    revalidatePath(`/departments/${departmentId}`);
+    revalidatePath(`/departments/${departmentId}/members`);
+    return { success: true };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "Failed to delete position") };
+  }
+}
+
+export async function updateDepartmentMemberSettings(
+  departmentId: string,
+  userId: string,
+  data: {
+    positionId?: string | null;
+    projectScopeType?: string;
+    managedProjectIds?: string[];
+    taskAssigneeIds?: string[];
+  }
+) {
+  try {
+    await checkDepartmentAdminOnly(departmentId);
+
+    const membership = await prisma.departmentMember.findUnique({
+      where: { departmentId_userId: { departmentId, userId } },
+      select: { id: true },
+    });
+    if (!membership) return { success: false, error: "Department member not found." };
+
+    const positionId = data.positionId?.trim() || null;
+    if (positionId) {
+      const position = await prisma.departmentPosition.findUnique({
+        where: { id: positionId },
+        select: { departmentId: true },
+      });
+      if (!position || position.departmentId !== departmentId) {
+        return { success: false, error: "Position not found." };
+      }
+    }
+
+    const projectScopeType = isProjectScopeType(data.projectScopeType || "")
+      ? data.projectScopeType!
+      : "NONE";
+    const managedProjectIds = Array.from(new Set((data.managedProjectIds || []).map((id) => id.trim()).filter(Boolean)));
+    const taskAssigneeIds = Array.from(new Set((data.taskAssigneeIds || []).map((id) => id.trim()).filter(Boolean)));
+
+    if (managedProjectIds.length > 0) {
+      const projects = await prisma.project.findMany({
+        where: { departmentId, id: { in: managedProjectIds } },
+        select: { id: true },
+      });
+      if (projects.length !== managedProjectIds.length) {
+        return { success: false, error: "Managed projects must belong to this department." };
+      }
+    }
+
+    if (taskAssigneeIds.length > 0) {
+      const assignees = await prisma.departmentMember.findMany({
+        where: { departmentId, userId: { in: taskAssigneeIds } },
+        select: { userId: true },
+      });
+      if (assignees.length !== taskAssigneeIds.length) {
+        return { success: false, error: "Task assignees must belong to this department." };
+      }
+    }
+
+    const conflictingProject = managedProjectIds.length > 0
+      ? await prisma.departmentMemberManagedProject.findFirst({
+          where: {
+            projectId: { in: managedProjectIds },
+            departmentMemberId: { not: membership.id },
+          },
+          include: {
+            user: { select: { name: true, email: true } },
+            project: { select: { name: true } },
+          },
+        })
+      : null;
+    if (conflictingProject) {
+      const owner = conflictingProject.user.name || conflictingProject.user.email;
+      return { success: false, error: `${conflictingProject.project.name} is already managed by ${owner}.` };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.departmentMember.update({
+        where: { departmentId_userId: { departmentId, userId } },
+        data: {
+          positionId,
+          projectScopeType,
+        },
+      });
+
+      await tx.departmentMemberManagedProject.deleteMany({
+        where: { departmentMemberId: membership.id },
+      });
+      if (projectScopeType === "SELECTED_PROJECTS" && managedProjectIds.length > 0) {
+        await tx.departmentMemberManagedProject.createMany({
+          data: managedProjectIds.map((projectId) => ({
+            departmentMemberId: membership.id,
+            projectId,
+            userId,
+          })),
+        });
+      }
+
+      await tx.departmentMemberTaskAssigneeScope.deleteMany({
+        where: { departmentMemberId: membership.id },
+      });
+      if (taskAssigneeIds.length > 0) {
+        await tx.departmentMemberTaskAssigneeScope.createMany({
+          data: taskAssigneeIds.map((assigneeUserId) => ({
+            departmentMemberId: membership.id,
+            assigneeUserId,
+          })),
+        });
+      }
+    });
+
+    revalidatePath(`/departments/${departmentId}`);
+    revalidatePath(`/departments/${departmentId}/members`);
+    revalidatePath(`/departments/${departmentId}/projects`);
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "Failed to update member settings") };
   }
 }

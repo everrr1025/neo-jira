@@ -11,6 +11,7 @@ import type { Locale } from "@/lib/i18n";
 type DepartmentMemberRecord = {
   userId: string;
   role: string;
+  isDepartmentAdmin: boolean;
   userEmail: string;
   userName: string | null;
 };
@@ -33,7 +34,7 @@ type Props = {
 const TEXT = {
   en: {
     title: "Departments",
-    subtitle: "Manage departments, heads, members, and related project totals.",
+    subtitle: "Manage departments, department admins, members, and related project totals.",
     createDepartment: "Add department",
     createTitle: "Create department",
     editTitle: "Edit department",
@@ -41,12 +42,12 @@ const TEXT = {
     key: "Key",
     description: "Description",
     descPlaceholder: "Optional details...",
-    head: "Head",
+    head: "Department admin",
     members: "Members",
     projects: "Projects",
     createdAt: "Created",
     actions: "Actions",
-    noHead: "No head assigned",
+    noHead: "No department admin",
     manage: "Members",
     edit: "Edit",
     delete: "Delete",
@@ -70,7 +71,7 @@ const TEXT = {
   },
   zh: {
     title: "部门",
-    subtitle: "管理部门、负责人、成员和关联项目数量。",
+    subtitle: "管理部门、部门管理员、成员和关联项目数量。",
     createDepartment: "新增部门",
     createTitle: "创建部门",
     editTitle: "编辑部门",
@@ -78,12 +79,12 @@ const TEXT = {
     key: "标识",
     description: "描述",
     descPlaceholder: "可选说明...",
-    head: "负责人",
+    head: "部门管理员",
     members: "成员",
     projects: "项目",
     createdAt: "创建时间",
     actions: "操作",
-    noHead: "未指派负责人",
+    noHead: "未设置部门管理员",
     manage: "成员",
     edit: "编辑",
     delete: "删除",
@@ -243,7 +244,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {departments.map((department) => {
-                const head = department.members.find((member) => member.role === "HEAD");
+                const head = department.members.find((member) => member.isDepartmentAdmin);
 
                 return (
                   <tr key={department.id} className="transition-colors hover:bg-slate-50/70">

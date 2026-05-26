@@ -29,7 +29,7 @@ export default async function AdminDepartmentMembersPage({
       include: {
         members: {
           include: { user: { select: { id: true, name: true, email: true } } },
-          orderBy: { role: "asc" },
+          orderBy: [{ isDepartmentAdmin: "desc" }, { user: { name: "asc" } }],
         },
       },
     }),
@@ -55,6 +55,7 @@ export default async function AdminDepartmentMembersPage({
     members: department.members.map((member) => ({
       userId: member.userId,
       role: member.role,
+      isDepartmentAdmin: member.isDepartmentAdmin,
       userName: member.user.name,
       userEmail: member.user.email,
     })),

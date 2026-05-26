@@ -149,7 +149,7 @@ export async function deleteUser(userId: string) {
         name: true,
         email: true,
         departmentMembers: {
-          where: { role: "HEAD" },
+          where: { isDepartmentAdmin: true },
           select: { department: { select: { name: true } } },
         },
       },
@@ -160,7 +160,7 @@ export async function deleteUser(userId: string) {
 
     const headDepartment = user.departmentMembers[0]?.department;
     if (headDepartment) {
-      return { success: false, error: `Cannot delete department head: ${headDepartment.name}.` };
+      return { success: false, error: `Cannot delete department admin: ${headDepartment.name}.` };
     }
 
     await prisma.$transaction(async (tx) => {

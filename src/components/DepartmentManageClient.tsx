@@ -24,9 +24,12 @@ import {
 
 import {
   createDepartmentProject,
+  createDepartmentPosition,
   deleteDepartmentProject,
-  setDepartmentMemberRole,
+  deleteDepartmentPosition,
+  updateDepartmentMemberSettings,
   updateDepartmentProject,
+  updateDepartmentPosition,
 } from "@/app/actions/departments";
 import {
   createAnnouncementNotification,
@@ -65,7 +68,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
-import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
+import type { DepartmentWorkspaceData, DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { DepartmentDashboardTask, DepartmentItemCenterItem } from "@/lib/departmentReminders";
 import type {
   DepartmentNotificationListItem,
@@ -412,19 +415,13 @@ const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   actions: 260,
 };
 
-const ROLE_BADGE: Record<string, { bg: string; text: string }> = {
-  HEAD: { bg: "bg-amber-100", text: "text-amber-800" },
-  ASSISTANT: { bg: "bg-blue-100", text: "text-blue-800" },
-  MEMBER: { bg: "bg-slate-100", text: "text-slate-600" },
-};
-
 function displayMember(member: { userName: string | null; userEmail: string }) {
   return member.userName || member.userEmail;
 }
-function getDepartmentRoleText(role: string | undefined, t: typeof TEXT[Locale]) {
-  if (role === "HEAD") return t.head;
-  if (role === "ASSISTANT") return t.assistant;
-  return t.member;
+function getProjectScopeText(scopeType: string, locale: Locale) {
+  if (scopeType === "ALL_PROJECTS") return locale === "zh" ? "主管全部项目" : "All projects";
+  if (scopeType === "SELECTED_PROJECTS") return locale === "zh" ? "分管指定项目" : "Selected projects";
+  return locale === "zh" ? "不分管项目" : "No managed projects";
 }
 function getNotificationLevelText(level: DepartmentNotificationListItem["level"], t: typeof TEXT[Locale]) {
   if (level === "DEPARTMENT") return t.departmentNotification;
@@ -728,10 +725,23 @@ export default function DepartmentManageClient({
     key: "",
     description: "",
   });
+  const [positionName, setPositionName] = useState("");
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+  const [editingPositionName, setEditingPositionName] = useState("");
+  const [settingsMember, setSettingsMember] = useState<DepartmentWorkspaceMember | null>(null);
+  const [memberSettingsForm, setMemberSettingsForm] = useState({
+    positionId: "none",
+    projectScopeType: "NONE",
+    managedProjectIds: [] as string[],
+    taskAssigneeIds: [] as string[],
+  });
 
   const sortedMembers = [...department.members].sort((a, b) => {
-    const order: Record<string, number> = { HEAD: 0, ASSISTANT: 1, MEMBER: 2 };
-    return (order[a.role] ?? 3) - (order[b.role] ?? 3) || displayMember(a).localeCompare(displayMember(b));
+    return (
+      Number(b.isDepartmentAdmin) - Number(a.isDepartmentAdmin) ||
+      (a.positionName || "").localeCompare(b.positionName || "") ||
+      displayMember(a).localeCompare(displayMember(b))
+    );
   });
   const projectColumnsById = useMemo(
     () =>
@@ -785,10 +795,13 @@ export default function DepartmentManageClient({
     () => department.projects.filter((project) => project.members.some((member) => member.userId === currentUserId)),
     [currentUserId, department.projects]
   );
-  const currentDepartmentMember = useMemo(
-    () => department.members.find((member) => member.userId === currentUserId) || null,
-    [currentUserId, department.members]
-  );
+  const managedProjectOwnerByProjectId = useMemo(() => {
+    const map = new Map<string, DepartmentWorkspaceMember>();
+    department.members.forEach((member) => {
+      member.managedProjectIds.forEach((projectId) => map.set(projectId, member));
+    });
+    return map;
+  }, [department.members]);
   const selectedDashboardTask = useMemo(
     () => myTaskItems.find((task) => task.id === selectedDashboardTaskId) || null,
     [myTaskItems, selectedDashboardTaskId]
@@ -1313,14 +1326,73 @@ export default function DepartmentManageClient({
     };
   }, [department.name, mode]);
 
-  const handleSetRole = (userId: string, role: "ASSISTANT" | "MEMBER") => {
+  const openMemberSettings = (member: DepartmentWorkspaceMember) => {
+    setPageErrorMsg("");
+    setSettingsMember(member);
+    setMemberSettingsForm({
+      positionId: member.positionId || "none",
+      projectScopeType: member.projectScopeType || "NONE",
+      managedProjectIds: member.managedProjectIds,
+      taskAssigneeIds: member.taskAssigneeIds,
+    });
+  };
+
+  const handleCreatePosition = () => {
+    if (!positionName.trim()) return;
     setPageErrorMsg("");
     startTransition(async () => {
-      const res = await setDepartmentMemberRole(department.id, userId, role);
+      const res = await createDepartmentPosition(department.id, { name: positionName });
       if (!res.success) {
-        setPageErrorMsg(translateError(res.error, t.memberRoleFailed));
+        setPageErrorMsg(translateError(res.error, locale === "zh" ? "创建岗位失败" : "Failed to create position"));
         return;
       }
+      setPositionName("");
+      router.refresh();
+    });
+  };
+
+  const handleUpdatePosition = (positionId: string) => {
+    if (!editingPositionName.trim()) return;
+    setPageErrorMsg("");
+    startTransition(async () => {
+      const res = await updateDepartmentPosition(department.id, positionId, { name: editingPositionName });
+      if (!res.success) {
+        setPageErrorMsg(translateError(res.error, locale === "zh" ? "更新岗位失败" : "Failed to update position"));
+        return;
+      }
+      setEditingPositionId(null);
+      setEditingPositionName("");
+      router.refresh();
+    });
+  };
+
+  const handleDeletePosition = (positionId: string) => {
+    setPageErrorMsg("");
+    startTransition(async () => {
+      const res = await deleteDepartmentPosition(department.id, positionId);
+      if (!res.success) {
+        setPageErrorMsg(translateError(res.error, locale === "zh" ? "删除岗位失败" : "Failed to delete position"));
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const handleSaveMemberSettings = () => {
+    if (!settingsMember) return;
+    setPageErrorMsg("");
+    startTransition(async () => {
+      const res = await updateDepartmentMemberSettings(department.id, settingsMember.userId, {
+        positionId: memberSettingsForm.positionId === "none" ? null : memberSettingsForm.positionId,
+        projectScopeType: memberSettingsForm.projectScopeType,
+        managedProjectIds: memberSettingsForm.managedProjectIds,
+        taskAssigneeIds: memberSettingsForm.taskAssigneeIds,
+      });
+      if (!res.success) {
+        setPageErrorMsg(translateError(res.error, locale === "zh" ? "更新成员设置失败" : "Failed to update member settings"));
+        return;
+      }
+      setSettingsMember(null);
       router.refresh();
     });
   };
@@ -1856,13 +1928,85 @@ export default function DepartmentManageClient({
           <div className="flex min-h-9 items-center justify-between gap-3">
             <h2 className="text-xl font-bold tracking-tight text-foreground">{t.members}</h2>
           </div>
+          {isHead ? (
+            <div className="rounded-xl border bg-card p-4 shadow-sm">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">{locale === "zh" ? "部门岗位" : "Department positions"}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {locale === "zh" ? "岗位只用于组织身份展示，不自动产生权限。" : "Positions describe organization identity and do not grant permissions by name."}
+                  </p>
+                </div>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  <Input
+                    value={positionName}
+                    onChange={(event) => setPositionName(event.target.value)}
+                    placeholder={locale === "zh" ? "岗位名称" : "Position name"}
+                    className="h-9 sm:w-48"
+                  />
+                  <Button type="button" size="sm" onClick={handleCreatePosition} disabled={isPending || !positionName.trim()}>
+                    <Plus size={14} />
+                    {locale === "zh" ? "添加" : "Add"}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {department.positions.length > 0 ? (
+                  department.positions.map((position) => (
+                    <div key={position.id} className="flex items-center gap-1 rounded-md border bg-background px-2 py-1">
+                      {editingPositionId === position.id ? (
+                        <Input
+                          value={editingPositionName}
+                          onChange={(event) => setEditingPositionName(event.target.value)}
+                          className="h-7 w-36"
+                        />
+                      ) : (
+                        <span className="px-1 text-sm font-medium">{position.name}</span>
+                      )}
+                      {editingPositionId === position.id ? (
+                        <Button type="button" variant="ghost" size="xs" onClick={() => handleUpdatePosition(position.id)} disabled={isPending}>
+                          {locale === "zh" ? "保存" : "Save"}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => {
+                            setEditingPositionId(position.id);
+                            setEditingPositionName(position.name);
+                          }}
+                        >
+                          {locale === "zh" ? "编辑" : "Edit"}
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => handleDeletePosition(position.id)}
+                        disabled={isPending}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">{locale === "zh" ? "暂无岗位。" : "No positions yet."}</span>
+                )}
+              </div>
+            </div>
+          ) : null}
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                 <tr>
                   <th className="h-12 px-5 py-0 align-middle">{t.name}</th>
                   <th className="h-12 px-5 py-0 align-middle">{t.email}</th>
-                  <th className="h-12 px-5 py-0 align-middle">{t.role}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "部门权限" : "Department access"}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "岗位" : "Position"}</th>
+                  <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "项目范围" : "Project scope"}</th>
                   <th className="h-12 px-5 py-0 align-middle">{t.memberProjects}</th>
                   {isHead ? <th className="h-12 px-5 py-0 align-middle">{t.actions}</th> : null}
                 </tr>
@@ -1870,14 +2014,12 @@ export default function DepartmentManageClient({
               <tbody className="divide-y divide-border">
                 {sortedMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={isHead ? 5 : 4} className="px-5 py-8 text-center text-muted-foreground">
+                    <td colSpan={isHead ? 7 : 6} className="px-5 py-8 text-center text-muted-foreground">
                       {t.noMembers}
                     </td>
                   </tr>
                 ) : (
                   paginatedMembers.map((member) => {
-                    const badge = ROLE_BADGE[member.role] || ROLE_BADGE.MEMBER;
-                    const canToggleAssistant = isHead && member.role !== "HEAD" && member.userId !== currentUserId;
                     return (
                       <tr key={member.userId} className="align-top transition-colors hover:bg-muted/40">
                         <td className="px-5 py-4 font-medium text-foreground">
@@ -1885,9 +2027,20 @@ export default function DepartmentManageClient({
                         </td>
                         <td className="px-5 py-4 text-muted-foreground">{member.userEmail}</td>
                         <td className="px-5 py-4">
-                          <Badge variant="secondary" className={`${badge.bg} ${badge.text}`}>
-                            {member.role === "HEAD" ? t.head : member.role === "ASSISTANT" ? t.assistant : t.member}
+                          <Badge variant={member.isDepartmentAdmin ? "default" : "secondary"}>
+                            {member.isDepartmentAdmin ? (locale === "zh" ? "部门管理员" : "Department admin") : t.member}
                           </Badge>
+                        </td>
+                        <td className="px-5 py-4 text-muted-foreground">{member.positionName || "-"}</td>
+                        <td className="px-5 py-4">
+                          <div className="space-y-1">
+                            <Badge variant="outline">{getProjectScopeText(member.projectScopeType, locale)}</Badge>
+                            {member.taskAssigneeIds.length > 0 ? (
+                              <div className="text-xs text-muted-foreground">
+                                {locale === "zh" ? "指定可分派" : "Extra assignees"}: {member.taskAssigneeIds.length}
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap gap-2">
@@ -1902,30 +2055,9 @@ export default function DepartmentManageClient({
                         </td>
                         {isHead ? (
                           <td className="px-5 py-4">
-                            {canToggleAssistant ? (
-                              member.role === "ASSISTANT" ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="xs"
-                                  onClick={() => handleSetRole(member.userId, "MEMBER")}
-                                  disabled={isPending}
-                                >
-                                  {t.setMember}
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="xs"
-                                  onClick={() => handleSetRole(member.userId, "ASSISTANT")}
-                                  disabled={isPending}
-                                  className="text-primary"
-                                >
-                                  {t.setAssistant}
-                                </Button>
-                              )
-                            ) : null}
+                            <Button type="button" variant="outline" size="xs" onClick={() => openMemberSettings(member)}>
+                              {locale === "zh" ? "设置" : "Configure"}
+                            </Button>
                           </td>
                         ) : null}
                       </tr>
@@ -1952,6 +2084,135 @@ export default function DepartmentManageClient({
           </div>
         </div>
       ) : null}
+
+      <Dialog open={Boolean(settingsMember)} onOpenChange={(open) => !open && setSettingsMember(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{locale === "zh" ? "成员业务设置" : "Member settings"}</DialogTitle>
+            <DialogDescription>
+              {settingsMember ? displayMember(settingsMember) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="grid gap-2">
+              <Label>{locale === "zh" ? "岗位" : "Position"}</Label>
+              <Select
+                value={memberSettingsForm.positionId}
+                onValueChange={(value) => setMemberSettingsForm((current) => ({ ...current, positionId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{locale === "zh" ? "未设置岗位" : "No position"}</SelectItem>
+                  {department.positions.map((position) => (
+                    <SelectItem key={position.id} value={position.id}>
+                      {position.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>{locale === "zh" ? "项目管理范围" : "Project scope"}</Label>
+              <Select
+                value={memberSettingsForm.projectScopeType}
+                onValueChange={(value) =>
+                  setMemberSettingsForm((current) => ({
+                    ...current,
+                    projectScopeType: value,
+                    managedProjectIds: value === "SELECTED_PROJECTS" ? current.managedProjectIds : [],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">{locale === "zh" ? "不分管项目" : "No managed projects"}</SelectItem>
+                  <SelectItem value="ALL_PROJECTS">{locale === "zh" ? "主管全部项目" : "All projects"}</SelectItem>
+                  <SelectItem value="SELECTED_PROJECTS">{locale === "zh" ? "分管指定项目" : "Selected projects"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {memberSettingsForm.projectScopeType === "SELECTED_PROJECTS" ? (
+              <div className="grid gap-2">
+                <Label>{locale === "zh" ? "分管项目" : "Managed projects"}</Label>
+                <div className="max-h-48 overflow-y-auto rounded-md border">
+                  {department.projects.map((project) => {
+                    const owner = managedProjectOwnerByProjectId.get(project.id);
+                    const locked = Boolean(owner && owner.userId !== settingsMember?.userId);
+                    const checked = memberSettingsForm.managedProjectIds.includes(project.id);
+                    return (
+                      <label key={project.id} className={`flex items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0 ${locked ? "opacity-50" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={locked}
+                          onChange={(event) =>
+                            setMemberSettingsForm((current) => ({
+                              ...current,
+                              managedProjectIds: event.target.checked
+                                ? Array.from(new Set([...current.managedProjectIds, project.id]))
+                                : current.managedProjectIds.filter((id) => id !== project.id),
+                            }))
+                          }
+                        />
+                        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                        {locked && owner ? (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {locale === "zh" ? "已由" : "Managed by"} {displayMember(owner)}
+                          </span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid gap-2">
+              <Label>{locale === "zh" ? "额外可分派成员" : "Extra task assignees"}</Label>
+              <div className="max-h-48 overflow-y-auto rounded-md border">
+                {department.members
+                  .filter((member) => member.userId !== settingsMember?.userId)
+                  .map((member) => {
+                    const checked = memberSettingsForm.taskAssigneeIds.includes(member.userId);
+                    return (
+                      <label key={member.userId} className="flex items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) =>
+                            setMemberSettingsForm((current) => ({
+                              ...current,
+                              taskAssigneeIds: event.target.checked
+                                ? Array.from(new Set([...current.taskAssigneeIds, member.userId]))
+                                : current.taskAssigneeIds.filter((id) => id !== member.userId),
+                            }))
+                          }
+                        />
+                        <span className="min-w-0 flex-1 truncate">{displayMember(member)}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{member.positionName || ""}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSettingsMember(null)}>
+              {t.cancel}
+            </Button>
+            <Button type="button" onClick={handleSaveMemberSettings} disabled={isPending}>
+              {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+              {locale === "zh" ? "保存设置" : "Save settings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {mode === "projects" ? (
         <div className="space-y-4">
