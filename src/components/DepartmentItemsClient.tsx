@@ -5082,25 +5082,31 @@ export default function DepartmentItemsClient({
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     {activeTab === "tasks" || form.itemType === "TODO" ? (
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex w-full flex-col gap-1.5">
                         <Label>{t.dueDate}</Label>
                         <LocalizedDateInput
                           locale={locale}
                           value={form.dueAt}
                           onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          className="h-[38px] w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         />
                       </div>
                     ) : null}
                     {activeTab === "tasks" || form.itemType === "TODO" ? (
-                      <DropdownField
-                        id="taskAssignee"
-                        label={t.assignee}
-                        value={currentTaskAssigneeValue}
-                        onChange={applyTaskAssigneeChoice}
-                        options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
-                        className="flex-1"
-                      />
+                      <div className="flex w-full flex-col gap-1.5">
+                        <Label>{t.assignee}</Label>
+                        <DropdownField
+                          id="taskAssignee"
+                          label={t.assignee}
+                          value={currentTaskAssigneeValue}
+                          onChange={applyTaskAssigneeChoice}
+                          options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
+                          className="w-full gap-0"
+                          detailsClassName="h-[38px]"
+                          hideLabel
+                          triggerClassName="h-full py-0"
+                        />
+                      </div>
                     ) : null}
                   </div>
                 </div>

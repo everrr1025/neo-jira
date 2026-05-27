@@ -16,10 +16,22 @@ type DropdownFieldProps = {
   onChange: (value: string) => void;
   options: DropdownOption[];
   className?: string;
+  detailsClassName?: string;
   hideLabel?: boolean;
+  triggerClassName?: string;
 };
 
-export function DropdownField({ id, label, value, onChange, options, className = "", hideLabel = false }: DropdownFieldProps) {
+export function DropdownField({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  className = "",
+  detailsClassName = "",
+  hideLabel = false,
+  triggerClassName = "",
+}: DropdownFieldProps) {
   const selectedOption = options.find((item) => item.value === value);
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
@@ -90,13 +102,13 @@ export function DropdownField({ id, label, value, onChange, options, className =
       </label>
       <details
         ref={detailsRef}
-        className="relative rounded-md border border-slate-200 bg-white"
+        className={`relative rounded-md border border-slate-200 bg-white ${detailsClassName}`}
         onToggle={handleToggle}
       >
         <summary
           id={id}
           ref={summaryRef}
-          className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden"
+          className={`flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-slate-700 [&::-webkit-details-marker]:hidden ${triggerClassName}`}
         >
           {selectedOption?.indicatorClassName ? (
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${selectedOption.indicatorClassName}`} />

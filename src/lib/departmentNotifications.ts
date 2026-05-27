@@ -67,34 +67,47 @@ export function getNotificationLevelLabel(level: DepartmentNotificationLevel, lo
 
 export async function getDepartmentNotificationPermission(
   departmentId: string,
-  { userId, userRole }: SessionLike,
+  { userId }: SessionLike,
 ): Promise<DepartmentNotificationPermission> {
-  const isGlobalAdmin = userRole === "ADMIN";
   const membership = await prisma.departmentMember.findUnique({
     where: { departmentId_userId: { departmentId, userId } },
-    select: { isDepartmentAdmin: true, projectScopeType: true },
+    select: {
+      id: true,
+      canCreateDepartmentAnnouncements: true,
+      announcementProjectScopeType: true,
+    },
   });
-  const canManageDepartment = Boolean(isGlobalAdmin || membership?.isDepartmentAdmin);
+  const canCreateDepartment = Boolean(membership?.canCreateDepartmentAnnouncements);
 
-  const projects = await prisma.project.findMany({
-    where: canManageDepartment
-      ? { departmentId }
-      : {
-          departmentId,
-          OR: [
-            { ownerId: userId },
-            { managedByDepartmentMembers: { some: { userId } } },
-            ...(membership?.projectScopeType === "ALL_PROJECTS" ? [{}] : []),
-          ],
-        },
-    select: { id: true, name: true, key: true },
-    orderBy: { name: "asc" },
-  });
+  const [scopedProjects, ownedProjects] = await Promise.all([
+    prisma.project.findMany({
+      where: membership?.announcementProjectScopeType === "ALL_PROJECTS"
+        ? { departmentId }
+        : membership?.announcementProjectScopeType === "SELECTED_PROJECTS" && membership.id
+          ? {
+              departmentId,
+              announcementScopes: { some: { departmentMemberId: membership.id } },
+            }
+        : {
+            departmentId,
+            id: "__none__",
+          },
+      select: { id: true, name: true, key: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.project.findMany({
+      where: { departmentId, ownerId: userId },
+      select: { id: true, name: true, key: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+  const projectsById = new Map([...scopedProjects, ...ownedProjects].map((project) => [project.id, project]));
+  const projects = Array.from(projectsById.values()).sort((left, right) => left.name.localeCompare(right.name));
 
   return {
-    canCreate: canManageDepartment || projects.length > 0,
-    canCreateDepartment: canManageDepartment,
-    canManageDepartment,
+    canCreate: canCreateDepartment || projects.length > 0,
+    canCreateDepartment,
+    canManageDepartment: canCreateDepartment,
     manageableProjects: projects,
   };
 }
