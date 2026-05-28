@@ -10,16 +10,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronsUpDown,
   FileArchive,
   FileImage,
   FileSpreadsheet,
   FileText,
-  Check,
   Loader2,
   Paperclip,
   Plus,
-  Search,
   Star,
   Trash2,
   X,
@@ -30,7 +27,6 @@ import {
   createDepartmentPosition,
   deleteDepartmentProject,
   deleteDepartmentPosition,
-  updateDepartmentMemberSettings,
   updateDepartmentProject,
   updateDepartmentPosition,
 } from "@/app/actions/departments";
@@ -68,12 +64,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
-import type { DepartmentWorkspaceData, DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
+import type { DepartmentWorkspaceData, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { DepartmentDashboardTask, DepartmentItemCenterItem } from "@/lib/departmentReminders";
 import type {
   DepartmentNotificationListItem,
@@ -350,13 +344,6 @@ type ProjectColumnConfig = {
   label: string;
   width: number;
 };
-type MultiSelectOption = {
-  id: string;
-  label: string;
-  description?: string;
-  disabled?: boolean;
-  disabledReason?: string;
-};
 
 const TASK_ATTACHMENT_MARKER_PATTERN = /<!--neo-task-attachments:([\s\S]*?)-->/g;
 
@@ -549,113 +536,6 @@ function isScheduleItemRelatedToUser(item: DepartmentItemCenterItem, userId: str
   return item.attendees.some((attendee) => attendee.userId === userId);
 }
 
-function SearchableMultiSelect({
-  label,
-  placeholder,
-  emptyText,
-  options,
-  selectedIds,
-  onChange,
-}: {
-  label: string;
-  placeholder: string;
-  emptyText: string;
-  options: MultiSelectOption[];
-  selectedIds: string[];
-  onChange: (selectedIds: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const selectedSet = new Set(selectedIds);
-  const selectedOptions = options.filter((option) => selectedSet.has(option.id));
-  const filteredOptions = options.filter((option) => {
-    const haystack = `${option.label} ${option.description || ""}`.toLowerCase();
-    return haystack.includes(query.trim().toLowerCase());
-  });
-
-  const toggleOption = (option: MultiSelectOption) => {
-    if (option.disabled) return;
-    onChange(
-      selectedSet.has(option.id)
-        ? selectedIds.filter((id) => id !== option.id)
-        : Array.from(new Set([...selectedIds, option.id])),
-    );
-  };
-
-  return (
-    <div className="grid gap-2">
-      <Label>{label}</Label>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button type="button" variant="outline" className="h-auto min-h-10 justify-between gap-2 px-3 text-left font-normal">
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {selectedOptions.length > 0 ? `${selectedOptions.length} selected` : placeholder}
-            </span>
-            <ChevronsUpDown size={15} className="shrink-0 text-muted-foreground" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[min(520px,calc(100vw-2rem))] p-0" align="start">
-          <div className="flex items-center gap-2 border-b px-3 py-2">
-            <Search size={15} className="text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={placeholder}
-              className="h-8 border-0 px-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto p-1">
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => {
-                const checked = selectedSet.has(option.id);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => toggleOption(option)}
-                    disabled={option.disabled}
-                    className="flex w-full items-start gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border ${checked ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}>
-                      {checked ? <Check size={12} /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-foreground">{option.label}</span>
-                      {option.description || option.disabledReason ? (
-                        <span className="block truncate text-xs text-muted-foreground">{option.disabledReason || option.description}</span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="px-3 py-8 text-center text-sm text-muted-foreground">{emptyText}</div>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-      {selectedOptions.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {selectedOptions.map((option) => (
-            <Badge key={option.id} variant="secondary" className="gap-1">
-              <span className="max-w-44 truncate">{option.label}</span>
-              {!option.disabled ? (
-                <button
-                  type="button"
-                  onClick={() => onChange(selectedIds.filter((id) => id !== option.id))}
-                  className="rounded-full text-muted-foreground hover:text-foreground"
-                >
-                  <X size={12} />
-                </button>
-              ) : null}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function PaginationFooter({
   locale,
   page,
@@ -845,19 +725,6 @@ export default function DepartmentManageClient({
   const [isPositionManagerOpen, setIsPositionManagerOpen] = useState(false);
   const [positionErrorMsg, setPositionErrorMsg] = useState("");
   const [selectedPositionFilter, setSelectedPositionFilter] = useState("all");
-  const [settingsMember, setSettingsMember] = useState<DepartmentWorkspaceMember | null>(null);
-  const [memberSettingsForm, setMemberSettingsForm] = useState({
-    positionId: "none",
-    projectScopeType: "NONE",
-    managedProjectIds: [] as string[],
-    taskAssigneeIds: [] as string[],
-    taskPositionIds: [] as string[],
-    taskProjectScopeType: "NONE",
-    taskProjectIds: [] as string[],
-    canCreateDepartmentAnnouncements: false,
-    announcementProjectScopeType: "NONE",
-    announcementProjectIds: [] as string[],
-  });
 
   const memberPositionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -935,122 +802,6 @@ export default function DepartmentManageClient({
     () => department.projects.filter((project) => project.members.some((member) => member.userId === currentUserId)),
     [currentUserId, department.projects]
   );
-  const projectOptions = useMemo<MultiSelectOption[]>(
-    () => department.projects.map((project) => ({ id: project.id, label: project.name, description: project.key })),
-    [department.projects]
-  );
-  const positionOptions = useMemo<MultiSelectOption[]>(
-    () => department.positions.map((position) => ({ id: position.id, label: position.name })),
-    [department.positions]
-  );
-  const memberOptions = useMemo<MultiSelectOption[]>(
-    () =>
-      department.members.map((member) => ({
-        id: member.userId,
-        label: displayMember(member),
-        description: member.positionName || member.userEmail,
-      })),
-    [department.members]
-  );
-  const settingsOwnerProjectIds = useMemo(
-    () => settingsMember ? department.projects.filter((project) => project.ownerId === settingsMember.userId).map((project) => project.id) : [],
-    [department.projects, settingsMember]
-  );
-  const settingsDefaultAccessProjectIds = useMemo(() => {
-    if (!settingsMember) return [];
-    return Array.from(new Set([...settingsMember.projects.map((project) => project.id), ...settingsOwnerProjectIds]));
-  }, [settingsMember, settingsOwnerProjectIds]);
-  const settingsDefaultAnnouncementProjectIds = settingsOwnerProjectIds;
-  const defaultAccessProjectIdSet = useMemo(() => new Set(settingsDefaultAccessProjectIds), [settingsDefaultAccessProjectIds]);
-  const defaultTaskProjectIdSet = useMemo(() => new Set(settingsOwnerProjectIds), [settingsOwnerProjectIds]);
-  const defaultAnnouncementProjectIdSet = useMemo(() => new Set(settingsDefaultAnnouncementProjectIds), [settingsDefaultAnnouncementProjectIds]);
-  const allProjectIds = useMemo(() => projectOptions.map((project) => project.id), [projectOptions]);
-  const projectAccessOptions = useMemo<MultiSelectOption[]>(
-    () =>
-      projectOptions.map((project) => ({
-        ...project,
-        disabled: defaultAccessProjectIdSet.has(project.id),
-        disabledReason: defaultAccessProjectIdSet.has(project.id)
-          ? locale === "zh" ? "参与项目默认可访问" : "Default access from project membership"
-          : project.description,
-      })),
-    [defaultAccessProjectIdSet, locale, projectOptions]
-  );
-  const taskProjectOptions = useMemo<MultiSelectOption[]>(
-    () =>
-      projectOptions.map((project) => ({
-        ...project,
-        disabled: defaultTaskProjectIdSet.has(project.id),
-        disabledReason: defaultTaskProjectIdSet.has(project.id)
-          ? locale === "zh" ? "负责项目默认可分派" : "Default from project owner"
-          : project.description,
-      })),
-    [defaultTaskProjectIdSet, locale, projectOptions]
-  );
-  const announcementProjectOptions = useMemo<MultiSelectOption[]>(
-    () =>
-      projectOptions.map((project) => ({
-        ...project,
-        disabled: defaultAnnouncementProjectIdSet.has(project.id),
-        disabledReason: defaultAnnouncementProjectIdSet.has(project.id)
-          ? locale === "zh" ? "项目负责人默认可发布" : "Default access as project owner"
-          : project.description,
-      })),
-    [defaultAnnouncementProjectIdSet, locale, projectOptions]
-  );
-  const selectedAccessProjectIds = useMemo(
-    () => {
-      if (memberSettingsForm.projectScopeType === "ALL_PROJECTS") return allProjectIds;
-      if (memberSettingsForm.projectScopeType === "SELECTED_PROJECTS") {
-        return Array.from(new Set([...memberSettingsForm.managedProjectIds, ...settingsDefaultAccessProjectIds]));
-      }
-      return settingsDefaultAccessProjectIds;
-    },
-    [allProjectIds, memberSettingsForm.managedProjectIds, memberSettingsForm.projectScopeType, settingsDefaultAccessProjectIds]
-  );
-  const selectedTaskProjectIds = useMemo(
-    () => {
-      if (memberSettingsForm.taskProjectScopeType === "ALL_PROJECTS") return allProjectIds;
-      if (memberSettingsForm.taskProjectScopeType === "SELECTED_PROJECTS") {
-        return Array.from(new Set([...memberSettingsForm.taskProjectIds, ...settingsOwnerProjectIds]));
-      }
-      return settingsOwnerProjectIds;
-    },
-    [allProjectIds, memberSettingsForm.taskProjectIds, memberSettingsForm.taskProjectScopeType, settingsOwnerProjectIds]
-  );
-  const selectedAnnouncementProjectIds = useMemo(
-    () => {
-      if (memberSettingsForm.announcementProjectScopeType === "ALL_PROJECTS") return allProjectIds;
-      if (memberSettingsForm.announcementProjectScopeType === "SELECTED_PROJECTS") {
-        return Array.from(new Set([...memberSettingsForm.announcementProjectIds, ...settingsDefaultAnnouncementProjectIds]));
-      }
-      return settingsDefaultAnnouncementProjectIds;
-    },
-    [allProjectIds, memberSettingsForm.announcementProjectIds, memberSettingsForm.announcementProjectScopeType, settingsDefaultAnnouncementProjectIds]
-  );
-  const taskAssigneePreview = useMemo(() => {
-    if (!settingsMember) return [];
-    const selectedTaskProjectIdSet = new Set(selectedTaskProjectIds);
-    const selectedTaskPositionIds = new Set(memberSettingsForm.taskPositionIds);
-    const selectedTaskAssigneeIds = new Set(memberSettingsForm.taskAssigneeIds);
-
-    return department.members
-      .map((member) => {
-        const sourceLabels: string[] = [];
-        if (member.userId === settingsMember.userId) sourceLabels.push(locale === "zh" ? "本人" : "Self");
-        if (selectedTaskAssigneeIds.has(member.userId)) sourceLabels.push(locale === "zh" ? "人员" : "Person");
-        if (member.positionId && selectedTaskPositionIds.has(member.positionId)) sourceLabels.push(locale === "zh" ? "岗位" : "Position");
-        const memberProjectIds = member.projects.map((project) => project.id);
-        if (memberSettingsForm.taskProjectScopeType === "ALL_PROJECTS" && memberProjectIds.length > 0) {
-          sourceLabels.push(locale === "zh" ? "全部项目" : "All projects");
-        }
-        if (memberProjectIds.some((projectId) => selectedTaskProjectIdSet.has(projectId))) {
-          sourceLabels.push(locale === "zh" ? "项目" : "Project");
-        }
-        return sourceLabels.length > 0 ? { member, sourceLabels: Array.from(new Set(sourceLabels)) } : null;
-      })
-      .filter((entry): entry is { member: DepartmentWorkspaceMember; sourceLabels: string[] } => Boolean(entry));
-  }, [department.members, locale, memberSettingsForm, selectedTaskProjectIds, settingsMember]);
   const selectedDashboardTask = useMemo(
     () => myTaskItems.find((task) => task.id === selectedDashboardTaskId) || null,
     [myTaskItems, selectedDashboardTaskId]
@@ -1598,24 +1349,6 @@ export default function DepartmentManageClient({
     };
   }, [department.name, mode]);
 
-  const openMemberSettings = (member: DepartmentWorkspaceMember) => {
-    setPageErrorMsg("");
-    const ownerProjectIds = department.projects.filter((project) => project.ownerId === member.userId).map((project) => project.id);
-    setSettingsMember(member);
-    setMemberSettingsForm({
-      positionId: member.positionId || "none",
-      projectScopeType: member.projectScopeType === "NONE" && ownerProjectIds.length > 0 ? "SELECTED_PROJECTS" : member.projectScopeType || "NONE",
-      managedProjectIds: member.managedProjectIds,
-      taskAssigneeIds: member.taskAssigneeIds,
-      taskPositionIds: member.taskPositionIds,
-      taskProjectScopeType: member.taskProjectScopeType === "NONE" && ownerProjectIds.length > 0 ? "SELECTED_PROJECTS" : member.taskProjectScopeType || "NONE",
-      taskProjectIds: member.taskProjectIds,
-      canCreateDepartmentAnnouncements: member.canCreateDepartmentAnnouncements,
-      announcementProjectScopeType: member.announcementProjectScopeType === "NONE" && ownerProjectIds.length > 0 ? "SELECTED_PROJECTS" : member.announcementProjectScopeType || "NONE",
-      announcementProjectIds: member.announcementProjectIds,
-    });
-  };
-
   const handleCreatePosition = () => {
     if (!positionName.trim()) return;
     setPositionErrorMsg("");
@@ -1653,34 +1386,6 @@ export default function DepartmentManageClient({
         setPositionErrorMsg(translatePositionError(res.error, locale === "zh" ? "删除岗位失败" : "Failed to delete position"));
         return;
       }
-      router.refresh();
-    });
-  };
-
-  const handleSaveMemberSettings = () => {
-    if (!settingsMember) return;
-    setPageErrorMsg("");
-    startTransition(async () => {
-      const managedProjectIds = memberSettingsForm.managedProjectIds.filter((projectId) => !defaultAccessProjectIdSet.has(projectId));
-      const taskProjectIds = memberSettingsForm.taskProjectIds.filter((projectId) => !defaultTaskProjectIdSet.has(projectId));
-      const announcementProjectIds = memberSettingsForm.announcementProjectIds.filter((projectId) => !defaultAnnouncementProjectIdSet.has(projectId));
-      const res = await updateDepartmentMemberSettings(department.id, settingsMember.userId, {
-        positionId: memberSettingsForm.positionId === "none" ? null : memberSettingsForm.positionId,
-        projectScopeType: memberSettingsForm.projectScopeType,
-        managedProjectIds,
-        taskAssigneeIds: memberSettingsForm.taskAssigneeIds,
-        taskPositionIds: memberSettingsForm.taskPositionIds,
-        taskProjectScopeType: memberSettingsForm.taskProjectScopeType,
-        taskProjectIds,
-        canCreateDepartmentAnnouncements: memberSettingsForm.canCreateDepartmentAnnouncements,
-        announcementProjectScopeType: memberSettingsForm.announcementProjectScopeType,
-        announcementProjectIds,
-      });
-      if (!res.success) {
-        setPageErrorMsg(translateError(res.error, locale === "zh" ? "更新成员设置失败" : "Failed to update member settings"));
-        return;
-      }
-      setSettingsMember(null);
       router.refresh();
     });
   };
@@ -2321,8 +2026,10 @@ export default function DepartmentManageClient({
                         </td>
                         {isHead ? (
                           <td className="px-5 py-4">
-                            <Button type="button" variant="outline" size="xs" onClick={() => openMemberSettings(member)}>
-                              {locale === "zh" ? "设置" : "Configure"}
+                            <Button asChild type="button" variant="outline" size="xs">
+                              <Link href={`/departments/${department.id}/members/${member.userId}/settings`}>
+                                {locale === "zh" ? "设置" : "Configure"}
+                              </Link>
                             </Button>
                           </td>
                         ) : null}
@@ -2449,228 +2156,6 @@ export default function DepartmentManageClient({
             </div>
           </div>
           <div className="h-6 shrink-0" />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(settingsMember)} onOpenChange={(open) => !open && setSettingsMember(null)}>
-        <DialogContent className="flex max-h-[92vh] max-w-4xl flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 px-6 pt-6">
-            <DialogTitle>{locale === "zh" ? "成员设置" : "Member settings"}</DialogTitle>
-            <DialogDescription>
-              {settingsMember ? displayMember(settingsMember) : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <Tabs defaultValue="basic" className="min-h-0 flex-1">
-            <TabsList className="mx-6 mt-5 grid w-auto shrink-0 grid-cols-4">
-              <TabsTrigger value="basic">{locale === "zh" ? "基础信息" : "Basic"}</TabsTrigger>
-              <TabsTrigger value="access">{locale === "zh" ? "项目访问" : "Project access"}</TabsTrigger>
-              <TabsTrigger value="assignment">{locale === "zh" ? "任务分派" : "Task assignment"}</TabsTrigger>
-              <TabsTrigger value="announcements">{locale === "zh" ? "公告权限" : "Announcements"}</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="basic" className="min-h-0 overflow-y-auto px-6 py-5 data-[state=inactive]:hidden">
-              <div className="grid gap-2">
-                <Label>{locale === "zh" ? "岗位" : "Position"}</Label>
-                <Select
-                  value={memberSettingsForm.positionId}
-                  onValueChange={(value) => setMemberSettingsForm((current) => ({ ...current, positionId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{locale === "zh" ? "未设置岗位" : "No position"}</SelectItem>
-                    {department.positions.map((position) => (
-                      <SelectItem key={position.id} value={position.id}>
-                        {position.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="access" className="min-h-0 space-y-5 overflow-y-auto px-6 py-5 data-[state=inactive]:hidden">
-              <div className="grid gap-2">
-                <Label>{locale === "zh" ? "访问权限" : "Project access"}</Label>
-                <Select
-                  value={memberSettingsForm.projectScopeType}
-                  onValueChange={(value) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      projectScopeType: value,
-                      managedProjectIds: value === "SELECTED_PROJECTS" ? current.managedProjectIds : [],
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE" disabled={settingsOwnerProjectIds.length > 0}>{locale === "zh" ? "无项目" : "No projects"}</SelectItem>
-                    <SelectItem value="ALL_PROJECTS">{locale === "zh" ? "全部项目" : "All projects"}</SelectItem>
-                    <SelectItem value="SELECTED_PROJECTS">{locale === "zh" ? "指定项目" : "Selected projects"}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {memberSettingsForm.projectScopeType !== "NONE" || selectedAccessProjectIds.length > 0 ? (
-                <SearchableMultiSelect
-                  label={locale === "zh" ? "可访问项目" : "Accessible projects"}
-                  placeholder={locale === "zh" ? "搜索项目" : "Search projects"}
-                  emptyText={locale === "zh" ? "没有匹配的项目" : "No matching projects"}
-                  options={projectAccessOptions}
-                  selectedIds={selectedAccessProjectIds}
-                  onChange={(selectedIds) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      managedProjectIds: current.projectScopeType === "SELECTED_PROJECTS"
-                        ? selectedIds.filter((projectId) => !defaultAccessProjectIdSet.has(projectId))
-                        : [],
-                    }))
-                  }
-                />
-              ) : null}
-            </TabsContent>
-
-            <TabsContent value="assignment" className="min-h-0 space-y-5 overflow-y-auto px-6 py-5 data-[state=inactive]:hidden">
-              <SearchableMultiSelect
-                label={locale === "zh" ? "按人员" : "By person"}
-                placeholder={locale === "zh" ? "搜索成员" : "Search members"}
-                emptyText={locale === "zh" ? "没有匹配的成员" : "No matching members"}
-                options={memberOptions.filter((member) => member.id !== settingsMember?.userId)}
-                selectedIds={memberSettingsForm.taskAssigneeIds}
-                onChange={(taskAssigneeIds) => setMemberSettingsForm((current) => ({ ...current, taskAssigneeIds }))}
-              />
-              <SearchableMultiSelect
-                label={locale === "zh" ? "按岗位" : "By position"}
-                placeholder={locale === "zh" ? "搜索岗位" : "Search positions"}
-                emptyText={locale === "zh" ? "没有匹配的岗位" : "No matching positions"}
-                options={positionOptions}
-                selectedIds={memberSettingsForm.taskPositionIds}
-                onChange={(taskPositionIds) => setMemberSettingsForm((current) => ({ ...current, taskPositionIds }))}
-              />
-              <div className="grid gap-2">
-                <Label>{locale === "zh" ? "按项目成员" : "By project members"}</Label>
-                <Select
-                  value={memberSettingsForm.taskProjectScopeType}
-                  onValueChange={(value) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      taskProjectScopeType: value,
-                      taskProjectIds: value === "SELECTED_PROJECTS" ? current.taskProjectIds : [],
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE" disabled={settingsOwnerProjectIds.length > 0}>{locale === "zh" ? "无项目成员" : "No project members"}</SelectItem>
-                    <SelectItem value="ALL_PROJECTS">{locale === "zh" ? "全部项目成员" : "All project members"}</SelectItem>
-                    <SelectItem value="SELECTED_PROJECTS">{locale === "zh" ? "指定项目成员" : "Selected project members"}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {memberSettingsForm.taskProjectScopeType !== "NONE" || selectedTaskProjectIds.length > 0 ? (
-                <SearchableMultiSelect
-                  label={locale === "zh" ? "可分派项目成员" : "Assignable project members"}
-                  placeholder={locale === "zh" ? "搜索项目" : "Search projects"}
-                  emptyText={locale === "zh" ? "没有匹配的项目" : "No matching projects"}
-                  options={taskProjectOptions}
-                  selectedIds={selectedTaskProjectIds}
-                  onChange={(selectedIds) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      taskProjectIds: current.taskProjectScopeType === "SELECTED_PROJECTS"
-                        ? selectedIds.filter((projectId) => !defaultTaskProjectIdSet.has(projectId))
-                        : [],
-                    }))
-                  }
-                />
-              ) : null}
-              <div className="grid gap-2">
-                <Label>{locale === "zh" ? "可分派人员预览" : "Assignable people preview"}</Label>
-                <div className="max-h-56 overflow-y-auto rounded-md border">
-                  {taskAssigneePreview.length > 0 ? (
-                    taskAssigneePreview.map(({ member, sourceLabels }) => (
-                      <div key={member.userId} className="flex items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium">{displayMember(member)}</div>
-                          <div className="truncate text-xs text-muted-foreground">{member.userEmail}{member.positionName ? ` · ${member.positionName}` : ""}</div>
-                        </div>
-                        <div className="flex flex-wrap justify-end gap-1">
-                          {sourceLabels.map((source) => (
-                            <Badge key={source} variant="outline">{source}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-3 py-8 text-center text-sm text-muted-foreground">{locale === "zh" ? "暂无可分派人员" : "No assignable people"}</div>
-                  )}
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="announcements" className="min-h-0 space-y-5 overflow-y-auto px-6 py-5 data-[state=inactive]:hidden">
-              <label className="flex items-center gap-3 rounded-md border p-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={memberSettingsForm.canCreateDepartmentAnnouncements}
-                  onChange={(event) => setMemberSettingsForm((current) => ({ ...current, canCreateDepartmentAnnouncements: event.target.checked }))}
-                />
-                <span className="font-medium">{locale === "zh" ? "可发布部门公告" : "Can publish department announcements"}</span>
-              </label>
-              <div className="grid gap-2">
-                <Label>{locale === "zh" ? "项目公告权限" : "Project announcement access"}</Label>
-                <Select
-                  value={memberSettingsForm.announcementProjectScopeType}
-                  onValueChange={(value) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      announcementProjectScopeType: value,
-                      announcementProjectIds: value === "SELECTED_PROJECTS" ? current.announcementProjectIds : [],
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NONE" disabled={settingsOwnerProjectIds.length > 0}>{locale === "zh" ? "无项目公告权限" : "No project announcements"}</SelectItem>
-                    <SelectItem value="ALL_PROJECTS">{locale === "zh" ? "全部项目公告" : "All project announcements"}</SelectItem>
-                    <SelectItem value="SELECTED_PROJECTS">{locale === "zh" ? "指定项目公告" : "Selected project announcements"}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {memberSettingsForm.announcementProjectScopeType !== "NONE" || selectedAnnouncementProjectIds.length > 0 ? (
-                <SearchableMultiSelect
-                  label={locale === "zh" ? "可发布公告的项目" : "Projects allowed for announcements"}
-                  placeholder={locale === "zh" ? "搜索项目" : "Search projects"}
-                  emptyText={locale === "zh" ? "没有匹配的项目" : "No matching projects"}
-                  options={announcementProjectOptions}
-                  selectedIds={selectedAnnouncementProjectIds}
-                  onChange={(selectedIds) =>
-                    setMemberSettingsForm((current) => ({
-                      ...current,
-                      announcementProjectIds: current.announcementProjectScopeType === "SELECTED_PROJECTS"
-                        ? selectedIds.filter((projectId) => !defaultAnnouncementProjectIdSet.has(projectId))
-                        : [],
-                    }))
-                  }
-                />
-              ) : null}
-            </TabsContent>
-          </Tabs>
-          <DialogFooter className="shrink-0 border-t px-6 py-4">
-            <Button type="button" variant="outline" onClick={() => setSettingsMember(null)}>
-              {t.cancel}
-            </Button>
-            <Button type="button" onClick={handleSaveMemberSettings} disabled={isPending}>
-              {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-              {locale === "zh" ? "保存" : "Save"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
