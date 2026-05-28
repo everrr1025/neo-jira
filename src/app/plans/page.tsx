@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
+import { CalendarDays, CheckCircle2, CircleDot, ListChecks, Target } from "lucide-react";
 
 import CreatePlanButton from "@/components/CreatePlanButton";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
@@ -56,6 +59,10 @@ function getPlanStatus(dateRange: { startDate: Date; endDate: Date }, locale: "e
     label: locale === "zh" ? "进行中" : "Active",
     className: "border-blue-200 bg-blue-50 text-blue-700",
   };
+}
+
+function getProgressClassName(statusKey: string) {
+  return statusKey === "COMPLETED" ? "bg-emerald-500" : "bg-blue-500";
 }
 
 function getPlanPageText(locale: "en" | "zh") {
@@ -144,10 +151,10 @@ export default async function PlansPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">{text.title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{text.subtitle}</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">{text.title}</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">{text.subtitle}</p>
         </div>
         {canCreatePlans ? (
           <CreatePlanButton projectId={activeProject.id} locale={locale} />
@@ -155,14 +162,20 @@ export default async function PlansPage() {
       </div>
 
       {plans.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-white px-6 py-16 text-center text-slate-500">
-          {text.empty}
-        </div>
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="flex size-10 items-center justify-center rounded-lg border bg-muted text-muted-foreground">
+              <CircleDot className="size-5" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">{text.empty}</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           {sortedPlans.map((plan) => {
             const totalIssues = plan.issues.length;
             const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
+            const statusKey = getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate });
             const doneIssues = plan.issues.filter(
               (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
             ).length;
@@ -171,67 +184,71 @@ export default async function PlansPage() {
 
             return (
               <Link href={`/plans/${plan.id}`} key={plan.id} className="block">
-                <div className="rounded-xl border bg-white p-5 shadow-sm transition-all hover:border-slate-300 hover:shadow-md">
-                  <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h3 className="truncate text-lg font-semibold text-slate-800" title={plan.name}>
-                          {plan.name}
-                        </h3>
-                        <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${status.className}`}>
-                          {status.label}
-                        </span>
-                        {typeof plan.targetCount === "number" && plan.targetCount > 0 ? (
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            {text.target} {plan.targetCount}
-                          </span>
+                <Card className="gap-0 py-0 transition-colors hover:border-foreground/20">
+                  <CardHeader className="border-b px-5 py-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 space-y-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <CardTitle className="truncate text-lg" title={plan.name}>
+                            {plan.name}
+                          </CardTitle>
+                          <Badge variant="outline" className={status.className}>
+                            {status.label}
+                          </Badge>
+                          {typeof plan.targetCount === "number" && plan.targetCount > 0 ? (
+                            <Badge variant="secondary" className="rounded-md">
+                              {text.target} {plan.targetCount}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {plan.description ? (
+                          <p className="line-clamp-2 text-sm text-muted-foreground">{plan.description}</p>
                         ) : null}
                       </div>
-                      {plan.description ? (
-                        <p className="mt-2 line-clamp-2 text-sm text-slate-500">{plan.description}</p>
-                      ) : null}
-                    </div>
 
-                    <div className="text-sm font-medium text-slate-500">
-                      {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
-                      {plan.endDate.toLocaleDateString(localeDateMap[locale])}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between text-sm">
-                    <div className="flex flex-wrap items-center gap-6">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-500">{text.total}</span>
-                        <span className="font-semibold text-slate-800">{totalIssues}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-500">{text.done}</span>
-                        <span className="font-semibold text-emerald-700">{doneIssues}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-500">{text.backlog}</span>
-                        <span className="font-semibold text-amber-700">{backlogIssues}</span>
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                        <CalendarDays className="size-4" />
+                        <span>
+                          {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+                          {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                        </span>
                       </div>
                     </div>
+                  </CardHeader>
 
-                    <div className="w-full min-w-[220px] sm:w-1/3">
-                      <div className="mb-1 flex justify-between text-xs">
-                        <span className="font-medium text-slate-500">{text.progress}</span>
-                        <span className="font-bold text-slate-700">{progress}%</span>
+                  <CardContent className="grid gap-4 px-5 py-4 lg:grid-cols-[1fr_minmax(220px,33%)] lg:items-center">
+                    <div className="grid gap-2 text-sm sm:grid-cols-3">
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <ListChecks className="size-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">{text.total}</span>
+                        <span className="ml-auto font-semibold">{totalIssues}</span>
                       </div>
-                      <div className="h-2 w-full rounded-full bg-slate-100">
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <CheckCircle2 className="size-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">{text.done}</span>
+                        <span className="ml-auto font-semibold">{doneIssues}</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <Target className="size-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">{text.backlog}</span>
+                        <span className="ml-auto font-semibold">{backlogIssues}</span>
+                      </div>
+                    </div>
+
+                    <div className="w-full">
+                      <div className="mb-2 flex justify-between text-xs">
+                        <span className="font-medium text-muted-foreground">{text.progress}</span>
+                        <span className="font-semibold">{progress}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
-                          className={`h-2 rounded-full ${
-                            getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate }) === "COMPLETED"
-                              ? "bg-emerald-500"
-                              : "bg-blue-500"
-                          }`}
+                          className={`h-full rounded-full ${getProgressClassName(statusKey)}`}
                           style={{ width: `${progress}%` }}
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               </Link>
             );
           })}

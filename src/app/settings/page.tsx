@@ -38,10 +38,10 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{translations.settingsPage.title}</h1>
-        <p className="mt-1 text-sm text-slate-500">{translations.settingsPage.subtitle}</p>
+    <div className="mx-auto w-full max-w-5xl space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight">{translations.settingsPage.title}</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">{translations.settingsPage.subtitle}</p>
       </div>
 
       <UserSettingsForm

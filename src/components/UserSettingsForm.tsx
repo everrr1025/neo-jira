@@ -1,11 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Eye, EyeOff, Settings, Shield } from "lucide-react";
+import { type FormEvent, useState, useTransition } from "react";
+import { Eye, EyeOff, KeyRound, Settings, Shield, UserRound } from "lucide-react";
 
 import AlertPopup from "@/components/AlertPopup";
 import { changeUserPassword } from "@/app/actions/user";
 import { AvatarPicker } from "@/components/layout/AvatarPicker";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { getTranslations, type Locale } from "@/lib/i18n";
 import { isValidPassword } from "@/lib/validation";
 
@@ -48,7 +60,7 @@ export default function UserSettingsForm({
     }
   };
 
-  const handlePasswordSubmit = (event: React.FormEvent) => {
+  const handlePasswordSubmit = (event: FormEvent) => {
     event.preventDefault();
 
     if (newPassword !== confirmPassword) {
@@ -90,84 +102,111 @@ export default function UserSettingsForm({
   };
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
-        <div className="flex items-start gap-4">
-          <div className="rounded-2xl bg-slate-100 p-3 text-slate-600">
-            <Settings size={20} />
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <Card>
+        <CardHeader className="border-b pb-6">
+          <div className="flex items-start gap-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-muted-foreground">
+              <Settings className="size-5" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-lg">{text.profile}</CardTitle>
+              <CardDescription>{text.profileHint}</CardDescription>
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-slate-900">{text.profile}</h2>
-            <p className="mt-1 text-sm text-slate-500">{text.profileHint}</p>
-          </div>
-        </div>
+        </CardHeader>
 
-        <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-center">
-          <AvatarPicker
-            userKey={user.id}
-            userName={user.name}
-            locale={locale}
-            initialAvatar={user.avatar}
-            size="lg"
-          />
-          <div>
-            <div className="text-base font-semibold text-slate-900">{user.name}</div>
-            <div className="text-sm text-slate-500">{user.email}</div>
-            <div className="mt-2 text-xs text-slate-500">{text.avatarHint}</div>
+        <CardContent className="space-y-6">
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+            <AvatarPicker
+              userKey={user.id}
+              userName={user.name}
+              locale={locale}
+              initialAvatar={user.avatar}
+              size="lg"
+            />
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="truncate text-base font-semibold">{user.name}</div>
+                <Badge variant="secondary" className="rounded-md">
+                  {locale === "zh" ? "当前账号" : "Current account"}
+                </Badge>
+              </div>
+              <div className="truncate text-sm text-muted-foreground">{user.email}</div>
+              <p className="text-xs text-muted-foreground">{text.avatarHint}</p>
+            </div>
           </div>
-        </div>
-      </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6">
-        <div className="flex items-start gap-4">
-          <div className="rounded-2xl bg-amber-50 p-3 text-amber-600">
-            <Shield size={20} />
+          <Separator />
+
+          <div className="grid gap-3 text-sm">
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+              <UserRound className="size-4 text-muted-foreground" />
+              <div className="min-w-0">
+                <div className="font-medium">{user.name}</div>
+                <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+              </div>
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-slate-900">{text.security}</h2>
-            <p className="mt-1 text-sm text-slate-500">{text.securityHint}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b pb-6">
+          <div className="flex items-start gap-4">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted text-muted-foreground">
+              <Shield className="size-5" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-lg">{text.security}</CardTitle>
+              <CardDescription>{text.securityHint}</CardDescription>
+            </div>
           </div>
-        </div>
+        </CardHeader>
 
-        <form onSubmit={handlePasswordSubmit} className="mt-6 max-w-xl space-y-4">
-          <PasswordField
-            label={text.currentPassword}
-            value={currentPassword}
-            onChange={setCurrentPassword}
-            show={showCurrentPassword}
-            onToggleShow={() => setShowCurrentPassword((value) => !value)}
-            locale={locale}
-          />
-          <PasswordField
-            label={text.newPassword}
-            value={newPassword}
-            onChange={setNewPassword}
-            show={showNewPassword}
-            onToggleShow={() => setShowNewPassword((value) => !value)}
-            locale={locale}
-          />
-          <PasswordField
-            label={text.confirmPassword}
-            value={confirmPassword}
-            onChange={setConfirmPassword}
-            show={showConfirmPassword}
-            onToggleShow={() => setShowConfirmPassword((value) => !value)}
-            locale={locale}
-          />
+        <CardContent>
+          <form onSubmit={handlePasswordSubmit} className="max-w-xl space-y-4">
+            <PasswordField
+              id="current-password"
+              label={text.currentPassword}
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              show={showCurrentPassword}
+              onToggleShow={() => setShowCurrentPassword((value) => !value)}
+              locale={locale}
+            />
+            <PasswordField
+              id="new-password"
+              label={text.newPassword}
+              value={newPassword}
+              onChange={setNewPassword}
+              show={showNewPassword}
+              onToggleShow={() => setShowNewPassword((value) => !value)}
+              locale={locale}
+            />
+            <PasswordField
+              id="confirm-password"
+              label={text.confirmPassword}
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              show={showConfirmPassword}
+              onToggleShow={() => setShowConfirmPassword((value) => !value)}
+              locale={locale}
+            />
 
-          <p className="text-xs text-slate-500">{text.passwordRule}</p>
+            <div className="flex gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+              <KeyRound className="mt-0.5 size-3.5 shrink-0" />
+              <p>{text.passwordRule}</p>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isPending}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isPending ? text.updatingPassword : text.updatePassword}
-            </button>
-          </div>
-        </form>
-      </section>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Button type="submit" disabled={isPending}>
+                {isPending ? text.updatingPassword : text.updatePassword}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <AlertPopup
         message={feedbackMessage}
@@ -180,6 +219,7 @@ export default function UserSettingsForm({
 }
 
 function PasswordField({
+  id,
   label,
   value,
   onChange,
@@ -187,6 +227,7 @@ function PasswordField({
   onToggleShow,
   locale,
 }: {
+  id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -195,24 +236,27 @@ function PasswordField({
   locale: Locale;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-slate-700">{label}</label>
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <input
+        <Input
+          id={id}
           type={show ? "text" : "password"}
           required
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          className="pr-10"
         />
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={onToggleShow}
-          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-slate-600"
+          className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           aria-label={show ? (locale === "zh" ? "隐藏密码" : "Hide password") : locale === "zh" ? "显示密码" : "Show password"}
         >
-          {show ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
+          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        </Button>
       </div>
     </div>
   );
