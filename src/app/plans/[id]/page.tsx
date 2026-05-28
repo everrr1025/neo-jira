@@ -78,7 +78,6 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   const userId = sessionUser.id;
   const userRole = sessionUser.role ?? "USER";
   if (!userId) redirect("/login");
-  const isGlobalAdmin = userRole === "ADMIN";
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
@@ -207,7 +206,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     }),
     prisma.user.findUnique({ where: { id: userId } }),
   ]);
-  const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
+  const projectRole = await getProjectRole(userId, activeProject.id);
   const canManagePlans = projectRole === "ADMIN";
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
   const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);

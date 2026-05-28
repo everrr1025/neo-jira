@@ -9,7 +9,6 @@ import {
   canMoveIssueToIteration,
   canUseIterationForActiveProject,
   isProjectInActiveContext,
-  resolveIssueCreateProjectId,
 } from "@/lib/activeProjectUtils";
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import { authOptions } from "@/lib/authOptions";
@@ -274,7 +273,6 @@ export async function createIssue(data: {
     if (!userId) throw new Error("Unauthorized");
 
     const userRole = sessionUser.role ?? "USER";
-    const isGlobalAdmin = userRole === "ADMIN";
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
 
@@ -330,14 +328,6 @@ export async function createIssue(data: {
     }
 
     let targetProjectId = selectedIteration?.projectId || selectedPlan?.projectId || activeProjectId || null;
-
-    if (!targetProjectId && isGlobalAdmin) {
-      targetProjectId = resolveIssueCreateProjectId({
-        activeProjectId,
-        selectedIterationProjectId: selectedIteration?.projectId,
-        fallbackProjectId: (await prisma.project.findFirst({ select: { id: true } }))?.id || null,
-      });
-    }
 
     if (!targetProjectId) throw new Error("Project not found or no access");
     await checkProjectMember(targetProjectId);

@@ -41,7 +41,7 @@ export default async function DepartmentPage({
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
-  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
+  const canViewAllProjects = Boolean(isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
   const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(
     department,
     userId,
@@ -51,7 +51,7 @@ export default async function DepartmentPage({
   const manageableReminderProjects = getManageableReminderProjects({
     projects: visibleDepartment.projects,
     userId,
-    canManageDepartment: canViewAllProjects,
+    canManageDepartment: isDepartmentAdmin,
   });
   const [latestNotifications, scheduleItems, myTaskItems] = await Promise.all([
     getLatestDepartmentNotifications({
@@ -67,7 +67,7 @@ export default async function DepartmentPage({
       userRole,
       visibleProjectIds,
       manageableProjectIds: manageableReminderProjects.map((project) => project.id),
-      canManageDepartment: canViewAllProjects,
+      canManageDepartment: isDepartmentAdmin,
       locale,
     }),
     getDepartmentDashboardTasks({

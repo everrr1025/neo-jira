@@ -24,10 +24,6 @@ export function buildActiveProjectWhere(
   userRole: string | undefined,
   projectId: string,
 ) {
-  if (userRole === "ADMIN") {
-    return { id: projectId };
-  }
-
   return {
     id: projectId,
     ...buildVisibleDepartmentProjectsWhere(userId),
@@ -39,10 +35,6 @@ export function buildProjectItemsWhere(projectId: string) {
 }
 
 export function buildVisibleProjectsWhere(userId: string, userRole: string | undefined) {
-  if (userRole === "ADMIN") {
-    return {};
-  }
-
   return buildVisibleDepartmentProjectsWhere(userId);
 }
 
@@ -56,10 +48,7 @@ export function buildProjectEntityWhere(entityId: string, projectId: string) {
 export function buildProjectUsersWhere(projectId: string, includeGlobalAdmins = true) {
   if (includeGlobalAdmins) {
     return {
-      OR: [
-        { role: "ADMIN" },
-        { projectMemberships: { some: { projectId } } },
-      ],
+      projectMemberships: { some: { projectId } },
     };
   }
 

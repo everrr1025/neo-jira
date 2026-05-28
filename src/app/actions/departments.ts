@@ -803,6 +803,12 @@ export async function updateDepartmentMemberSettings(
     projectScopeType?: string;
     managedProjectIds?: string[];
     taskAssigneeIds?: string[];
+    taskPositionIds?: string[];
+    taskProjectScopeType?: string;
+    taskProjectIds?: string[];
+    canCreateDepartmentAnnouncements?: boolean;
+    announcementProjectScopeType?: string;
+    announcementProjectIds?: string[];
   }
 ) {
   try {
@@ -828,16 +834,26 @@ export async function updateDepartmentMemberSettings(
     const projectScopeType = isProjectScopeType(data.projectScopeType || "")
       ? data.projectScopeType!
       : "NONE";
+    const taskProjectScopeType = isProjectScopeType(data.taskProjectScopeType || "")
+      ? data.taskProjectScopeType!
+      : "NONE";
+    const announcementProjectScopeType = isProjectScopeType(data.announcementProjectScopeType || "")
+      ? data.announcementProjectScopeType!
+      : "NONE";
     const managedProjectIds = Array.from(new Set((data.managedProjectIds || []).map((id) => id.trim()).filter(Boolean)));
     const taskAssigneeIds = Array.from(new Set((data.taskAssigneeIds || []).map((id) => id.trim()).filter(Boolean)));
+    const taskPositionIds = Array.from(new Set((data.taskPositionIds || []).map((id) => id.trim()).filter(Boolean)));
+    const taskProjectIds = Array.from(new Set((data.taskProjectIds || []).map((id) => id.trim()).filter(Boolean)));
+    const announcementProjectIds = Array.from(new Set((data.announcementProjectIds || []).map((id) => id.trim()).filter(Boolean)));
 
-    if (managedProjectIds.length > 0) {
+    const projectIdsToValidate = Array.from(new Set([...managedProjectIds, ...taskProjectIds, ...announcementProjectIds]));
+    if (projectIdsToValidate.length > 0) {
       const projects = await prisma.project.findMany({
-        where: { departmentId, id: { in: managedProjectIds } },
+        where: { departmentId, id: { in: projectIdsToValidate } },
         select: { id: true },
       });
-      if (projects.length !== managedProjectIds.length) {
-        return { success: false, error: "Managed projects must belong to this department." };
+      if (projects.length !== projectIdsToValidate.length) {
+        return { success: false, error: "Selected projects must belong to this department." };
       }
     }
 
@@ -851,21 +867,14 @@ export async function updateDepartmentMemberSettings(
       }
     }
 
-    const conflictingProject = managedProjectIds.length > 0
-      ? await prisma.departmentMemberManagedProject.findFirst({
-          where: {
-            projectId: { in: managedProjectIds },
-            departmentMemberId: { not: membership.id },
-          },
-          include: {
-            user: { select: { name: true, email: true } },
-            project: { select: { name: true } },
-          },
-        })
-      : null;
-    if (conflictingProject) {
-      const owner = conflictingProject.user.name || conflictingProject.user.email;
-      return { success: false, error: `${conflictingProject.project.name} is already managed by ${owner}.` };
+    if (taskPositionIds.length > 0) {
+      const positions = await prisma.departmentPosition.findMany({
+        where: { departmentId, id: { in: taskPositionIds } },
+        select: { id: true },
+      });
+      if (positions.length !== taskPositionIds.length) {
+        return { success: false, error: "Selected positions must belong to this department." };
+      }
     }
 
     await prisma.$transaction(async (tx) => {
@@ -874,6 +883,9 @@ export async function updateDepartmentMemberSettings(
         data: {
           positionId,
           projectScopeType,
+          taskProjectScopeType,
+          canCreateDepartmentAnnouncements: Boolean(data.canCreateDepartmentAnnouncements),
+          announcementProjectScopeType,
         },
       });
 
@@ -898,6 +910,42 @@ export async function updateDepartmentMemberSettings(
           data: taskAssigneeIds.map((assigneeUserId) => ({
             departmentMemberId: membership.id,
             assigneeUserId,
+          })),
+        });
+      }
+
+      await tx.departmentMemberTaskPositionScope.deleteMany({
+        where: { departmentMemberId: membership.id },
+      });
+      if (taskPositionIds.length > 0) {
+        await tx.departmentMemberTaskPositionScope.createMany({
+          data: taskPositionIds.map((positionId) => ({
+            departmentMemberId: membership.id,
+            positionId,
+          })),
+        });
+      }
+
+      await tx.departmentMemberTaskProjectScope.deleteMany({
+        where: { departmentMemberId: membership.id },
+      });
+      if (taskProjectScopeType === "SELECTED_PROJECTS" && taskProjectIds.length > 0) {
+        await tx.departmentMemberTaskProjectScope.createMany({
+          data: taskProjectIds.map((projectId) => ({
+            departmentMemberId: membership.id,
+            projectId,
+          })),
+        });
+      }
+
+      await tx.departmentMemberAnnouncementProjectScope.deleteMany({
+        where: { departmentMemberId: membership.id },
+      });
+      if (announcementProjectScopeType === "SELECTED_PROJECTS" && announcementProjectIds.length > 0) {
+        await tx.departmentMemberAnnouncementProjectScope.createMany({
+          data: announcementProjectIds.map((projectId) => ({
+            departmentMemberId: membership.id,
+            projectId,
           })),
         });
       }

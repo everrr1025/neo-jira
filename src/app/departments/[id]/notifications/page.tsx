@@ -9,6 +9,7 @@ import {
 } from "@/lib/departmentNotifications";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import prisma from "@/lib/prisma";
+import { buildVisibleDepartmentProjectsWhere } from "@/lib/departmentPermissions";
 
 export const dynamic = "force-dynamic";
 
@@ -117,7 +118,10 @@ export default async function DepartmentNotificationsPage({
       },
     }),
     prisma.project.findMany({
-      where: { departmentId },
+      where: {
+        departmentId,
+        ...buildVisibleDepartmentProjectsWhere(userId),
+      },
       select: { id: true, name: true, key: true },
       orderBy: { name: "asc" },
     }),

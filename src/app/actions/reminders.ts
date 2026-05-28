@@ -69,9 +69,7 @@ async function canManageProjectReminder(userId: string, userRole: string, projec
       id: projectId,
       OR: [
         { ownerId: userId },
-        { managedByDepartmentMembers: { some: { userId } } },
-        { department: { members: { some: { userId, isDepartmentAdmin: true } } } },
-        { department: { members: { some: { userId, projectScopeType: "ALL_PROJECTS" } } } },
+        { members: { some: { userId, role: "ADMIN" } } },
       ],
     },
     select: { id: true },

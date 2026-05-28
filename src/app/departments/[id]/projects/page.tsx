@@ -36,7 +36,7 @@ export default async function DepartmentProjectsPage({
   if (!isGlobalAdmin && !isDepartmentMember) {
     redirect("/");
   }
-  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
+  const canViewAllProjects = Boolean(isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
   const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(
     department,
     userId,

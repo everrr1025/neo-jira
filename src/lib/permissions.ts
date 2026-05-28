@@ -1,7 +1,9 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
-import { buildDepartmentProjectAccessWhere } from "@/lib/activeProjectUtils";
-import { canManageDepartment } from "@/lib/departmentPermissions";
+import {
+  buildVisibleDepartmentProjectsWhere,
+  canManageDepartment,
+} from "@/lib/departmentPermissions";
 import prisma from "@/lib/prisma";
 
 type SessionUser = {
@@ -37,10 +39,6 @@ export async function checkGlobalAdmin() {
  * Returns "ADMIN" | "MEMBER" | null (null = not a member)
  */
 export async function getProjectRole(userId: string, projectId: string): Promise<string | null> {
-  // Global admins are treated as project admins
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (user?.role === "ADMIN") return "ADMIN";
-
   const membership = await prisma.projectMember.findUnique({
     where: { userId_projectId: { userId, projectId } },
   });
@@ -48,19 +46,19 @@ export async function getProjectRole(userId: string, projectId: string): Promise
     return membership.role;
   }
 
-  const canViewAsDepartmentManager = await prisma.project.findFirst({
+  return null;
+}
+
+export async function canAccessProjectData(userId: string, projectId: string): Promise<boolean> {
+  const project = await prisma.project.findFirst({
     where: {
       id: projectId,
-      OR: [
-        buildDepartmentProjectAccessWhere(userId),
-        { managedByDepartmentMembers: { some: { userId } } },
-        { ownerId: userId },
-      ],
+      ...buildVisibleDepartmentProjectsWhere(userId),
     },
     select: { id: true },
   });
 
-  return canViewAsDepartmentManager ? "MEMBER" : null;
+  return Boolean(project);
 }
 
 /**
@@ -82,22 +80,8 @@ export async function checkProjectAdmin(projectId: string) {
 }
 
 export async function canConfigureProjectFields(userId: string, projectId: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (user?.role === "ADMIN") return true;
-
-  const project = await prisma.project.findFirst({
-    where: {
-      id: projectId,
-      OR: [
-        { ownerId: userId },
-        { members: { some: { userId, role: "ADMIN" } } },
-        buildDepartmentProjectAccessWhere(userId),
-      ],
-    },
-    select: { id: true },
-  });
-
-  return Boolean(project);
+  const role = await getProjectRole(userId, projectId);
+  return role === "ADMIN";
 }
 
 export async function checkDepartmentAdmin(departmentId: string) {

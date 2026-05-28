@@ -42,7 +42,7 @@ export default async function DepartmentItemsPage({
   if (!isGlobalAdmin && !myMembership) redirect("/");
 
   const isDepartmentAdmin = Boolean(myMembership?.isDepartmentAdmin);
-  const canViewAllProjects = Boolean(isGlobalAdmin || isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
+  const canViewAllProjects = Boolean(isDepartmentAdmin || myMembership?.projectScopeType === "ALL_PROJECTS");
   const canCreateDepartmentItem = Boolean(isGlobalAdmin || myMembership);
   const visibleDepartment = filterDepartmentWorkspaceProjectsForUser(department, userId, canViewAllProjects);
   const visibleProjectIds = visibleDepartment.projects.map((project) => project.id);
@@ -74,7 +74,7 @@ export default async function DepartmentItemsPage({
       userRole,
       visibleProjectIds,
       manageableProjectIds: reminderProjectOptions.map((project) => project.id),
-      canManageDepartment: canCreateDepartmentItem,
+      canManageDepartment: isDepartmentAdmin,
       locale,
     }),
     getNoteFoldersForUser(userId),

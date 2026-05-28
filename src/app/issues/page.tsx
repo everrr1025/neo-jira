@@ -29,11 +29,10 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const userId = sessionUser.id;
   const userRole = sessionUser.role ?? "USER";
   if (!userId) redirect("/login");
-  const isGlobalAdmin = userRole === "ADMIN";
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
-  const projectRole = isGlobalAdmin ? "ADMIN" : await getProjectRole(userId, activeProject.id);
+  const projectRole = await getProjectRole(userId, activeProject.id);
   const canManagePlans = projectRole === "ADMIN";
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
 
@@ -131,7 +130,6 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.issuesPage.title}</h2>
           <p className="text-sm text-slate-500 mt-1">
             {translations.issuesPage.subtitle}
-            {isGlobalAdmin ? ` | ${activeProject.name} (${activeProject.key})` : ""}
           </p>
         </div>
         <div className="flex items-center gap-3">

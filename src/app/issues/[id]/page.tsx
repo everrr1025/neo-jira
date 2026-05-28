@@ -22,13 +22,12 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   const sessionUser = session.user as { id?: string; role?: string | null };
   const userId = sessionUser.id as string;
   const userRole = sessionUser.role as string;
-  const isGlobalAdmin = userRole === "ADMIN";
 
   const resolvedParams = await params;
   const issueProject = await prisma.issue.findFirst({
     where: {
       id: resolvedParams.id,
-      ...(isGlobalAdmin ? {} : { project: buildVisibleProjectsWhere(userId, userRole) }),
+      project: buildVisibleProjectsWhere(userId, userRole),
     },
     select: { id: true, projectId: true },
   });
@@ -109,11 +108,8 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     orderBy: { position: "asc" },
   });
 
-  let canDeleteIssue = isGlobalAdmin;
-  if (!canDeleteIssue) {
-    const role = await getProjectRole(userId, issue.projectId);
-    canDeleteIssue = role === "ADMIN";
-  }
+  const role = await getProjectRole(userId, issue.projectId);
+  const canDeleteIssue = role === "ADMIN";
   const canManageIssueFields = await canConfigureProjectFields(userId, issue.projectId);
 
   return (

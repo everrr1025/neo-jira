@@ -23,6 +23,29 @@ assert.equal(findProjectById(projects, "project-c"), null);
 
 assert.deepEqual(buildActiveProjectWhere("user-1", "ADMIN", "project-a"), {
   id: "project-a",
+  OR: [
+    { ownerId: "user-1" },
+    {
+      members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      managedByDepartmentMembers: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      department: {
+        members: {
+          some: {
+            userId: "user-1",
+            OR: [{ isDepartmentAdmin: true }, { projectScopeType: "ALL_PROJECTS" }],
+          },
+        },
+      },
+    },
+  ],
 });
 
 assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
@@ -79,6 +102,29 @@ assert.deepEqual(buildVisibleProjectsWhere("user-1", "USER"), {
 });
 
 assert.deepEqual(buildVisibleProjectsWhere("user-1", "ADMIN"), {
+  OR: [
+    { ownerId: "user-1" },
+    {
+      members: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      managedByDepartmentMembers: {
+        some: { userId: "user-1" },
+      },
+    },
+    {
+      department: {
+        members: {
+          some: {
+            userId: "user-1",
+            OR: [{ isDepartmentAdmin: true }, { projectScopeType: "ALL_PROJECTS" }],
+          },
+        },
+      },
+    },
+  ],
 });
 
 assert.deepEqual(buildProjectItemsWhere("project-a"), {
@@ -91,10 +137,7 @@ assert.deepEqual(buildProjectEntityWhere("issue-1", "project-a"), {
 });
 
 assert.deepEqual(buildProjectUsersWhere("project-a"), {
-  OR: [
-    { role: "ADMIN" },
-    { projectMemberships: { some: { projectId: "project-a" } } },
-  ],
+  projectMemberships: { some: { projectId: "project-a" } },
 });
 
 assert.deepEqual(buildProjectUsersWhere("project-a", false), {

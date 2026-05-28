@@ -56,27 +56,24 @@ export async function canAssignDepartmentTask(params: {
   departmentId: string;
   userRole?: string | null;
 }) {
-  const { assignerId, assigneeId, departmentId, userRole } = params;
+  const { assignerId, assigneeId, departmentId } = params;
   if (assignerId === assigneeId) return true;
-  if (userRole === "ADMIN") return true;
 
   const [assignerMembership, assigneeMembership] = await Promise.all([
     prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId: assignerId } },
       select: {
         id: true,
-        isDepartmentAdmin: true,
-        projectScopeType: true,
+        taskProjectScopeType: true,
       },
     }),
     prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId: assigneeId } },
-      select: { id: true },
+      select: { id: true, positionId: true },
     }),
   ]);
 
   if (!assignerMembership || !assigneeMembership) return false;
-  if (assignerMembership.isDepartmentAdmin) return true;
 
   const explicitAssignee = await prisma.departmentMemberTaskAssigneeScope.findUnique({
     where: {
@@ -89,7 +86,20 @@ export async function canAssignDepartmentTask(params: {
   });
   if (explicitAssignee) return true;
 
-  if (assignerMembership.projectScopeType === "ALL_PROJECTS") {
+  if (assigneeMembership.positionId) {
+    const positionScope = await prisma.departmentMemberTaskPositionScope.findUnique({
+      where: {
+        departmentMemberId_positionId: {
+          departmentMemberId: assignerMembership.id,
+          positionId: assigneeMembership.positionId,
+        },
+      },
+      select: { id: true },
+    });
+    if (positionScope) return true;
+  }
+
+  if (assignerMembership.taskProjectScopeType === "ALL_PROJECTS") {
     const assigneeProject = await prisma.projectMember.findFirst({
       where: {
         userId: assigneeId,
@@ -100,7 +110,7 @@ export async function canAssignDepartmentTask(params: {
     if (assigneeProject) return true;
   }
 
-  const managedProjectAssignee = await prisma.departmentMemberManagedProject.findFirst({
+  const scopedProjectAssignee = await prisma.departmentMemberTaskProjectScope.findFirst({
     where: {
       departmentMemberId: assignerMembership.id,
       project: {
@@ -109,7 +119,7 @@ export async function canAssignDepartmentTask(params: {
     },
     select: { id: true },
   });
-  if (managedProjectAssignee) return true;
+  if (scopedProjectAssignee) return true;
 
   const ownedProjectAssignee = await prisma.project.findFirst({
     where: {

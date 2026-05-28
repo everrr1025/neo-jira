@@ -31,7 +31,6 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   const userId = sessionUser.id;
   const userRole = sessionUser.role ?? "USER";
   if (!userId) redirect("/login");
-  const isGlobalAdmin = userRole === "ADMIN";
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
@@ -64,11 +63,8 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
 
   if (!iteration) redirect("/iterations");
 
-  let canManage = isGlobalAdmin;
-  if (!canManage) {
-    const role = await getProjectRole(userId, iteration.project.id);
-    canManage = role === "ADMIN";
-  }
+  const role = await getProjectRole(userId, iteration.project.id);
+  const canManage = role === "ADMIN";
 
   const issues = iteration.issues;
   const doneStatusKeys = iteration.project.workflowStatuses

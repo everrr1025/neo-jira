@@ -10,6 +10,12 @@ export type DepartmentWorkspaceMember = {
   projectScopeType: string;
   managedProjectIds: string[];
   taskAssigneeIds: string[];
+  taskPositionIds: string[];
+  taskProjectScopeType: string;
+  taskProjectIds: string[];
+  canCreateDepartmentAnnouncements: boolean;
+  announcementProjectScopeType: string;
+  announcementProjectIds: string[];
   userName: string | null;
   userEmail: string;
   projects: Array<{
@@ -109,6 +115,9 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
           position: { select: { id: true, name: true } },
           managedProjects: { select: { projectId: true } },
           taskAssigneeScopes: { select: { assigneeUserId: true } },
+          taskPositionScopes: { select: { positionId: true } },
+          taskProjectScopes: { select: { projectId: true } },
+          announcementProjectScopes: { select: { projectId: true } },
           user: {
             select: {
               id: true,
@@ -197,6 +206,12 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
       projectScopeType: member.projectScopeType,
       managedProjectIds: member.managedProjects.map((project) => project.projectId),
       taskAssigneeIds: member.taskAssigneeScopes.map((scope) => scope.assigneeUserId),
+      taskPositionIds: member.taskPositionScopes.map((scope) => scope.positionId),
+      taskProjectScopeType: member.taskProjectScopeType,
+      taskProjectIds: member.taskProjectScopes.map((scope) => scope.projectId),
+      canCreateDepartmentAnnouncements: member.canCreateDepartmentAnnouncements,
+      announcementProjectScopeType: member.announcementProjectScopeType,
+      announcementProjectIds: member.announcementProjectScopes.map((scope) => scope.projectId),
       userName: member.user.name,
       userEmail: member.user.email,
       projects: member.user.projectMemberships
