@@ -766,7 +766,7 @@ function scheduleDateLabel(item: DepartmentItemCenterItem, locale: Locale) {
 function attendeeAvatarSrc(id: string) {
   let sum = 0;
   for (const char of id) sum += char.charCodeAt(0);
-  return `/avatars/cartoon-${String((sum % 12) + 1).padStart(2, "0")}.svg`;
+  return `/avatars/${String((sum % 24) + 1).padStart(2, "0")}.png`;
 }
 
 function parseScheduleDetails(content: string | null) {

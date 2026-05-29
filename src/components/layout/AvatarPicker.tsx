@@ -59,7 +59,7 @@ export function AvatarPicker({
 
       {editable && isOpen && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]">
-          <div className="w-full max-w-md overflow-hidden rounded-xl border bg-white shadow-2xl">
+          <div className="w-full max-w-lg overflow-hidden rounded-xl border bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <h3 className="font-semibold text-slate-800">{translations.sidebar.chooseAvatar}</h3>
               <button
@@ -70,7 +70,7 @@ export function AvatarPicker({
                 {translations.sidebar.close}
               </button>
             </div>
-            <div className="grid grid-cols-4 gap-3 p-4">
+            <div className="grid grid-cols-6 gap-3 p-4">
               {AVATAR_PRESETS.map((item) => (
                 <button
                   type="button"
