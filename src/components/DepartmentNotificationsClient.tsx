@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition, useEffect, useCallback, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, useEffect, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowDown,
@@ -35,16 +35,25 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
+import ShadcnDatePicker from "@/components/ShadcnDatePicker";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
@@ -58,7 +67,6 @@ import {
   type NotificationAttachment,
 } from "@/lib/notificationAttachments";
 import { formatRelativeTime } from "@/lib/timeFormat";
-import LocalizedDateInput from "./LocalizedDateInput";
 
 type FilterOption = {
   value: string;
@@ -422,7 +430,6 @@ export default function DepartmentNotificationsClient({
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverSide, setDragOverSide] = useState<"left" | "right" | null>(null);
-  const columnMenuRef = useRef<HTMLDetailsElement>(null);
   const createContentEditorRef = useRef<RichTextEditorHandle>(null);
   const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const resizingRef = useRef<{
@@ -535,17 +542,6 @@ export default function DepartmentNotificationsClient({
       } satisfies StoredNotificationColumnPreferences)
     );
   }, [columnOrder, columnStorageKey, columnWidths, hasLoadedColumnPreferences, visibleColumns]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
-        columnMenuRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const handleDragStart = (event: React.DragEvent, index: number) => {
     event.dataTransfer.setData("colIndex", index.toString());
@@ -1063,6 +1059,7 @@ export default function DepartmentNotificationsClient({
           )}
 
           <SingleFilter
+            label={t.createdAt}
             value={createdFilter}
             options={createdFilterOptions}
             onChange={(value) => {
@@ -1074,44 +1071,51 @@ export default function DepartmentNotificationsClient({
                 page: 1,
               });
             }}
-            renderSummary={(label) => (
-              <div className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm shadow-xs hover:bg-accent hover:text-accent-foreground">
-                <span className="text-muted-foreground">{t.createdAt}</span>
-                <span className="border-none bg-transparent p-0 font-medium text-foreground">{label}</span>
-                <ChevronDown size={14} className="text-muted-foreground" />
-              </div>
-            )}
           />
 
           {createdFilter !== "ALL" ? (
-            <LocalizedDateInput
-              locale={locale}
-              aria-label={t.createdAt}
-              value={createdDate}
-              onChange={(e) => updateQueryParams({ createdDate: e.target.value, from: null, to: null, page: 1 })}
-              className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            <div className="w-[180px] [&_label]:sr-only">
+              <ShadcnDatePicker
+                id="notificationCreatedDate"
+                label={t.createdAt}
+                locale={locale}
+                value={createdDate}
+                onChange={(createdDate) => updateQueryParams({ createdDate, from: null, to: null, page: 1 })}
+              />
+            </div>
           ) : null}
 
           {(filters.category || filters.projectId || filters.read || filters.publishStatus || hasActiveCreatedFilter || filters.search) ? (
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => updateQueryParams({ category: null, projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
             >
               {t.reset}
             </Button>
           ) : null}
 
-          <details ref={columnMenuRef} className="relative">
-            <summary
-              className="inline-flex h-9 w-9 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-              aria-label={t.columns}
-              title={t.columns}
-            >
-              <Eye size={16} className="text-muted-foreground" />
-            </summary>
-            <div className="absolute right-0 z-30 mt-2 w-48 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={t.columns}
+                title={t.columns}
+              >
+                <Eye className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={8} className="w-60">
+              <DropdownMenuLabel className="flex items-center justify-between gap-3">
+                <span>{t.columns}</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {visibleColumns.length}/{DEFAULT_COLUMN_ORDER.length}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               {DEFAULT_COLUMN_ORDER.map((columnId) => {
                 const column = columnsById.get(columnId);
                 if (!column) return null;
@@ -1119,32 +1123,29 @@ export default function DepartmentNotificationsClient({
                 const isDisabled = isChecked && visibleColumns.length === 1;
 
                 return (
-                  <label
+                  <DropdownMenuCheckboxItem
                     key={column.id}
-                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                      isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-                    }`}
+                    checked={isChecked}
+                    disabled={isDisabled}
+                    onCheckedChange={() => handleToggleColumnVisibility(column.id)}
+                    onSelect={(event) => event.preventDefault()}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      disabled={isDisabled}
-                      onChange={() => handleToggleColumnVisibility(column.id)}
-                      className="h-4 w-4"
-                    />
-                    <span>{column.label}</span>
-                  </label>
+                    {column.label}
+                  </DropdownMenuCheckboxItem>
                 );
               })}
-              <button
+              <DropdownMenuSeparator />
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={handleResetColumns}
-                className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
+                className="w-full justify-start text-primary hover:text-primary"
               >
                 {t.resetColumns}
-              </button>
-            </div>
-          </details>
+              </Button>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -1258,9 +1259,9 @@ export default function DepartmentNotificationsClient({
                               variant="outline"
                               onClick={() => manage("delete", notification.id)}
                               disabled={isPending}
-                              className="border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={12} />
                               {t.delete}
                             </Button>
                           ) : null}
@@ -1405,19 +1406,6 @@ function MultiFilter({
   onClear: () => void;
   clearText: string;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const selectedLabels = options
     .filter((option) => selectedValues.includes(option.value))
     .map((option) => option.label);
@@ -1429,92 +1417,88 @@ function MultiFilter({
         : `${label} (${selectedLabels.length})`;
 
   return (
-    <details ref={detailsRef} className="relative">
-      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
-        <span className="max-w-40 truncate">{buttonText}</span>
-        <ChevronDown size={14} className="text-muted-foreground" />
-      </summary>
-      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="max-w-56 justify-between">
+          <span className="truncate">{buttonText}</span>
+          <ChevronDown className="size-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-64">
+        <DropdownMenuLabel className="flex items-center justify-between gap-3">
+          <span>{label}</span>
+          {selectedValues.length > 0 ? (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+              {selectedValues.length}
+            </span>
+          ) : null}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
         {options.map((option) => (
-          <label
+          <DropdownMenuCheckboxItem
             key={option.value}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            checked={selectedValues.includes(option.value)}
+            onCheckedChange={() => onToggle(option.value)}
+            onSelect={(event) => event.preventDefault()}
           >
-            <input
-              type="checkbox"
-              checked={selectedValues.includes(option.value)}
-              onChange={() => onToggle(option.value)}
-              className="h-4 w-4"
-            />
-            <span>{option.label}</span>
-          </label>
+            {option.label}
+          </DropdownMenuCheckboxItem>
         ))}
         {selectedValues.length > 0 && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
-          >
-            {clearText}
-          </button>
+          <>
+            <DropdownMenuSeparator />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              className="w-full justify-start text-primary hover:text-primary"
+            >
+              {clearText}
+            </Button>
+          </>
         )}
-      </div>
-    </details>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 function SingleFilter({
+  label,
   value,
   options,
   onChange,
-  renderSummary,
 }: {
+  label: string;
   value: string;
   options: FilterOption[];
   onChange: (value: string) => void;
-  renderSummary: (label: string) => ReactNode;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const selectedOption = options.find((option) => option.value === value) || options[0];
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleSelect = (nextValue: string) => {
-    onChange(nextValue);
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-  };
-
   return (
-    <details ref={detailsRef} className="relative">
-      <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-        {renderSummary(selectedOption?.label || "")}
-      </summary>
-      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="max-w-64 justify-between">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="truncate font-medium text-foreground">{selectedOption?.label || ""}</span>
+          <ChevronDown className="size-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-56">
+        <DropdownMenuLabel>{label}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
         {options.map((option) => (
-          <button
-            type="button"
+          <DropdownMenuItem
             key={option.value}
-            onClick={() => handleSelect(option.value)}
-            className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-              option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
-            }`}
+            onSelect={() => onChange(option.value)}
+            className={option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
           >
             {option.label}
-          </button>
+          </DropdownMenuItem>
         ))}
-      </div>
-    </details>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1562,23 +1546,22 @@ function NotificationFormDialog({
     }}>
       <DialogContent className="flex max-h-[90vh] max-w-[calc(100%-2rem)] flex-col overflow-hidden p-0 sm:max-w-2xl">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <DialogHeader className="border-b px-6 py-4">
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4 pr-12">
             <DialogTitle>{t.newNotification}</DialogTitle>
-            <DialogDescription>{t.subtitle}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             {errorMsg ? <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">{errorMsg}</div> : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t.level}</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-1 rounded-md border bg-muted p-1 sm:grid-cols-2">
                   {levelOptions.map((option) => (
                     <label
                       key={option.value}
-                      className={`flex h-10 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium transition-colors ${
+                      className={`flex h-8 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium transition-colors ${
                         form.level === option.value
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "bg-background text-foreground hover:bg-accent hover:text-accent-foreground"
+                          ? "border-primary/30 bg-background text-foreground shadow-sm"
+                          : "border-transparent bg-transparent text-muted-foreground hover:bg-background/70 hover:text-foreground"
                       }`}
                     >
                       <input
@@ -1618,10 +1601,11 @@ function NotificationFormDialog({
               ) : null}
             </div>
             <div className="space-y-2">
-              <Label>
-                {t.titleField} <span className="text-red-500">*</span>
+              <Label htmlFor="notification-title">
+                {t.titleField} <span className="text-destructive">*</span>
               </Label>
               <Input
+                id="notification-title"
                 required
                 autoFocus
                 value={form.title}
@@ -1630,9 +1614,9 @@ function NotificationFormDialog({
             </div>
             <div className="space-y-2">
               <Label>
-                {t.content} <span className="text-red-500">*</span>
+                {t.content} <span className="text-destructive">*</span>
               </Label>
-              <div className="h-72 min-h-0">
+              <div className="h-72 min-h-0 rounded-lg border bg-background">
                 <RichTextEditor
                   ref={editorRef}
                   value={form.content}
@@ -1655,7 +1639,7 @@ function NotificationFormDialog({
               <NotificationAttachmentList attachments={attachments} onRemove={onRemoveAttachment} isPending={isPending} />
             </div>
           </div>
-          <DialogFooter className="border-t bg-muted/40 px-6 py-4">
+          <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
             <Button
               type="button"
               variant="outline"

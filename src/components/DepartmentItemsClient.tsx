@@ -59,6 +59,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -66,6 +74,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DropdownField } from "@/components/DropdownField";
 import LocalizedDateInput from "@/components/LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
+import ShadcnDatePicker from "@/components/ShadcnDatePicker";
 import type {
   DepartmentReminderIssueOption,
   DepartmentReminderAssigneeOption,
@@ -899,7 +908,7 @@ function LocalizedTimeInput({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={inputId} className="text-sm font-medium text-slate-700">{label}</label>
+      <Label htmlFor={inputId}>{label}</Label>
       <input
         tabIndex={-1}
         aria-hidden="true"
@@ -915,32 +924,32 @@ function LocalizedTimeInput({
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={openPicker}
-        className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-[color,box-shadow] outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span>{value || (locale === "zh" ? "选择时间" : "Select time")}</span>
-        <Clock size={16} className="shrink-0 text-slate-400" />
+        <Clock size={16} className="shrink-0 text-muted-foreground" />
       </button>
       {isOpen && popoverPosition
         ? createPortal(
             <div
               ref={popoverRef}
-              className="z-[90] rounded-xl border border-slate-200 bg-white p-3 shadow-2xl"
+              className="z-[90] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl"
               style={{ left: popoverPosition.left, top: popoverPosition.top, width: popoverPosition.width, position: "fixed" }}
             >
-              <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-sm font-semibold text-slate-800">{locale === "zh" ? "选择时间" : "Select time"}</span>
-                <span className="rounded-md bg-blue-50 px-2 py-1 text-sm font-semibold text-blue-700">{value}</span>
+              <div className="mb-3 flex items-center justify-between border-b pb-2">
+                <span className="text-sm font-semibold">{locale === "zh" ? "选择时间" : "Select time"}</span>
+                <span className="rounded-md bg-muted px-2 py-1 text-sm font-semibold">{value}</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">{locale === "zh" ? "小时" : "Hour"}</div>
+                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase text-muted-foreground">{locale === "zh" ? "小时" : "Hour"}</div>
                   <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
                     {timeHours.map((hour) => (
                       <button
                         key={hour}
                         type="button"
                         onClick={() => updateTime(hour, selectedMinute)}
-                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${hour === selectedHour ? "bg-blue-600 font-semibold text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${hour === selectedHour ? "bg-primary font-semibold text-primary-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
                       >
                         {hour}
                       </button>
@@ -948,14 +957,14 @@ function LocalizedTimeInput({
                   </div>
                 </div>
                 <div>
-                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">{locale === "zh" ? "分钟" : "Minute"}</div>
+                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase text-muted-foreground">{locale === "zh" ? "分钟" : "Minute"}</div>
                   <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
                     {timeMinutes.map((minute) => (
                       <button
                         key={minute}
                         type="button"
                         onClick={() => updateTime(selectedHour, minute)}
-                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${minute === selectedMinute ? "bg-blue-600 font-semibold text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${minute === selectedMinute ? "bg-primary font-semibold text-primary-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
                       >
                         {minute}
                       </button>
@@ -1241,7 +1250,6 @@ export default function DepartmentItemsClient({
   );
   const [taskVisibleColumnIds, setTaskVisibleColumnIds] = useState<TaskColumnId[]>(TASK_DEFAULT_COLUMN_IDS);
   const [taskColumnWidths, setTaskColumnWidths] = useState<Record<TaskColumnId, number>>(TASK_DEFAULT_COLUMN_WIDTHS);
-  const taskColumnMenuRef = useRef<HTMLDetailsElement>(null);
   const taskConfigurableColumns = useMemo(
     () => taskColumnDefinitions.filter((column) => column.id !== "actions"),
     [taskColumnDefinitions]
@@ -2756,17 +2764,6 @@ export default function DepartmentItemsClient({
   ]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (taskColumnMenuRef.current && !taskColumnMenuRef.current.contains(event.target as Node)) {
-        taskColumnMenuRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden" && noteSaveStatus === "pending") {
         void saveSelectedNoteNow();
@@ -2839,46 +2836,54 @@ export default function DepartmentItemsClient({
     const visibleCount = taskVisibleColumnIds.length;
 
     return (
-      <details ref={taskColumnMenuRef} className="relative">
-        <summary
-          className="inline-flex h-8 w-8 cursor-pointer select-none list-none items-center justify-center rounded-md border bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-          aria-label={taskTableText.columns}
-          title={taskTableText.columns}
-        >
-          <Eye size={16} className="text-muted-foreground" />
-        </summary>
-        <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={taskTableText.columns}
+            title={taskTableText.columns}
+          >
+            <Eye className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={8} className="w-60">
+          <DropdownMenuLabel className="flex items-center justify-between gap-3">
+            <span>{taskTableText.columns}</span>
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+              {visibleCount}/{taskConfigurableColumns.length}
+            </span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           {taskConfigurableColumns.map((column) => {
             const isChecked = taskVisibleColumnIds.includes(column.id);
             const isDisabled = isChecked && visibleCount === 1;
 
             return (
-              <label
+              <DropdownMenuCheckboxItem
                 key={column.id}
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                  isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-                }`}
+                checked={isChecked}
+                disabled={isDisabled}
+                onCheckedChange={() => handleToggleTaskColumnVisibility(column.id)}
+                onSelect={(event) => event.preventDefault()}
               >
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  disabled={isDisabled}
-                  onChange={() => handleToggleTaskColumnVisibility(column.id)}
-                  className="h-4 w-4"
-                />
-                <span>{column.label}</span>
-              </label>
+                {column.label}
+              </DropdownMenuCheckboxItem>
             );
           })}
-          <button
+          <DropdownMenuSeparator />
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={resetTaskColumns}
-            className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-left text-sm font-medium text-primary hover:bg-accent"
+            className="w-full justify-start text-primary hover:text-primary"
           >
             {taskTableText.resetColumns}
-          </button>
-        </div>
-      </details>
+          </Button>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   };
 
@@ -2975,6 +2980,7 @@ export default function DepartmentItemsClient({
                     onClick={() => requestDeleteTask(item)}
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
+                    <Trash2 size={12} />
                     {t.deleteTask}
                   </Button>
                 </>
@@ -3261,21 +3267,10 @@ export default function DepartmentItemsClient({
   );
 
   const renderScheduleCreateDialog = () => (
-    <div className="w-full max-w-[600px] overflow-hidden rounded-lg border border-[#C3C6D6] bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-[#DFE1E6] px-6 py-4">
-        <h3 className="text-xl font-semibold text-[#051A3E]">{editingScheduleItem ? t.edit : st.create}</h3>
-        <button
-          type="button"
-          onClick={() => {
-            setIsCreateOpen(false);
-            setEditingScheduleItemId(null);
-          }}
-          className="rounded p-1 text-[#42526E] hover:bg-[#EBECF0]"
-          aria-label={t.cancel}
-        >
-          <X size={20} />
-        </button>
-      </div>
+    <DialogContent className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden p-0 sm:max-w-[600px]">
+      <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4 pr-12">
+        <DialogTitle className="text-xl">{editingScheduleItem ? t.edit : st.create}</DialogTitle>
+      </DialogHeader>
       <form
         onSubmit={handleCreate}
         onKeyDown={(event) => {
@@ -3284,79 +3279,90 @@ export default function DepartmentItemsClient({
           }
         }}
       >
-        <div className="max-h-[calc(100vh-220px)] space-y-6 overflow-y-auto p-6">
+        <div className="max-h-[calc(100vh-220px)] space-y-6 overflow-y-auto px-6 py-5">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-700">{t.titleField}</label>
-            <input
+            <Label htmlFor="scheduleTitle">{t.titleField}</Label>
+            <Input
+              id="scheduleTitle"
               value={form.title}
               onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
               placeholder={form.scheduleKind === "out" ? (locale === "zh" ? "添加外出标题" : "Add out-of-office title") : form.scheduleKind === "memo" ? (locale === "zh" ? "添加备忘标题" : "Add memo title") : st.addMeetingTitle}
-              className="h-10 w-full rounded border border-[#C1C7D0] px-3 text-sm text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
               required
             />
           </div>
 
           <div className={`grid gap-4 ${form.scheduleKind === "memo" ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-            <DropdownField
-              id="scheduleKind"
-              label={t.type}
-              value={form.scheduleKind}
-              onChange={handleScheduleKindChange}
-              options={scheduleKindOptions}
-            />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="scheduleKind">{t.type}</Label>
+              <Select value={form.scheduleKind} onValueChange={handleScheduleKindChange}>
+                <SelectTrigger id="scheduleKind" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {scheduleKindOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="inline-flex items-center gap-2">
+                        <span className={`size-2.5 rounded-full ${option.indicatorClassName}`} />
+                        {option.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {form.scheduleKind !== "memo" ? (
               <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">{st.location}</label>
+              <Label htmlFor="scheduleLocation">{st.location}</Label>
               <div className="relative">
-                <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4F5F7B]" />
-                <input
+                <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="scheduleLocation"
                   value={form.location}
                   onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))}
-                  className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="pl-9"
                   placeholder={locale === "zh" ? "会议室 / 地点" : "Room or location"}
                 />
               </div>
             </div>
             ) : (
               <>
-                <DropdownField
-                  id="scheduleMemoVisibility"
-                  label={st.visibility}
-                  value={form.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL"}
-                  onChange={(value) => setForm((current) => ({ ...current, scopeType: value as "PERSONAL" | "DEPARTMENT" | "PROJECT" }))}
-                  options={[
-                    ...(canCreateDepartmentItem ? [{ value: "DEPARTMENT", label: st.publicMemo }] : []),
-                    { value: "PERSONAL", label: st.privateMemo },
-                  ]}
-                />
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="scheduleMemoDate" className="text-sm font-medium text-slate-700">{st.date}</label>
-                  <LocalizedDateInput
+                  <Label htmlFor="scheduleMemoVisibility">{st.visibility}</Label>
+                  <Select
+                    value={form.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL"}
+                    onValueChange={(value) => setForm((current) => ({ ...current, scopeType: value as "PERSONAL" | "DEPARTMENT" | "PROJECT" }))}
+                  >
+                    <SelectTrigger id="scheduleMemoVisibility" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {canCreateDepartmentItem ? <SelectItem value="DEPARTMENT">{st.publicMemo}</SelectItem> : null}
+                      <SelectItem value="PERSONAL">{st.privateMemo}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <ShadcnDatePicker
                     id="scheduleMemoDate"
+                    label={st.date}
                     locale={locale}
                     value={form.scheduleDate}
-                    onChange={(event) => setForm((current) => ({ ...current, scheduleDate: event.target.value }))}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    onChange={(scheduleDate) => setForm((current) => ({ ...current, scheduleDate }))}
                     required
                   />
-                </div>
               </>
             )}
           </div>
 
           {form.scheduleKind !== "memo" ? (
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="scheduleDate" className="text-sm font-medium text-slate-700">{st.date}</label>
-                <LocalizedDateInput
+              <ShadcnDatePicker
                   id="scheduleDate"
+                  label={st.date}
                   locale={locale}
                   value={form.scheduleDate}
-                  onChange={(event) => setForm((current) => ({ ...current, scheduleDate: event.target.value }))}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  onChange={(scheduleDate) => setForm((current) => ({ ...current, scheduleDate }))}
                   required
                 />
-              </div>
               <LocalizedTimeInput
                 id="scheduleStartTime"
                 label={st.startTime}
@@ -3376,12 +3382,12 @@ export default function DepartmentItemsClient({
           </div>
           ) : (
             <div className="space-y-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
                 <input
                   type="checkbox"
                   checked={form.hasTime}
                   onChange={(event) => setForm((current) => ({ ...current, hasTime: event.target.checked }))}
-                  className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
+                  className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                 />
                 {t.hasTime}
               </label>
@@ -3411,14 +3417,14 @@ export default function DepartmentItemsClient({
           )}
 
           {form.scheduleKind === "meeting" ? <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-700">{st.participants}</label>
-            <div className="rounded border border-[#C1C7D0] bg-white p-2">
+            <Label>{st.participants}</Label>
+            <div className="rounded-md border bg-background p-2">
               <div className="flex min-h-8 flex-wrap gap-2">
                 {selectedAttendees.map((attendee) => (
-                  <span key={attendee.id} className="inline-flex items-center gap-1.5 rounded-full bg-[#EBECF0] px-2 py-1 text-xs text-[#051A3E]">
-                    <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-4 w-4 rounded-full border border-[#DFE1E6]" />
+                  <span key={attendee.id} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-1 text-xs text-foreground">
+                    <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-4 w-4 rounded-full border" />
                     {attendee.name || attendee.email}
-                    <button type="button" onClick={() => removeAttendee(attendee.id)} className="text-[#42526E] hover:text-red-600">
+                    <button type="button" onClick={() => removeAttendee(attendee.id)} className="text-muted-foreground hover:text-destructive">
                       <X size={12} />
                     </button>
                   </span>
@@ -3432,18 +3438,18 @@ export default function DepartmentItemsClient({
                 />
               </div>
               {form.attendeeQuery.trim() && attendeeMatches.length > 0 ? (
-                <div className="mt-2 border-t border-[#DFE1E6] pt-2">
+                <div className="mt-2 border-t pt-2">
                   {attendeeMatches.map((attendee, index) => (
                     <button
                       key={attendee.id}
                       type="button"
                       onMouseEnter={() => setActiveAttendeeMatchIndex(index)}
                       onClick={() => addAttendee(attendee.id)}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#051A3E] ${
-                        index === activeAttendeeMatchIndex ? "bg-[#E9F2FF]" : "hover:bg-[#F4F5F7]"
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground ${
+                        index === activeAttendeeMatchIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
-                      <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-6 w-6 rounded-full border border-[#DFE1E6]" />
+                      <img src={attendeeAvatarSrc(attendee.id)} alt="" className="h-6 w-6 rounded-full border" />
                       <span className="min-w-0 truncate">{attendee.name || attendee.email}</span>
                     </button>
                   ))}
@@ -3453,33 +3459,33 @@ export default function DepartmentItemsClient({
           </div> : null}
 
           <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-700">{st.meetingMinutes}</label>
-            <textarea
+            <Label htmlFor="scheduleNotes">{st.meetingMinutes}</Label>
+            <Textarea
+              id="scheduleNotes"
               value={form.meetingMinutes}
               onChange={(event) => setForm((current) => ({ ...current, meetingMinutes: event.target.value }))}
               placeholder={st.agendaPlaceholder}
               rows={form.scheduleKind === "memo" ? 6 : 5}
-              className="w-full rounded border border-[#C1C7D0] px-3 py-2 text-sm leading-6 text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
             />
           </div>
         </div>
-        <div className="flex justify-end gap-3 border-t border-[#DFE1E6] bg-[#F4F5F7] px-6 py-4">
-          <button
+        <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               setIsCreateOpen(false);
               setEditingScheduleItemId(null);
             }}
-            className="rounded px-4 py-2 text-sm font-semibold text-[#42526E] hover:bg-[#EBECF0]"
           >
             {t.cancel}
-          </button>
-          <button type="submit" disabled={isPending} className="rounded bg-[#0052CC] px-4 py-2 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50">
+          </Button>
+          <Button type="submit" disabled={isPending}>
             {editingScheduleItem ? t.save : st.create}
-          </button>
-        </div>
+          </Button>
+        </DialogFooter>
       </form>
-    </div>
+    </DialogContent>
   );
 
   const renderScheduleWorkspace = () => (
@@ -4977,161 +4983,163 @@ export default function DepartmentItemsClient({
         </div>
       ) : null}
 
-      {isCreateOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          {activeTab === "schedule" ? (
-            renderScheduleCreateDialog()
-          ) : (
-            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
-              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <h3 className="text-xl font-bold text-slate-800">{t.addTask}</h3>
-                  <button
-                    type="button"
-                    onClick={() => setForm((current) => ({ ...current, isImportant: !current.isImportant }))}
-                    className={`inline-flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors ${
-                      form.isImportant
-                        ? "bg-amber-50 text-amber-500 hover:bg-amber-100"
-                        : "text-slate-300 hover:bg-slate-100 hover:text-amber-400"
-                    }`}
-                    title={t.important}
-                    aria-pressed={form.isImportant}
-                    aria-label={t.important}
-                  >
-                    <Star size={16} className={form.isImportant ? "fill-amber-400 text-amber-400" : ""} />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void closeCreateTaskDialog()}
-                  className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
+      <Dialog
+        open={isCreateOpen && activeTab === "schedule"}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsCreateOpen(false);
+            setEditingScheduleItemId(null);
+          }
+        }}
+      >
+        {renderScheduleCreateDialog()}
+      </Dialog>
 
-              <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
-                  <div className="space-y-2">
-                    <Label>
-                      {t.titleField} <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      value={form.title}
-                      onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t.notes}</Label>
-                    <div className="h-72 min-h-0">
-                      <RichTextEditor
-                        ref={taskContentEditorRef}
-                        value={form.content}
-                        onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
-                        height={220}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <Label>{locale === "zh" ? `附件 (${taskAttachments.length})` : `Attachments (${taskAttachments.length})`}</Label>
-                      <Button asChild type="button" variant="secondary" size="sm" disabled={isTaskAttachmentUploading || isPending}>
-                        <label className="cursor-pointer">
-                          {isTaskAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
-                          {isTaskAttachmentUploading ? (locale === "zh" ? "上传中" : "Uploading") : (locale === "zh" ? "添加附件" : "Add attachment")}
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={handleTaskAttachmentUpload}
-                            disabled={isTaskAttachmentUploading || isPending}
-                          />
-                        </label>
-                      </Button>
-                    </div>
-                    {taskAttachments.length > 0 ? (
-                      <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
-                        {taskAttachments.map((attachment) => (
-                          <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
-                            <span className="inline-flex min-w-0 items-center gap-2.5">
-                              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                                {getTaskAttachmentIcon(attachment.fileName)}
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block truncate font-medium">{attachment.fileName}</span>
-                                {formatAttachmentSize(attachment.fileSize) ? (
-                                  <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
-                                ) : null}
-                              </span>
-                            </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => void removeTaskAttachment(attachment.id)}
-                              disabled={isPending}
-                              title={locale === "zh" ? "移除附件" : "Remove attachment"}
-                            >
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {activeTab === "tasks" || form.itemType === "TODO" ? (
-                      <div className="flex w-full flex-col gap-1.5">
-                        <Label>{t.dueDate}</Label>
-                        <LocalizedDateInput
-                          locale={locale}
-                          value={form.dueAt}
-                          onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))}
-                          className="h-[38px] w-full rounded-md border border-slate-200 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                        />
-                      </div>
-                    ) : null}
-                    {activeTab === "tasks" || form.itemType === "TODO" ? (
-                      <div className="flex w-full flex-col gap-1.5">
-                        <Label>{t.assignee}</Label>
-                        <DropdownField
-                          id="taskAssignee"
-                          label={t.assignee}
-                          value={currentTaskAssigneeValue}
-                          onChange={applyTaskAssigneeChoice}
-                          options={taskAssigneeChoices.map((choice) => ({ value: choice.value, label: choice.label }))}
-                          className="w-full gap-0"
-                          detailsClassName="h-[38px]"
-                          hideLabel
-                          triggerClassName="h-full py-0"
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void closeCreateTaskDialog()}
-                    disabled={isPending}
-                  >
-                    {t.cancel}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={isPending || isTaskAttachmentUploading || !form.title.trim()}
-                  >
-                    {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                    {t.create}
-                  </Button>
-                </div>
-              </form>
+      <Dialog
+        open={isCreateOpen && activeTab !== "schedule"}
+        onOpenChange={(open) => {
+          if (!open) void closeCreateTaskDialog();
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <DialogTitle className="text-xl">{t.addTask}</DialogTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setForm((current) => ({ ...current, isImportant: !current.isImportant }))}
+                className={form.isImportant ? "text-amber-500 hover:bg-amber-50 hover:text-amber-600" : "text-muted-foreground hover:text-amber-500"}
+                title={t.important}
+                aria-pressed={form.isImportant}
+                aria-label={t.important}
+              >
+                <Star className={form.isImportant ? "fill-amber-400 text-amber-400" : ""} />
+              </Button>
             </div>
-          )}
-        </div>
-      ) : null}
+          </DialogHeader>
+
+          <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <div className="space-y-2">
+                <Label htmlFor="task-title">
+                  {t.titleField} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="task-title"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{t.notes}</Label>
+                <div className="min-h-0 rounded-lg border bg-background">
+                  <RichTextEditor
+                    ref={taskContentEditorRef}
+                    value={form.content}
+                    onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
+                    height={220}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>{locale === "zh" ? `附件 (${taskAttachments.length})` : `Attachments (${taskAttachments.length})`}</Label>
+                  <Button asChild type="button" variant="secondary" size="sm" disabled={isTaskAttachmentUploading || isPending}>
+                    <label className="cursor-pointer">
+                      {isTaskAttachmentUploading ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+                      {isTaskAttachmentUploading ? (locale === "zh" ? "上传中" : "Uploading") : (locale === "zh" ? "添加附件" : "Add attachment")}
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleTaskAttachmentUpload}
+                        disabled={isTaskAttachmentUploading || isPending}
+                      />
+                    </label>
+                  </Button>
+                </div>
+                {taskAttachments.length > 0 ? (
+                  <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
+                    {taskAttachments.map((attachment) => (
+                      <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
+                        <span className="inline-flex min-w-0 items-center gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                            {getTaskAttachmentIcon(attachment.fileName)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{attachment.fileName}</span>
+                            {formatAttachmentSize(attachment.fileSize) ? (
+                              <span className="block text-xs text-muted-foreground">{formatAttachmentSize(attachment.fileSize)}</span>
+                            ) : null}
+                          </span>
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => void removeTaskAttachment(attachment.id)}
+                          disabled={isPending}
+                          title={locale === "zh" ? "移除附件" : "Remove attachment"}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {activeTab === "tasks" || form.itemType === "TODO" ? (
+                  <ShadcnDatePicker
+                    id="taskDueDate"
+                    label={t.dueDate}
+                    locale={locale}
+                    value={form.dueAt}
+                    onChange={(dueAt) => setForm((current) => ({ ...current, dueAt }))}
+                  />
+                ) : null}
+                {activeTab === "tasks" || form.itemType === "TODO" ? (
+                  <div className="flex w-full flex-col gap-1.5">
+                    <Label htmlFor="taskAssignee">{t.assignee}</Label>
+                    <Select value={currentTaskAssigneeValue} onValueChange={applyTaskAssigneeChoice}>
+                      <SelectTrigger id="taskAssignee" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {taskAssigneeChoices.map((choice) => (
+                          <SelectItem key={choice.value} value={choice.value}>
+                            {choice.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void closeCreateTaskDialog()}
+                disabled={isPending}
+              >
+                {t.cancel}
+              </Button>
+              <Button
+                type="submit"
+                disabled={isPending || isTaskAttachmentUploading || !form.title.trim()}
+              >
+                {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                {t.create}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {selectedTask ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
