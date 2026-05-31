@@ -23,6 +23,18 @@ export const AVATAR_PRESETS = [
   "/avatars/22.png",
   "/avatars/23.png",
   "/avatars/24.png",
+  "/avatars/25.png",
+  "/avatars/26.png",
+  "/avatars/27.png",
+  "/avatars/28.png",
+  "/avatars/29.png",
+  "/avatars/30.png",
+  "/avatars/31.png",
+  "/avatars/32.png",
+  "/avatars/33.png",
+  "/avatars/34.png",
+  "/avatars/35.png",
+  "/avatars/36.png",
 ] as const;
 
 export function getAvatarStorageKey(userKey: string) {
