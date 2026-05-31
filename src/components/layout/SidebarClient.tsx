@@ -38,7 +38,7 @@ export function SidebarClient({
   canManageActiveProject: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
-  departmentContext?: { id: string; name: string; role?: string | null; isDepartmentAdmin?: boolean; positionName?: string | null } | null;
+  departmentContext?: { id: string; name: string; positionName?: string | null } | null;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
@@ -287,11 +287,7 @@ export function SidebarClient({
             locale={locale}
             position={
               departmentContext
-                ? departmentContext.isDepartmentAdmin
-                  ? locale === "zh"
-                    ? `部门管理员${departmentContext.positionName ? ` · ${departmentContext.positionName}` : ""}`
-                    : `Department admin${departmentContext.positionName ? ` · ${departmentContext.positionName}` : ""}`
-                  : departmentContext.positionName || (locale === "zh" ? "成员" : "Member")
+                ? departmentContext.positionName
                 : isAdmin
                   ? locale === "zh"
                     ? "系统管理员"

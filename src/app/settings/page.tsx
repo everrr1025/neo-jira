@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import UserSettingsForm from "@/components/UserSettingsForm";
 import { authOptions } from "@/lib/authOptions";
+import { getUserDepartmentMembership } from "@/lib/departmentAccess";
 import { getTranslations } from "@/lib/i18n";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
@@ -23,15 +24,18 @@ export default async function SettingsPage() {
   const locale = await getCurrentLocale();
   const translations = getTranslations(locale);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      avatar: true,
-    },
-  });
+  const [user, departmentMembership] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatar: true,
+      },
+    }),
+    getUserDepartmentMembership(userId),
+  ]);
 
   if (!user) {
     redirect("/login");
@@ -50,6 +54,8 @@ export default async function SettingsPage() {
           name: user.name || user.email,
           email: user.email,
           avatar: user.avatar,
+          isDepartmentAdmin: departmentMembership?.isDepartmentAdmin || false,
+          departmentPosition: departmentMembership?.positionName || null,
         }}
         locale={locale}
       />

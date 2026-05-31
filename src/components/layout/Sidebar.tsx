@@ -44,8 +44,6 @@ export async function Sidebar({ locale }: { locale: Locale }) {
           ? {
               id: departmentMembership.departmentId,
               name: departmentMembership.departmentName,
-              role: departmentMembership.role,
-              isDepartmentAdmin: departmentMembership.isDepartmentAdmin,
               positionName: departmentMembership.positionName,
             }
           : null

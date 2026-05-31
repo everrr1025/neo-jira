@@ -30,11 +30,15 @@ export default function UserSettingsForm({
     name: string;
     email: string;
     avatar?: string | null;
+    isDepartmentAdmin?: boolean;
+    departmentPosition?: string | null;
   };
   locale: Locale;
 }) {
   const translations = getTranslations(locale);
   const text = translations.settingsPage;
+  const departmentAdminLabel = locale === "zh" ? "部门管理员" : "Department admin";
+  const hasDepartmentMeta = Boolean(user.isDepartmentAdmin || user.departmentPosition);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -128,12 +132,22 @@ export default function UserSettingsForm({
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="truncate text-base font-semibold">{user.name}</div>
-                <Badge variant="secondary" className="rounded-md">
-                  {locale === "zh" ? "当前账号" : "Current account"}
-                </Badge>
+                {hasDepartmentMeta ? (
+                  <>
+                    {user.isDepartmentAdmin ? (
+                      <Badge variant="secondary" className="rounded-md">
+                        {departmentAdminLabel}
+                      </Badge>
+                    ) : null}
+                    {user.departmentPosition ? (
+                      <Badge variant="secondary" className="rounded-md">
+                        {user.departmentPosition}
+                      </Badge>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
               <div className="truncate text-sm text-muted-foreground">{user.email}</div>
-              <p className="text-xs text-muted-foreground">{text.avatarHint}</p>
             </div>
           </div>
 

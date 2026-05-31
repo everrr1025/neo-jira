@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import IssueList from "@/components/IssueList";
 import CreateIssueButton from "@/components/CreateIssueButton";
+import IssueSearchInput from "@/components/IssueSearchInput";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
@@ -125,14 +126,12 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="flex flex-col h-full space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{translations.issuesPage.title}</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            {translations.issuesPage.subtitle}
-          </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <IssueSearchInput locale={locale} />
           <CreateIssueButton
             users={users}
             plans={plans}

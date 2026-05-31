@@ -14,7 +14,6 @@ import {
   FileSpreadsheet,
   FileText,
   Loader2,
-  ListFilter,
   Paperclip,
   Plus,
   Search,
@@ -1017,10 +1016,6 @@ export default function DepartmentNotificationsClient({
         ) : null}
 
         <div className="flex w-full flex-wrap items-center gap-2">
-          <div className="inline-flex h-9 items-center px-2 text-muted-foreground">
-            <ListFilter size={14} />
-          </div>
-
           <MultiFilter
             label={t.project}
             options={projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` }))}
@@ -1247,7 +1242,7 @@ export default function DepartmentNotificationsClient({
                               variant="outline"
                               onClick={() => manage("revoke", notification.id)}
                               disabled={isPending}
-                              className="text-amber-700 hover:bg-amber-50 hover:text-amber-700"
+                              className="text-black hover:bg-amber-50 hover:text-black"
                             >
                               {t.revoke}
                             </Button>

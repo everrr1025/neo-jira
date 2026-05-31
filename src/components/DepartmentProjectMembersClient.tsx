@@ -2,11 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPlus } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
@@ -320,88 +322,79 @@ export default function DepartmentProjectMembersClient({
         ) : null}
       </div>
 
-      {isAddOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{t.addMembers}</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {t.selected} {selectedMemberIds.length}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="flex max-h-[88vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4 pr-12">
+            <DialogTitle>{t.addMembers}</DialogTitle>
+            <DialogDescription>
+              {t.selected} {selectedMemberIds.length}
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="border-b border-slate-100 p-4">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
-                  placeholder={t.searchUsers}
-                  className="h-9 w-full rounded-md border border-slate-200 py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-auto">
-              {filteredUsers.map((user) => {
-                const checked = selectedMemberIds.includes(user.userId);
-                return (
-                  <label key={user.userId} className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) =>
-                        setSelectedMemberIds((current) =>
-                          event.target.checked
-                            ? Array.from(new Set([...current, user.userId]))
-                            : current.filter((selectedId) => selectedId !== user.userId)
-                        )
-                      }
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-800">{displayMember(user)}</div>
-                      <div className="truncate text-xs text-slate-500">{user.userEmail}</div>
-                    </div>
-                  </label>
-                );
-              })}
-              {filteredUsers.length === 0 ? (
-                <div className="px-6 py-12 text-center text-sm text-slate-500">{t.noUsers}</div>
-              ) : null}
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsAddOpen(false)}
-                disabled={isPending}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                {t.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleAddSelectedMembers}
-                disabled={isPending || selectedMemberIds.length === 0}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-              >
-                {isPending ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-                {t.addSelected}
-              </button>
+          <div className="shrink-0 border-b px-6 py-4">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={userSearch}
+                onChange={(event) => setUserSearch(event.target.value)}
+                placeholder={t.searchUsers}
+                className="pl-9"
+              />
             </div>
           </div>
-        </div>
-      ) : null}
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            {filteredUsers.map((user) => {
+              const checked = selectedMemberIds.includes(user.userId);
+              return (
+                <label
+                  key={user.userId}
+                  className="flex cursor-pointer items-center gap-3 rounded-md px-4 py-3 transition-colors hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) =>
+                      setSelectedMemberIds((current) =>
+                        event.target.checked
+                          ? Array.from(new Set([...current, user.userId]))
+                          : current.filter((selectedId) => selectedId !== user.userId)
+                      )
+                    }
+                    className="size-4 rounded border border-input accent-primary"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">{displayMember(user)}</div>
+                    <div className="truncate text-xs text-muted-foreground">{user.userEmail}</div>
+                  </div>
+                </label>
+              );
+            })}
+            {filteredUsers.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-muted-foreground">{t.noUsers}</div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddOpen(false)}
+              disabled={isPending}
+            >
+              {t.cancel}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleAddSelectedMembers}
+              disabled={isPending || selectedMemberIds.length === 0}
+            >
+              {isPending ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
+              {t.addSelected}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

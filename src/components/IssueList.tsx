@@ -4,8 +4,6 @@ import { useState, useTransition, useEffect, useRef, useCallback, useMemo, type 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  Search,
-  ListFilter,
   ArrowLeft,
   ArrowRight,
   ChevronDown,
@@ -30,9 +28,18 @@ import {
   deletePlanFieldDefinition,
   updatePlanIssueFieldValue,
 } from "@/app/actions/plans";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useIssueListFilters } from "./issuelist/useIssueListFilters";
 import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
@@ -52,7 +59,7 @@ import {
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
-import LocalizedDateInput from "./LocalizedDateInput";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 
 type Issue = {
   id: string;
@@ -136,6 +143,11 @@ type ColumnConfig = {
   width: number;
 };
 
+type ResizableColumn =
+  | { type: "column"; id: ColumnId; label: string; width: number }
+  | { type: "issueField"; id: string; field: IssueFieldDefinition; width: number }
+  | { type: "planField"; id: string; field: PlanFieldDefinition; width: number };
+
 type StoredIssueListColumnPreferences = {
   visibleColumnIds?: ColumnId[];
   columnWidths?: Partial<Record<ColumnId, number>>;
@@ -143,6 +155,7 @@ type StoredIssueListColumnPreferences = {
   issueFieldWidths?: Partial<Record<string, number>>;
   visiblePlanFieldIds?: string[];
   planFieldWidths?: Partial<Record<string, number>>;
+  columnOrder?: string[];
 };
 
 type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
@@ -219,19 +232,6 @@ function MultiFilter({
   onClear: () => void;
   clearText: string;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const selectedLabels = options
     .filter((option) => selectedValues.includes(option.value))
     .map((option) => option.label);
@@ -243,37 +243,49 @@ function MultiFilter({
         : `${label} (${selectedLabels.length})`;
 
   return (
-    <details ref={detailsRef} className="relative">
-      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
-        <span className="max-w-40 truncate">{buttonText}</span>
-        <ChevronDown size={14} className="text-muted-foreground" />
-      </summary>
-      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="max-w-56 justify-between">
+          <span className="truncate">{buttonText}</span>
+          <ChevronDown className="size-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-64">
+        <DropdownMenuLabel className="flex items-center justify-between gap-3">
+          <span>{label}</span>
+          {selectedValues.length > 0 ? (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+              {selectedValues.length}
+            </span>
+          ) : null}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
         {options.map((option) => (
-          <label
+          <DropdownMenuCheckboxItem
             key={option.value}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            checked={selectedValues.includes(option.value)}
+            onCheckedChange={() => onToggle(option.value)}
+            onSelect={(event) => event.preventDefault()}
           >
-            <input
-              type="checkbox"
-              checked={selectedValues.includes(option.value)}
-              onChange={() => onToggle(option.value)}
-              className="h-4 w-4"
-            />
-            <span>{option.label}</span>
-          </label>
+            {option.label}
+          </DropdownMenuCheckboxItem>
         ))}
         {selectedValues.length > 0 && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm text-primary hover:bg-accent hover:text-accent-foreground"
-          >
-            {clearText}
-          </button>
+          <>
+            <DropdownMenuSeparator />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              className="w-full justify-start text-primary hover:text-primary"
+            >
+              {clearText}
+            </Button>
+          </>
         )}
-      </div>
-    </details>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -304,97 +316,89 @@ function ColumnVisibilityMenu({
   visiblePlanFieldIds?: string[];
   onTogglePlanField?: (fieldId: string) => void;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const visibleCount = visibleColumnIds.length;
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  const totalColumnCount = columns.length + issueFields.length + planFields.length;
+  const totalVisibleCount = visibleColumnIds.length + visibleIssueFieldIds.length + visiblePlanFieldIds.length;
 
   return (
-    <details ref={detailsRef} className="relative">
-      <summary
-        className="inline-flex h-9 w-9 cursor-pointer select-none items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-        aria-label={buttonLabel}
-        title={buttonLabel}
-      >
-        <Eye size={16} className="text-muted-foreground" />
-      </summary>
-      <div className="absolute right-0 z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label={buttonLabel}
+          title={buttonLabel}
+        >
+          <Eye className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-64">
+        <DropdownMenuLabel className="flex items-center justify-between gap-3">
+          <span>{buttonLabel}</span>
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+            {totalVisibleCount}/{totalColumnCount}
+          </span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
         {columns.map((column) => {
           const isChecked = visibleColumnIds.includes(column.id);
           const isDisabled = isChecked && visibleCount === 1;
 
           return (
-            <label
+            <DropdownMenuCheckboxItem
               key={column.id}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                isDisabled ? "cursor-not-allowed text-muted-foreground/60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-              }`}
+              checked={isChecked}
+              disabled={isDisabled}
+              onCheckedChange={() => onToggle(column.id)}
+              onSelect={(event) => event.preventDefault()}
             >
-              <input
-                type="checkbox"
-                checked={isChecked}
-                disabled={isDisabled}
-                onChange={() => onToggle(column.id)}
-                className="h-4 w-4"
-              />
-              <span>{column.label}</span>
-            </label>
+              {column.label}
+            </DropdownMenuCheckboxItem>
           );
         })}
         {issueFields.length > 0 ? (
-          <div className="mt-1 border-t pt-1">
+          <>
+            <DropdownMenuSeparator />
             {issueFields.map((field) => (
-              <label
+              <DropdownMenuCheckboxItem
                 key={field.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                checked={visibleIssueFieldIds.includes(field.id)}
+                onCheckedChange={() => onToggleIssueField?.(field.id)}
+                onSelect={(event) => event.preventDefault()}
               >
-                <input
-                  type="checkbox"
-                  checked={visibleIssueFieldIds.includes(field.id)}
-                  onChange={() => onToggleIssueField?.(field.id)}
-                  className="h-4 w-4"
-                />
                 <span className="truncate">{field.name}</span>
-              </label>
+              </DropdownMenuCheckboxItem>
             ))}
-          </div>
+          </>
         ) : null}
         {planFields.length > 0 ? (
-          <div className="mt-1 border-t pt-1">
+          <>
+            <DropdownMenuSeparator />
             {planFields.map((field) => (
-              <label
+              <DropdownMenuCheckboxItem
                 key={field.id}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                checked={visiblePlanFieldIds.includes(field.id)}
+                onCheckedChange={() => onTogglePlanField?.(field.id)}
+                onSelect={(event) => event.preventDefault()}
               >
-                <input
-                  type="checkbox"
-                  checked={visiblePlanFieldIds.includes(field.id)}
-                  onChange={() => onTogglePlanField?.(field.id)}
-                  className="h-4 w-4"
-                />
                 <span className="truncate">{field.name}</span>
-              </label>
+              </DropdownMenuCheckboxItem>
             ))}
-          </div>
+          </>
         ) : null}
-        <button
+        <DropdownMenuSeparator />
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={onReset}
-          className="mt-1 w-full rounded-md border-t px-2 py-1.5 pt-2 text-left text-sm font-medium text-primary hover:bg-accent"
+          className="w-full justify-start text-primary hover:text-primary"
         >
           {resetLabel}
-        </button>
-      </div>
-    </details>
+        </Button>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -444,7 +448,6 @@ function AdvancedFieldFilters({
   searchParams: URLSearchParams;
   updateQueryParams: (updates: Record<string, string | string[] | null>) => void;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const allFields = [
     ...issueFields.map((field) => ({ ...field, source: "issue" as const })),
     ...planFields.map((field) => ({ ...field, source: "plan" as const })),
@@ -456,17 +459,6 @@ function AdvancedFieldFilters({
   const clearLabel = locale === "zh" ? "清除" : "Clear";
   const valueLabel = locale === "zh" ? "筛选值" : "Value";
   const noFieldsLabel = locale === "zh" ? "暂无可筛选的扩展字段" : "No custom fields to filter";
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const updateFieldFilter = (field: CustomFieldDefinition & { source: "issue" | "plan" }, op: string, value: string) => {
     const prefix = field.source === "plan" ? "planField" : "issueField";
@@ -486,13 +478,15 @@ function AdvancedFieldFilters({
   };
 
   return (
-    <details ref={detailsRef} className="relative">
-      <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border bg-background px-3 text-sm text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">
-        <Settings2 size={14} className="text-muted-foreground" />
-        <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
-        <ChevronDown size={14} className="text-muted-foreground" />
-      </summary>
-      <div className="absolute right-0 z-30 mt-2 w-[min(92vw,520px)] rounded-lg border bg-popover p-3 text-popover-foreground shadow-xl">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="gap-2">
+          <Settings2 className="size-4 text-muted-foreground" />
+          <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
+          <ChevronDown className="size-4 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-[min(92vw,560px)] p-3">
         {allFields.length === 0 ? (
           <p className="px-1 py-2 text-sm text-muted-foreground">{noFieldsLabel}</p>
         ) : (
@@ -513,69 +507,87 @@ function AdvancedFieldFilters({
                     <div className="truncate text-sm font-medium text-foreground">{field.name}</div>
                     <div className="text-xs text-muted-foreground">{field.source === "plan" ? (locale === "zh" ? "计划扩展列" : "Plan field") : (locale === "zh" ? "问题扩展字段" : "Issue field")}</div>
                   </div>
-                  <select
-                    value={op}
-                    onChange={(event) => updateFieldFilter(field, event.target.value, value)}
-                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    aria-label={field.name}
+                  <Select
+                    value={op || "__ANY__"}
+                    onValueChange={(nextValue) => updateFieldFilter(field, nextValue === "__ANY__" ? "" : nextValue, value)}
                   >
-                    <option value="">{locale === "zh" ? "不限" : "Any"}</option>
+                    <SelectTrigger aria-label={field.name} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                    <SelectItem value="__ANY__">{locale === "zh" ? "不限" : "Any"}</SelectItem>
                     {options.map((option) => (
-                      <option key={option.value} value={option.value}>
+                      <SelectItem key={option.value} value={option.value}>
                         {option.label}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
+                    </SelectContent>
+                  </Select>
                   {needsValue && field.type === "BOOLEAN" ? (
-                    <select
+                    <Select
                       value={value || "true"}
-                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
-                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      aria-label={valueLabel}
+                      onValueChange={(nextValue) => updateFieldFilter(field, op, nextValue)}
                     >
-                      <option value="true">{locale === "zh" ? "是" : "Yes"}</option>
-                      <option value="false">{locale === "zh" ? "否" : "No"}</option>
-                    </select>
+                      <SelectTrigger aria-label={valueLabel} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">{locale === "zh" ? "是" : "Yes"}</SelectItem>
+                        <SelectItem value="false">{locale === "zh" ? "否" : "No"}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   ) : needsValue && field.type === "SELECT" ? (
-                    <select
-                      value={value}
-                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
-                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      aria-label={valueLabel}
+                    <Select
+                      value={value || "__SELECT__"}
+                      onValueChange={(nextValue) => updateFieldFilter(field, op, nextValue === "__SELECT__" ? "" : nextValue)}
                     >
-                      <option value="">{locale === "zh" ? "请选择" : "Select"}</option>
+                      <SelectTrigger aria-label={valueLabel} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                      <SelectItem value="__SELECT__">{locale === "zh" ? "请选择" : "Select"}</SelectItem>
                       {fieldOptions.map((option) => (
-                        <option key={option} value={option}>
+                        <SelectItem key={option} value={option}>
                           {option}
-                        </option>
+                        </SelectItem>
                       ))}
-                    </select>
+                      </SelectContent>
+                    </Select>
                   ) : needsValue ? (
-                    <input
-                      type={field.type === "NUMBER" ? "number" : "text"}
-                      value={value}
-                      onChange={(event) => updateFieldFilter(field, op, event.target.value)}
-                      placeholder={valueLabel}
-                      className="h-9 rounded-md border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                      aria-label={valueLabel}
-                    />
+                    field.type === "NUMBER" ? (
+                      <NumberInput
+                        value={value}
+                        onValueChange={(nextValue) => updateFieldFilter(field, op, nextValue)}
+                        placeholder={valueLabel}
+                        aria-label={valueLabel}
+                      />
+                    ) : (
+                      <Input
+                        value={value}
+                        onChange={(event) => updateFieldFilter(field, op, event.target.value)}
+                        placeholder={valueLabel}
+                        aria-label={valueLabel}
+                      />
+                    )
                   ) : (
                     <div className="hidden sm:block" />
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => clearFieldFilter(field)}
-                    className="h-9 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    className="text-muted-foreground"
                   >
                     {clearLabel}
-                  </button>
+                  </Button>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
-    </details>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -590,47 +602,25 @@ function SingleFilter({
   onChange: (value: string) => void;
   renderSummary: (label: string) => ReactNode;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const selectedOption = options.find((option) => option.value === value) || options[0];
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (detailsRef.current && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleSelect = (nextValue: string) => {
-    onChange(nextValue);
-    if (detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-  };
-
   return (
-    <details ref={detailsRef} className="relative">
-      <summary className="list-none cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         {renderSummary(selectedOption?.label || "")}
-      </summary>
-      <div className="absolute z-30 mt-2 w-56 space-y-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl">
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-56">
         {options.map((option) => (
-          <button
-            type="button"
+          <DropdownMenuItem
             key={option.value}
-            onClick={() => handleSelect(option.value)}
-            className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-              option.value === value ? "bg-accent font-medium text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
-            }`}
+            onSelect={() => onChange(option.value)}
+            className={option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
           >
             {option.label}
-          </button>
+          </DropdownMenuItem>
         ))}
-      </div>
-    </details>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -779,6 +769,10 @@ function getDefaultFieldWidth(field: CustomFieldDefinition) {
   return 150;
 }
 
+function getColumnOrderKey(column: Pick<ResizableColumn, "type" | "id">) {
+  return `${column.type}:${column.id}`;
+}
+
 function FieldDraftInput({
   field,
   value,
@@ -827,9 +821,26 @@ function FieldDraftInput({
     );
   }
 
+  if (field.type === "NUMBER") {
+    return (
+      <NumberInput
+        value={displayedDraft}
+        onFocus={() => {
+          setDraft(value);
+          setIsFocused(true);
+        }}
+        onBlur={commitDraft}
+        onValueChange={setDraft}
+        onStepValueChange={onCommit}
+        inputClassName="h-8 border-transparent bg-transparent text-sm font-medium text-foreground hover:border-border focus-visible:ring-1"
+        aria-label={field.name}
+      />
+    );
+  }
+
   return (
     <input
-      type={field.type === "NUMBER" ? "number" : "text"}
+      type="text"
       value={displayedDraft}
       onFocus={() => {
         setDraft(value);
@@ -888,8 +899,6 @@ export default function IssueList({
 }) {
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
-  const [search, setSearch] = useState(searchParams.get("search") || "");
-  const [isSearchOpen, setIsSearchOpen] = useState(() => Boolean(searchParams.get("search")));
   const translations = getTranslations(locale);
   const planLabel = locale === "zh" ? "计划" : "Plan";
   const columnsButtonLabel = locale === "zh" ? "显示列" : "Columns";
@@ -952,6 +961,9 @@ export default function IssueList({
   const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
   const { page: currentPage, pageSize: itemsPerPage } = pagination;
   const { sortBy, sortDirection } = sorting;
+  const activeCustomFilterCount = Array.from(searchParams.keys()).filter((key) =>
+    (key.startsWith("issueField_") || key.startsWith("planField_")) && key.endsWith("_op") && searchParams.get(key)
+  ).length;
   const activeFilterCount =
     statusFilter.length +
     typeFilter.length +
@@ -960,9 +972,10 @@ export default function IssueList({
     sprintFilter.length +
     assigneeFilter.length +
     watcherFilter.length +
-    (dueFilter !== "ALL" || duePreset || dueDateValue ? 1 : 0) +
+    (dueFilter !== "ALL" || (duePreset && duePreset !== "NONE") || dueDateValue ? 1 : 0) +
     (searchParamsSearch ? 1 : 0) +
-    (view && view !== "all" ? 1 : 0);
+    (view && view !== "all" ? 1 : 0) +
+    activeCustomFilterCount;
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
@@ -993,6 +1006,14 @@ export default function IssueList({
       {} as Record<string, number>
     )
   );
+  const visiblePlanFields = useMemo(
+    () => planFields.filter((field) => visiblePlanFieldIds.includes(field.id)),
+    [planFields, visiblePlanFieldIds]
+  );
+  const visibleIssueFields = useMemo(
+    () => issueFields.filter((field) => visibleIssueFieldIds.includes(field.id)),
+    [issueFields, visibleIssueFieldIds]
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeFieldManager, setActiveFieldManager] = useState<"issue" | "plan" | null>(null);
   const [fieldForm, setFieldForm] = useState({
@@ -1012,7 +1033,7 @@ export default function IssueList({
   const defaultColumns = useMemo<ColumnConfig[]>(
     () => [
       { id: "key", label: translations.issueList.key, width: 80 },
-      { id: "title", label: translations.issueList.summary, width: 0 },
+      { id: "title", label: translations.issueList.summary, width: 320 },
       ...(lockedPlanId ? [] : [{ id: "plan" as const, label: planLabel, width: 180 }]),
       { id: "iteration", label: translations.issueList.sprint, width: 160 },
       { id: "status", label: translations.issueList.status, width: 140 },
@@ -1055,6 +1076,7 @@ export default function IssueList({
   );
 
   const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(defaultVisibleColumnIds);
+  const [columnOrderKeys, setColumnOrderKeys] = useState<string[]>([]);
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
   const [hasLoadedColumnPreferences, setHasLoadedColumnPreferences] = useState(false);
   const columns = useMemo(
@@ -1070,6 +1092,46 @@ export default function IssueList({
         })
         .filter((column): column is ColumnConfig => Boolean(column)),
     [columnWidths, defaultColumnsById, visibleColumnIds]
+  );
+  const availableColumns = useMemo<ResizableColumn[]>(
+    () => [
+      ...columns.map((column) => ({ type: "column" as const, id: column.id, label: column.label, width: column.width })),
+      ...visibleIssueFields.map((field) => ({
+        type: "issueField" as const,
+        id: field.id,
+        field,
+        width: issueFieldWidths[field.id] ?? getDefaultFieldWidth(field),
+      })),
+      ...visiblePlanFields.map((field) => ({
+        type: "planField" as const,
+        id: field.id,
+        field,
+        width: planFieldWidths[field.id] ?? getDefaultFieldWidth(field),
+      })),
+    ],
+    [columns, issueFieldWidths, planFieldWidths, visibleIssueFields, visiblePlanFields]
+  );
+  const defaultColumnOrderKeys = useMemo(
+    () => availableColumns.map(getColumnOrderKey),
+    [availableColumns]
+  );
+  const availableColumnsByKey = useMemo(
+    () => new Map(availableColumns.map((column) => [getColumnOrderKey(column), column] as const)),
+    [availableColumns]
+  );
+  const orderedColumnKeys = useMemo(() => {
+    const storedKeys = columnOrderKeys.length > 0 ? columnOrderKeys : defaultColumnOrderKeys;
+    const orderedKeys = storedKeys.filter((key) => availableColumnsByKey.has(key));
+    const missingKeys = defaultColumnOrderKeys.filter((key) => !orderedKeys.includes(key));
+    return [...orderedKeys, ...missingKeys];
+  }, [availableColumnsByKey, columnOrderKeys, defaultColumnOrderKeys]);
+  const resizableColumns = useMemo(
+    () => orderedColumnKeys.map((key) => availableColumnsByKey.get(key)).filter((column): column is ResizableColumn => Boolean(column)),
+    [availableColumnsByKey, orderedColumnKeys]
+  );
+  const columnsTotalWidth = useMemo(
+    () => resizableColumns.reduce((total, column) => total + column.width, 0),
+    [resizableColumns]
   );
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -1088,8 +1150,8 @@ export default function IssueList({
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
       if (sourceIndex !== targetIndex) {
-        const nextVisibleColumnIds = [...visibleColumnIds];
-        const [removed] = nextVisibleColumnIds.splice(sourceIndex, 1);
+        const nextColumnOrderKeys = resizableColumns.map(getColumnOrderKey);
+        const [removed] = nextColumnOrderKeys.splice(sourceIndex, 1);
         const adjustedTarget =
           dragOverSide === "right"
             ? sourceIndex < targetIndex
@@ -1098,8 +1160,23 @@ export default function IssueList({
             : sourceIndex < targetIndex
               ? targetIndex - 1
               : targetIndex;
-        nextVisibleColumnIds.splice(Math.max(0, adjustedTarget), 0, removed);
-        setVisibleColumnIds(nextVisibleColumnIds);
+        nextColumnOrderKeys.splice(Math.max(0, adjustedTarget), 0, removed);
+        setColumnOrderKeys(nextColumnOrderKeys);
+        setVisibleColumnIds(
+          nextColumnOrderKeys
+            .filter((key) => key.startsWith("column:"))
+            .map((key) => key.slice("column:".length) as ColumnId)
+        );
+        setVisibleIssueFieldIds(
+          nextColumnOrderKeys
+            .filter((key) => key.startsWith("issueField:"))
+            .map((key) => key.slice("issueField:".length))
+        );
+        setVisiblePlanFieldIds(
+          nextColumnOrderKeys
+            .filter((key) => key.startsWith("planField:"))
+            .map((key) => key.slice("planField:".length))
+        );
       }
     }
     setDragSourceIndex(null);
@@ -1130,19 +1207,17 @@ export default function IssueList({
     startWidth: number;
     nextStartWidth: number;
   } | null>(null);
-  const issueFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
-  const planFieldResizingRef = useRef<{ fieldId: string; startX: number; startWidth: number } | null>(null);
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, colIndex: number) => {
       e.preventDefault();
       e.stopPropagation();
-      const col = columns[colIndex];
-      const nextCol = columns[colIndex + 1];
+      const col = resizableColumns[colIndex];
+      const nextCol = resizableColumns[colIndex + 1];
       if (!col || !nextCol) return;
       const startWidth = col.width || 150;
       const nextStartWidth = nextCol.width || 150;
-      const minWidth = 60;
+      const minWidth = 80;
       resizingRef.current = { colIndex, nextColIndex: colIndex + 1, startX: e.clientX, startWidth, nextStartWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
@@ -1150,12 +1225,10 @@ export default function IssueList({
         if (!resizeState) return;
 
         const delta = ev.clientX - resizeState.startX;
-        const resizeColIndex = resizeState.colIndex;
-        const nextResizeColIndex = resizeState.nextColIndex;
-        const resizeColumnId = columns[resizeColIndex]?.id;
-        const nextResizeColumnId = columns[nextResizeColIndex]?.id;
+        const resizeColumn = resizableColumns[resizeState.colIndex];
+        const nextResizeColumn = resizableColumns[resizeState.nextColIndex];
 
-        if (!resizeColumnId || !nextResizeColumnId) return;
+        if (!resizeColumn || !nextResizeColumn) return;
 
         const boundedDelta = Math.min(
           resizeState.nextStartWidth - minWidth,
@@ -1163,12 +1236,32 @@ export default function IssueList({
         );
         const newWidth = resizeState.startWidth + boundedDelta;
         const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
+        const columnUpdates: Partial<Record<ColumnId, number>> = {};
+        const issueFieldUpdates: Record<string, number> = {};
+        const planFieldUpdates: Record<string, number> = {};
 
-        setColumnWidths((prev) => ({
-          ...prev,
-          [resizeColumnId]: newWidth,
-          [nextResizeColumnId]: nextNewWidth,
-        }));
+        for (const [column, width] of [
+          [resizeColumn, newWidth],
+          [nextResizeColumn, nextNewWidth],
+        ] as const) {
+          if (column.type === "column") {
+            columnUpdates[column.id] = width;
+          } else if (column.type === "issueField") {
+            issueFieldUpdates[column.id] = width;
+          } else {
+            planFieldUpdates[column.id] = width;
+          }
+        }
+
+        if (Object.keys(columnUpdates).length > 0) {
+          setColumnWidths((prev) => ({ ...prev, ...columnUpdates }));
+        }
+        if (Object.keys(issueFieldUpdates).length > 0) {
+          setIssueFieldWidths((prev) => ({ ...prev, ...issueFieldUpdates }));
+        }
+        if (Object.keys(planFieldUpdates).length > 0) {
+          setPlanFieldWidths((prev) => ({ ...prev, ...planFieldUpdates }));
+        }
       };
 
       const onMouseUp = () => {
@@ -1184,71 +1277,7 @@ export default function IssueList({
       document.body.style.cursor = "ew-resize";
       document.body.style.userSelect = "none";
     },
-    [columns]
-  );
-
-  const handlePlanFieldResizeStart = useCallback(
-    (e: React.MouseEvent, field: PlanFieldDefinition) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const startWidth = planFieldWidths[field.id] || getDefaultFieldWidth(field);
-      planFieldResizingRef.current = { fieldId: field.id, startX: e.clientX, startWidth };
-
-      const onMouseMove = (ev: MouseEvent) => {
-        const resizeState = planFieldResizingRef.current;
-        if (!resizeState) return;
-
-        const delta = ev.clientX - resizeState.startX;
-        const newWidth = Math.max(80, resizeState.startWidth + delta);
-        setPlanFieldWidths((prev) => ({ ...prev, [resizeState.fieldId]: newWidth }));
-      };
-
-      const onMouseUp = () => {
-        planFieldResizingRef.current = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "ew-resize";
-      document.body.style.userSelect = "none";
-    },
-    [planFieldWidths]
-  );
-
-  const handleIssueFieldResizeStart = useCallback(
-    (e: React.MouseEvent, field: IssueFieldDefinition) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const startWidth = issueFieldWidths[field.id] || getDefaultFieldWidth(field);
-      issueFieldResizingRef.current = { fieldId: field.id, startX: e.clientX, startWidth };
-
-      const onMouseMove = (ev: MouseEvent) => {
-        const resizeState = issueFieldResizingRef.current;
-        if (!resizeState) return;
-
-        const delta = ev.clientX - resizeState.startX;
-        const newWidth = Math.max(80, resizeState.startWidth + delta);
-        setIssueFieldWidths((prev) => ({ ...prev, [resizeState.fieldId]: newWidth }));
-      };
-
-      const onMouseUp = () => {
-        issueFieldResizingRef.current = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "ew-resize";
-      document.body.style.userSelect = "none";
-    },
-    [issueFieldWidths]
+    [resizableColumns]
   );
 
   useEffect(() => {
@@ -1327,7 +1356,8 @@ export default function IssueList({
       {} as Record<string, number>
     );
 
-    setVisibleColumnIds(validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds);
+    const nextVisibleColumnIds = validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds;
+    setVisibleColumnIds(nextVisibleColumnIds);
     setColumnWidths({ ...defaultColumnWidths, ...validColumnWidths });
     const allIssueFieldIds = issueFields.map((field) => field.id);
     const mergedVisibleIssueFieldIds =
@@ -1360,6 +1390,17 @@ export default function IssueList({
         {} as Record<string, number>
       )
     );
+    const availableOrderKeys = [
+      ...nextVisibleColumnIds.map((columnId) => `column:${columnId}`),
+      ...mergedVisibleIssueFieldIds.map((fieldId) => `issueField:${fieldId}`),
+      ...mergedVisiblePlanFieldIds.map((fieldId) => `planField:${fieldId}`),
+    ];
+    const validColumnOrderKeys = storedPreferences?.columnOrder?.filter((key) => availableOrderKeys.includes(key));
+    setColumnOrderKeys(
+      validColumnOrderKeys && validColumnOrderKeys.length > 0
+        ? [...validColumnOrderKeys, ...availableOrderKeys.filter((key) => !validColumnOrderKeys.includes(key))]
+        : availableOrderKeys
+    );
     setHasLoadedColumnPreferences(true);
   }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds, issueFields, planFields]);
 
@@ -1375,16 +1416,10 @@ export default function IssueList({
         issueFieldWidths,
         visiblePlanFieldIds,
         planFieldWidths,
+        columnOrder: resizableColumns.map(getColumnOrderKey),
       } satisfies StoredIssueListColumnPreferences)
     );
-  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, issueFieldWidths, planFieldWidths, visibleColumnIds, visibleIssueFieldIds, visiblePlanFieldIds]);
-
-  useEffect(() => {
-    setSearch(searchParamsSearch);
-    if (searchParamsSearch) {
-      setIsSearchOpen(true);
-    }
-  }, [searchParamsSearch]);
+  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, issueFieldWidths, planFieldWidths, resizableColumns, visibleColumnIds, visibleIssueFieldIds, visiblePlanFieldIds]);
 
   useEffect(() => {
     const availableIssueIds = new Set(issues.map((issue) => issue.id));
@@ -1549,6 +1584,32 @@ export default function IssueList({
   const toggleFilterValue = (value: string, filterKey: string, currentValues: string[]) => {
     const newValues = currentValues.includes(value) ? currentValues.filter((item) => item !== value) : [...currentValues, value];
     updateQueryParams({ [filterKey]: newValues });
+  };
+
+  const resetFilters = () => {
+    const updates: Record<string, string | string[] | null> = {
+      status: null,
+      type: null,
+      priority: null,
+      plan: null,
+      sprint: null,
+      assignee: null,
+      watcher: null,
+      view: null,
+      dueFilter: null,
+      dueDate: null,
+      duePreset: null,
+      search: null,
+      page: "1",
+    };
+
+    for (const key of Array.from(searchParams.keys())) {
+      if (key.startsWith("issueField_") || key.startsWith("planField_")) {
+        updates[key] = null;
+      }
+    }
+
+    updateQueryParams(updates);
   };
 
   const handleSortByColumn = (columnId: ColumnId) => {
@@ -1804,18 +1865,262 @@ export default function IssueList({
         .filter((item): item is { id: string; label: string; value: number } => Boolean(item)),
     [issues, planFields]
   );
-  const visiblePlanFields = useMemo(
-    () => planFields.filter((field) => visiblePlanFieldIds.includes(field.id)),
-    [planFields, visiblePlanFieldIds]
-  );
-  const visibleIssueFields = useMemo(
-    () => issueFields.filter((field) => visibleIssueFieldIds.includes(field.id)),
-    [issueFields, visibleIssueFieldIds]
-  );
-
   const paginatedIssueIds = paginatedIssues.map((issue) => issue.id);
   const allCurrentPageSelected =
     paginatedIssueIds.length > 0 && paginatedIssueIds.every((issueId) => selectedIssueIds.includes(issueId));
+
+  const renderColumnCell = (issue: Issue, col: ColumnConfig) => {
+    if (col.id === "key") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5 text-muted-foreground font-medium">
+          <Link href={`/issues/${issue.id}`} className="hover:text-primary hover:underline">
+            {issue.key}
+          </Link>
+        </td>
+      );
+    }
+
+    if (col.id === "title") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5 font-semibold text-foreground overflow-hidden text-ellipsis">
+          <Link href={`/issues/${issue.id}`} className="hover:text-primary block w-full truncate border-b border-transparent">
+            {issue.title}
+          </Link>
+        </td>
+      );
+    }
+
+    if (col.id === "plan") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          {canManagePlans ? (
+            <InlineSelect
+              value={issue.planId || ""}
+              options={planInlineOptions}
+              className="relative block w-full"
+              onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
+              renderSummary={(label) => (
+                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                  {label}
+                </span>
+              )}
+            />
+          ) : (
+            <span className="block w-full truncate text-sm font-medium text-foreground">
+              {issue.plan?.name || noPlanLabel}
+            </span>
+          )}
+        </td>
+      );
+    }
+
+    if (col.id === "iteration") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          <InlineSelect
+            value={issue.iterationId || ""}
+            options={iterationInlineOptions}
+            className="relative block w-full"
+            onChange={(value) => handleInlineUpdate(issue.id, "iterationId", value || null)}
+            renderSummary={(label) => (
+              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                {label}
+              </span>
+            )}
+          />
+        </td>
+      );
+    }
+
+    if (col.id === "status") {
+      const workflow = getWorkflowForProject(issue.projectId);
+      const transitionMap = buildWorkflowTransitionMap(workflow.transitions, workflow.statuses);
+      const allowedTargets = transitionMap.get(issue.status);
+      const statusInlineOptions = buildWorkflowStatusOptions(
+        workflow.statuses.filter((status) => status.key === issue.status || allowedTargets?.has(status.key)),
+        locale
+      );
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          <InlineSelect
+            value={issue.status}
+            options={statusInlineOptions.length > 0 ? statusInlineOptions : buildWorkflowStatusOptions(workflow.statuses, locale)}
+            className="relative block w-full"
+            onChange={(value) => handleInlineUpdate(issue.id, "status", value)}
+            renderSummary={(label) => (
+              <span
+                className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium cursor-pointer border-none outline-none focus:ring-0 transition-colors ${getWorkflowStatusBadgeClass(issue.status, workflow.statuses)}`}
+              >
+                {label}
+              </span>
+            )}
+          />
+        </td>
+      );
+    }
+
+    if (col.id === "type") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          <InlineSelect
+            value={issue.type}
+            options={typeOptions}
+            className="relative block w-full"
+            onChange={(value) => handleInlineUpdate(issue.id, "type", value)}
+            renderSummary={(label) => (
+              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                {label}
+              </span>
+            )}
+          />
+        </td>
+      );
+    }
+
+    if (col.id === "priority") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                issue.priority === "URGENT"
+                  ? "bg-red-600"
+                  : issue.priority === "HIGH"
+                    ? "bg-orange-500"
+                    : issue.priority === "MEDIUM"
+                      ? "bg-amber-400"
+                      : "bg-green-400"
+              }`}
+            ></span>
+            <InlineSelect
+              value={issue.priority}
+              options={priorityInlineOptions}
+              className="relative block w-full"
+              onChange={(value) => handleInlineUpdate(issue.id, "priority", value)}
+              renderSummary={(label) => (
+                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                  {label}
+                </span>
+              )}
+            />
+          </div>
+        </td>
+      );
+    }
+
+    if (col.id === "dueDate") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5 text-sm font-medium text-foreground">
+          {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString(localeDateMap[locale]) : ""}
+        </td>
+      );
+    }
+
+    if (col.id === "assignee") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          <InlineSelect
+            value={issue.assigneeId || ""}
+            options={assigneeInlineOptions}
+            className="relative block w-full"
+            onChange={(value) => handleInlineUpdate(issue.id, "assigneeId", value || null)}
+            renderSummary={(label) => (
+              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                {label}
+              </span>
+            )}
+          />
+        </td>
+      );
+    }
+
+    return <td key={`column:${col.id}`}></td>;
+  };
+
+  const renderCustomFieldCell = (
+    issue: Issue,
+    field: CustomFieldDefinition,
+    fieldValue: CustomFieldValue | PlanIssueFieldValue | undefined,
+    onUpdate: (value: string | boolean | null) => void,
+    keyPrefix: "issueField" | "planField"
+  ) => {
+    const displayValue = getFieldValueForDisplay(field, fieldValue);
+
+    if (field.type === "BOOLEAN") {
+      return (
+        <td key={`${keyPrefix}:${field.id}`} className="px-5 py-3.5">
+          <input
+            type="checkbox"
+            checked={fieldValue?.valueBoolean || false}
+            onChange={(event) => onUpdate(event.target.checked)}
+            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+            aria-label={field.name}
+          />
+        </td>
+      );
+    }
+
+    if (field.type === "SELECT") {
+      const options = [
+        { value: "", label: locale === "zh" ? "未选择" : "Not set" },
+        ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
+      ];
+
+      return (
+        <td key={`${keyPrefix}:${field.id}`} className="px-5 py-3.5">
+          <InlineSelect
+            value={displayValue}
+            options={options}
+            className="relative block w-full"
+            onChange={(value) => onUpdate(value || null)}
+            renderSummary={(label) => (
+              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
+                {label}
+              </span>
+            )}
+          />
+        </td>
+      );
+    }
+
+    return (
+      <td key={`${keyPrefix}:${field.id}`} className={`px-5 py-3.5 ${field.type === "LONG_TEXT" ? "align-top" : ""}`}>
+        <FieldDraftInput
+          field={field}
+          value={displayValue}
+          multiline={field.type === "LONG_TEXT"}
+          onCommit={(value) => onUpdate(value)}
+        />
+      </td>
+    );
+  };
+
+  const renderIssueTableCell = (issue: Issue, column: ResizableColumn) => {
+    if (column.type === "column") {
+      const columnConfig = columns.find((item) => item.id === column.id);
+      return columnConfig ? renderColumnCell(issue, columnConfig) : <td key={getColumnOrderKey(column)} />;
+    }
+
+    if (column.type === "issueField") {
+      const fieldValue = issue.issueFieldValues?.find((value) => value.fieldDefinitionId === column.id);
+      return renderCustomFieldCell(
+        issue,
+        column.field,
+        fieldValue,
+        (value) => handleIssueFieldValueUpdate(issue.id, column.field, value),
+        "issueField"
+      );
+    }
+
+    const fieldValue = issue.planFieldValues?.find((value) => value.fieldDefinitionId === column.id);
+    return renderCustomFieldCell(
+      issue,
+      column.field,
+      fieldValue,
+      (value) => handlePlanFieldValueUpdate(issue.id, column.field, value),
+      "planField"
+    );
+  };
 
   const toggleIssueSelection = (issueId: string) => {
     setSelectedIssueIds((current) =>
@@ -1946,6 +2251,11 @@ export default function IssueList({
         {} as Record<string, number>
       )
     );
+    setColumnOrderKeys([
+      ...defaultVisibleColumnIds.map((columnId) => `column:${columnId}`),
+      ...issueFields.map((field) => `issueField:${field.id}`),
+      ...planFields.map((field) => `planField:${field.id}`),
+    ]);
   };
 
   const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
@@ -1959,88 +2269,30 @@ export default function IssueList({
       }`}
     >
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
-        {!lockedPlanId ? (
-          <div className="mb-3 flex flex-wrap items-center gap-1 border-b pb-3">
-            {viewOptions.map((option) => {
-              const isActive = (view || "all") === option.value || (!view && option.value === "all");
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+          {!lockedPlanId ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {viewOptions.map((option) => {
+                const isActive = (view || "all") === option.value || (!view && option.value === "all");
 
-              return (
-                <Button
-                  type="button"
-                  key={option.value}
-                  variant={isActive ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => handleViewChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-2 w-full">
-          <div className={`flex items-center gap-2 ${isSearchOpen ? "w-full lg:w-80" : "w-auto"} relative`}>
-            {isSearchOpen ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setIsSearchOpen(false)}
-                  className="absolute left-2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  aria-label={locale === "zh" ? "收起搜索" : "Collapse search"}
-                  title={locale === "zh" ? "收起搜索" : "Collapse search"}
-                >
-                  <Search size={14} />
-                </button>
-                <Input
-                  type="text"
-                  placeholder={translations.issueList.searchPlaceholder}
-                  value={search}
-                  autoFocus
-                  onChange={(e) => {
-                    setSearch(e.target.value); updateQueryParams({ search: e.target.value });
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape" && !search) {
-                      setIsSearchOpen(false);
-                    }
-                  }}
-                  className="pr-9 pl-9"
-                />
-                {search ? (
-                  <button
+                return (
+                  <Button
                     type="button"
-                    onClick={() => {
-                      setSearch("");
-                      updateQueryParams({ search: null });
-                    }}
-                    className="absolute right-2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    aria-label={locale === "zh" ? "清除搜索" : "Clear search"}
-                    title={locale === "zh" ? "清除搜索" : "Clear search"}
+                    key={option.value}
+                    variant={isActive ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => handleViewChange(option.value)}
                   >
-                    <X size={14} />
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setIsSearchOpen(true)}
-                aria-label={translations.issueList.searchPlaceholder}
-                title={translations.issueList.searchPlaceholder}
-              >
-                <Search />
-              </Button>
-            )}
-          </div>
-
-          <div className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-muted/45 px-2.5 text-sm font-medium text-muted-foreground">
-            <ListFilter size={14} />
-            <span>{locale === "zh" ? "筛选" : "Filters"}</span>
-            {activeFilterCount > 0 ? <Badge variant="secondary">{activeFilterCount}</Badge> : null}
-          </div>
-
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+          ) : (
+            <div />
+          )}
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2">
           {view !== "backlog" ? (
             <MultiFilter
               label={translations.issueList.sprint}
@@ -2131,15 +2383,17 @@ export default function IssueList({
               />
 
               {dueFilter !== "ALL" ? (
-                <LocalizedDateInput
+                <div className="w-[190px] [&_label]:sr-only">
+                <ShadcnDatePicker
+                  id="issueDueDateFilter"
+                  label={translations.issueList.due}
                   locale={locale}
-                  aria-label={translations.issueList.due}
                   value={dueDateValue}
-                  onChange={(e) => {
-                    updateQueryParams({ duePreset: null, dueDate: e.target.value });
+                  onChange={(dueDate) => {
+                    updateQueryParams({ duePreset: null, dueDate });
                   }}
-                  className="h-9 rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                 />
+                </div>
               ) : null}
             </>
           ) : null}
@@ -2173,6 +2427,17 @@ export default function IssueList({
             >
               <Settings2 />
               <span>{planFieldsManagerLabel}</span>
+            </Button>
+          ) : null}
+
+          {activeFilterCount > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetFilters}
+            >
+              {locale === "zh" ? "重置" : "Reset"}
             </Button>
           ) : null}
 
@@ -2279,22 +2544,24 @@ export default function IssueList({
                     className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                   />
                 </th>
-                {columns.map((col, index) => {
-                  const columnSortField = COLUMN_SORT_FIELD_MAP[col.id];
+                {resizableColumns.map((column, index) => {
+                  const columnKey = getColumnOrderKey(column);
+                  const columnSortField = column.type === "column" ? COLUMN_SORT_FIELD_MAP[column.id] : undefined;
                   const isSortedColumn = !!columnSortField && sortBy === columnSortField;
                   const showLeftLine =
                     dragOverIndex === index && dragOverSide === "left" && dragSourceIndex !== index;
                   const showRightLine =
                     dragOverIndex === index && dragOverSide === "right" && dragSourceIndex !== index;
                   const isDragging = dragSourceIndex === index;
+                  const label = column.type === "column" ? column.label : column.field.name;
 
                   return (
                     <th
-                      key={col.id}
+                      key={columnKey}
                       className={`group/column relative h-12 cursor-move select-none overflow-hidden px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
-                      style={col.width ? { width: `${col.width}px` } : undefined}
+                      style={{ width: `${(column.width / columnsTotalWidth) * 100}%` }}
                       draggable
                       onDragStart={(e) => handleDragStart(e, index)}
                       onDragOver={(e) => handleDragOver(e, index)}
@@ -2309,31 +2576,37 @@ export default function IssueList({
                     >
                       {showLeftLine && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      <button
-                        type="button"
-                        onClick={() => handleSortByColumn(col.id)}
-                        disabled={!columnSortField}
-                        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
-                          columnSortField
-                            ? "cursor-pointer text-muted-foreground hover:text-foreground"
-                            : "cursor-move text-muted-foreground"
-                        }`}
-                        draggable={false}
-                      >
-                        <span className="truncate">{col.label}</span>
-                        {columnSortField &&
-                          isSortedColumn && (
+                      {column.type === "column" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSortByColumn(column.id)}
+                          disabled={!columnSortField}
+                          className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
+                            columnSortField
+                              ? "cursor-pointer text-muted-foreground hover:text-foreground"
+                              : "cursor-move text-muted-foreground"
+                          }`}
+                          draggable={false}
+                        >
+                          <span className="truncate">{label}</span>
+                          {columnSortField && isSortedColumn ? (
                             sortDirection === "asc" ? (
                               <ArrowUp size={12} />
                             ) : (
                               <ArrowDown size={12} />
                             )
-                          )}
-                      </button>
+                          ) : null}
+                        </button>
+                      ) : (
+                        <span className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground">
+                          <span className="truncate">{label}</span>
+                          {column.field.required ? <span className="text-red-500">*</span> : null}
+                        </span>
+                      )}
 
                       {showRightLine && <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      {columns[index + 1] ? (
+                      {resizableColumns[index + 1] ? (
                         <div
                           className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                           onMouseDown={(e) => handleResizeStart(e, index)}
@@ -2344,42 +2617,6 @@ export default function IssueList({
                     </th>
                   );
                 })}
-                {visibleIssueFields.map((field) => (
-                  <th
-                    key={field.id}
-                    className="group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle"
-                    style={{ width: `${issueFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
-                  >
-                    <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">
-                      <span className="truncate">{field.name}</span>
-                      {field.required ? <span className="text-red-500">*</span> : null}
-                    </span>
-                    <div
-                      className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                      onMouseDown={(event) => handleIssueFieldResizeStart(event, field)}
-                      draggable={false}
-                      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                    />
-                  </th>
-                ))}
-                {visiblePlanFields.map((field) => (
-                  <th
-                    key={field.id}
-                    className="group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle"
-                    style={{ width: `${planFieldWidths[field.id] || getDefaultFieldWidth(field)}px` }}
-                  >
-                    <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">
-                      <span className="truncate">{field.name}</span>
-                      {field.required ? <span className="text-red-500">*</span> : null}
-                    </span>
-                    <div
-                      className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                      onMouseDown={(event) => handlePlanFieldResizeStart(event, field)}
-                      draggable={false}
-                      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                    />
-                  </th>
-                ))}
               </tr>
             </thead>
 
@@ -2395,333 +2632,7 @@ export default function IssueList({
                       className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
                     />
                   </td>
-                  {columns.map((col) => {
-                    if (col.id === "key") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5 text-muted-foreground font-medium">
-                          <Link href={`/issues/${issue.id}`} className="hover:text-primary hover:underline">
-                            {issue.key}
-                          </Link>
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "title") {
-                      return (
-                        <td
-                          key={col.id}
-                          className="px-5 py-3.5 font-semibold text-foreground overflow-hidden text-ellipsis"
-                        >
-                          <Link
-                            href={`/issues/${issue.id}`}
-                            className="hover:text-primary block w-full truncate border-b border-transparent"
-                          >
-                            {issue.title}
-                          </Link>
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "plan") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          {canManagePlans ? (
-                            <InlineSelect
-                              value={issue.planId || ""}
-                              options={planInlineOptions}
-                              className="relative block w-full"
-                              onChange={(value) => handleInlineUpdate(issue.id, "planId", value || null)}
-                              renderSummary={(label) => (
-                                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                  {label}
-                                </span>
-                              )}
-                            />
-                          ) : (
-                            <span className="block w-full truncate text-sm font-medium text-foreground">
-                              {issue.plan?.name || noPlanLabel}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "iteration") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={issue.iterationId || ""}
-                            options={iterationInlineOptions}
-                            className="relative block w-full"
-                            onChange={(value) => handleInlineUpdate(issue.id, "iterationId", value || null)}
-                            renderSummary={(label) => (
-                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "status") {
-                      const workflow = getWorkflowForProject(issue.projectId);
-                      const transitionMap = buildWorkflowTransitionMap(workflow.transitions, workflow.statuses);
-                      const allowedTargets = transitionMap.get(issue.status);
-                      const statusInlineOptions = buildWorkflowStatusOptions(
-                        workflow.statuses.filter(
-                          (status) => status.key === issue.status || allowedTargets?.has(status.key)
-                        ),
-                        locale
-                      );
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={issue.status}
-                            options={statusInlineOptions.length > 0 ? statusInlineOptions : buildWorkflowStatusOptions(workflow.statuses, locale)}
-                            className="relative block w-full"
-                            onChange={(value) => handleInlineUpdate(issue.id, "status", value)}
-                            renderSummary={(label) => (
-                              <span
-                                className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium cursor-pointer border-none outline-none focus:ring-0 transition-colors ${getWorkflowStatusBadgeClass(issue.status, workflow.statuses)}`}
-                              >
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "type") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={issue.type}
-                            options={typeOptions}
-                            className="relative block w-full"
-                            onChange={(value) => handleInlineUpdate(issue.id, "type", value)}
-                            renderSummary={(label) => (
-                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "priority") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                issue.priority === "URGENT"
-                                  ? "bg-red-600"
-                                  : issue.priority === "HIGH"
-                                    ? "bg-orange-500"
-                                    : issue.priority === "MEDIUM"
-                                      ? "bg-amber-400"
-                                      : "bg-green-400"
-                              }`}
-                            ></span>
-                            <InlineSelect
-                              value={issue.priority}
-                              options={priorityInlineOptions}
-                              className="relative block w-full"
-                              onChange={(value) => handleInlineUpdate(issue.id, "priority", value)}
-                              renderSummary={(label) => (
-                                <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                  {label}
-                                </span>
-                              )}
-                            />
-                          </div>
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "dueDate") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5 text-sm font-medium text-foreground">
-                          {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString(localeDateMap[locale]) : ""}
-                        </td>
-                      );
-                    }
-
-                    if (col.id === "assignee") {
-                      return (
-                        <td key={col.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={issue.assigneeId || ""}
-                            options={assigneeInlineOptions}
-                            className="relative block w-full"
-                            onChange={(value) => handleInlineUpdate(issue.id, "assigneeId", value || null)}
-                            renderSummary={(label) => (
-                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    return <td key={col.id}></td>;
-                  })}
-                  {visibleIssueFields.map((field) => {
-                    const fieldValue = issue.issueFieldValues?.find((value) => value.fieldDefinitionId === field.id);
-                    const displayValue = getFieldValueForDisplay(field, fieldValue);
-
-                    if (field.type === "BOOLEAN") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <input
-                            type="checkbox"
-                            checked={fieldValue?.valueBoolean || false}
-                            onChange={(event) => handleIssueFieldValueUpdate(issue.id, field, event.target.checked)}
-                            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
-                            aria-label={field.name}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "NUMBER") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <FieldDraftInput
-                            field={field}
-                            value={displayValue}
-                            onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "SELECT") {
-                      const options = [
-                        { value: "", label: locale === "zh" ? "未选择" : "Not set" },
-                        ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
-                      ];
-
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={displayValue}
-                            options={options}
-                            className="relative block w-full"
-                            onChange={(value) => handleIssueFieldValueUpdate(issue.id, field, value || null)}
-                            renderSummary={(label) => (
-                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "LONG_TEXT") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5 align-top">
-                          <FieldDraftInput
-                            field={field}
-                            value={displayValue}
-                            multiline
-                            onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
-                          />
-                        </td>
-                      );
-                    }
-
-                    return (
-                      <td key={field.id} className="px-5 py-3.5">
-                        <FieldDraftInput
-                          field={field}
-                          value={displayValue}
-                          onCommit={(value) => handleIssueFieldValueUpdate(issue.id, field, value)}
-                        />
-                      </td>
-                    );
-                  })}
-                  {visiblePlanFields.map((field) => {
-                    const fieldValue = issue.planFieldValues?.find((value) => value.fieldDefinitionId === field.id);
-                    const displayValue = getFieldValueForDisplay(field, fieldValue);
-
-                    if (field.type === "BOOLEAN") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <input
-                            type="checkbox"
-                            checked={fieldValue?.valueBoolean || false}
-                            onChange={(event) => handlePlanFieldValueUpdate(issue.id, field, event.target.checked)}
-                            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
-                            aria-label={field.name}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "NUMBER") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <FieldDraftInput
-                            field={field}
-                            value={displayValue}
-                            onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "SELECT") {
-                      const options = [
-                        { value: "", label: locale === "zh" ? "未选择" : "Not set" },
-                        ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
-                      ];
-
-                      return (
-                        <td key={field.id} className="px-5 py-3.5">
-                          <InlineSelect
-                            value={displayValue}
-                            options={options}
-                            className="relative block w-full"
-                            onChange={(value) => handlePlanFieldValueUpdate(issue.id, field, value || null)}
-                            renderSummary={(label) => (
-                              <span className="block w-full cursor-pointer truncate border-none bg-transparent p-0 text-sm font-medium text-foreground outline-none focus:ring-0">
-                                {label}
-                              </span>
-                            )}
-                          />
-                        </td>
-                      );
-                    }
-
-                    if (field.type === "LONG_TEXT") {
-                      return (
-                        <td key={field.id} className="px-5 py-3.5 align-top">
-                          <FieldDraftInput
-                            field={field}
-                            value={displayValue}
-                            multiline
-                            onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
-                          />
-                        </td>
-                      );
-                    }
-
-                    return (
-                      <td key={field.id} className="px-5 py-3.5">
-                        <FieldDraftInput
-                          field={field}
-                          value={displayValue}
-                          onCommit={(value) => handlePlanFieldValueUpdate(issue.id, field, value)}
-                        />
-                      </td>
-                    );
-                  })}
+                  {resizableColumns.map((column) => renderIssueTableCell(issue, column))}
                 </tr>
               ))}
             </tbody>

@@ -27,6 +27,7 @@ import CommentSection from "./CommentSection";
 import { DropdownField } from "./DropdownField";
 import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
+import { NumberInput } from "./ui/number-input";
 
 type IssueUser = {
   id: string;
@@ -558,13 +559,23 @@ export default function IssueDetailClient({
                 return (
                   <label key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
                     <span className="text-xs font-semibold text-slate-500">{field.name}</span>
-                    <input
-                      key={`${field.id}-${displayValue}`}
-                      type={field.type === "NUMBER" ? "number" : "text"}
-                      defaultValue={displayValue}
-                      onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    {field.type === "NUMBER" ? (
+                      <NumberInput
+                        key={`${field.id}-${displayValue}`}
+                        defaultValue={displayValue}
+                        onBlur={(event) => handleIssueFieldValueUpdate(field, event.currentTarget.value)}
+                        onStepValueChange={(value) => handleIssueFieldValueUpdate(field, value)}
+                        inputClassName="border-slate-200 bg-white text-sm font-medium text-slate-700 focus-visible:ring-blue-500"
+                      />
+                    ) : (
+                      <input
+                        key={`${field.id}-${displayValue}`}
+                        type="text"
+                        defaultValue={displayValue}
+                        onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
+                        className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
                   </label>
                 );
               })}

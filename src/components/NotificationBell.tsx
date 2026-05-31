@@ -1,10 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bell, Check } from "lucide-react";
 
-import { getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { getTranslations, type Locale } from "@/lib/i18n";
+import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 
 type NotificationItem = {
   id: string;
@@ -21,7 +31,6 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
   const text = translations.notificationsMenu;
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -40,17 +49,6 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
 
   const markAllAsRead = async () => {
@@ -66,86 +64,98 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
   };
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => {
-          const nextOpen = !open;
-          setOpen(nextOpen);
-          if (nextOpen) {
-            void markAllAsRead();
-          }
-        }}
-        className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-        title={text.title}
-      >
-        <Bell size={18} />
-        {unreadCount > 0 && (
-          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />
-        )}
-      </button>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          void markAllAsRead();
+        }
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="relative rounded-full text-muted-foreground"
+          title={text.title}
+        >
+          <Bell size={18} />
+          {unreadCount > 0 && (
+            <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-destructive" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
 
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-3 w-[340px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
-            <span className="text-sm font-semibold text-slate-900">{text.title}</span>
-            <div className="flex items-center gap-3">
-              {unreadCount > 0 && (
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                  {locale === "zh" ? `${unreadCount}${text.unreadSuffix}` : `${unreadCount} ${text.unreadSuffix}`}
-                </span>
-              )}
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void markAllAsRead()}
-                  className="text-xs font-medium text-blue-600 hover:underline"
-                >
-                  {text.markAllRead}
-                </button>
-              )}
-            </div>
+      <DropdownMenuContent align="end" sideOffset={10} className="w-[360px] overflow-hidden rounded-lg p-0 shadow-xl">
+        <div className="flex items-center justify-between gap-3 bg-muted/35 px-4 py-3">
+          <DropdownMenuLabel className="p-0 text-sm font-semibold">{text.title}</DropdownMenuLabel>
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                {locale === "zh" ? `${unreadCount}${text.unreadSuffix}` : `${unreadCount} ${text.unreadSuffix}`}
+              </span>
+            )}
+            {unreadCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void markAllAsRead();
+                }}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {text.markAllRead}
+              </Button>
+            )}
           </div>
+        </div>
 
-          <div className="max-h-[420px] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-slate-500">{text.noNotifications}</div>
-            ) : (
-              notifications.map((notification) => {
-                const actorName = notification.actor?.name || text.systemActor;
-                return (
+        <DropdownMenuSeparator className="m-0" />
+
+        <div className="max-h-[420px] overflow-y-auto p-1.5">
+          {notifications.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">{text.noNotifications}</div>
+          ) : (
+            notifications.map((notification) => {
+              const actorName = notification.actor?.name || text.systemActor;
+              return (
+                <DropdownMenuItem key={notification.id} asChild className="cursor-pointer p-0 focus:bg-transparent">
                   <Link
-                    key={notification.id}
                     href={notification.link || "#"}
                     target={notification.link ? "_blank" : undefined}
                     rel={notification.link ? "noreferrer" : undefined}
                     onClick={() => setOpen(false)}
-                    className={`flex gap-3 border-b border-slate-100 px-4 py-3 transition-colors hover:bg-slate-50 ${
-                      notification.read ? "bg-white" : "bg-blue-50/40"
+                    className={`flex w-full gap-3 rounded-md px-3 py-3 transition-colors hover:bg-accent focus:bg-accent ${
+                      notification.read ? "bg-background" : "bg-primary/5"
                     }`}
                   >
                     <div className="pt-1">
                       {notification.read ? (
-                        <Check size={14} className="text-slate-300" />
+                        <Check size={14} className="text-muted-foreground/45" />
                       ) : (
-                        <span className="mt-1 block h-2.5 w-2.5 rounded-full bg-blue-500" />
+                        <span className="mt-1 block h-2.5 w-2.5 rounded-full bg-primary" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className={`text-sm ${notification.read ? "text-slate-600" : "font-medium text-slate-800"}`}>
-                        <span className="font-semibold">{actorName}</span> {notification.message}
+                      <p className={`text-sm leading-5 ${notification.read ? "text-muted-foreground" : "font-medium text-foreground"}`}>
+                        <span className="font-semibold text-foreground">{actorName}</span> {notification.message}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {new Date(notification.createdAt).toLocaleString(localeDateMap[locale])}
+                      <p className="mt-1 text-xs text-muted-foreground" title={formatFullDateTime(notification.createdAt, locale)}>
+                        {formatRelativeTime(notification.createdAt, locale)}
                       </p>
                     </div>
                   </Link>
-                );
-              })
-            )}
-          </div>
+                </DropdownMenuItem>
+              );
+            })
+          )}
         </div>
-      )}
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Plus } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import CreateIssueModal, {
   type CreateIssueIteration,
   type CreateIssuePlan,
@@ -37,16 +40,17 @@ export default function CreateIssueButton({
 
   return (
     <>
-      <button 
+      <Button
+        type="button"
         onClick={() => {
           setModalKey((value) => value + 1);
           setIsModalOpen(true);
         }}
-        className="flex items-center justify-center gap-1 whitespace-nowrap rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
         title={translations.createIssue.createNewIssue}
       >
-        <span className="text-lg leading-none mb-[2px]">+</span> {translations.createIssue.create}
-      </button>
+        <Plus className="size-4" />
+        {translations.createIssue.create}
+      </Button>
       <CreateIssueModal 
         key={modalKey}
         isOpen={isModalOpen} 
