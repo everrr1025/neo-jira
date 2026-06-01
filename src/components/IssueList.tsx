@@ -162,6 +162,8 @@ type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "p
 type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
+const issueListCheckboxClassName =
+  "size-4 shrink-0 rounded-sm border border-input accent-primary transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 const TYPE_ORDER: Record<string, number> = {
   EPIC: 1,
@@ -455,7 +457,7 @@ function AdvancedFieldFilters({
   const activeCount = allFields.filter((field) =>
     searchParams.get(`${field.source === "plan" ? "planField" : "issueField"}_${field.id}_op`)
   ).length;
-  const label = locale === "zh" ? "高级筛选" : "Advanced";
+  const label = locale === "zh" ? "扩展列" : "Custom fields";
   const clearLabel = locale === "zh" ? "清除" : "Clear";
   const valueLabel = locale === "zh" ? "筛选值" : "Value";
   const noFieldsLabel = locale === "zh" ? "暂无可筛选的扩展字段" : "No custom fields to filter";
@@ -976,6 +978,8 @@ export default function IssueList({
     (searchParamsSearch ? 1 : 0) +
     (view && view !== "all" ? 1 : 0) +
     activeCustomFilterCount;
+  const activeAdvancedFilterCount = activeFilterCount - (view && view !== "all" ? 1 : 0);
+  const [isFilterRowOpen, setIsFilterRowOpen] = useState(false);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
@@ -1202,10 +1206,8 @@ export default function IssueList({
 
   const resizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number;
     startX: number;
     startWidth: number;
-    nextStartWidth: number;
   } | null>(null);
 
   const handleResizeStart = useCallback(
@@ -1213,12 +1215,10 @@ export default function IssueList({
       e.preventDefault();
       e.stopPropagation();
       const col = resizableColumns[colIndex];
-      const nextCol = resizableColumns[colIndex + 1];
-      if (!col || !nextCol) return;
+      if (!col) return;
       const startWidth = col.width || 150;
-      const nextStartWidth = nextCol.width || 150;
       const minWidth = 80;
-      resizingRef.current = { colIndex, nextColIndex: colIndex + 1, startX: e.clientX, startWidth, nextStartWidth };
+      resizingRef.current = { colIndex, startX: e.clientX, startWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
         const resizeState = resizingRef.current;
@@ -1226,31 +1226,20 @@ export default function IssueList({
 
         const delta = ev.clientX - resizeState.startX;
         const resizeColumn = resizableColumns[resizeState.colIndex];
-        const nextResizeColumn = resizableColumns[resizeState.nextColIndex];
 
-        if (!resizeColumn || !nextResizeColumn) return;
+        if (!resizeColumn) return;
 
-        const boundedDelta = Math.min(
-          resizeState.nextStartWidth - minWidth,
-          Math.max(minWidth - resizeState.startWidth, delta)
-        );
-        const newWidth = resizeState.startWidth + boundedDelta;
-        const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
+        const newWidth = Math.max(minWidth, resizeState.startWidth + delta);
         const columnUpdates: Partial<Record<ColumnId, number>> = {};
         const issueFieldUpdates: Record<string, number> = {};
         const planFieldUpdates: Record<string, number> = {};
 
-        for (const [column, width] of [
-          [resizeColumn, newWidth],
-          [nextResizeColumn, nextNewWidth],
-        ] as const) {
-          if (column.type === "column") {
-            columnUpdates[column.id] = width;
-          } else if (column.type === "issueField") {
-            issueFieldUpdates[column.id] = width;
-          } else {
-            planFieldUpdates[column.id] = width;
-          }
+        if (resizeColumn.type === "column") {
+          columnUpdates[resizeColumn.id] = newWidth;
+        } else if (resizeColumn.type === "issueField") {
+          issueFieldUpdates[resizeColumn.id] = newWidth;
+        } else {
+          planFieldUpdates[resizeColumn.id] = newWidth;
         }
 
         if (Object.keys(columnUpdates).length > 0) {
@@ -2053,7 +2042,7 @@ export default function IssueList({
             type="checkbox"
             checked={fieldValue?.valueBoolean || false}
             onChange={(event) => onUpdate(event.target.checked)}
-            className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+            className={issueListCheckboxClassName}
             aria-label={field.name}
           />
         </td>
@@ -2287,11 +2276,53 @@ export default function IssueList({
                   </Button>
                 );
               })}
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="gap-1 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setIsFilterRowOpen((current) => !current)}
+                aria-expanded={isFilterRowOpen}
+              >
+                <span>{locale === "zh" ? "高级" : "Advanced"}</span>
+                {activeAdvancedFilterCount > 0 ? (
+                  <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">{activeAdvancedFilterCount}</span>
+                ) : null}
+                <ChevronDown className={`size-4 transition-transform ${isFilterRowOpen ? "rotate-180" : ""}`} />
+              </Button>
             </div>
           ) : (
             <div />
           )}
+          <div className="ml-auto flex items-center gap-2">
+            <ColumnVisibilityMenu
+              buttonLabel={columnsButtonLabel}
+              resetLabel={resetColumnsLabel}
+              columns={defaultColumns}
+              visibleColumnIds={visibleColumnIds}
+              onToggle={handleToggleColumnVisibility}
+              onReset={handleResetColumns}
+              issueFields={issueFields}
+              visibleIssueFieldIds={visibleIssueFieldIds}
+              onToggleIssueField={handleToggleIssueFieldVisibility}
+              planFields={planFields}
+              visiblePlanFieldIds={visiblePlanFieldIds}
+              onTogglePlanField={handleTogglePlanFieldVisibility}
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setIsFullscreen((current) => !current)}
+              title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+              aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
+            >
+              {isFullscreen ? <Minimize2 /> : <Maximize2 />}
+            </Button>
+          </div>
         </div>
+        {isFilterRowOpen ? (
         <div className="flex w-full flex-wrap items-center gap-2">
           {view !== "backlog" ? (
             <MultiFilter
@@ -2441,32 +2472,8 @@ export default function IssueList({
             </Button>
           ) : null}
 
-          <ColumnVisibilityMenu
-            buttonLabel={columnsButtonLabel}
-            resetLabel={resetColumnsLabel}
-            columns={defaultColumns}
-            visibleColumnIds={visibleColumnIds}
-            onToggle={handleToggleColumnVisibility}
-            onReset={handleResetColumns}
-            issueFields={issueFields}
-            visibleIssueFieldIds={visibleIssueFieldIds}
-            onToggleIssueField={handleToggleIssueFieldVisibility}
-            planFields={planFields}
-            visiblePlanFieldIds={visiblePlanFieldIds}
-            onTogglePlanField={handleTogglePlanFieldVisibility}
-          />
-
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setIsFullscreen((current) => !current)}
-            title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
-            aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
-          >
-            {isFullscreen ? <Minimize2 /> : <Maximize2 />}
-          </Button>
         </div>
+        ) : null}
 
         {lockedPlanId && planFieldSummary.length > 0 ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2532,7 +2539,10 @@ export default function IssueList({
 
       <div className={`flex flex-1 flex-col overflow-hidden bg-card ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
         <div className="relative overflow-x-auto flex-1">
-          <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
+          <table
+            className="text-left text-sm whitespace-nowrap"
+            style={{ tableLayout: "fixed", width: `max(100%, ${columnsTotalWidth + 48}px)` }}
+          >
             <thead className="sticky top-0 z-10 border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 <th className="h-12 w-12 px-4 py-0 align-middle">
@@ -2541,7 +2551,7 @@ export default function IssueList({
                     checked={allCurrentPageSelected}
                     onChange={toggleCurrentPageSelection}
                     aria-label={locale === "zh" ? "选择当前页全部问题" : "Select all issues on this page"}
-                    className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+                    className={issueListCheckboxClassName}
                   />
                 </th>
                 {resizableColumns.map((column, index) => {
@@ -2561,7 +2571,7 @@ export default function IssueList({
                       className={`group/column relative h-12 cursor-move select-none overflow-hidden px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
-                      style={{ width: `${(column.width / columnsTotalWidth) * 100}%` }}
+                      style={{ width: `${column.width}px` }}
                       draggable
                       onDragStart={(e) => handleDragStart(e, index)}
                       onDragOver={(e) => handleDragOver(e, index)}
@@ -2606,14 +2616,12 @@ export default function IssueList({
 
                       {showRightLine && <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      {resizableColumns[index + 1] ? (
-                        <div
-                          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                          onMouseDown={(e) => handleResizeStart(e, index)}
-                          draggable={false}
-                          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                        />
-                      ) : null}
+                      <div
+                        className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                        onMouseDown={(e) => handleResizeStart(e, index)}
+                        draggable={false}
+                        title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                      />
                     </th>
                   );
                 })}
@@ -2629,7 +2637,7 @@ export default function IssueList({
                       checked={selectedIssueIds.includes(issue.id)}
                       onChange={() => toggleIssueSelection(issue.id)}
                       aria-label={locale === "zh" ? `选择问题 ${issue.key}` : `Select issue ${issue.key}`}
-                      className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+                      className={issueListCheckboxClassName}
                     />
                   </td>
                   {resizableColumns.map((column) => renderIssueTableCell(issue, column))}

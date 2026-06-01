@@ -1031,6 +1031,23 @@ const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
   assignee: 160,
   actions: 150,
 };
+const TASK_ACTION_COLUMN_MIN_WIDTH = 72;
+
+function estimateTaskActionButtonWidth(label: string, hasIcon = false) {
+  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 14 : 7), 0);
+  return Math.max(36, textWidth + (hasIcon ? 20 : 0) + 18);
+}
+
+function estimateTaskActionColumnWidth(
+  buttons: Array<{ label: string; hasIcon?: boolean }>,
+  headerLabel: string
+) {
+  const buttonGap = buttons.length > 1 ? (buttons.length - 1) * 8 : 0;
+  const buttonsWidth = buttons.reduce((total, button) => total + estimateTaskActionButtonWidth(button.label, button.hasIcon), 0);
+  const headerWidth = estimateTaskActionButtonWidth(headerLabel) + 24;
+  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 24));
+}
+
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
   title: "title",
   dueDate: "dueDate",
@@ -1523,6 +1540,19 @@ export default function DepartmentItemsClient({
     const start = (currentTaskPage - 1) * taskPageSize;
     return sortedTaskItems.slice(start, start + taskPageSize);
   }, [currentTaskPage, sortedTaskItems, taskPageSize]);
+  const taskActionColumnWidth = useMemo(
+    () =>
+      estimateTaskActionColumnWidth(
+        paginatedTaskItems.some((item) => item.canEdit)
+          ? [
+              { label: t.edit },
+              { label: t.deleteTask, hasIcon: true },
+            ]
+          : [],
+        t.actions
+      ),
+    [paginatedTaskItems, t.actions, t.deleteTask, t.edit]
+  );
   const taskRangeStart = sortedTaskItems.length === 0 ? 0 : (currentTaskPage - 1) * taskPageSize + 1;
   const taskRangeEnd = Math.min(currentTaskPage * taskPageSize, sortedTaskItems.length);
   const [taskDragSourceIndex, setTaskDragSourceIndex] = useState<number | null>(null);
@@ -2816,7 +2846,11 @@ export default function DepartmentItemsClient({
         }}
         disabled={!sortField}
         className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
-          sortField ? "cursor-pointer text-muted-foreground hover:text-foreground" : column.id === "actions" ? "cursor-default text-muted-foreground" : "cursor-move text-muted-foreground"
+          sortField
+            ? "cursor-pointer text-muted-foreground hover:text-foreground"
+            : column.id === "actions"
+              ? "cursor-default text-muted-foreground"
+              : "cursor-move text-muted-foreground"
         }`}
         draggable={false}
       >
@@ -2960,8 +2994,12 @@ export default function DepartmentItemsClient({
         }
 
         return (
-          <td key={column.id} className="sticky right-0 z-10 bg-card px-3 py-4 group-hover:bg-muted">
-            <div className="flex items-center gap-2">
+          <td
+            key={column.id}
+            className="sticky right-0 z-10 bg-card px-3 py-4 group-hover:bg-muted"
+            style={{ width: `${taskActionColumnWidth}px` }}
+          >
+            <div className="flex items-center justify-end gap-2">
               {item.canEdit ? (
                 <>
                   <Button
@@ -4682,7 +4720,7 @@ export default function DepartmentItemsClient({
                           } ${
                             isDragging ? "opacity-40" : ""
                           }`}
-                          style={{ width: `${column.width}px` }}
+                          style={{ width: `${column.id === "actions" ? taskActionColumnWidth : column.width}px` }}
                           draggable={column.id !== "actions"}
                           onDragStart={(event) => handleTaskColumnDragStart(event, index)}
                           onDragOver={(event) => handleTaskColumnDragOver(event, index)}

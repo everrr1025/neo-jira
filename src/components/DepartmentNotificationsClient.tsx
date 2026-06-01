@@ -253,6 +253,23 @@ type ColumnConfig = {
   sortable?: boolean;
 };
 
+const ACTION_COLUMN_MIN_WIDTH = 72;
+
+function estimateNotificationActionButtonWidth(label: string, hasIcon = false) {
+  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 14 : 7), 0);
+  return Math.max(36, textWidth + (hasIcon ? 20 : 0) + 18);
+}
+
+function estimateNotificationActionColumnWidth(
+  buttons: Array<{ label: string; hasIcon?: boolean }>,
+  headerLabel: string
+) {
+  const buttonGap = buttons.length > 1 ? (buttons.length - 1) * 8 : 0;
+  const buttonsWidth = buttons.reduce((total, button) => total + estimateNotificationActionButtonWidth(button.label, button.hasIcon), 0);
+  const headerWidth = estimateNotificationActionButtonWidth(headerLabel) + 24;
+  return Math.ceil(Math.max(ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 24));
+}
+
 const DEFAULT_WIDTHS: Record<ColumnId, number> = {
   level: 110,
   title: 320,
@@ -494,6 +511,19 @@ export default function DepartmentNotificationsClient({
   const createdDate = filters.createdDate || "";
   const currentCategory = filters.category || "";
   const showActionColumn = currentView === "sent";
+  const actionColumnWidth = useMemo(() => {
+    let maxWidth = estimateNotificationActionColumnWidth([], t.actions);
+
+    for (const notification of notifications) {
+      const buttons = [
+        ...(notification.canManage && notification.status === "SENT" ? [{ label: t.revoke }] : []),
+        ...(notification.canDelete ? [{ label: t.delete, hasIcon: true }] : []),
+      ];
+      maxWidth = Math.max(maxWidth, estimateNotificationActionColumnWidth(buttons, t.actions));
+    }
+
+    return maxWidth;
+  }, [notifications, t.actions, t.delete, t.revoke]);
   const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
   const createdFilterOptions = useMemo<FilterOption[]>(
     () => [
@@ -1205,7 +1235,7 @@ export default function DepartmentNotificationsClient({
                   );
                 })}
                 {showActionColumn ? (
-                  <th className="h-12 w-36 px-5 py-0 text-right align-middle">
+                  <th className="h-12 px-3 py-0 text-left align-middle" style={{ width: `${actionColumnWidth}px` }}>
                     <span className="font-semibold text-muted-foreground">{t.actions}</span>
                   </th>
                 ) : null}
@@ -1233,7 +1263,7 @@ export default function DepartmentNotificationsClient({
                       </td>
                     ))}
                     {showActionColumn ? (
-                      <td className="px-5 py-3.5 text-right align-middle">
+                      <td className="px-3 py-3.5 text-right align-middle" style={{ width: `${actionColumnWidth}px` }}>
                         <div className="inline-flex items-center justify-end gap-2">
                           {notification.canManage && notification.status === "SENT" ? (
                             <Button
