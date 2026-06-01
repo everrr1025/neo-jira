@@ -253,11 +253,11 @@ type ColumnConfig = {
   sortable?: boolean;
 };
 
-const ACTION_COLUMN_MIN_WIDTH = 72;
+const ACTION_COLUMN_MIN_WIDTH = 56;
 
 function estimateNotificationActionButtonWidth(label: string, hasIcon = false) {
-  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 14 : 7), 0);
-  return Math.max(36, textWidth + (hasIcon ? 20 : 0) + 18);
+  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12 : 6), 0);
+  return Math.max(32, textWidth + (hasIcon ? 16 : 0) + 16);
 }
 
 function estimateNotificationActionColumnWidth(
@@ -266,8 +266,8 @@ function estimateNotificationActionColumnWidth(
 ) {
   const buttonGap = buttons.length > 1 ? (buttons.length - 1) * 8 : 0;
   const buttonsWidth = buttons.reduce((total, button) => total + estimateNotificationActionButtonWidth(button.label, button.hasIcon), 0);
-  const headerWidth = estimateNotificationActionButtonWidth(headerLabel) + 24;
-  return Math.ceil(Math.max(ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 24));
+  const headerWidth = estimateNotificationActionButtonWidth(headerLabel) + 16;
+  return Math.ceil(Math.max(ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 16));
 }
 
 const DEFAULT_WIDTHS: Record<ColumnId, number> = {
@@ -1235,7 +1235,7 @@ export default function DepartmentNotificationsClient({
                   );
                 })}
                 {showActionColumn ? (
-                  <th className="h-12 px-3 py-0 text-left align-middle" style={{ width: `${actionColumnWidth}px` }}>
+                  <th className="h-12 px-2 py-0 text-left align-middle" style={{ width: `${actionColumnWidth}px` }}>
                     <span className="font-semibold text-muted-foreground">{t.actions}</span>
                   </th>
                 ) : null}
@@ -1263,8 +1263,8 @@ export default function DepartmentNotificationsClient({
                       </td>
                     ))}
                     {showActionColumn ? (
-                      <td className="px-3 py-3.5 text-right align-middle" style={{ width: `${actionColumnWidth}px` }}>
-                        <div className="inline-flex items-center justify-end gap-2">
+                      <td className="px-2 py-3.5 text-left align-middle" style={{ width: `${actionColumnWidth}px` }}>
+                        <div className="inline-flex items-center justify-start gap-2">
                           {notification.canManage && notification.status === "SENT" ? (
                             <Button
                               type="button"

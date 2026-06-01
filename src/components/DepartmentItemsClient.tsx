@@ -1031,11 +1031,11 @@ const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
   assignee: 160,
   actions: 150,
 };
-const TASK_ACTION_COLUMN_MIN_WIDTH = 72;
+const TASK_ACTION_COLUMN_MIN_WIDTH = 56;
 
 function estimateTaskActionButtonWidth(label: string, hasIcon = false) {
-  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 14 : 7), 0);
-  return Math.max(36, textWidth + (hasIcon ? 20 : 0) + 18);
+  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12 : 6), 0);
+  return Math.max(32, textWidth + (hasIcon ? 16 : 0) + 16);
 }
 
 function estimateTaskActionColumnWidth(
@@ -1044,8 +1044,8 @@ function estimateTaskActionColumnWidth(
 ) {
   const buttonGap = buttons.length > 1 ? (buttons.length - 1) * 8 : 0;
   const buttonsWidth = buttons.reduce((total, button) => total + estimateTaskActionButtonWidth(button.label, button.hasIcon), 0);
-  const headerWidth = estimateTaskActionButtonWidth(headerLabel) + 24;
-  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 24));
+  const headerWidth = estimateTaskActionButtonWidth(headerLabel) + 16;
+  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 16));
 }
 
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
@@ -2996,10 +2996,10 @@ export default function DepartmentItemsClient({
         return (
           <td
             key={column.id}
-            className="sticky right-0 z-10 bg-card px-3 py-4 group-hover:bg-muted"
+            className="sticky right-0 z-10 bg-card px-2 py-4 group-hover:bg-muted"
             style={{ width: `${taskActionColumnWidth}px` }}
           >
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center justify-start gap-2">
               {item.canEdit ? (
                 <>
                   <Button
