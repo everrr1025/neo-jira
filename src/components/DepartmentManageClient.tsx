@@ -331,6 +331,7 @@ const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 type ProjectColumnId = "name" | "key" | "description" | "owner" | "members" | "createdAt" | "actions";
+type MemberColumnId = "name" | "email" | "access" | "position" | "projects" | "actions";
 type ProjectSortField = Exclude<ProjectColumnId, "actions">;
 type SortDirection = "asc" | "desc";
 type TaskAttachment = {
@@ -341,6 +342,11 @@ type TaskAttachment = {
 };
 type ProjectColumnConfig = {
   id: ProjectColumnId;
+  label: string;
+  width: number;
+};
+type MemberColumnConfig = {
+  id: MemberColumnId;
   label: string;
   width: number;
 };
@@ -412,6 +418,14 @@ const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   members: 120,
   createdAt: 150,
   actions: 260,
+};
+const MEMBER_DEFAULT_COLUMN_WIDTHS: Record<MemberColumnId, number> = {
+  name: 180,
+  email: 240,
+  access: 160,
+  position: 160,
+  projects: 280,
+  actions: 120,
 };
 
 function displayMember(member: { userName: string | null; userEmail: string }) {
@@ -667,6 +681,7 @@ export default function DepartmentManageClient({
   const [editingProject, setEditingProject] = useState<DepartmentWorkspaceProject | null>(null);
   const [memberPage, setMemberPage] = useState(1);
   const [memberPageSize, setMemberPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [memberColumnWidths, setMemberColumnWidths] = useState(MEMBER_DEFAULT_COLUMN_WIDTHS);
   const [projectPage, setProjectPage] = useState(1);
   const [projectPageSize, setProjectPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [projectSortField, setProjectSortField] = useState<ProjectSortField>("createdAt");
@@ -695,6 +710,11 @@ export default function DepartmentManageClient({
     startX: number;
     startWidth: number;
     nextStartWidth: number;
+  } | null>(null);
+  const memberResizingRef = useRef<{
+    colIndex: number;
+    startX: number;
+    startWidth: number;
   } | null>(null);
   const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const [newProject, setNewProject] = useState({
@@ -750,6 +770,25 @@ export default function DepartmentManageClient({
       displayMember(a).localeCompare(displayMember(b))
     );
   });
+  const memberColumns = useMemo<MemberColumnConfig[]>(
+    () => {
+      const columns: MemberColumnConfig[] = [
+        { id: "name", label: t.name, width: memberColumnWidths.name },
+        { id: "email", label: t.email, width: memberColumnWidths.email },
+        { id: "access", label: locale === "zh" ? "部门权限" : "Department access", width: memberColumnWidths.access },
+        { id: "position", label: locale === "zh" ? "岗位" : "Position", width: memberColumnWidths.position },
+        { id: "projects", label: t.memberProjects, width: memberColumnWidths.projects },
+      ];
+      return isHead
+        ? [...columns, { id: "actions", label: t.actions, width: memberColumnWidths.actions }]
+        : columns;
+    },
+    [isHead, locale, memberColumnWidths, t.actions, t.email, t.memberProjects, t.name]
+  );
+  const memberColumnsTotalWidth = useMemo(
+    () => memberColumns.reduce((total, column) => total + column.width, 0),
+    [memberColumns]
+  );
   const projectColumnsById = useMemo(
     () =>
       new Map<ProjectColumnId, ProjectColumnConfig>([
@@ -1152,6 +1191,49 @@ export default function DepartmentManageClient({
     setProjectDragOverSide(null);
   };
 
+  const handleMemberColumnResizeStart = useCallback(
+    (event: React.MouseEvent, colIndex: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const column = memberColumns[colIndex];
+      if (!column || column.id === "actions") return;
+      const minWidth = 80;
+      memberResizingRef.current = {
+        colIndex,
+        startX: event.clientX,
+        startWidth: column.width,
+      };
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const resizeState = memberResizingRef.current;
+        if (!resizeState) return;
+        const resizeColumnId = memberColumns[resizeState.colIndex]?.id;
+        if (!resizeColumnId || resizeColumnId === "actions") return;
+
+        const delta = moveEvent.clientX - resizeState.startX;
+        const newWidth = Math.max(minWidth, resizeState.startWidth + delta);
+        setMemberColumnWidths((current) => ({
+          ...current,
+          [resizeColumnId]: newWidth,
+        }));
+      };
+
+      const onMouseUp = () => {
+        memberResizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+    },
+    [memberColumns]
+  );
+
   const handleProjectColumnResizeStart = useCallback(
     (event: React.MouseEvent, colIndex: number) => {
       event.preventDefault();
@@ -1202,6 +1284,65 @@ export default function DepartmentManageClient({
     },
     [projectColumns]
   );
+
+  const renderMemberCell = (member: DepartmentWorkspaceData["members"][number], column: MemberColumnConfig) => {
+    if (column.id === "name") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-4 font-medium text-foreground">
+          <span className="block truncate">{displayMember(member)}</span>
+        </td>
+      );
+    }
+    if (column.id === "email") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-4 text-muted-foreground">
+          <span className="block truncate">{member.userEmail}</span>
+        </td>
+      );
+    }
+    if (column.id === "access") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-4">
+          <Badge variant={member.isDepartmentAdmin ? "default" : "secondary"}>
+            {member.isDepartmentAdmin ? (locale === "zh" ? "部门管理员" : "Department admin") : t.member}
+          </Badge>
+        </td>
+      );
+    }
+    if (column.id === "position") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-4 text-muted-foreground">
+          <span className="block truncate">{member.positionName || "-"}</span>
+        </td>
+      );
+    }
+    if (column.id === "projects") {
+      return (
+        <td key={column.id} className="overflow-hidden px-5 py-4">
+          <div className="flex flex-wrap gap-2">
+            {member.projects.length > 0
+              ? member.projects.map((project) => (
+                  <Badge key={project.id} variant="outline" className="max-w-full border-emerald-200 bg-emerald-50 text-emerald-700">
+                    <span className="truncate">{project.name}</span>
+                  </Badge>
+                ))
+              : null}
+          </div>
+        </td>
+      );
+    }
+    return (
+      <td key={column.id} className="sticky right-0 z-10 bg-card px-5 py-4 group-hover/member-row:bg-muted">
+        {isHead ? (
+          <Button asChild type="button" variant="outline" size="xs">
+            <Link href={`/departments/${department.id}/members/${member.userId}/settings`}>
+              {locale === "zh" ? "设置" : "Configure"}
+            </Link>
+          </Button>
+        ) : null}
+      </td>
+    );
+  };
 
   const renderProjectHeaderLabel = (column: ProjectColumnConfig) => {
     const sortField = column.id === "actions" ? null : column.id;
@@ -1612,7 +1753,7 @@ export default function DepartmentManageClient({
                           }`}
                         >
                           <div className="flex min-w-0 items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium leading-5 text-foreground">
+                            <span className="min-w-0 flex-1 truncate text-sm font-normal leading-5 text-foreground">
                               {task.issueKey ? `${task.issueKey} ${task.title}` : task.title}
                             </span>
                             {task.isImportant ? <Star size={13} className="shrink-0 fill-amber-400 text-amber-400" /> : null}
@@ -1981,64 +2122,52 @@ export default function DepartmentManageClient({
             </Button>
           </div>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
-                <tr>
-                  <th className="h-12 px-5 py-0 align-middle">{t.name}</th>
-                  <th className="h-12 px-5 py-0 align-middle">{t.email}</th>
-                  <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "部门权限" : "Department access"}</th>
-                  <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "岗位" : "Position"}</th>
-                  <th className="h-12 px-5 py-0 align-middle">{t.memberProjects}</th>
-                  {isHead ? <th className="h-12 px-5 py-0 align-middle">{t.actions}</th> : null}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sortedMembers.length === 0 ? (
+            <div className="overflow-x-auto">
+              <table
+                className="text-left text-sm"
+                style={{ tableLayout: "fixed", width: `max(100%, ${memberColumnsTotalWidth}px)` }}
+              >
+                <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    <td colSpan={isHead ? 6 : 5} className="px-5 py-8 text-center text-muted-foreground">
-                      {t.noMembers}
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedMembers.map((member) => {
-                    return (
-                      <tr key={member.userId} className="align-top transition-colors hover:bg-muted/40">
-                        <td className="px-5 py-4 font-medium text-foreground">
-                          <span>{displayMember(member)}</span>
-                        </td>
-                        <td className="px-5 py-4 text-muted-foreground">{member.userEmail}</td>
-                        <td className="px-5 py-4">
-                          <Badge variant={member.isDepartmentAdmin ? "default" : "secondary"}>
-                            {member.isDepartmentAdmin ? (locale === "zh" ? "部门管理员" : "Department admin") : t.member}
-                          </Badge>
-                        </td>
-                        <td className="px-5 py-4 text-muted-foreground">{member.positionName || "-"}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex flex-wrap gap-2">
-                            {member.projects.length > 0 ? (
-                              member.projects.map((project) => (
-                                <Badge key={project.id} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                                  <span>{project.name}</span>
-                                </Badge>
-                              ))
-                            ) : null}
-                          </div>
-                        </td>
-                        {isHead ? (
-                          <td className="px-5 py-4">
-                            <Button asChild type="button" variant="outline" size="xs">
-                              <Link href={`/departments/${department.id}/members/${member.userId}/settings`}>
-                                {locale === "zh" ? "设置" : "Configure"}
-                              </Link>
-                            </Button>
-                          </td>
+                    {memberColumns.map((column, index) => (
+                      <th
+                        key={column.id}
+                        className={`group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle transition-colors ${
+                          column.id === "actions" ? "sticky right-0 z-20 bg-muted/50" : "hover:bg-muted"
+                        }`}
+                        style={{ width: `${column.width}px` }}
+                      >
+                        <span className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground">
+                          <span className="truncate">{column.label}</span>
+                        </span>
+                        {column.id !== "actions" ? (
+                          <div
+                            className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                            onMouseDown={(event) => handleMemberColumnResizeStart(event, index)}
+                            title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                          />
                         ) : null}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {sortedMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={memberColumns.length} className="px-5 py-8 text-center text-muted-foreground">
+                        {t.noMembers}
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedMembers.map((member) => (
+                      <tr key={member.userId} className="group/member-row align-top transition-colors hover:bg-muted/40">
+                        {memberColumns.map((column) => renderMemberCell(member, column))}
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
             {sortedMembers.length > 0 ? (
               <PaginationFooter
                 locale={locale}
