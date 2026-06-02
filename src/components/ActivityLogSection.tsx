@@ -145,6 +145,7 @@ export default function ActivityLogSection({
                     alt={actorName}
                     width={36}
                     height={36}
+                    unoptimized
                     className="h-full w-full object-cover"
                   />
                 </div>
