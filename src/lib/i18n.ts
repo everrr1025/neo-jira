@@ -191,6 +191,8 @@ type TranslationBundle = {
     sprintNamePlaceholder: string;
     startDate: string;
     endDate: string;
+    cancel: string;
+    creating: string;
     failedCreateSprint: string;
   };
   iterationDetail: {
@@ -515,6 +517,8 @@ const translations: Record<Locale, TranslationBundle> = {
       sprintNamePlaceholder: "Sprint 6",
       startDate: "Start date",
       endDate: "End date",
+      cancel: "Cancel",
+      creating: "Creating...",
       failedCreateSprint: "Failed to create sprint",
     },
     iterationDetail: {
@@ -831,13 +835,15 @@ const translations: Record<Locale, TranslationBundle> = {
       removeAttachment: "移除附件",
     },
     createSprint: {
-      createSprint: "创建 Sprint",
+      createSprint: "创建",
       modalTitle: "创建 Sprint",
       project: "项目",
       sprintName: "Sprint 名称",
       sprintNamePlaceholder: "Sprint 6",
       startDate: "开始日期",
       endDate: "结束日期",
+      cancel: "取消",
+      creating: "创建中...",
       failedCreateSprint: "创建 Sprint 失败",
     },
     iterationDetail: {

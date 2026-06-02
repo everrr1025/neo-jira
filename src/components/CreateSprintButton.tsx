@@ -77,7 +77,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                 size="icon-sm"
                 onClick={handleClose}
                 disabled={isPending}
-                aria-label={translations.createSprint.modalTitle}
+                aria-label={translations.createSprint.cancel}
               >
                 <X className="size-4" />
               </Button>
@@ -148,9 +148,12 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
             </div>
 
             <DialogFooter className="border-t bg-muted/35 px-6 py-4">
-              <Button type="submit" disabled={isPending} className="w-full">
+              <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>
+                {translations.createSprint.cancel}
+              </Button>
+              <Button type="submit" disabled={isPending}>
                 {isPending ? <Loader2 className="animate-spin" /> : null}
-                {translations.createSprint.createSprint}
+                {isPending ? translations.createSprint.creating : translations.createSprint.createSprint}
               </Button>
             </DialogFooter>
           </form>

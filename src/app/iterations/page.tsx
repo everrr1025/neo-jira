@@ -4,7 +4,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { CreateSprintButton } from "@/components/CreateSprintButton";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { redirect } from "next/navigation";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
@@ -12,7 +13,7 @@ import { canManageProjectPlanning } from "@/lib/permissions";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
-import { CalendarDays, CheckCircle2, CircleDot, ListChecks } from "lucide-react";
+import { CircleDot } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -92,72 +93,73 @@ export default async function IterationsPage() {
       </div>
 
       <div className="grid gap-4">
-        {iterations.map((iteration) => {
-          const totalIssues = iteration._count.issues;
-          const completedIssues = iteration.issues.filter(
-            (issue) => getWorkflowStatusCategory(issue.status, iteration.project.workflowStatuses) === "DONE"
-          ).length;
-          const progress = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
+        {iterations.length > 0 && (
+          <Card className="gap-0 py-0">
+            <Table className="min-w-[820px]">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[280px]">{translations.iterationsPage.title}</TableHead>
+                  <TableHead>{translations.issueList.status}</TableHead>
+                  <TableHead>{translations.projectsPage.key}</TableHead>
+                  <TableHead>{locale === "zh" ? "周期" : "Period"}</TableHead>
+                  <TableHead className="text-right">{translations.iterationsPage.issues}</TableHead>
+                  <TableHead className="text-right">{translations.iterationsPage.completed}</TableHead>
+                  <TableHead className="w-[180px]">{translations.iterationsPage.progress}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {iterations.map((iteration) => {
+                  const totalIssues = iteration._count.issues;
+                  const completedIssues = iteration.issues.filter(
+                    (issue) => getWorkflowStatusCategory(issue.status, iteration.project.workflowStatuses) === "DONE"
+                  ).length;
+                  const progress = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
 
-          return (
-            <Link href={`/iterations/${iteration.id}`} key={iteration.id} className="block">
-              <Card className="gap-0 py-0 transition-colors hover:border-foreground/20">
-                <CardHeader className="border-b px-5 py-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <CardTitle className="truncate text-lg" title={iteration.name}>
+                  return (
+                    <TableRow key={iteration.id}>
+                      <TableCell className="max-w-[280px]">
+                        <Link
+                          href={`/iterations/${iteration.id}`}
+                          className="block truncate font-medium text-foreground hover:text-primary hover:underline"
+                          title={iteration.name}
+                        >
                           {iteration.name}
-                        </CardTitle>
+                        </Link>
+                      </TableCell>
+                      <TableCell>
                         <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
                           {getIterationStatusLabel(iteration.status, locale)}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
                         <Badge variant="secondary" className="rounded-md">
                           {iteration.project.key}
                         </Badge>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                      <CalendarDays className="size-4" />
-                      <span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {iteration.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
                         {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
-                      </span>
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="grid gap-4 px-5 py-4 sm:grid-cols-[1fr_minmax(220px,33%)] sm:items-center">
-                  <div className="grid gap-2 text-sm sm:grid-cols-2">
-                    <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                      <ListChecks className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">{translations.iterationsPage.issues}</span>
-                      <span className="ml-auto font-semibold">{totalIssues}</span>
-                    </div>
-                    <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                      <CheckCircle2 className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">{translations.iterationsPage.completed}</span>
-                      <span className="ml-auto font-semibold">{completedIssues}</span>
-                    </div>
-                  </div>
-
-                  <div className="w-full">
-                    <div className="mb-2 flex justify-between text-xs">
-                      <span className="font-medium text-muted-foreground">{translations.iterationsPage.progress}</span>
-                      <span className="font-semibold">{progress}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full ${getProgressClassName(iteration.status)}`}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{totalIssues}</TableCell>
+                      <TableCell className="text-right font-medium">{completedIssues}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={`h-full rounded-full ${getProgressClassName(iteration.status)}`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="w-9 text-right text-xs font-semibold">{progress}%</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
         {iterations.length === 0 && (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">

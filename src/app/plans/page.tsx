@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
-import { CalendarDays, CheckCircle2, CircleDot, ListChecks, Target } from "lucide-react";
+import { CircleDot } from "lucide-react";
 
 import CreatePlanButton from "@/components/CreatePlanButton";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
@@ -71,11 +72,12 @@ function getPlanPageText(locale: "en" | "zh") {
       title: "计划",
       subtitle: "按阶段目标管理任务池，并跟踪整体推进情况。",
       empty: "当前项目下还没有计划。",
-      total: "问题数",
+      current: "当前问题数",
       done: "已完成",
-      backlog: "未进迭代",
       progress: "进度",
       target: "目标数",
+      period: "周期",
+      status: "状态",
     };
   }
 
@@ -83,11 +85,12 @@ function getPlanPageText(locale: "en" | "zh") {
     title: "Plans",
     subtitle: "Track medium-term delivery goals and their overall progress.",
     empty: "No plans have been created for the active project yet.",
-    total: "Issue Count",
+    current: "Current Issues",
     done: "Done",
-    backlog: "Not in sprint",
     progress: "Progress",
     target: "Target",
+    period: "Period",
+    status: "Status",
   };
 }
 
@@ -111,7 +114,6 @@ export default async function PlansPage() {
         issues: {
           select: {
             status: true,
-            iterationId: true,
           },
         },
       },
@@ -171,88 +173,71 @@ export default async function PlansPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
-          {sortedPlans.map((plan) => {
-            const totalIssues = plan.issues.length;
-            const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
-            const statusKey = getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate });
-            const doneIssues = plan.issues.filter(
-              (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
-            ).length;
-            const backlogIssues = plan.issues.filter((issue) => issue.iterationId == null).length;
-            const progress = totalIssues > 0 ? Math.round((doneIssues / totalIssues) * 100) : 0;
+        <Card className="gap-0 py-0">
+          <Table className="min-w-[900px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[280px]">{text.title}</TableHead>
+                <TableHead>{text.status}</TableHead>
+                <TableHead>{text.period}</TableHead>
+                <TableHead className="text-right">{text.target}</TableHead>
+                <TableHead className="text-right">{text.current}</TableHead>
+                <TableHead className="text-right">{text.done}</TableHead>
+                <TableHead className="w-[180px]">{text.progress}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedPlans.map((plan) => {
+                const totalIssues = plan.issues.length;
+                const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
+                const statusKey = getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate });
+                const doneIssues = plan.issues.filter(
+                  (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
+                ).length;
+                const progress = totalIssues > 0 ? Math.round((doneIssues / totalIssues) * 100) : 0;
 
-            return (
-              <Link href={`/plans/${plan.id}`} key={plan.id} className="block">
-                <Card className="gap-0 py-0 transition-colors hover:border-foreground/20">
-                  <CardHeader className="border-b px-5 py-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 space-y-2">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <CardTitle className="truncate text-lg" title={plan.name}>
-                            {plan.name}
-                          </CardTitle>
-                          <Badge variant="outline" className={status.className}>
-                            {status.label}
-                          </Badge>
-                          {typeof plan.targetCount === "number" && plan.targetCount > 0 ? (
-                            <Badge variant="secondary" className="rounded-md">
-                              {text.target} {plan.targetCount}
-                            </Badge>
-                          ) : null}
+                return (
+                  <TableRow key={plan.id}>
+                    <TableCell className="max-w-[280px]">
+                      <Link
+                        href={`/plans/${plan.id}`}
+                        className="block truncate font-medium text-foreground hover:text-primary hover:underline"
+                        title={plan.name}
+                      >
+                        {plan.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={status.className}>
+                        {status.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+                      {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {typeof plan.targetCount === "number" ? plan.targetCount : "-"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">{totalIssues}</TableCell>
+                    <TableCell className="text-right font-medium">{doneIssues}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={`h-full rounded-full ${getProgressClassName(statusKey)}`}
+                            style={{ width: `${progress}%` }}
+                          />
                         </div>
-                        {plan.description ? (
-                          <p className="line-clamp-2 text-sm text-muted-foreground">{plan.description}</p>
-                        ) : null}
+                        <span className="w-9 text-right text-xs font-semibold">{progress}%</span>
                       </div>
-
-                      <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                        <CalendarDays className="size-4" />
-                        <span>
-                          {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
-                          {plan.endDate.toLocaleDateString(localeDateMap[locale])}
-                        </span>
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="grid gap-4 px-5 py-4 lg:grid-cols-[1fr_minmax(220px,33%)] lg:items-center">
-                    <div className="grid gap-2 text-sm sm:grid-cols-3">
-                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                        <ListChecks className="size-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">{text.total}</span>
-                        <span className="ml-auto font-semibold">{totalIssues}</span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                        <CheckCircle2 className="size-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">{text.done}</span>
-                        <span className="ml-auto font-semibold">{doneIssues}</span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                        <Target className="size-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">{text.backlog}</span>
-                        <span className="ml-auto font-semibold">{backlogIssues}</span>
-                      </div>
-                    </div>
-
-                    <div className="w-full">
-                      <div className="mb-2 flex justify-between text-xs">
-                        <span className="font-medium text-muted-foreground">{text.progress}</span>
-                        <span className="font-semibold">{progress}%</span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full rounded-full ${getProgressClassName(statusKey)}`}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   );
