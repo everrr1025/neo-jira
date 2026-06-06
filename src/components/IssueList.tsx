@@ -2259,41 +2259,37 @@ export default function IssueList({
     >
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-          {!lockedPlanId ? (
-            <div className="flex flex-wrap items-center gap-1">
-              {viewOptions.map((option) => {
-                const isActive = (view || "all") === option.value || (!view && option.value === "all");
+          <div className="flex flex-wrap items-center gap-1">
+            {viewOptions.map((option) => {
+              const isActive = (view || "all") === option.value || (!view && option.value === "all");
 
-                return (
-                  <Button
-                    type="button"
-                    key={option.value}
-                    variant={isActive ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => handleViewChange(option.value)}
-                  >
-                    {option.label}
-                  </Button>
-                );
-              })}
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className="gap-1 px-2 text-muted-foreground hover:text-foreground"
-                onClick={() => setIsFilterRowOpen((current) => !current)}
-                aria-expanded={isFilterRowOpen}
-              >
-                <span>{locale === "zh" ? "高级" : "Advanced"}</span>
-                {activeAdvancedFilterCount > 0 ? (
-                  <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">{activeAdvancedFilterCount}</span>
-                ) : null}
-                <ChevronDown className={`size-4 transition-transform ${isFilterRowOpen ? "rotate-180" : ""}`} />
-              </Button>
-            </div>
-          ) : (
-            <div />
-          )}
+              return (
+                <Button
+                  type="button"
+                  key={option.value}
+                  variant={isActive ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => handleViewChange(option.value)}
+                >
+                  {option.label}
+                </Button>
+              );
+            })}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="gap-1 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setIsFilterRowOpen((current) => !current)}
+              aria-expanded={isFilterRowOpen}
+            >
+              <span>{locale === "zh" ? "高级" : "Advanced"}</span>
+              {activeAdvancedFilterCount > 0 ? (
+                <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">{activeAdvancedFilterCount}</span>
+              ) : null}
+              <ChevronDown className={`size-4 transition-transform ${isFilterRowOpen ? "rotate-180" : ""}`} />
+            </Button>
+          </div>
           <div className="ml-auto flex items-center gap-2">
             <ColumnVisibilityMenu
               buttonLabel={columnsButtonLabel}

@@ -189,7 +189,7 @@ export async function parseIssueSearchParams(
   if (type.length > 0) andFilters.push({ type: { in: type } });
   if (priority.length > 0) andFilters.push({ priority: { in: priority } });
   
-  if (sprint.length > 0 && !(!lockedPlanId && view === "backlog")) {
+  if (sprint.length > 0 && view !== "backlog") {
     if (sprint.includes("__BACKLOG__") && sprint.length === 1) {
       andFilters.push({ iterationId: null });
     } else if (sprint.includes("__BACKLOG__")) {
@@ -215,7 +215,7 @@ export async function parseIssueSearchParams(
     }
   }
 
-  if (assignee.length > 0 && !(!lockedPlanId && view === "assignedToMe")) {
+  if (assignee.length > 0 && view !== "assignedToMe") {
     const filters: Prisma.IssueWhereInput[] = [];
     const validAssignees = assignee.filter((a) => a !== "ME" && a !== "UNASSIGNED");
     if (validAssignees.length > 0) {
@@ -233,7 +233,7 @@ export async function parseIssueSearchParams(
     }
   }
 
-  if (watcher.length > 0 && currentUserId && watcher.includes("ME") && !(!lockedPlanId && view === "watching")) {
+  if (watcher.length > 0 && currentUserId && watcher.includes("ME") && view !== "watching") {
     andFilters.push({ watchers: { some: { id: currentUserId } } });
   }
 
@@ -246,7 +246,7 @@ export async function parseIssueSearchParams(
     });
   }
 
-  if (dueFilter && dueFilter !== "ALL" && dueDate && !(!lockedPlanId && (view === "overdue" || view === "dueSoon"))) {
+  if (dueFilter && dueFilter !== "ALL" && dueDate && view !== "overdue" && view !== "dueSoon") {
     const date = new Date(dueDate);
     date.setHours(0, 0, 0, 0);
     const nextDay = new Date(date);
@@ -259,30 +259,28 @@ export async function parseIssueSearchParams(
     } else if (dueFilter === "LTE") {
       andFilters.push({ dueDate: { lt: nextDay } });
     }
-  } else if (duePreset === "NEXT_3_DAYS" && !(!lockedPlanId && (view === "overdue" || view === "dueSoon"))) {
+  } else if (duePreset === "NEXT_3_DAYS" && view !== "overdue" && view !== "dueSoon") {
     const today = startOfToday();
     const threeDaysLater = new Date(today);
     threeDaysLater.setDate(threeDaysLater.getDate() + 4); // < 4 days later is <= 3 days later
     andFilters.push({ dueDate: { gte: today, lt: threeDaysLater } });
   }
 
-  if (!lockedPlanId) {
-    const today = startOfToday();
-    const dueSoonEnd = new Date(today);
-    dueSoonEnd.setDate(dueSoonEnd.getDate() + 4);
-    const incompleteFilter: Prisma.IssueWhereInput = { NOT: { status: { in: doneStatusKeys } } };
+  const today = startOfToday();
+  const dueSoonEnd = new Date(today);
+  dueSoonEnd.setDate(dueSoonEnd.getDate() + 4);
+  const incompleteFilter: Prisma.IssueWhereInput = { NOT: { status: { in: doneStatusKeys } } };
 
-    if (view === "backlog") {
-      andFilters.push({ iterationId: null });
-    } else if (view === "overdue") {
-      andFilters.push({ dueDate: { not: null, lt: today } }, incompleteFilter);
-    } else if (view === "dueSoon") {
-      andFilters.push({ dueDate: { not: null, gte: today, lt: dueSoonEnd } }, incompleteFilter);
-    } else if (view === "assignedToMe" && currentUserId) {
-      andFilters.push({ assigneeId: currentUserId });
-    } else if (view === "watching" && currentUserId) {
-      andFilters.push({ watchers: { some: { id: currentUserId } } });
-    }
+  if (view === "backlog") {
+    andFilters.push({ iterationId: null });
+  } else if (view === "overdue") {
+    andFilters.push({ dueDate: { not: null, lt: today } }, incompleteFilter);
+  } else if (view === "dueSoon") {
+    andFilters.push({ dueDate: { not: null, gte: today, lt: dueSoonEnd } }, incompleteFilter);
+  } else if (view === "assignedToMe" && currentUserId) {
+    andFilters.push({ assigneeId: currentUserId });
+  } else if (view === "watching" && currentUserId) {
+    andFilters.push({ watchers: { some: { id: currentUserId } } });
   }
 
   andFilters.push(...buildCustomFieldFilters(searchParams, issueFieldDefinitions));

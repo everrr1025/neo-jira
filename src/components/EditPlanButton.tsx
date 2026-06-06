@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PLAN_NAME_MAX_LENGTH } from "@/lib/validation";
 
 import AlertPopup from "./AlertPopup";
-import LocalizedDateInput from "./LocalizedDateInput";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 
 type EditPlanButtonProps = {
   plan: {
@@ -29,9 +29,6 @@ type EditPlanButtonProps = {
 function formatDateInputValue(date: Date | string) {
   return new Date(date).toISOString().slice(0, 10);
 }
-
-const dateInputClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 function getEditPlanText(locale: "en" | "zh") {
   if (locale === "zh") {
@@ -174,27 +171,21 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="edit-plan-start-date">{text.startDate}</Label>
-                  <LocalizedDateInput
-                    id="edit-plan-start-date"
-                    locale={locale}
-                    value={formData.startDate}
-                    onChange={(event) => setFormData((current) => ({ ...current, startDate: event.target.value }))}
-                    className={dateInputClassName}
-                  />
-                </div>
+                <ShadcnDatePicker
+                  id="edit-plan-start-date"
+                  label={text.startDate}
+                  locale={locale}
+                  value={formData.startDate}
+                  onChange={(startDate) => setFormData((current) => ({ ...current, startDate }))}
+                />
 
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="edit-plan-end-date">{text.endDate}</Label>
-                  <LocalizedDateInput
-                    id="edit-plan-end-date"
-                    locale={locale}
-                    value={formData.endDate}
-                    onChange={(event) => setFormData((current) => ({ ...current, endDate: event.target.value }))}
-                    className={dateInputClassName}
-                  />
-                </div>
+                <ShadcnDatePicker
+                  id="edit-plan-end-date"
+                  label={text.endDate}
+                  locale={locale}
+                  value={formData.endDate}
+                  onChange={(endDate) => setFormData((current) => ({ ...current, endDate }))}
+                />
               </div>
             </div>
 

@@ -240,20 +240,21 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>{plan.name}</h2>
             <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${status.className}`}>
               {status.label}
             </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
-            <span className="whitespace-nowrap">
+            <span className="whitespace-nowrap text-sm text-slate-500">
+              <span aria-hidden="true" className="mr-2 text-slate-300">
+                ·
+              </span>
               {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
               {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
             </span>
             {summaryItems.map((item) => (
-              <span key={item.label} className="whitespace-nowrap">
+              <span key={item.label} className="whitespace-nowrap text-sm text-slate-500">
                 <span aria-hidden="true" className="mr-2 text-slate-300">
                   ·
                 </span>
@@ -288,7 +289,6 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         planFieldDefinitions={planFieldDefinitions}
         canManagePlanFields={canManageIssueFields}
         canManagePlans={canManagePlans}
-        unframed
       />
     </div>
   );
