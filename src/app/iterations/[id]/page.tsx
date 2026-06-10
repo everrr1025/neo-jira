@@ -2,8 +2,6 @@ import prisma from "@/lib/prisma";
 import KanbanBoard from "@/components/KanbanBoard";
 import CreateIssueButton from "@/components/CreateIssueButton";
 import AddExistingIssuesButton from "@/components/AddExistingIssuesButton";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
@@ -121,12 +119,6 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
 
   return (
     <div className="flex flex-col h-full">
-      <div className="mb-4">
-        <Link href="/iterations" className="text-sm font-medium text-slate-500 hover:text-blue-600 flex items-center gap-1 w-fit transition-colors">
-          <ArrowLeft size={16} /> {translations.iterationDetail.backToSprints}
-        </Link>
-      </div>
-
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <h2 className="break-words text-2xl font-bold text-slate-800 tracking-tight" title={iteration.name}>
@@ -138,9 +130,21 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          {canChangeSprintIssues && (
-            <div className="flex flex-wrap items-center gap-2">
-              {canManage && (
+          {canManage && (
+            <SprintActionButton
+              sprintId={iteration.id}
+              status={iteration.status}
+              locale={locale}
+              plannedSprints={plannedSprints}
+              unfinishedIssueCount={unfinishedIssueCount}
+              sprintData={{
+                id: iteration.id,
+                name: iteration.name,
+                startDate: iteration.startDate.toISOString(),
+                endDate: iteration.endDate.toISOString(),
+              }}
+            >
+              {canChangeSprintIssues && (
                 <AddExistingIssuesButton
                   sprintId={iteration.id}
                   sprintName={iteration.name}
@@ -154,35 +158,18 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   defaultDueDate={defaultDueDate}
                 />
               )}
-              {!canManage && (
-                <CreateIssueButton
-                  locale={locale}
-                  users={users}
-                  plans={plans}
-                  iterations={iterations}
-                  canManagePlans={false}
-                  defaultIterationId={iteration.id}
-                  defaultDueDate={defaultDueDate}
-                />
-              )}
-            </div>
+            </SprintActionButton>
           )}
-          {canManage && (
-            <div className={`flex items-center gap-2 ${canChangeSprintIssues ? "border-l border-slate-200 pl-2" : ""}`}>
-              <SprintActionButton
-                sprintId={iteration.id}
-                status={iteration.status}
-                locale={locale}
-                plannedSprints={plannedSprints}
-                unfinishedIssueCount={unfinishedIssueCount}
-                sprintData={{
-                  id: iteration.id,
-                  name: iteration.name,
-                  startDate: iteration.startDate.toISOString(),
-                  endDate: iteration.endDate.toISOString(),
-                }}
-              />
-            </div>
+          {canChangeSprintIssues && !canManage && (
+            <CreateIssueButton
+              locale={locale}
+              users={users}
+              plans={plans}
+              iterations={iterations}
+              canManagePlans={false}
+              defaultIterationId={iteration.id}
+              defaultDueDate={defaultDueDate}
+            />
           )}
         </div>
       </div>

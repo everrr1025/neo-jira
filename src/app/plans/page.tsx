@@ -217,7 +217,7 @@ export default async function PlansPage() {
                       {plan.endDate.toLocaleDateString(localeDateMap[locale])}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {typeof plan.targetCount === "number" ? plan.targetCount : "-"}
+                      {typeof plan.targetCount === "number" ? plan.targetCount : null}
                     </TableCell>
                     <TableCell className="text-right font-medium">{totalIssues}</TableCell>
                     <TableCell className="text-right font-medium">{doneIssues}</TableCell>

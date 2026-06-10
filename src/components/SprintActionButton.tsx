@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { AlertTriangle, Loader2, MoreHorizontal, RotateCcw, Trash2, Pencil } from "lucide-react";
+import { ReactNode, useMemo, useState, useTransition } from "react";
+import { AlertTriangle, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -34,6 +34,7 @@ type SprintActionButtonProps = {
   plannedSprints: PlannedSprintOption[];
   unfinishedIssueCount: number;
   sprintData: SprintData;
+  children?: ReactNode;
 };
 
 export function SprintActionButton({
@@ -43,6 +44,7 @@ export function SprintActionButton({
   plannedSprints,
   unfinishedIssueCount,
   sprintData,
+  children,
 }: SprintActionButtonProps) {
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -146,43 +148,42 @@ export function SprintActionButton({
           </Button>
         )}
 
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isPending || isDeleting}
-          onClick={() => setIsEditOpen(true)}
-          title={locale === "zh" ? "编辑" : "Edit Sprint"}
-        >
-          <Pencil />
-          <span className="hidden sm:inline">{locale === "zh" ? "编辑" : "Edit Sprint"}</span>
-        </Button>
+        {children}
 
-        <Button
-          type="button"
-          variant="outline"
-          disabled={isDeleting}
-          onClick={() => setIsDeleteOpen(true)}
-          className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-        >
-          {isDeleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-          {locale === "zh" ? "删除" : text.deleteSprint}
-        </Button>
-
-        {status === "ACTIVE" && (
-          <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="icon" disabled={isPending || isDeleting} title={text.moreActions}>
-                {isDeleting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="icon" disabled={isPending || isDeleting} title={text.moreActions}>
+              {isDeleting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsEditOpen(true);
+              }}
+            >
+              <Pencil />
+              {locale === "zh" ? "编辑" : "Edit Sprint"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsDeleteOpen(true);
+              }}
+            >
+              <Trash2 />
+              {locale === "zh" ? "删除" : text.deleteSprint}
+            </DropdownMenuItem>
+            {status === "ACTIVE" && (
               <DropdownMenuItem onClick={() => runAction(() => reopenSprint(sprintId))}>
                 <RotateCcw />
                 {text.moveBackToPlanned}
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <Dialog open={isCompleteOpen} onOpenChange={(open) => (!open && !isPending ? setIsCompleteOpen(false) : null)}>
