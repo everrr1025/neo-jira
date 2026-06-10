@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
@@ -19,18 +18,14 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           accessDeniedTitle: "访问被拒绝",
           accessDeniedDesc: "你没有权限管理这个项目的设置。",
           backToProjects: "返回项目列表",
-          projects: "项目",
-          settingsSuffix: "设置",
-          detailsTitle: "项目详情",
+          detailsTitle: "项目设置",
           detailsDesc: "更新项目标识和基础信息。",
         }
       : {
           accessDeniedTitle: "Access Denied",
           accessDeniedDesc: "You don't have permission to manage this project's settings.",
           backToProjects: "Back to Projects",
-          projects: "Projects",
-          settingsSuffix: "Settings",
-          detailsTitle: "Project Details",
+          detailsTitle: "Project Settings",
           detailsDesc: "Update your project's identity and basic information.",
         };
 
@@ -82,22 +77,11 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Link href="/projects" className="flex items-center gap-1 transition-colors hover:text-blue-600">
-          <ChevronLeft size={16} />
-          {text.projects}
-        </Link>
-        <span>/</span>
-        <span className="font-medium text-slate-800">
-          {project.name} {text.settingsSuffix}
-        </span>
-      </div>
-
-      <div className="rounded-xl border bg-white p-8 shadow-sm">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-slate-800">{text.detailsTitle}</h2>
-          <p className="mt-1 text-sm text-slate-500">{text.detailsDesc}</p>
+    <div className="mx-auto w-full max-w-5xl space-y-6">
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">{text.detailsTitle}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{text.detailsDesc}</p>
         </div>
 
         <ProjectSettingsForm project={project} locale={locale} />

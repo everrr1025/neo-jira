@@ -457,7 +457,7 @@ function AdvancedFieldFilters({
   const activeCount = allFields.filter((field) =>
     searchParams.get(`${field.source === "plan" ? "planField" : "issueField"}_${field.id}_op`)
   ).length;
-  const label = locale === "zh" ? "扩展列" : "Custom fields";
+  const label = locale === "zh" ? "扩展字段" : "Custom fields";
   const clearLabel = locale === "zh" ? "清除" : "Clear";
   const valueLabel = locale === "zh" ? "筛选值" : "Value";
   const noFieldsLabel = locale === "zh" ? "暂无可筛选的扩展字段" : "No custom fields to filter";
@@ -483,7 +483,6 @@ function AdvancedFieldFilters({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" size="sm" className="gap-2">
-          <Settings2 className="size-4 text-muted-foreground" />
           <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
           <ChevronDown className="size-4 text-muted-foreground" />
         </Button>
@@ -913,9 +912,8 @@ export default function IssueList({
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
-  const planFieldsManagerLabel = locale === "zh" ? "扩展列" : "Plan fields";
-  const issueFieldsManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
-  const addFieldLabel = locale === "zh" ? "新增字段" : "Add field";
+  const fieldManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
+  const addFieldLabel = locale === "zh" ? "添加" : "Add field";
   const fieldNameLabel = locale === "zh" ? "字段名称" : "Field name";
   const fieldKeyLabel = locale === "zh" ? "字段标识" : "Field key";
   const fieldTypeLabel = locale === "zh" ? "字段类型" : "Field type";
@@ -937,6 +935,7 @@ export default function IssueList({
   );
   const fullscreenLabel = locale === "zh" ? "全屏显示" : "Fullscreen";
   const exitFullscreenLabel = locale === "zh" ? "退出全屏" : "Exit fullscreen";
+  const customFieldsButtonLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const workflowByProject = useMemo(
     () =>
       new Map(
@@ -1834,13 +1833,6 @@ export default function IssueList({
     () =>
       planFields
         .map((field) => {
-          if (field.type === "BOOLEAN") {
-            const count = issues.filter((issue) =>
-              issue.planFieldValues?.some((value) => value.fieldDefinitionId === field.id && value.valueBoolean)
-            ).length;
-            return { id: field.id, label: field.name, value: count };
-          }
-
           if (field.type === "NUMBER") {
             const total = issues.reduce((sum, issue) => {
               const value = issue.planFieldValues?.find((item) => item.fieldDefinitionId === field.id)?.valueNumber;
@@ -2248,7 +2240,7 @@ export default function IssueList({
   };
 
   const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
-  const activeManagerTitle = activeFieldManager === "issue" ? issueFieldsManagerLabel : planFieldsManagerLabel;
+  const activeManagerTitle = fieldManagerLabel;
   const activeManagerSubmit = activeFieldManager === "issue" ? handleCreateIssueField : handleCreatePlanField;
 
   return (
@@ -2305,6 +2297,32 @@ export default function IssueList({
               visiblePlanFieldIds={visiblePlanFieldIds}
               onTogglePlanField={handleTogglePlanFieldVisibility}
             />
+
+            {canManageIssueFields ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setActiveFieldManager("issue")}
+                title={customFieldsButtonLabel}
+                aria-label={customFieldsButtonLabel}
+              >
+                <Settings2 />
+              </Button>
+            ) : null}
+
+            {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setActiveFieldManager("plan")}
+                title={customFieldsButtonLabel}
+                aria-label={customFieldsButtonLabel}
+              >
+                <Settings2 />
+              </Button>
+            ) : null}
 
             <Button
               type="button"
@@ -2432,30 +2450,6 @@ export default function IssueList({
             searchParams={searchParams}
             updateQueryParams={updateQueryParams}
           />
-
-          {canManageIssueFields ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveFieldManager("issue")}
-            >
-              <Settings2 />
-              <span>{issueFieldsManagerLabel}</span>
-            </Button>
-          ) : null}
-
-          {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveFieldManager("plan")}
-            >
-              <Settings2 />
-              <span>{planFieldsManagerLabel}</span>
-            </Button>
-          ) : null}
 
           {activeFilterCount > 0 ? (
             <Button

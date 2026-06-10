@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 
 import { createPlan } from "@/app/actions/plans";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ function formatDateInputValue(date: Date) {
 function getCreatePlanText(locale: "en" | "zh") {
   if (locale === "zh") {
     return {
-      button: "创建计划",
+      button: "计划",
       modalTitle: "创建计划",
       name: "计划名称",
       namePlaceholder: "例如：2026年5-6月政务服务一期上线",
@@ -116,7 +116,9 @@ export default function CreatePlanButton({ projectId, locale }: CreatePlanButton
       <Button
         type="button"
         onClick={() => setIsOpen(true)}
+        title={text.modalTitle}
       >
+        <Plus className="size-4" />
         {text.button}
       </Button>
 

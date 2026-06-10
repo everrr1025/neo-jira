@@ -638,7 +638,7 @@ const translations: Record<Locale, TranslationBundle> = {
       deleteFailed: "Failed to delete sprint",
     },
     settingsPage: {
-      title: "Settings",
+      title: "Personal settings",
       subtitle: "Manage your personal preferences and account security.",
       profile: "Profile",
       profileHint: "Update how you appear across the workspace.",
@@ -662,7 +662,7 @@ const translations: Record<Locale, TranslationBundle> = {
       incorrectCurrentPassword: "The current password is incorrect.",
       newPasswordMustDiffer: "The new password must be different from the current password.",
       passwordUpdateFailed: "Failed to update password.",
-      openSettings: "Open settings",
+      openSettings: "Personal settings",
     },
   },
   zh: {
@@ -963,7 +963,7 @@ const translations: Record<Locale, TranslationBundle> = {
       deleteFailed: "删除 Sprint 失败",
     },
     settingsPage: {
-      title: "设置",
+      title: "个人设置",
       subtitle: "管理你的个人偏好和账户安全。",
       profile: "个人资料",
       profileHint: "更新你在工作区中的显示方式。",
@@ -986,7 +986,7 @@ const translations: Record<Locale, TranslationBundle> = {
       incorrectCurrentPassword: "当前密码不正确。",
       newPasswordMustDiffer: "新密码不能与当前密码相同。",
       passwordUpdateFailed: "更新密码失败。",
-      openSettings: "打开设置",
+      openSettings: "个人设置",
     },
   },
 };

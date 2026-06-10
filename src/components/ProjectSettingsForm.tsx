@@ -7,6 +7,14 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { updateProject } from "@/app/actions/projects";
 import { type Locale } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Textarea } from "./ui/textarea";
 import {
   DEFAULT_WORKFLOW_TEMPLATE,
   getWorkflowCategoryLabel,
@@ -168,9 +176,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
           updateSuccess: "项目更新成功",
           projectName: "项目名称",
           projectKey: "项目标识",
-          projectKeyHint: "用于 Issue 编号的短标识，例如 NJ、WEB。",
           projectOwner: "项目负责人",
-          ownerLockedHint: "项目负责人在创建后不可修改。",
           description: "项目描述",
           cancel: "取消",
           saveChanges: "保存更改",
@@ -194,9 +200,7 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
           updateSuccess: "Project updated successfully!",
           projectName: "Project Name",
           projectKey: "Project Key",
-          projectKeyHint: "Short identifier for issues (e.g., NJ, WEB).",
           projectOwner: "Project Owner",
-          ownerLockedHint: "Project owner cannot be changed after creation.",
           description: "Description",
           cancel: "Cancel",
           saveChanges: "Save Changes",
@@ -383,245 +387,232 @@ export default function ProjectSettingsForm({ project, locale }: ProjectSettings
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
+    <form onSubmit={handleSubmit} className="max-w-5xl space-y-6">
       <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={6000} />
 
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
+        <div className="rounded-md border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
       ) : null}
 
       {success ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-600">
+        <div className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-700">
           {text.updateSuccess}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-6">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="name" className="text-sm font-medium text-slate-700">
-            {text.projectName}
-          </label>
-          <input
-            id="name"
-            required
-            value={formData.name}
-            onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="key" className="text-sm font-medium text-slate-700">
-            {text.projectKey}
-          </label>
-          <input
-            id="key"
-            required
-            value={formData.key}
-            onChange={(event) =>
-              setFormData((prev) => ({ ...prev, key: event.target.value.toUpperCase() }))
-            }
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            maxLength={10}
-          />
-          <p className="text-xs text-slate-500">{text.projectKeyHint}</p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="owner" className="text-sm font-medium text-slate-700">
-            {text.projectOwner}
-          </label>
-          <input
-            id="owner"
-            value={project.owner?.name || project.owner?.email || ""}
-            disabled
-            className="w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
-          />
-          <p className="text-xs text-slate-500">{text.ownerLockedHint}</p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="description" className="text-sm font-medium text-slate-700">
-            {text.description}
-          </label>
-          <textarea
-            id="description"
-            rows={4}
-            value={formData.description}
-            onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
-            className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm transition-shadow focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          />
-        </div>
-      </div>
-
-      <section className="rounded-xl border border-slate-200 bg-slate-50/40 p-5">
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">{text.workflowTitle}</h3>
-            <p className="mt-1 text-sm text-slate-500">{text.workflowDesc}</p>
+      <Card>
+        <CardHeader>
+          <CardTitle>{locale === "zh" ? "基础信息" : "Basic information"}</CardTitle>
+          <CardDescription>{locale === "zh" ? "维护项目名称、标识和描述。" : "Maintain the project name, key, and description."}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="name">{text.projectName}</Label>
+            <Input
+              id="name"
+              required
+              value={formData.name}
+              onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
+            />
           </div>
-          <button
-            type="button"
-            onClick={addStatus}
-            className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
-          >
-            <Plus size={16} />
-            {text.addStatus}
-          </button>
-        </div>
 
-        <div className="space-y-3">
-          {workflowDraft.statuses.map((status, index) => (
-            <div key={status.clientId} className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_180px_110px_auto]">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-500">{text.statusName}</label>
-                  <input
-                    value={status.name}
-                    onChange={(event) => updateStatus(status.clientId, "name", event.target.value)}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  />
-                </div>
+          <div className="grid gap-2">
+            <Label htmlFor="key">{text.projectKey}</Label>
+            <Input
+              id="key"
+              required
+              value={formData.key}
+              onChange={(event) =>
+                setFormData((prev) => ({ ...prev, key: event.target.value.toUpperCase() }))
+              }
+              className="uppercase"
+              maxLength={10}
+            />
+          </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-500">{text.statusCategory}</label>
-                  <div className="relative">
-                    <select
-                      value={status.category}
-                      onChange={(event) =>
-                        updateStatus(status.clientId, "category", event.target.value as WorkflowStatusCategory)
-                      }
-                      className="w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-8 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    >
-                      {categoryOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={14}
-                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+          <div className="grid gap-2">
+            <Label htmlFor="owner">{text.projectOwner}</Label>
+            <Input id="owner" value={project.owner?.name || project.owner?.email || ""} disabled />
+          </div>
+
+          <div className="grid gap-2 md:col-span-2">
+            <Label htmlFor="description">{text.description}</Label>
+            <Textarea
+              id="description"
+              rows={4}
+              value={formData.description}
+              onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
+              className="resize-none"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1.5">
+              <CardTitle>{text.workflowTitle}</CardTitle>
+              <CardDescription>{text.workflowDesc}</CardDescription>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={addStatus}>
+              <Plus className="size-4" />
+              {text.addStatus}
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          <div className="space-y-3">
+            {workflowDraft.statuses.map((status, index) => (
+              <div key={status.clientId} className="rounded-lg border bg-muted/20 p-4">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_190px_130px_auto]">
+                  <div className="grid gap-2">
+                    <Label>{text.statusName}</Label>
+                    <Input
+                      value={status.name}
+                      onChange={(event) => updateStatus(status.clientId, "name", event.target.value)}
                     />
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-500">{text.initialStatus}</label>
-                  <label className="inline-flex h-[42px] items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700">
-                    <input
-                      type="radio"
-                      checked={status.isInitial}
-                      onChange={() => setInitialStatus(status.clientId)}
-                    />
-                    {text.initialStatus}
-                  </label>
-                </div>
+                  <div className="grid gap-2">
+                    <Label>{text.statusCategory}</Label>
+                    <Select
+                      value={status.category}
+                      onValueChange={(value) =>
+                        updateStatus(status.clientId, "category", value as WorkflowStatusCategory)
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categoryOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="flex items-end justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => moveStatus(status.clientId, -1)}
-                    disabled={index === 0}
-                    className="rounded-md border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    title={text.moveUp}
-                  >
-                    <ChevronUp size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveStatus(status.clientId, 1)}
-                    disabled={index === workflowDraft.statuses.length - 1}
-                    className="rounded-md border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    title={text.moveDown}
-                  >
-                    <ChevronDown size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeStatus(status.clientId)}
-                    className="rounded-md border border-red-200 p-2 text-red-600 transition-colors hover:bg-red-50"
-                    title={text.removeStatus}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="grid gap-2">
+                    <Label>{text.initialStatus}</Label>
+                    <label className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium">
+                      <input
+                        type="radio"
+                        checked={status.isInitial}
+                        onChange={() => setInitialStatus(status.clientId)}
+                        className="size-4 accent-primary"
+                      />
+                      {text.initialStatus}
+                    </label>
+                  </div>
+
+                  <div className="flex items-end justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => moveStatus(status.clientId, -1)}
+                      disabled={index === 0}
+                      title={text.moveUp}
+                      aria-label={text.moveUp}
+                    >
+                      <ChevronUp className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => moveStatus(status.clientId, 1)}
+                      disabled={index === workflowDraft.statuses.length - 1}
+                      title={text.moveDown}
+                      aria-label={text.moveDown}
+                    >
+                      <ChevronDown className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={() => removeStatus(status.clientId)}
+                      title={text.removeStatus}
+                      aria-label={text.removeStatus}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold">{text.transitions}</h4>
+                <Badge variant="secondary">{workflowDraft.transitions.size}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{text.transitionsHint}</p>
             </div>
-          ))}
-        </div>
 
-        <div className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-slate-900">{text.transitions}</h4>
-            <p className="text-xs text-slate-500">{text.transitionsHint}</p>
-          </div>
+            <div className="overflow-hidden rounded-lg border bg-background">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="border-r">{text.transitions}</TableHead>
+                    {workflowDraft.statuses.map((status) => (
+                      <TableHead key={`column-${status.clientId}`} className="text-center">
+                        {status.name.trim() || "-"}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {workflowDraft.statuses.map((fromStatus) => (
+                    <TableRow key={`row-${fromStatus.clientId}`}>
+                      <TableCell className="border-r font-medium">{fromStatus.name.trim() || "-"}</TableCell>
+                      {workflowDraft.statuses.map((toStatus) => {
+                        const transitionKey = `${fromStatus.clientId}->${toStatus.clientId}`;
+                        const isSelf = fromStatus.clientId === toStatus.clientId;
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-            <table className="min-w-full border-collapse text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="border-b border-r border-slate-200 px-3 py-2 text-left font-semibold text-slate-600">
-                    {text.transitions}
-                  </th>
-                  {workflowDraft.statuses.map((status) => (
-                    <th
-                      key={`column-${status.clientId}`}
-                      className="border-b border-slate-200 px-3 py-2 text-center font-semibold text-slate-600"
-                    >
-                      {status.name.trim() || "-"}
-                    </th>
+                        return (
+                          <TableCell key={transitionKey} className="text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelf ? true : workflowDraft.transitions.has(transitionKey)}
+                              disabled={isSelf}
+                              onChange={() => toggleTransition(fromStatus.clientId, toStatus.clientId)}
+                              className="size-4 rounded border-input accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {workflowDraft.statuses.map((fromStatus) => (
-                  <tr key={`row-${fromStatus.clientId}`} className="odd:bg-slate-50/40">
-                    <td className="border-r border-slate-200 px-3 py-2 font-medium text-slate-700">
-                      {fromStatus.name.trim() || "-"}
-                    </td>
-                    {workflowDraft.statuses.map((toStatus) => {
-                      const transitionKey = `${fromStatus.clientId}->${toStatus.clientId}`;
-                      const isSelf = fromStatus.clientId === toStatus.clientId;
-
-                      return (
-                        <td key={transitionKey} className="px-3 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelf ? true : workflowDraft.transitions.has(transitionKey)}
-                            disabled={isSelf}
-                            onChange={() => toggleTransition(fromStatus.clientId, toStatus.clientId)}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </TableBody>
+              </Table>
+            </div>
           </div>
-        </div>
 
-        <p className="mt-4 text-xs text-slate-500">{text.workflowValidationHint}</p>
-      </section>
+          <p className="text-xs text-muted-foreground">{text.workflowValidationHint}</p>
+        </CardContent>
+      </Card>
 
-      <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-        >
-          {text.cancel}
-        </button>
-        <button
-          type="submit"
-          disabled={isPending}
-          className="flex items-center gap-2 rounded-md bg-blue-600 px-6 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {isPending ? text.saving : text.saveChanges}
-        </button>
-      </div>
+      <Card>
+        <CardFooter className="justify-end gap-3 py-4">
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            {text.cancel}
+          </Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending ? text.saving : text.saveChanges}
+          </Button>
+        </CardFooter>
+      </Card>
     </form>
   );
 }

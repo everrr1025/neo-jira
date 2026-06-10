@@ -60,6 +60,7 @@ export function SidebarUserMenu({
           href="/settings"
           className="rounded-lg p-2 text-[#71717a] transition-colors hover:bg-[#f4f4f5] hover:text-[#09090b]"
           title={translations.settingsPage.openSettings}
+          aria-label={translations.settingsPage.openSettings}
         >
           <Settings size={16} />
         </Link>
