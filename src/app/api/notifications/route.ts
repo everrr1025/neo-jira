@@ -34,11 +34,21 @@ export async function GET() {
   });
 }
 
-export async function PATCH() {
+export async function PATCH(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = (session.user as SessionUser).id;
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = (await request.json().catch(() => ({}))) as { id?: string };
+  if (body.id) {
+    await prisma.notification.updateMany({
+      where: { id: body.id, userId, read: false },
+      data: { read: true },
+    });
+
+    return NextResponse.json({ success: true });
+  }
 
   await prisma.notification.updateMany({
     where: { userId, read: false },

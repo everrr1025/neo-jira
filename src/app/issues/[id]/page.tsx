@@ -115,7 +115,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   return (
     <div className="mx-auto flex h-full w-full max-w-5xl flex-col pb-10">
       <div className="mb-6">
-        <BackButton label={translations.issueDetail.back} />
+        <BackButton label={translations.issueDetail.back} fallbackHref="/issues" />
       </div>
 
       <IssueDetailClient

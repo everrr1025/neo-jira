@@ -1633,10 +1633,10 @@ export default function DepartmentManageClient({
                       }`}
                     >
                       <span
-                        className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                        className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${
                           notification.read
-                            ? "border bg-muted text-muted-foreground"
-                            : "bg-primary text-primary-foreground"
+                            ? "bg-muted text-muted-foreground"
+                            : "border-rose-200 bg-rose-50 text-rose-700"
                         }`}
                       >
                         {getNotificationLevelText(notification.level, t)}

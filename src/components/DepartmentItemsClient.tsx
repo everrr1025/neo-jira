@@ -51,6 +51,7 @@ import { addReminderComment, createReminder, deleteReminderItem, deleteReminderT
 import { createNote, createNoteFolder, deleteNote, deleteNoteFolder, emptyNoteTrash, permanentlyDeleteNote, restoreNote, updateNote, updateNoteFolder } from "@/app/actions/notes";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -616,24 +617,24 @@ function scheduleTypeLabel(type: ScheduleType, locale: Locale) {
 }
 
 function scheduleChipClass(type: ScheduleType) {
-  if (type === "reminder") return "border-l-red-600 bg-red-50 text-red-700";
-  if (type === "out") return "border-l-slate-500 bg-slate-100 text-slate-700";
+  if (type === "reminder") return "border-l-destructive bg-destructive/10 text-destructive";
+  if (type === "out") return "border-l-muted-foreground bg-muted text-muted-foreground";
   if (type === "memo") return "border-l-amber-500 bg-amber-50 text-amber-800";
-  return "border-l-[#0052CC] bg-[#E9F2FF] text-[#0052CC]";
+  return "border-l-primary bg-primary/10 text-primary";
 }
 
 function scheduleDotClass(type: ScheduleType) {
-  if (type === "reminder") return "bg-red-600";
-  if (type === "out") return "bg-slate-500";
+  if (type === "reminder") return "bg-destructive";
+  if (type === "out") return "bg-muted-foreground";
   if (type === "memo") return "bg-amber-500";
-  return "bg-[#0052CC]";
+  return "bg-primary";
 }
 
 function scheduleBadgeClass(type: ScheduleType) {
-  if (type === "reminder") return "border border-red-200 bg-red-50 text-red-700";
-  if (type === "out") return "border border-slate-200 bg-slate-100 text-slate-700";
+  if (type === "reminder") return "border-destructive/20 bg-destructive/10 text-destructive";
+  if (type === "out") return "border-border bg-muted text-muted-foreground";
   if (type === "memo") return "border border-amber-200 bg-amber-50 text-amber-800";
-  return "border border-blue-200 bg-[#E9F2FF] text-[#0052CC]";
+  return "border-primary/20 bg-primary/10 text-primary";
 }
 
 function attendanceStatusLabel(status: string, locale: Locale) {
@@ -1229,6 +1230,7 @@ export default function DepartmentItemsClient({
   const noteEditorRef = useRef<RichTextEditorHandle>(null);
   const taskContentEditorRef = useRef<RichTextEditorHandle>(null);
   const editTaskContentEditorRef = useRef<RichTextEditorHandle>(null);
+  const scheduleFilterIdPrefix = useId();
   const [scheduleView, setScheduleView] = useState<ScheduleView>("week");
   const [visibleScheduleTypes, setVisibleScheduleTypes] = useState<Record<ScheduleType, boolean>>({
     meeting: true,
@@ -1797,12 +1799,19 @@ export default function DepartmentItemsClient({
   }, [form.attendeeQuery]);
 
   const calendarItems = scheduleItems.filter((item) => item.itemType !== "NOTE");
-  const pendingMeetingCount = items.filter((item) => {
+  const pendingMeetingItems = items.filter((item) => {
     if (getScheduleType(item) !== "meeting") return false;
     return item.attendees.some((attendee) =>
       attendee.userId === currentUserId && (attendee.status === "PENDING" || attendee.status === "TENTATIVE")
     );
-  }).length;
+  }).sort((a, b) => {
+    const aTime = new Date(a.date).getTime();
+    const bTime = new Date(b.date).getTime();
+    const safeATime = Number.isNaN(aTime) ? Number.POSITIVE_INFINITY : aTime;
+    const safeBTime = Number.isNaN(bTime) ? Number.POSITIVE_INFINITY : bTime;
+    return safeATime - safeBTime;
+  });
+  const pendingMeetingCount = pendingMeetingItems.length;
   const groupedByDay = calendarItems.reduce((acc, item) => {
     const key = dayKey(item.date);
     acc[key] = [...(acc[key] || []), item];
@@ -3140,6 +3149,13 @@ export default function DepartmentItemsClient({
     setSelectedScheduleItemId(item.id);
   };
 
+  const openEarliestPendingMeeting = () => {
+    const earliestPendingMeeting = pendingMeetingItems[0];
+    if (!earliestPendingMeeting) return;
+    setScheduleOverflowDate(null);
+    openScheduleItem(earliestPendingMeeting);
+  };
+
   const renderScheduleChip = (item: DepartmentItemCenterItem, compact = false, maxTitleLines = 1) => {
     const type = getScheduleType(item);
     const myAttendance = type === "meeting" ? item.attendees.find((attendee) => attendee.userId === currentUserId) : null;
@@ -3163,12 +3179,12 @@ export default function DepartmentItemsClient({
         <span className={compact ? "truncate" : "min-w-0 whitespace-normal"} style={titleStyle}>
           {time ? `${time} · ${title}` : title}
         </span>
-        {needsConfirmation ? <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#DE350B] ring-1 ring-white" /> : null}
+        {needsConfirmation ? <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-destructive ring-1 ring-background" /> : null}
       </>
     );
     const timedPaddingClass = maxTitleLines >= 6 ? "py-3" : maxTitleLines >= 3 ? "py-2" : "py-1";
     const timedAlignmentClass = maxTitleLines >= 3 ? "items-center" : "items-start";
-    const chipClassName = `relative flex min-h-6 w-full min-w-0 gap-1 border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] hover:brightness-95 ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
+    const chipClassName = `relative flex min-h-6 w-full min-w-0 gap-1 rounded-md border border-transparent border-l-2 px-1.5 text-left text-[11px] font-semibold leading-[13px] transition-colors hover:border-border ${compact ? "items-center py-1" : `h-full overflow-hidden ${timedAlignmentClass} ${timedPaddingClass}`} ${scheduleChipClass(type)}`;
 
     return (
       <button
@@ -3420,12 +3436,10 @@ export default function DepartmentItemsClient({
           </div>
           ) : (
             <div className="space-y-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
-                <input
-                  type="checkbox"
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
+                <Checkbox
                   checked={form.hasTime}
-                  onChange={(event) => setForm((current) => ({ ...current, hasTime: event.target.checked }))}
-                  className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+                  onCheckedChange={(checked) => setForm((current) => ({ ...current, hasTime: checked === true }))}
                 />
                 {t.hasTime}
               </label>
@@ -3527,67 +3541,76 @@ export default function DepartmentItemsClient({
   );
 
   const renderScheduleWorkspace = () => (
-    <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden rounded-lg border border-[#e2e8f0] bg-[#f3f3f4] lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="hidden min-h-0 flex-col border-r border-[#e2e8f0] bg-[#f3f3f4] p-4 lg:flex">
-        <div className="space-y-2">
-          {scheduleTypes.map((type) => (
-            <label key={type.id} className="flex cursor-pointer items-center gap-2 text-sm text-[#172B4D]">
-              <input
-                type="checkbox"
-                checked={visibleScheduleTypes[type.id]}
-                onChange={(event) => setVisibleScheduleTypes((current) => ({ ...current, [type.id]: event.target.checked }))}
-                className="h-4 w-4 rounded border-[#C1C7D0] text-[#0052CC] focus:ring-[#0052CC]"
-              />
-              <span>{type.label}</span>
-              <span className={`h-3 w-3 shrink-0 rounded-full ${scheduleDotClass(type.id)}`} />
-              {type.id === "meeting" && pendingMeetingCount > 0 ? (
-                <span className="ml-auto rounded bg-[#DE350B] px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                  {locale === "zh" ? `${st.pendingMeetings}${pendingMeetingCount}` : `${st.pendingMeetings} ${pendingMeetingCount}`}
-                </span>
-              ) : (
-                <span className="ml-auto" />
-              )}
-            </label>
-          ))}
+    <div className="h-[calc(100vh-112px)] min-h-[640px] overflow-hidden rounded-xl border bg-card lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="hidden min-h-0 flex-col border-r bg-muted/25 p-4 lg:flex">
+        <div className="space-y-1">
+          {scheduleTypes.map((type) => {
+            const checkboxId = `${scheduleFilterIdPrefix}-${type.id}`;
+            return (
+              <div
+                key={type.id}
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <label htmlFor={checkboxId} className="flex min-w-0 cursor-pointer items-center gap-2">
+                  <Checkbox
+                    id={checkboxId}
+                    checked={visibleScheduleTypes[type.id]}
+                    onCheckedChange={(checked) => setVisibleScheduleTypes((current) => ({ ...current, [type.id]: checked === true }))}
+                  />
+                  <span>{type.label}</span>
+                  <span className={`h-3 w-3 shrink-0 rounded-full ${scheduleDotClass(type.id)}`} />
+                </label>
+                {type.id === "meeting" && pendingMeetingCount > 0 ? (
+                  <Badge variant="destructive" asChild className="ml-auto rounded-md px-1.5 py-0 text-[11px]">
+                    <button type="button" onClick={openEarliestPendingMeeting}>
+                      {locale === "zh" ? `${st.pendingMeetings}${pendingMeetingCount}` : `${st.pendingMeetings} ${pendingMeetingCount}`}
+                    </button>
+                  </Badge>
+                ) : (
+                  <span className="ml-auto" />
+                )}
+              </div>
+            );
+          })}
         </div>
-        <div className="mt-6 border-t border-[#DFE1E6] pt-5">
-          <div className="space-y-2 text-sm text-[#172B4D]">
+        <div className="mt-6 border-t pt-5">
+          <div className="space-y-2 text-sm text-muted-foreground">
             <div className="flex items-center justify-between">
               <span>{st.todaySummary}</span>
-              <span className="font-semibold tabular-nums">{todayScheduleCount}</span>
+              <span className="font-semibold tabular-nums text-foreground">{todayScheduleCount}</span>
             </div>
             <div className="flex items-center justify-between">
               <span>{scheduleView === "week" ? st.week : st.month}</span>
-              <span className="font-semibold tabular-nums">{calendarItems.length}</span>
+              <span className="font-semibold tabular-nums text-foreground">{calendarItems.length}</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-[#f3f3f4]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
+      <section className="flex min-h-0 min-w-0 flex-col bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <h2 className="text-xl font-semibold text-[#172B4D]">{scheduleTitle}</h2>
-            <div className="flex overflow-hidden rounded border border-[#DFE1E6]">
-              <button type="button" onClick={() => moveScheduleCursor("previous")} className="inline-flex h-8 w-8 items-center justify-center border-r border-[#DFE1E6] text-[#42526E] hover:bg-[#F4F5F7]">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">{scheduleTitle}</h2>
+            <div className="flex overflow-hidden rounded-md border bg-background">
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => moveScheduleCursor("previous")} className="rounded-none border-r">
                 <ChevronLeft size={16} />
-              </button>
-              <button type="button" onClick={() => moveScheduleCursor("next")} className="inline-flex h-8 w-8 items-center justify-center text-[#42526E] hover:bg-[#F4F5F7]">
+              </Button>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => moveScheduleCursor("next")} className="rounded-none">
                 <ChevronRight size={16} />
-              </button>
+              </Button>
             </div>
-            <button type="button" onClick={() => setScheduleCursor(new Date())} className="h-8 rounded border border-[#DFE1E6] bg-white px-3 text-sm font-medium text-[#172B4D] hover:bg-[#F4F5F7]">
+            <Button type="button" variant="outline" size="sm" onClick={() => setScheduleCursor(new Date())}>
               {st.today}
-            </button>
+            </Button>
           </div>
           <div className="flex items-center gap-3">
-            <div className="inline-flex rounded border border-[#DFE1E6] bg-[#F4F5F7] p-1">
+            <div className="inline-flex rounded-md border bg-muted p-1">
               {(["week", "month"] as ScheduleView[]).map((nextView) => (
                 <button
                   key={nextView}
                   type="button"
                   onClick={() => setScheduleView(nextView)}
-                  className={`h-8 rounded px-4 text-sm font-medium ${scheduleView === nextView ? "bg-white text-[#0052CC] shadow-sm" : "text-[#42526E] hover:text-[#0052CC]"}`}
+                  className={`h-8 rounded-md px-4 text-sm font-medium transition-colors ${scheduleView === nextView ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   {nextView === "month" ? st.month : nextView === "week" ? st.week : t.list}
                 </button>
@@ -3597,28 +3620,28 @@ export default function DepartmentItemsClient({
         </div>
 
         {scheduleView === "week" ? (
-          <div className="shrink-0 overflow-y-auto bg-white [scrollbar-gutter:stable]">
-            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6]">
-              <div className="border-r border-[#DFE1E6]" />
+          <div className="shrink-0 overflow-y-auto bg-background [scrollbar-gutter:stable]">
+            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b">
+              <div className="border-r" />
               {scheduleDays.map((date) => {
                 const isCurrentDay = isSameDay(date, new Date());
                 return (
                   <div
                     key={date.toISOString()}
-                    className={`border-r border-[#DFE1E6] px-3 py-3 text-center last:border-r-0 ${isCurrentDay ? "bg-[#F8FAFF]" : ""}`}
+                    className={`border-r px-3 py-3 text-center last:border-r-0 ${isCurrentDay ? "bg-primary/5" : ""}`}
                   >
-                    <div className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
                     </div>
-                    <div className={`mt-1 text-sm font-semibold ${isCurrentDay ? "text-[#0052CC]" : "text-[#172B4D]"}`}>
+                    <div className={`mt-1 text-sm font-semibold ${isCurrentDay ? "text-primary" : "text-foreground"}`}>
                       {date.getDate()}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-[#DFE1E6] bg-[#FAFBFC]">
-              <div className="border-r border-[#DFE1E6] px-0.5 py-0.5 text-right text-[11px] font-semibold uppercase tracking-wide text-[#6B778C]">
+            <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b bg-muted/25">
+              <div className="border-r px-0.5 py-0.5 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {st.noTime}
               </div>
               {scheduleDays.map((date) => {
@@ -3630,7 +3653,7 @@ export default function DepartmentItemsClient({
                   <div
                     key={`${key}-all-day`}
                     onClick={() => openCreateScheduleModal(date)}
-                    className={`min-h-16 border-r border-[#DFE1E6] p-0.5 text-left hover:bg-[#FAFBFC] last:border-r-0 ${isCurrentDay ? "bg-[#F4F7FF]" : "bg-white"}`}
+                    className={`min-h-16 border-r p-0.5 text-left hover:bg-accent/50 last:border-r-0 ${isCurrentDay ? "bg-primary/5" : "bg-background"}`}
                   >
                     <div className="space-y-1">
                       {shownItems.map((item) => renderScheduleChip(item, true))}
@@ -3641,7 +3664,7 @@ export default function DepartmentItemsClient({
                             event.stopPropagation();
                             setScheduleOverflowDate(key);
                           }}
-                          className="block w-full px-1 text-left text-[11px] font-medium text-[#42526E] hover:text-[#0052CC]"
+                          className="block w-full px-1 text-left text-[11px] font-medium text-muted-foreground hover:text-primary"
                         >
                           +{allDayItems.length - shownItems.length} {st.moreItems}
                         </button>
@@ -3653,9 +3676,9 @@ export default function DepartmentItemsClient({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-7 overflow-y-auto border-b border-[#DFE1E6] bg-white [scrollbar-gutter:stable]">
+          <div className="grid grid-cols-7 overflow-y-auto border-b bg-background [scrollbar-gutter:stable]">
             {scheduleDays.slice(0, 7).map((date) => (
-              <div key={date.toISOString()} className="border-r border-[#DFE1E6] px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-[#172B4D] last:border-r-0">
+              <div key={date.toISOString()} className="border-r px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide text-foreground last:border-r-0">
                 {date.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { weekday: "short" })}
               </div>
             ))}
@@ -3663,16 +3686,16 @@ export default function DepartmentItemsClient({
         )}
 
         {scheduleView === "week" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto bg-white [scrollbar-gutter:stable]">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-background [scrollbar-gutter:stable]">
             <div
               className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))]"
               style={{ height: (WEEK_END_HOUR - WEEK_START_HOUR) * WEEK_HOUR_HEIGHT + WEEK_GRID_TOP_PADDING, paddingTop: WEEK_GRID_TOP_PADDING }}
             >
-              <div className="relative border-r border-[#DFE1E6] bg-[#FAFBFC]">
+              <div className="relative border-r bg-muted/25">
                 {WEEK_HOURS.slice(0, -1).map((hour) => (
                   <div
                     key={hour}
-                    className="absolute right-2 text-[11px] font-medium tabular-nums text-[#6B778C]"
+                    className="absolute right-2 text-[11px] font-medium tabular-nums text-muted-foreground"
                     style={{ top: (hour - WEEK_START_HOUR) * WEEK_HOUR_HEIGHT }}
                   >
                     {`${String(hour).padStart(2, "0")}:00`}
@@ -3687,7 +3710,7 @@ export default function DepartmentItemsClient({
                 return (
                   <div
                     key={`${key}-time-grid`}
-                    className={`relative border-r border-[#DFE1E6] last:border-r-0 ${isCurrentDay ? "bg-[#F8FAFF]" : ""}`}
+                    className={`relative border-r last:border-r-0 ${isCurrentDay ? "bg-primary/5" : ""}`}
                   >
                     {WEEK_HOURS.slice(0, -1).map((hour) => {
                       const startTime = `${String(hour).padStart(2, "0")}:00`;
@@ -3697,7 +3720,7 @@ export default function DepartmentItemsClient({
                           key={hour}
                           type="button"
                           onClick={() => openCreateScheduleModal(date, startTime, endTime, true)}
-                          className="block w-full border-b border-[#EBECF0] text-left hover:bg-[#F4F5F7]"
+                          className="block w-full border-b text-left hover:bg-accent/50"
                           style={{ height: WEEK_HOUR_HEIGHT }}
                           aria-label={`${startTime}-${endTime}`}
                         />
@@ -3727,7 +3750,7 @@ export default function DepartmentItemsClient({
             </div>
           </div>
         ) : scheduleView === "month" ? (
-          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(170px,1fr)] overflow-y-auto bg-white [scrollbar-gutter:stable]">
+          <div className="grid min-h-0 flex-1 grid-cols-7 auto-rows-[minmax(170px,1fr)] overflow-y-auto bg-background [scrollbar-gutter:stable]">
             {scheduleDays.map((date) => {
               const key = format(date, "yyyy-MM-dd");
               const dayItems = [...(groupedByDay[key] || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -3738,9 +3761,9 @@ export default function DepartmentItemsClient({
                 <div
                   key={key}
                   onClick={() => openCreateScheduleModal(date)}
-                  className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b border-[#DFE1E6] p-2 text-left hover:bg-[#FAFBFC] ${isCurrentDay ? "bg-[#F4F7FF] ring-2 ring-inset ring-[#0052CC]/35" : "bg-white"} ${muted ? "text-[#A5ADBA]" : "text-[#172B4D]"}`}
+                  className={`group flex min-h-[170px] cursor-pointer flex-col border-r border-b p-2 text-left hover:bg-accent/50 ${isCurrentDay ? "bg-primary/5 ring-2 ring-inset ring-ring/40" : "bg-background"} ${muted ? "text-muted-foreground/60" : "text-foreground"}`}
                 >
-                  <div className={`mb-1 text-sm font-semibold ${isCurrentDay ? "text-[#0052CC]" : ""}`}>
+                  <div className={`mb-1 text-sm font-semibold ${isCurrentDay ? "text-primary" : ""}`}>
                     {date.getDate()}
                   </div>
                   <div className="min-h-0 w-full space-y-1 overflow-hidden">
@@ -3752,7 +3775,7 @@ export default function DepartmentItemsClient({
                           event.stopPropagation();
                           setScheduleOverflowDate(key);
                         }}
-                        className="block w-full px-1 text-left text-[11px] font-medium text-[#42526E] hover:text-[#0052CC]"
+                        className="block w-full px-1 text-left text-[11px] font-medium text-muted-foreground hover:text-primary"
                       >
                         +{dayItems.length - shownItems.length} {st.moreItems}
                       </button>
@@ -3767,27 +3790,28 @@ export default function DepartmentItemsClient({
       </section>
 
       {scheduleOverflowDate ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#091E42]/30 px-4" onClick={() => setScheduleOverflowDate(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 px-4" onClick={() => setScheduleOverflowDate(null)}>
           <div
-            className="flex max-h-[78vh] w-full max-w-[520px] flex-col overflow-hidden rounded-lg border border-[#DFE1E6] bg-white shadow-2xl"
+            className="flex max-h-[78vh] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border bg-card"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[#DFE1E6] px-5 py-4">
-              <h3 className="min-w-0 truncate text-base font-semibold text-[#172B4D]">{scheduleOverflowTitle}</h3>
-              <button
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <h3 className="min-w-0 truncate text-base font-semibold text-foreground">{scheduleOverflowTitle}</h3>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setScheduleOverflowDate(null)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7]"
                 title={t.cancel}
               >
                 <X size={18} />
-              </button>
+              </Button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {scheduleOverflowItems.length === 0 ? (
-                <p className="p-5 text-sm text-[#42526E]">{st.noEvents}</p>
+                <p className="p-5 text-sm text-muted-foreground">{st.noEvents}</p>
               ) : (
-                <div className="divide-y divide-[#DFE1E6]">
+                <div className="divide-y">
                   {scheduleOverflowItems.map((item) => {
                     const type = getScheduleType(item);
                     return (
@@ -3798,16 +3822,16 @@ export default function DepartmentItemsClient({
                           setScheduleOverflowDate(null);
                           openScheduleItem(item);
                         }}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-white px-5 py-3 text-left text-sm hover:bg-[#F4F5F7]"
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-card px-5 py-3 text-left text-sm transition-colors hover:bg-accent"
                       >
                         <span className="min-w-0">
                           <span className="flex min-w-0 items-center gap-2">
                             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${scheduleDotClass(type)}`} />
-                            <span className="truncate font-semibold text-[#172B4D]">{item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title}</span>
+                            <span className="truncate font-semibold text-foreground">{item.kind === "ISSUE_DUE" && item.issueKey ? `${item.issueKey} ${item.title}` : item.title}</span>
                           </span>
-                          <span className="mt-0.5 block truncate text-xs text-[#42526E]">{scheduleTimeLabel(item, locale, true) || st.noTime}</span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{scheduleTimeLabel(item, locale, true) || st.noTime}</span>
                         </span>
-                        <span className="shrink-0 rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">{scheduleTypeLabel(type, locale)}</span>
+                        <Badge variant="secondary" className="shrink-0 rounded-md">{scheduleTypeLabel(type, locale)}</Badge>
                       </button>
                     );
                   })}
@@ -3819,86 +3843,89 @@ export default function DepartmentItemsClient({
       ) : null}
 
       {selectedScheduleItem ? (
-        <div className="fixed inset-0 z-50 bg-[#091E42]/30" onClick={() => setSelectedScheduleItemId(null)}>
+        <div className="fixed inset-0 z-50 bg-foreground/30" onClick={() => setSelectedScheduleItemId(null)}>
         <div
-          className="absolute inset-y-0 right-0 flex w-full max-w-[420px] flex-col border-l border-[#DFE1E6] bg-white shadow-2xl"
+          className="absolute inset-y-0 right-0 flex w-full max-w-[440px] flex-col border-l bg-card"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-start justify-between gap-3 border-b border-[#DFE1E6] px-5 py-4">
+          <div className="flex items-start justify-between gap-3 border-b bg-muted/20 px-5 py-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${scheduleBadgeClass(getScheduleType(selectedScheduleItem))}`}>
+                <Badge variant="outline" className={`rounded-md ${scheduleBadgeClass(getScheduleType(selectedScheduleItem))}`}>
                   {scheduleTypeLabel(getScheduleType(selectedScheduleItem), locale)}
-                </span>
+                </Badge>
                 {selectedScheduleIsMemo ? (
-                  <span className="inline-flex rounded border border-[#DFE1E6] bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">
+                  <Badge variant="secondary" className="rounded-md">
                     {selectedScheduleVisibilityLabel}
-                  </span>
+                  </Badge>
                 ) : null}
               </div>
-              <h3 className="mt-3 break-words text-lg font-semibold text-[#172B4D]">{selectedScheduleItem.title}</h3>
+              <h3 className="mt-3 break-words text-lg font-semibold text-foreground">{selectedScheduleItem.title}</h3>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {selectedScheduleItem.kind === "REMINDER" && selectedScheduleItem.canEdit ? (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => openEditScheduleItem(selectedScheduleItem)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7] hover:text-[#0052CC]"
                     title={t.edit}
                   >
                     <Pencil size={16} />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     disabled={isPending}
                     onClick={handleDeleteScheduleItem}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     title={st.deleteSchedule}
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </Button>
                 </>
               ) : null}
-              <button type="button" onClick={() => setSelectedScheduleItemId(null)} className="inline-flex h-8 w-8 items-center justify-center rounded text-[#42526E] hover:bg-[#F4F5F7]" title={t.cancel}>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => setSelectedScheduleItemId(null)} title={t.cancel}>
                 <X size={18} />
-              </button>
+              </Button>
             </div>
           </div>
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4 text-sm text-[#172B4D]">
-            {detailError ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm text-red-600">{detailError}</div> : null}
-            <div className={`grid gap-5 text-xs text-[#42526E] ${selectedScheduleIsMemo || !selectedScheduleDetails?.location ? "grid-cols-2" : "grid-cols-3"}`}>
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4 text-sm text-foreground">
+            {detailError ? <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{detailError}</div> : null}
+            <div className={`grid gap-3 text-xs text-muted-foreground ${selectedScheduleIsMemo || !selectedScheduleDetails?.location ? "grid-cols-2" : "grid-cols-3"}`}>
               <div className="flex min-w-0 gap-2">
-                <span className="mt-0.5 shrink-0 text-[#6B778C]" title={locale === "zh" ? "时间" : "Time"}>
+                <span className="mt-0.5 shrink-0 text-muted-foreground" title={locale === "zh" ? "时间" : "Time"}>
                   <Clock size={14} />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-[#172B4D]">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
+                  <p className="truncate text-foreground">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
                   <p className="mt-0.5">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
-                  {selectedScheduleItem.dueDate ? <p className="text-xs text-[#42526E]">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
+                  {selectedScheduleItem.dueDate ? <p className="text-xs text-muted-foreground">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
                 </div>
               </div>
               {!selectedScheduleIsMemo && selectedScheduleDetails?.location ? (
                 <div className="flex min-w-0 gap-2">
-                  <span className="mt-0.5 shrink-0 text-[#6B778C]" title={st.location}>
+                  <span className="mt-0.5 shrink-0 text-muted-foreground" title={st.location}>
                     <MapPin size={14} />
                   </span>
-                  <p className="min-w-0 break-words text-[#172B4D]">{selectedScheduleDetails.location}</p>
+                  <p className="min-w-0 break-words text-foreground">{selectedScheduleDetails.location}</p>
                 </div>
               ) : null}
               <div className="min-w-0 text-right">
-                <p className="truncate text-[#172B4D]">
+                <p className="truncate text-foreground">
                   {locale === "zh" ? "发起人" : "Organizer"} {selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}
                 </p>
               </div>
             </div>
             {selectedScheduleDetails?.notes ? (
-              <div className="rounded bg-[#FAFBFC] p-3 whitespace-pre-wrap leading-6">
+              <div className="rounded-md border bg-muted/30 p-3 whitespace-pre-wrap leading-6">
                 {selectedScheduleDetails.notes}
               </div>
             ) : null}
             {selectedScheduleIsMemo ? (
-              <div className="text-xs text-[#42526E]">
+              <div className="text-xs text-muted-foreground">
                 {selectedScheduleItem.creatorName || selectedScheduleItem.creatorEmail || "-"}{" "}
                 {locale === "zh" ? "创建于" : "created"} {formatRelativeTime(selectedScheduleItem.createdAt, locale)}
               </div>
@@ -3907,32 +3934,32 @@ export default function DepartmentItemsClient({
               <>
                 <div className="space-y-4 pt-2">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">{st.participants}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{st.participants}</p>
                     {selectedScheduleType === "meeting" && selectedScheduleParticipants.length > 0 ? (
-                      <span className="shrink-0 rounded bg-[#F4F5F7] px-2 py-1 text-xs font-semibold text-[#42526E]">
+                      <Badge variant="secondary" className="shrink-0 rounded-md">
                         {st.attendanceSummary} {selectedScheduleConfirmedCount}/{selectedScheduleParticipants.length}
-                      </span>
+                      </Badge>
                     ) : null}
                   </div>
                   <div className="min-w-0 space-y-2">
                     {selectedScheduleParticipants.map((participant) => (
-                      <div key={`${participant.id}-${participant.name}`} className="flex min-w-0 items-center gap-2">
+                      <div key={`${participant.id}-${participant.name}`} className="flex min-w-0 items-center gap-2 rounded-md border bg-background px-2 py-2">
                         {participant.id.startsWith("guest:") ? (
-                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EBECF0] text-xs font-semibold text-[#42526E]">
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
                             {participant.name.slice(0, 1).toUpperCase()}
                           </span>
                         ) : (
-                          <img src={attendeeAvatarSrc(participant.id)} alt="" className="h-7 w-7 shrink-0 rounded-full border border-[#DFE1E6]" />
+                          <img src={attendeeAvatarSrc(participant.id)} alt="" className="h-7 w-7 shrink-0 rounded-full border" />
                         )}
                         <span className="min-w-0 truncate font-medium">{participant.name}</span>
-                        {participant.isCreator ? <span className="shrink-0 rounded bg-[#E9F2FF] px-1.5 py-0.5 text-[11px] font-semibold text-[#0052CC]">{t.openedBy}</span> : null}
+                        {participant.isCreator ? <Badge variant="secondary" className="shrink-0 rounded-md px-1.5 py-0 text-[11px]">{t.openedBy}</Badge> : null}
                         {selectedScheduleType === "meeting" ? (
                           participant.id === currentUserId && selectedScheduleCanRespond ? (
                             <details className="group relative ml-auto shrink-0">
-                              <summary className={`flex cursor-pointer list-none rounded border px-1.5 py-0.5 text-[11px] font-semibold [&::-webkit-details-marker]:hidden ${attendanceStatusClass(participant.status)}`}>
+                              <summary className={`flex cursor-pointer list-none rounded-md border px-1.5 py-0.5 text-[11px] font-semibold [&::-webkit-details-marker]:hidden ${attendanceStatusClass(participant.status)}`}>
                                 {attendanceStatusLabel(participant.status, locale)}
                               </summary>
-                              <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded border border-[#DFE1E6] bg-white py-1 shadow-lg">
+                              <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-md border bg-popover py-1 text-popover-foreground">
                                 {([
                                   ["CONFIRMED", st.confirmAttendance],
                                   ["TENTATIVE", st.tentativeAttendance],
@@ -3948,8 +3975,8 @@ export default function DepartmentItemsClient({
                                     }}
                                     className={`block w-full px-3 py-2 text-left text-xs font-semibold disabled:opacity-50 ${
                                       participant.status === status
-                                        ? "bg-[#E9F2FF] text-[#0052CC]"
-                                        : "text-[#172B4D] hover:bg-[#F4F5F7]"
+                                        ? "bg-accent text-accent-foreground"
+                                        : "text-popover-foreground hover:bg-accent hover:text-accent-foreground"
                                     }`}
                                   >
                                     {label}
@@ -3958,7 +3985,7 @@ export default function DepartmentItemsClient({
                               </div>
                             </details>
                           ) : (
-                            <span className={`ml-auto shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold ${attendanceStatusClass(participant.status)}`}>
+                            <span className={`ml-auto shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${attendanceStatusClass(participant.status)}`}>
                               {attendanceStatusLabel(participant.status, locale)}
                             </span>
                           )
@@ -3968,38 +3995,37 @@ export default function DepartmentItemsClient({
                   </div>
                 </div>
                 <div className="space-y-4 pt-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#42526E]">{t.replies} ({selectedScheduleItem.comments.length})</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.replies} ({selectedScheduleItem.comments.length})</p>
                   {selectedScheduleItem.comments.length > 0 ? (
                     <div className="space-y-2">
                       {selectedScheduleItem.comments.map((comment) => (
-                        <div key={comment.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                          <div className="flex items-start justify-between gap-3 text-xs text-slate-500">
-                            <span className="min-w-0 truncate font-semibold text-slate-700">{comment.authorName || comment.authorEmail}</span>
+                        <div key={comment.id} className="rounded-md border bg-muted/30 px-3 py-2">
+                          <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+                            <span className="min-w-0 truncate font-semibold text-foreground">{comment.authorName || comment.authorEmail}</span>
                             <span className="shrink-0" title={formatFullDateTime(comment.createdAt, locale)}>{formatRelativeTime(comment.createdAt, locale)}</span>
                           </div>
-                          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{comment.content}</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{comment.content}</p>
                         </div>
                       ))}
                     </div>
                   ) : null}
                   {selectedScheduleCanComment ? (
                     <div className="space-y-2">
-                      <textarea
+                      <Textarea
                         value={scheduleReplyContent}
                         onChange={(event) => setScheduleReplyContent(event.target.value)}
                         placeholder={st.meetingCommentPlaceholder}
                         rows={3}
-                        className="w-full rounded border border-[#C1C7D0] px-3 py-2 text-sm leading-6 text-[#051A3E] outline-none focus:border-[#0052CC] focus:ring-2 focus:ring-[#0052CC]/20"
+                        className="min-h-24"
                       />
                       <div className="flex justify-end">
-                        <button
+                        <Button
                           type="button"
                           disabled={isPending || !scheduleReplyContent.trim()}
                           onClick={handleSaveScheduleReply}
-                          className="rounded bg-[#0052CC] px-3 py-2 text-sm font-semibold text-white hover:bg-[#003D9B] disabled:opacity-50"
                         >
                           {st.sendMessage}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ) : null}

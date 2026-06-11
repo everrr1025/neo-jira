@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { createAuditLogs } from "@/lib/audit";
 import { deleteLocalUpload } from "@/lib/uploadCleanup";
+import { buildVisibleProjectsWhere } from "@/lib/activeProjectUtils";
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -30,8 +31,16 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
     }
 
-    if (attachment.uploaderId !== userId) {
-      return NextResponse.json({ error: "Only the uploaded user can delete this attachment" }, { status: 403 });
+    const canAccessProject = await prisma.project.findFirst({
+      where: {
+        id: attachment.issue.projectId,
+        ...buildVisibleProjectsWhere(userId, undefined),
+      },
+      select: { id: true },
+    });
+
+    if (!canAccessProject) {
+      return NextResponse.json({ error: "You do not have permission to delete this attachment" }, { status: 403 });
     }
 
     await prisma.$transaction(async (tx) => {

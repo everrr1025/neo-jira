@@ -63,15 +63,36 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
     }
   };
 
+  const markNotificationAsRead = async (notification: NotificationItem) => {
+    if (notification.read) return;
+
+    setNotifications((current) =>
+      current.map((item) => (item.id === notification.id ? { ...item, read: true } : item))
+    );
+
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: notification.id }),
+      });
+      if (!response.ok) {
+        setNotifications((current) =>
+          current.map((item) => (item.id === notification.id ? { ...item, read: false } : item))
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      setNotifications((current) =>
+        current.map((item) => (item.id === notification.id ? { ...item, read: false } : item))
+      );
+    }
+  };
+
   return (
     <DropdownMenu
       open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (nextOpen) {
-          void markAllAsRead();
-        }
-      }}
+      onOpenChange={setOpen}
     >
       <DropdownMenuTrigger asChild>
         <Button
@@ -129,7 +150,10 @@ export default function NotificationBell({ locale }: { locale: Locale }) {
                     href={notification.link || "#"}
                     target={notification.link ? "_blank" : undefined}
                     rel={notification.link ? "noreferrer" : undefined}
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                      void markNotificationAsRead(notification);
+                      setOpen(false);
+                    }}
                     className={`flex w-full gap-3 rounded-md px-3 py-3 transition-colors hover:bg-accent focus:bg-accent ${
                       notification.read ? "bg-background" : "bg-primary/5"
                     }`}
