@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - main
+  release:
+    types: [published]
 
 jobs:
   deploy:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     # No-op update to trigger a fresh deployment run for diagnostics.
 
@@ -34,6 +37,190 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          debug: true
+          timeout: 60s
+          command_timeout: 30m
+          script: |
+            set -e
+            INITIAL_MIGRATION="20260417000000_init"
+            PROD_DATABASE_URL="file:/home/ubuntu/var/www/neo-jira-data/dev.db"
+            BACKUP_DIR="/home/ubuntu/var/www/neo-jira-data/backups"
+
+            log_step() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+            }
+
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            log_step "Switching to deploy directory"
+            cd /home/ubuntu/var/www/neo-jira
+
+            log_step "Fetching latest code from origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+
+            # Keep production SQLite data outside the git checkout.
+            log_step "Ensuring production data directories exist"
+            mkdir -p /home/ubuntu/var/www/neo-jira-data "$BACKUP_DIR"
+
+            # ONE-TIME DATABASE IMPORT LOGIC
+            if [ -f prisma/import-me.db ]; then
+              echo "Found prisma/import-me.db. Performing one-time database import..."
+              mv -f prisma/import-me.db /home/ubuntu/var/www/neo-jira-data/dev.db
+              echo "Import completed to /home/ubuntu/var/www/neo-jira-data/dev.db"
+
+              # If the .env is still pointing to the old local path, update it.
+              if grep -q "DATABASE_URL=.*prisma/dev.db" .env; then
+                echo "Updating .env to point to the new production database path..."
+                sed -i "s|^DATABASE_URL=.*|DATABASE_URL=\"$PROD_DATABASE_URL\"|" .env
+              fi
+            elif [ ! -f /home/ubuntu/var/www/neo-jira-data/dev.db ] && [ -f prisma/dev.db ]; then
+              echo "Initializing production DB from prisma/dev.db..."
+              cp prisma/dev.db /home/ubuntu/var/www/neo-jira-data/dev.db
+            fi
+
+            # Ensure Prisma and the app use the protected production DB path.
+            touch .env
+            if ! grep -q '^DATABASE_URL=' .env; then
+              echo "DATABASE_URL is missing from /home/ubuntu/var/www/neo-jira/.env"
+              echo "Expected: DATABASE_URL=\"$PROD_DATABASE_URL\""
+              exit 1
+            fi
+
+            # Fail fast if production DATABASE_URL drifts away from the managed external SQLite path.
+            CURRENT_DB_URL=$(grep '^DATABASE_URL=' .env | tail -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+            if [ "$CURRENT_DB_URL" != "$PROD_DATABASE_URL" ]; then
+              echo "DATABASE_URL mismatch in /home/ubuntu/var/www/neo-jira/.env"
+              echo "Expected: $PROD_DATABASE_URL"
+              echo "Actual:   $CURRENT_DB_URL"
+              exit 1
+            fi
+
+            export DATABASE_URL="$CURRENT_DB_URL"
+
+            if [ -f /home/ubuntu/var/www/neo-jira-data/dev.db ]; then
+              TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+              cp /home/ubuntu/var/www/neo-jira-data/dev.db "$BACKUP_DIR/dev-$TIMESTAMP.db"
+              echo "Backed up SQLite database to $BACKUP_DIR/dev-$TIMESTAMP.db"
+            fi
+
+            log_step "Running npm ci"
+            npm ci
+            log_step "npm ci completed"
+
+            log_step "Running prisma generate"
+            npx prisma generate
+            log_step "prisma generate completed"
+
+            log_step "Detecting baseline migrations"
+            BASELINE_MIGRATIONS=$(python3 - <<'PY'
+            import os
+            import sqlite3
+
+            db_url = os.environ.get("DATABASE_URL", "")
+            if not db_url.startswith("file:"):
+                print("")
+                raise SystemExit(0)
+
+            db_path = db_url[len("file:"):]
+            if not os.path.isabs(db_path):
+                db_path = os.path.abspath(db_path)
+
+            if not os.path.exists(db_path):
+                print("")
+                raise SystemExit(0)
+
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            tables = {row[0] for row in cur.fetchall()}
+            user_tables = tables - {"_prisma_migrations"}
+            if not user_tables:
+                conn.close()
+                print("")
+                raise SystemExit(0)
+
+            migrations = []
+            if {"User", "Project", "Issue"}.issubset(tables):
+                migrations.append("20260417000000_init")
+            if "AuditLog" in tables:
+                migrations.append("20260417072536_add_audit_logs")
+            if {"ProjectWorkflowStatus", "ProjectWorkflowTransition"}.issubset(tables):
+                migrations.append("20260418022713_add_project_workflows")
+
+            if "_prisma_migrations" in tables:
+                try:
+                    cur.execute("SELECT migration_name FROM _prisma_migrations")
+                    applied_migrations = {row[0] for row in cur.fetchall()}
+                except sqlite3.DatabaseError:
+                    applied_migrations = set()
+                migrations = [
+                    migration
+                    for migration in migrations
+                    if migration not in applied_migrations
+                ]
+
+            conn.close()
+
+            print("\n".join(migrations))
+            PY
+            )
+
+            if [ -n "$BASELINE_MIGRATIONS" ]; then
+              log_step "Existing SQLite data requires baseline migration records"
+              echo "$BASELINE_MIGRATIONS" | while IFS= read -r migration; do
+                if [ -n "$migration" ]; then
+                  echo "Marking migration as applied: $migration"
+                  npx prisma migrate resolve --applied "$migration"
+                fi
+              done
+              log_step "Baseline migration recording completed"
+            else
+              log_step "No baseline migration changes needed"
+            fi
+
+            log_step "Running prisma migrate deploy"
+            npx prisma migrate deploy
+            log_step "prisma migrate deploy completed"
+
+            log_step "Running production build"
+            npm run build
+            log_step "Production build completed"
+
+            log_step "Restarting pm2 process neo-jira"
+            pm2 restart neo-jira --update-env
+            log_step "pm2 restart completed"
+
+  deploy-prod:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check SSH connectivity
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          debug: true
+          timeout: 60s
+          command_timeout: 2m
+          script: |
+            set -e
+            echo "connectivity-check:start"
+            whoami
+            hostname
+            pwd
+            echo "connectivity-check:end"
+
+      - name: Deploy to Production VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
           debug: true
           timeout: 60s
           command_timeout: 30m
