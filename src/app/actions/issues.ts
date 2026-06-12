@@ -28,7 +28,7 @@ import {
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
 
-const ISSUE_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT"] as const;
+const ISSUE_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT", "DATE"] as const;
 type IssueFieldType = (typeof ISSUE_FIELD_TYPES)[number];
 
 function normalizeFieldKey(input: string) {
@@ -54,6 +54,24 @@ function assertIssueFieldType(type: string): asserts type is IssueFieldType {
   if (!ISSUE_FIELD_TYPES.includes(type as IssueFieldType)) {
     throw new Error("Unsupported field type");
   }
+}
+
+function normalizeDateFieldValue(value: string | number | boolean | null) {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error("Invalid date");
+  }
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    throw new Error("Invalid date");
+  }
+  return value;
 }
 
 async function assertAssignableAssignee(
@@ -722,6 +740,8 @@ export async function updateIssueFieldValue(data: {
       const options = field.optionsJson ? (JSON.parse(field.optionsJson) as string[]) : [];
       if (option && !options.includes(option)) throw new Error("Invalid option");
       valueData.valueOption = option;
+    } else if (field.type === "DATE") {
+      valueData.valueText = normalizeDateFieldValue(data.value);
     }
 
     const savedValue = await prisma.issueFieldValue.upsert({

@@ -468,15 +468,25 @@ export async function getDepartmentNotificationsPage({
       : {}),
   };
 
-  const announcementCategoryWhere =
+  const announcementWhere: Prisma.AnnouncementWhereInput = {
+    level: { in: ["DEPARTMENT", "PROJECT"] },
+  };
+  const legacyReminderWhere: Prisma.AnnouncementWhereInput = {
+    level: "SYSTEM",
+    OR: [
+      { dedupeKey: null },
+      { NOT: { dedupeKey: { startsWith: "issue-due:" } } },
+    ],
+  };
+  const announcementCategoryWhere: Prisma.AnnouncementWhereInput =
     categoryValues.length === 0
-      ? {}
+      ? { OR: [announcementWhere, legacyReminderWhere] }
       : categoryValues.includes("ANNOUNCEMENT") && categoryValues.includes("REMINDER")
-        ? {}
+        ? { OR: [announcementWhere, legacyReminderWhere] }
         : categoryValues.includes("ANNOUNCEMENT")
-          ? { level: { in: ["DEPARTMENT", "PROJECT"] as DepartmentNotificationLevel[] } }
+          ? announcementWhere
           : categoryValues.includes("REMINDER")
-            ? { level: "SYSTEM", dedupeKey: { not: { startsWith: "issue-due:" } } }
+            ? legacyReminderWhere
             : { id: "__none__" };
 
   if (view === "sent") {
@@ -529,9 +539,8 @@ export async function getDepartmentNotificationsPage({
 
   const visibleWhere = {
     ...baseWhere,
-    ...announcementCategoryWhere,
     status: "SENT",
-    NOT: { dedupeKey: { startsWith: "issue-due:" } },
+    AND: [announcementCategoryWhere],
     receipts: {
       some: {
         userId,

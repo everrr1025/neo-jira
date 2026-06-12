@@ -83,7 +83,7 @@ type Issue = {
   dueDate?: Date | string | null;
 };
 
-type PlanFieldType = "BOOLEAN" | "NUMBER" | "TEXT" | "LONG_TEXT" | "SELECT";
+type PlanFieldType = "BOOLEAN" | "NUMBER" | "TEXT" | "LONG_TEXT" | "SELECT" | "DATE";
 
 type CustomFieldDefinition = {
   id: string;
@@ -162,6 +162,10 @@ type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "p
 type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
+const DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH = 80;
+const DATE_FIELD_INPUT_WIDTH = 180;
+const TABLE_CELL_HORIZONTAL_PADDING = 40;
+const DATE_FIELD_COLUMN_MIN_WIDTH = DATE_FIELD_INPUT_WIDTH + TABLE_CELL_HORIZONTAL_PADDING;
 const issueListCheckboxClassName =
   "size-4 shrink-0 rounded-sm border border-input accent-primary transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -423,6 +427,14 @@ function getCustomFieldFilterOptions(field: CustomFieldDefinition, locale: Local
       ...emptyOptions,
     ];
   }
+  if (field.type === "DATE") {
+    return [
+      { value: "EQ", label: locale === "zh" ? "等于" : "Equals" },
+      { value: "GTE", label: locale === "zh" ? "晚于或等于" : "On or after" },
+      { value: "LTE", label: locale === "zh" ? "早于或等于" : "On or before" },
+      ...emptyOptions,
+    ];
+  }
   if (field.type === "SELECT") {
     return [
       { value: "EQ", label: locale === "zh" ? "等于" : "Is" },
@@ -562,6 +574,16 @@ function AdvancedFieldFilters({
                         placeholder={valueLabel}
                         aria-label={valueLabel}
                       />
+                    ) : field.type === "DATE" ? (
+                      <div className="[&_label]:sr-only">
+                        <ShadcnDatePicker
+                          id={`field-filter-${field.source}-${field.id}`}
+                          label={valueLabel}
+                          locale={locale}
+                          value={value}
+                          onChange={(nextValue) => updateFieldFilter(field, op, nextValue)}
+                        />
+                      </div>
                     ) : (
                       <Input
                         value={value}
@@ -766,8 +788,17 @@ function getFieldValueForDisplay(field: CustomFieldDefinition, value?: CustomFie
 }
 
 function getDefaultFieldWidth(field: CustomFieldDefinition) {
+  if (field.type === "DATE") return DATE_FIELD_COLUMN_MIN_WIDTH;
   if (field.type === "TEXT" || field.type === "LONG_TEXT") return 240;
   return 150;
+}
+
+function getResizableColumnMinWidth(column: ResizableColumn) {
+  if ((column.type === "issueField" || column.type === "planField") && column.field.type === "DATE") {
+    return DATE_FIELD_COLUMN_MIN_WIDTH;
+  }
+
+  return DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH;
 }
 
 function getColumnOrderKey(column: Pick<ResizableColumn, "type" | "id">) {
@@ -930,6 +961,7 @@ export default function IssueList({
       { value: "TEXT", label: locale === "zh" ? "文本" : "Text" },
       { value: "LONG_TEXT", label: locale === "zh" ? "多行文本" : "Long text" },
       { value: "SELECT", label: locale === "zh" ? "下拉选择" : "Select" },
+      { value: "DATE", label: locale === "zh" ? "日期" : "Date" },
     ],
     [locale]
   );
@@ -1216,7 +1248,6 @@ export default function IssueList({
       const col = resizableColumns[colIndex];
       if (!col) return;
       const startWidth = col.width || 150;
-      const minWidth = 80;
       resizingRef.current = { colIndex, startX: e.clientX, startWidth };
 
       const onMouseMove = (ev: MouseEvent) => {
@@ -1228,7 +1259,7 @@ export default function IssueList({
 
         if (!resizeColumn) return;
 
-        const newWidth = Math.max(minWidth, resizeState.startWidth + delta);
+        const newWidth = Math.max(getResizableColumnMinWidth(resizeColumn), resizeState.startWidth + delta);
         const columnUpdates: Partial<Record<ColumnId, number>> = {};
         const issueFieldUpdates: Record<string, number> = {};
         const planFieldUpdates: Record<string, number> = {};
@@ -1317,26 +1348,32 @@ export default function IssueList({
       },
       {} as Record<ColumnId, number>
     );
+    const issueFieldsById = new Map(issueFields.map((field) => [field.id, field]));
     const currentIssueFieldIds = new Set(issueFields.map((field) => field.id));
     const validVisibleIssueFieldIds = storedPreferences?.visibleIssueFieldIds?.filter((fieldId) =>
       currentIssueFieldIds.has(fieldId)
     );
     const validIssueFieldWidths = Object.entries(storedPreferences?.issueFieldWidths || {}).reduce(
       (acc, [fieldId, width]) => {
-        if (currentIssueFieldIds.has(fieldId) && typeof width === "number" && width >= 80) {
+        const field = issueFieldsById.get(fieldId);
+        const minWidth = field?.type === "DATE" ? DATE_FIELD_COLUMN_MIN_WIDTH : DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH;
+        if (field && typeof width === "number" && width >= minWidth) {
           acc[fieldId] = width;
         }
         return acc;
       },
       {} as Record<string, number>
     );
+    const planFieldsById = new Map(planFields.map((field) => [field.id, field]));
     const currentPlanFieldIds = new Set(planFields.map((field) => field.id));
     const validVisiblePlanFieldIds = storedPreferences?.visiblePlanFieldIds?.filter((fieldId) =>
       currentPlanFieldIds.has(fieldId)
     );
     const validPlanFieldWidths = Object.entries(storedPreferences?.planFieldWidths || {}).reduce(
       (acc, [fieldId, width]) => {
-        if (currentPlanFieldIds.has(fieldId) && typeof width === "number" && width >= 80) {
+        const field = planFieldsById.get(fieldId);
+        const minWidth = field?.type === "DATE" ? DATE_FIELD_COLUMN_MIN_WIDTH : DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH;
+        if (field && typeof width === "number" && width >= minWidth) {
           acc[fieldId] = width;
         }
         return acc;
@@ -1669,7 +1706,14 @@ export default function IssueList({
           fieldDefinitionId: field.id,
           valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
           valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
-          valueText: field.type === "TEXT" ? (typeof value === "string" ? value : value === null ? null : String(value)) : null,
+          valueText:
+            field.type === "TEXT" || field.type === "LONG_TEXT" || field.type === "DATE"
+              ? typeof value === "string"
+                ? value
+                : value === null
+                  ? null
+                  : String(value)
+              : null,
           valueOption: field.type === "SELECT" ? (typeof value === "string" && value ? value : null) : null,
         };
 
@@ -1709,7 +1753,7 @@ export default function IssueList({
           valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
           valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
           valueText:
-            field.type === "TEXT" || field.type === "LONG_TEXT"
+            field.type === "TEXT" || field.type === "LONG_TEXT" || field.type === "DATE"
               ? typeof value === "string"
                 ? value
                 : value === null
@@ -2060,6 +2104,22 @@ export default function IssueList({
               </span>
             )}
           />
+        </td>
+      );
+    }
+
+    if (field.type === "DATE") {
+      return (
+        <td key={`${keyPrefix}:${field.id}`} className="px-5 py-3.5">
+          <div className="[&_label]:sr-only" style={{ width: DATE_FIELD_INPUT_WIDTH }}>
+            <ShadcnDatePicker
+              id={`${keyPrefix}-${field.id}-${issue.id}`}
+              label={field.name}
+              locale={locale}
+              value={displayValue}
+              onChange={(value) => onUpdate(value || null)}
+            />
+          </div>
         </td>
       );
     }

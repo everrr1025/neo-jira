@@ -62,6 +62,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   if (!iteration) redirect("/iterations");
 
   const role = await getProjectRole(userId, iteration.project.id);
+  const canCreateIssues = Boolean(role);
   const canManage = role === "ADMIN";
 
   const issues = iteration.issues;
@@ -160,7 +161,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
               )}
             </SprintActionButton>
           )}
-          {canChangeSprintIssues && !canManage && (
+          {canChangeSprintIssues && !canManage && canCreateIssues && (
             <CreateIssueButton
               locale={locale}
               users={users}

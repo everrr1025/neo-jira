@@ -27,6 +27,7 @@ import CommentSection from "./CommentSection";
 import { DropdownField } from "./DropdownField";
 import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 import { NumberInput } from "./ui/number-input";
 
 type IssueUser = {
@@ -184,7 +185,7 @@ export default function IssueDetailClient({
       valueBoolean: field.type === "BOOLEAN" ? Boolean(value) : null,
       valueNumber: field.type === "NUMBER" && value !== "" && value !== null ? Number(value) : null,
       valueText:
-        field.type === "TEXT" || field.type === "LONG_TEXT"
+        field.type === "TEXT" || field.type === "LONG_TEXT" || field.type === "DATE"
           ? typeof value === "string"
             ? value
             : value === null
@@ -553,6 +554,20 @@ export default function IssueDetailClient({
                         className="w-full resize-y rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </label>
+                  );
+                }
+
+                if (field.type === "DATE") {
+                  return (
+                    <div key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5 [&_label]:text-xs [&_label]:font-semibold [&_label]:text-slate-500`}>
+                      <ShadcnDatePicker
+                        id={`issue-field-${field.id}`}
+                        label={field.name}
+                        locale={locale}
+                        value={displayValue}
+                        onChange={(value) => handleIssueFieldValueUpdate(field, value || null)}
+                      />
+                    </div>
                   );
                 }
 

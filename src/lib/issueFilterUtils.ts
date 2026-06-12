@@ -29,6 +29,18 @@ function startOfToday() {
   return today;
 }
 
+function isDateFieldValue(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
 function fieldValueWhere(fieldType: string, op: string, value: string) {
   if (op === "EMPTY") {
     return {
@@ -69,6 +81,13 @@ function fieldValueWhere(fieldType: string, op: string, value: string) {
     if (!value) return null;
     if (op === "NEQ") return { valueOption: { not: value } };
     return { valueOption: value };
+  }
+
+  if (fieldType === "DATE") {
+    if (!isDateFieldValue(value)) return null;
+    if (op === "GTE") return { valueText: { gte: value } };
+    if (op === "LTE") return { valueText: { lte: value } };
+    return { valueText: value };
   }
 
   if (!value) return null;

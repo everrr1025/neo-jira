@@ -34,6 +34,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
   const projectRole = await getProjectRole(userId, activeProject.id);
+  const canCreateIssues = Boolean(projectRole);
   const canManagePlans = projectRole === "ADMIN";
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
 
@@ -132,14 +133,16 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
         </div>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <IssueSearchInput locale={locale} />
-          <CreateIssueButton
-            users={users}
-            plans={plans}
-            iterations={iterations}
-            locale={locale}
-            currentUserId={userId}
-            canManagePlans={canManagePlans}
-          />
+          {canCreateIssues ? (
+            <CreateIssueButton
+              users={users}
+              plans={plans}
+              iterations={iterations}
+              locale={locale}
+              currentUserId={userId}
+              canManagePlans={canManagePlans}
+            />
+          ) : null}
         </div>
       </div>
 
