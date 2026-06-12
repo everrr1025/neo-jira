@@ -19,6 +19,7 @@ type ShadcnDatePickerProps = {
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  className?: string;
 };
 
 const localeMap = {
@@ -58,6 +59,7 @@ export default function ShadcnDatePicker({
   value,
   onChange,
   required = false,
+  className = "flex flex-col gap-1.5",
 }: ShadcnDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedDate = parseDateInputValue(value);
@@ -65,7 +67,7 @@ export default function ShadcnDatePicker({
   const copy = copyMap[locale];
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={className}>
       <Label htmlFor={id}>{label}</Label>
       <input
         tabIndex={-1}

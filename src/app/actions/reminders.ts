@@ -16,6 +16,12 @@ type SessionUser = {
 type ReminderScopeType = "PERSONAL" | "DEPARTMENT" | "PROJECT";
 type ReminderItemType = "NOTE" | "TODO" | "EVENT" | "REMINDER";
 type ReminderAttendanceStatus = "PENDING" | "CONFIRMED" | "DECLINED" | "TENTATIVE";
+const SCHEDULE_START_HOUR = 7;
+const SCHEDULE_LAST_START_HOUR = 21;
+const SCHEDULE_LAST_START_MINUTE = 45;
+const SCHEDULE_END_HOUR = 22;
+const SCHEDULE_END_MINUTE = 0;
+const SCHEDULE_MINUTE_STEP = 15;
 
 function getSessionUser(session: unknown) {
   const user = (session as { user?: SessionUser }).user;
@@ -31,6 +37,34 @@ function parseLocalDateTime(value: string) {
 
   const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function minutesFromLocalTime(date: Date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function isWithinScheduleTimeRange(startAt: Date, endAt: Date | null) {
+  if (!endAt) return false;
+  if (
+    startAt.getFullYear() !== endAt.getFullYear() ||
+    startAt.getMonth() !== endAt.getMonth() ||
+    startAt.getDate() !== endAt.getDate()
+  ) {
+    return false;
+  }
+
+  const startMinutes = minutesFromLocalTime(startAt);
+  const endMinutes = minutesFromLocalTime(endAt);
+  const latestStartMinutes = SCHEDULE_LAST_START_HOUR * 60 + SCHEDULE_LAST_START_MINUTE;
+  const latestEndMinutes = SCHEDULE_END_HOUR * 60 + SCHEDULE_END_MINUTE;
+  return (
+    startMinutes >= SCHEDULE_START_HOUR * 60 &&
+    startMinutes <= latestStartMinutes &&
+    endMinutes <= latestEndMinutes &&
+    endMinutes > startMinutes &&
+    startMinutes % SCHEDULE_MINUTE_STEP === 0 &&
+    endMinutes % SCHEDULE_MINUTE_STEP === 0
+  );
 }
 
 function isValidPriority(value: string) {
@@ -271,6 +305,9 @@ export async function createReminder(data: {
     }
     if (endAt && endAt < startAt) {
       return { success: false, error: "End time must be after start time" };
+    }
+    if ((itemType === "EVENT" || (itemType === "REMINDER" && endAt)) && !isWithinScheduleTimeRange(startAt, endAt)) {
+      return { success: false, error: "Schedule start time must be between 07:00 and 21:45, end time can be up to 22:00, in 15-minute increments" };
     }
 
     const membership = await getDepartmentMembership(currentUser.id, departmentId);
@@ -692,6 +729,9 @@ export async function updateReminderItem(
     const content = data.content?.trim() || null;
     if (!startAt) return { success: false, error: "Item time is required" };
     if (endAt && endAt < startAt) return { success: false, error: "End time must be after start time" };
+    if ((itemType === "EVENT" || (itemType === "REMINDER" && endAt)) && !isWithinScheduleTimeRange(startAt, endAt)) {
+      return { success: false, error: "Schedule start time must be between 07:00 and 21:45, end time can be up to 22:00, in 15-minute increments" };
+    }
 
     const scopeType = data.scopeType || (reminder.scopeType as ReminderScopeType);
     if (!["PERSONAL", "DEPARTMENT", "PROJECT"].includes(scopeType)) {

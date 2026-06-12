@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createPortal } from "react-dom";
 import {
   addMonths,
   addWeeks,
@@ -599,8 +598,24 @@ function combineDateAndTime(dateValue: string, timeValue: string) {
   return `${dateValue || format(new Date(), "yyyy-MM-dd")}T${timeValue || "09:00"}`;
 }
 
-function combineDateAsAllDay(dateValue: string) {
-  return `${dateValue || format(new Date(), "yyyy-MM-dd")}T00:00`;
+function timeToMinutes(value: string) {
+  const [hour = "0", minute = "0"] = value.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+
+function isTimeInScheduleRange(startTime: string, endTime: string) {
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(endTime);
+  const latestStartMinutes = 21 * 60 + 45;
+  const latestEndMinutes = 22 * 60;
+  return (
+    startMinutes >= WEEK_START_HOUR * 60 &&
+    startMinutes <= latestStartMinutes &&
+    endMinutes <= latestEndMinutes &&
+    endMinutes > startMinutes &&
+    startMinutes % 15 === 0 &&
+    endMinutes % 15 === 0
+  );
 }
 
 function getScheduleType(item: DepartmentItemCenterItem): ScheduleType {
@@ -681,7 +696,17 @@ function isAllDayScheduleItem(item: DepartmentItemCenterItem) {
   if (item.kind === "ISSUE_DUE" || item.itemType === "TODO") return true;
   const start = new Date(item.date);
   if (Number.isNaN(start.getTime())) return true;
-  if (item.itemType === "REMINDER") return !hasTimedSchedulePlacement(item);
+  if (item.itemType === "REMINDER") {
+    const end = item.endDate ? new Date(item.endDate) : null;
+    return Boolean(
+      end &&
+      !Number.isNaN(end.getTime()) &&
+      start.getHours() === WEEK_START_HOUR &&
+      start.getMinutes() === 0 &&
+      end.getHours() === WEEK_END_HOUR &&
+      end.getMinutes() === 0
+    );
+  }
   return start.getHours() === 0 && start.getMinutes() === 0;
 }
 
@@ -823,30 +848,13 @@ function parseScheduleDetails(content: string | null) {
   };
 }
 
-const TIME_POPOVER_HEIGHT = 280;
-const TIME_POPOVER_GAP = 8;
-const TIME_VIEWPORT_MARGIN = 12;
-const timeHours = Array.from({ length: 24 }, (_, index) => `${index}`.padStart(2, "0"));
-
-function getTimePopoverPosition(element: HTMLButtonElement) {
-  const rect = element.getBoundingClientRect();
-  const left = Math.min(
-    Math.max(TIME_VIEWPORT_MARGIN, rect.left),
-    Math.max(TIME_VIEWPORT_MARGIN, window.innerWidth - rect.width - TIME_VIEWPORT_MARGIN)
-  );
-  const shouldOpenAbove =
-    window.innerHeight - rect.bottom < TIME_POPOVER_HEIGHT + TIME_POPOVER_GAP &&
-    rect.top > TIME_POPOVER_HEIGHT + TIME_POPOVER_GAP;
-  const top = shouldOpenAbove
-    ? Math.max(TIME_VIEWPORT_MARGIN, rect.top - TIME_POPOVER_HEIGHT - TIME_POPOVER_GAP)
-    : Math.min(window.innerHeight - TIME_POPOVER_HEIGHT - TIME_VIEWPORT_MARGIN, rect.bottom + TIME_POPOVER_GAP);
-
-  return {
-    left,
-    top,
-    width: rect.width,
-  };
-}
+const WEEK_START_HOUR = 7;
+const WEEK_END_HOUR = 22;
+const WEEK_HOUR_HEIGHT = 64;
+const WEEK_GRID_TOP_PADDING = 0;
+const WEEK_EVENT_INSET = 2;
+const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
+const SCHEDULE_TIME_MINUTES = ["00", "15", "30", "45"] as const;
 
 function LocalizedTimeInput({
   id,
@@ -854,7 +862,8 @@ function LocalizedTimeInput({
   value,
   onChange,
   locale,
-  minuteStep = 5,
+  minTime = `${String(WEEK_START_HOUR).padStart(2, "0")}:00`,
+  maxTime = "21:45",
   required = false,
 }: {
   id?: string;
@@ -862,57 +871,40 @@ function LocalizedTimeInput({
   value: string;
   onChange: (value: string) => void;
   locale: Locale;
-  minuteStep?: 5 | 15;
+  minTime?: string;
+  maxTime?: string;
   required?: boolean;
 }) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null);
   const [selectedHour = "09", selectedMinute = "00"] = value.split(":");
-  const timeMinutes = Array.from({ length: 60 / minuteStep }, (_, index) => `${index * minuteStep}`.padStart(2, "0"));
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const clickedTrigger = buttonRef.current?.contains(target);
-      const clickedPopover = popoverRef.current?.contains(target);
-      if (!clickedTrigger && !clickedPopover) setIsOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
-    };
-    const handleReposition = () => {
-      if (buttonRef.current) setPopoverPosition(getTimePopoverPosition(buttonRef.current));
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
-    window.addEventListener("resize", handleReposition);
-    window.addEventListener("scroll", handleReposition, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
-      window.removeEventListener("resize", handleReposition);
-      window.removeEventListener("scroll", handleReposition, true);
-    };
-  }, [isOpen]);
-
-  const openPicker = () => {
-    if (buttonRef.current) setPopoverPosition(getTimePopoverPosition(buttonRef.current));
-    setIsOpen((current) => !current);
-  };
-
-  const updateTime = (hour: string, minute: string) => {
-    onChange(`${hour}:${minute}`);
+  const minMinutes = timeToMinutes(minTime);
+  const maxMinutes = timeToMinutes(maxTime);
+  const availableHours = WEEK_HOURS
+    .map((hour) => `${hour}`.padStart(2, "0"))
+    .filter((hour) => {
+      const hourStart = timeToMinutes(`${hour}:00`);
+      const hourEnd = timeToMinutes(`${hour}:45`);
+      return hourStart <= maxMinutes && hourEnd >= minMinutes;
+    });
+  const hourValue = availableHours.includes(selectedHour) ? selectedHour : availableHours[0] || "09";
+  const availableMinutes = SCHEDULE_TIME_MINUTES.filter((minute) => {
+    const nextMinutes = timeToMinutes(`${hourValue}:${minute}`);
+    return nextMinutes >= minMinutes && nextMinutes <= maxMinutes;
+  });
+  const minuteValue = availableMinutes.includes(selectedMinute as (typeof SCHEDULE_TIME_MINUTES)[number])
+    ? selectedMinute
+    : availableMinutes[0] || "00";
+  const updateTime = (nextHour: string, nextMinute: string) => {
+    const nextAvailableMinutes = SCHEDULE_TIME_MINUTES.filter((minute) => {
+      const nextMinutes = timeToMinutes(`${nextHour}:${minute}`);
+      return nextMinutes >= minMinutes && nextMinutes <= maxMinutes;
+    });
+    onChange(`${nextHour}:${nextAvailableMinutes.includes(nextMinute as (typeof SCHEDULE_TIME_MINUTES)[number]) ? nextMinute : nextAvailableMinutes[0] || "00"}`);
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="space-y-2">
       <Label htmlFor={inputId}>{label}</Label>
       <input
         tabIndex={-1}
@@ -922,65 +914,38 @@ function LocalizedTimeInput({
         required={required}
         className="pointer-events-none absolute h-0 w-0 opacity-0"
       />
-      <button
-        ref={buttonRef}
-        id={inputId}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={openPicker}
-        className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm transition-[color,box-shadow] outline-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <span>{value || (locale === "zh" ? "选择时间" : "Select time")}</span>
-        <Clock size={16} className="shrink-0 text-muted-foreground" />
-      </button>
-      {isOpen && popoverPosition
-        ? createPortal(
-            <div
-              ref={popoverRef}
-              className="z-[90] rounded-md border bg-popover p-3 text-popover-foreground shadow-xl"
-              style={{ left: popoverPosition.left, top: popoverPosition.top, width: popoverPosition.width, position: "fixed" }}
-            >
-              <div className="mb-3 flex items-center justify-between border-b pb-2">
-                <span className="text-sm font-semibold">{locale === "zh" ? "选择时间" : "Select time"}</span>
-                <span className="rounded-md bg-muted px-2 py-1 text-sm font-semibold">{value}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase text-muted-foreground">{locale === "zh" ? "小时" : "Hour"}</div>
-                  <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-                    {timeHours.map((hour) => (
-                      <button
-                        key={hour}
-                        type="button"
-                        onClick={() => updateTime(hour, selectedMinute)}
-                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${hour === selectedHour ? "bg-primary font-semibold text-primary-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
-                      >
-                        {hour}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-1 px-2 text-center text-xs font-semibold uppercase text-muted-foreground">{locale === "zh" ? "分钟" : "Minute"}</div>
-                  <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
-                    {timeMinutes.map((minute) => (
-                      <button
-                        key={minute}
-                        type="button"
-                        onClick={() => updateTime(selectedHour, minute)}
-                        className={`flex w-full items-center justify-center rounded-md px-2 py-1.5 text-sm transition-colors ${minute === selectedMinute ? "bg-primary font-semibold text-primary-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
-                      >
-                        {minute}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
+      <div id={inputId} className="grid grid-cols-2 gap-2">
+        <div className="relative">
+          <select
+            aria-label={locale === "zh" ? "小时" : "Hour"}
+            value={hourValue}
+            onChange={(event) => updateTime(event.target.value, minuteValue)}
+            className="h-9 w-full appearance-none rounded-md border border-input bg-background py-1 pl-3 pr-8 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {availableHours.map((hour) => (
+              <option key={hour} value={hour}>
+                {hour}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        </div>
+        <div className="relative">
+          <select
+            aria-label={locale === "zh" ? "分钟" : "Minute"}
+            value={minuteValue}
+            onChange={(event) => updateTime(hourValue, event.target.value)}
+            className="h-9 w-full appearance-none rounded-md border border-input bg-background py-1 pl-3 pr-8 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {availableMinutes.map((minute) => (
+              <option key={minute} value={minute}>
+                {minute}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1007,12 +972,6 @@ type SavedNoteSnapshot = {
   content: string;
 };
 
-const WEEK_START_HOUR = 7;
-const WEEK_END_HOUR = 22;
-const WEEK_HOUR_HEIGHT = 64;
-const WEEK_GRID_TOP_PADDING = 0;
-const WEEK_EVENT_INSET = 2;
-const WEEK_HOURS = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR + 1 }, (_, index) => WEEK_START_HOUR + index);
 const TASK_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const TASK_STATUS_SORT_ORDER: Record<string, number> = {
   NOT_STARTED: 0,
@@ -1882,10 +1841,10 @@ export default function DepartmentItemsClient({
     setIsCreateOpen(true);
   };
 
-  const openCreateScheduleModal = (date = scheduleCursor, startTime = "09:00", endTime = "10:00", hasTime = false) => {
+  const openCreateScheduleModal = (date = scheduleCursor, startTime = "07:00", endTime = "22:00", hasTime = true) => {
     setEditingScheduleItemId(null);
     const scheduleDate = format(date, "yyyy-MM-dd");
-    const [startHour = "09", startMinute = "00"] = startTime.split(":");
+    const [startHour = "07", startMinute = "00"] = startTime.split(":");
     const [endHour = "10", endMinute = "00"] = endTime.split(":");
     resetForm({
       itemType: "REMINDER",
@@ -1898,7 +1857,7 @@ export default function DepartmentItemsClient({
       scheduleDate,
       startTime,
       endTime,
-      hasTime,
+      hasTime: true,
       location: "",
       attendeeIds: [],
       attendeeQuery: "",
@@ -1927,10 +1886,12 @@ export default function DepartmentItemsClient({
           })
           .filter((id): id is string => Boolean(id));
     setEditingScheduleItemId(item.id);
+    const isMemoSchedule = scheduleKind === "memo";
+    const memoHasTimedPlacement = hasTimedSchedulePlacement(item);
     resetForm({
       title: item.title,
       itemType: scheduleKind === "memo" ? "REMINDER" : "EVENT",
-      hasTime: scheduleKind === "memo" ? hasTimedSchedulePlacement(item) : true,
+      hasTime: true,
       startAt: item.date,
       endAt: item.endDate || "",
       dueAt: "",
@@ -1938,8 +1899,8 @@ export default function DepartmentItemsClient({
       assigneeId: item.assigneeId || currentUserId,
       scheduleKind,
       scheduleDate: format(new Date(item.date), "yyyy-MM-dd"),
-      startTime: formatTimeLocalFromIso(item.date) || "09:00",
-      endTime: formatTimeLocalFromIso(item.endDate) || formatTimeLocalFromIso(item.date) || "10:00",
+      startTime: isMemoSchedule && !memoHasTimedPlacement ? "07:00" : formatTimeLocalFromIso(item.date) || "09:00",
+      endTime: isMemoSchedule && !memoHasTimedPlacement ? "22:00" : formatTimeLocalFromIso(item.endDate) || formatTimeLocalFromIso(item.date) || (isMemoSchedule ? "22:00" : "10:00"),
       location: details.location,
       attendeeIds,
       attendeeQuery: "",
@@ -1954,8 +1915,13 @@ export default function DepartmentItemsClient({
   const handleCreate = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    const isScheduleCreate = activeTab === "schedule";
+    const isTimedSchedule = isScheduleCreate;
+    if (isTimedSchedule && !isTimeInScheduleRange(form.startTime, form.endTime)) {
+      setError(locale === "zh" ? "日程开始时间必须在 07:00-21:45 之间，结束时间最晚 22:00，并以 15 分钟为间隔。" : "Schedule start time must be between 07:00 and 21:45, end time can be up to 22:00, in 15-minute increments.");
+      return;
+    }
     startTransition(async () => {
-      const isScheduleCreate = activeTab === "schedule";
       const attendeeNames = form.attendeeIds
         .map((id) => assigneeOptions.find((assignee) => assignee.id === id))
         .filter(Boolean)
@@ -1968,12 +1934,8 @@ export default function DepartmentItemsClient({
       ].filter(Boolean).join("\n\n");
       const scheduleItemType = form.scheduleKind === "memo" ? "REMINDER" : "EVENT";
       const scheduleScopeType = isScheduleCreate && form.scheduleKind !== "memo" ? "DEPARTMENT" : form.scopeType;
-      const scheduleStartAt = form.scheduleKind === "memo" && !form.hasTime
-        ? combineDateAsAllDay(form.scheduleDate)
-        : combineDateAndTime(form.scheduleDate, form.startTime);
-      const scheduleEndAt = form.scheduleKind === "memo" && !form.hasTime
-        ? undefined
-        : combineDateAndTime(form.scheduleDate, form.endTime);
+      const scheduleStartAt = combineDateAndTime(form.scheduleDate, form.startTime);
+      const scheduleEndAt = combineDateAndTime(form.scheduleDate, form.endTime);
       const result =
         isScheduleCreate && editingScheduleItem
           ? await updateReminderItem(editingScheduleItem.id, {
@@ -3121,6 +3083,10 @@ export default function DepartmentItemsClient({
   const scheduleTitle = scheduleView === "week"
     ? `${scheduleRangeStart.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", weekTitleStartOptions)} - ${scheduleRangeEnd.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", weekTitleEndOptions)}`
     : scheduleCursor.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", { month: "long", year: "numeric" });
+  const visibleRangeCalendarItems = calendarItems.filter((item) => {
+    const itemDate = new Date(item.date);
+    return itemDate >= scheduleRangeStart && itemDate <= scheduleRangeEnd;
+  });
   const scheduleTypes: Array<{ id: ScheduleType; label: string }> = [
     { id: "meeting", label: st.meetings },
     { id: "out", label: st.outOfOffice },
@@ -3264,6 +3230,9 @@ export default function DepartmentItemsClient({
       scheduleKind: nextKind,
       scopeType: nextKind === "memo" ? "PERSONAL" : "DEPARTMENT",
       attendeeIds: nextKind === "meeting" ? current.attendeeIds : [],
+      hasTime: nextKind === "memo" ? true : current.hasTime,
+      startTime: nextKind === "memo" ? "07:00" : current.startTime,
+      endTime: nextKind === "memo" ? "22:00" : current.endTime,
     }));
   };
 
@@ -3327,7 +3296,7 @@ export default function DepartmentItemsClient({
   const renderScheduleCreateDialog = () => (
     <DialogContent className="flex max-h-[90vh] w-full max-w-[600px] flex-col overflow-hidden p-0 sm:max-w-[600px]">
       <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4 pr-12">
-        <DialogTitle className="text-xl">{editingScheduleItem ? t.edit : st.create}</DialogTitle>
+        <DialogTitle className="text-xl">{editingScheduleItem ? t.edit : locale === "zh" ? "新建日程" : "New schedule"}</DialogTitle>
       </DialogHeader>
       <form
         onSubmit={handleCreate}
@@ -3338,7 +3307,7 @@ export default function DepartmentItemsClient({
         }}
       >
         <div className="max-h-[calc(100vh-220px)] space-y-6 overflow-y-auto px-6 py-5">
-          <div className="space-y-1">
+          <div className="space-y-2">
             <Label htmlFor="scheduleTitle">{t.titleField}</Label>
             <Input
               id="scheduleTitle"
@@ -3349,8 +3318,8 @@ export default function DepartmentItemsClient({
             />
           </div>
 
-          <div className={`grid gap-4 ${form.scheduleKind === "memo" ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-            <div className="flex flex-col gap-1.5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
               <Label htmlFor="scheduleKind">{t.type}</Label>
               <Select value={form.scheduleKind} onValueChange={handleScheduleKindChange}>
                 <SelectTrigger id="scheduleKind" className="w-full">
@@ -3369,7 +3338,7 @@ export default function DepartmentItemsClient({
               </Select>
             </div>
             {form.scheduleKind !== "memo" ? (
-              <div className="flex flex-col gap-1.5">
+              <div className="space-y-2">
               <Label htmlFor="scheduleLocation">{st.location}</Label>
               <div className="relative">
                 <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -3384,7 +3353,7 @@ export default function DepartmentItemsClient({
             </div>
             ) : (
               <>
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-2">
                   <Label htmlFor="scheduleMemoVisibility">{st.visibility}</Label>
                   <Select
                     value={form.scopeType === "DEPARTMENT" ? "DEPARTMENT" : "PERSONAL"}
@@ -3399,14 +3368,6 @@ export default function DepartmentItemsClient({
                     </SelectContent>
                   </Select>
                 </div>
-                <ShadcnDatePicker
-                    id="scheduleMemoDate"
-                    label={st.date}
-                    locale={locale}
-                    value={form.scheduleDate}
-                    onChange={(scheduleDate) => setForm((current) => ({ ...current, scheduleDate }))}
-                    required
-                  />
               </>
             )}
           </div>
@@ -3419,6 +3380,7 @@ export default function DepartmentItemsClient({
                   locale={locale}
                   value={form.scheduleDate}
                   onChange={(scheduleDate) => setForm((current) => ({ ...current, scheduleDate }))}
+                  className="space-y-2"
                   required
                 />
               <LocalizedTimeInput
@@ -3435,44 +3397,42 @@ export default function DepartmentItemsClient({
                 value={form.endTime}
                 onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
                 locale={locale}
+                maxTime="22:00"
                 required
               />
           </div>
           ) : (
-            <div className="space-y-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
-                <Checkbox
-                  checked={form.hasTime}
-                  onCheckedChange={(checked) => setForm((current) => ({ ...current, hasTime: checked === true }))}
-                />
-                {t.hasTime}
-              </label>
-              {form.hasTime ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <LocalizedTimeInput
-                    id="scheduleMemoStartTime"
-                    label={st.startTime}
-                    value={form.startTime}
-                    onChange={(value) => setForm((current) => ({ ...current, startTime: value }))}
-                    locale={locale}
-                    minuteStep={15}
-                    required
-                  />
-                  <LocalizedTimeInput
-                    id="scheduleMemoEndTime"
-                    label={st.endTime}
-                    value={form.endTime}
-                    onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
-                    locale={locale}
-                    minuteStep={15}
-                    required
-                  />
-                </div>
-              ) : null}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <ShadcnDatePicker
+                id="scheduleMemoDate"
+                label={st.date}
+                locale={locale}
+                value={form.scheduleDate}
+                onChange={(scheduleDate) => setForm((current) => ({ ...current, scheduleDate }))}
+                className="space-y-2"
+                required
+              />
+              <LocalizedTimeInput
+                id="scheduleMemoStartTime"
+                label={st.startTime}
+                value={form.startTime}
+                onChange={(value) => setForm((current) => ({ ...current, startTime: value }))}
+                locale={locale}
+                required
+              />
+              <LocalizedTimeInput
+                id="scheduleMemoEndTime"
+                label={st.endTime}
+                value={form.endTime}
+                onChange={(value) => setForm((current) => ({ ...current, endTime: value }))}
+                locale={locale}
+                maxTime="22:00"
+                required
+              />
             </div>
           )}
 
-          {form.scheduleKind === "meeting" ? <div className="space-y-1">
+          {form.scheduleKind === "meeting" ? <div className="space-y-2">
             <Label>{st.participants}</Label>
             <div className="rounded-md border bg-background p-2">
               <div className="flex min-h-8 flex-wrap gap-2">
@@ -3489,7 +3449,7 @@ export default function DepartmentItemsClient({
                   value={form.attendeeQuery}
                   onChange={(event) => setForm((current) => ({ ...current, attendeeQuery: event.target.value }))}
                   onKeyDown={handleAttendeeInputKeyDown}
-                  placeholder={st.addGuest}
+                  placeholder={locale === "zh" ? (selectedAttendees.length > 0 ? "添加参会人" : "输入@选择参会人或直接输入姓名") : st.addGuest}
                   className="min-w-[120px] flex-1 border-0 bg-transparent px-1 py-1 text-sm outline-none"
                 />
               </div>
@@ -3514,14 +3474,14 @@ export default function DepartmentItemsClient({
             </div>
           </div> : null}
 
-          <div className="space-y-1">
+          <div className="space-y-2">
             <Label htmlFor="scheduleNotes">{st.meetingMinutes}</Label>
             <Textarea
               id="scheduleNotes"
               value={form.meetingMinutes}
               onChange={(event) => setForm((current) => ({ ...current, meetingMinutes: event.target.value }))}
               placeholder={st.agendaPlaceholder}
-              rows={form.scheduleKind === "memo" ? 6 : 5}
+              rows={form.scheduleKind === "memo" ? 12 : 10}
             />
           </div>
         </div>
@@ -3585,7 +3545,7 @@ export default function DepartmentItemsClient({
             </div>
             <div className="flex items-center justify-between">
               <span>{scheduleView === "week" ? st.week : st.month}</span>
-              <span className="font-semibold tabular-nums text-foreground">{calendarItems.length}</span>
+              <span className="font-semibold tabular-nums text-foreground">{visibleRangeCalendarItems.length}</span>
             </div>
           </div>
         </div>
