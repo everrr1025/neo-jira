@@ -329,6 +329,10 @@ function notificationAttachmentIcon(fileName: string) {
   return <Paperclip size={14} className="shrink-0 text-slate-400" />;
 }
 
+function getAttachmentDownloadName(fileName: string) {
+  return /\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName) ? undefined : fileName;
+}
+
 function NotificationAttachmentList({
   attachments,
   onRemove,
@@ -344,7 +348,7 @@ function NotificationAttachmentList({
     <div className="overflow-hidden rounded-md border bg-card text-card-foreground shadow-xs">
       {attachments.map((attachment) => (
         <div key={attachment.id} className="flex min-w-0 items-center justify-between gap-3 border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-accent/50">
-          <a href={attachment.fileUrl} target="_blank" rel="noreferrer" className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-foreground">
+          <a href={attachment.fileUrl} download={getAttachmentDownloadName(attachment.fileName)} target="_blank" rel="noreferrer" className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-foreground">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
               {notificationAttachmentIcon(attachment.fileName)}
             </span>

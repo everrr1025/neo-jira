@@ -526,6 +526,10 @@ function getTaskAttachmentIcon(fileName: string) {
   return <Paperclip size={14} className="shrink-0 text-slate-400" />;
 }
 
+function getAttachmentDownloadName(fileName: string) {
+  return /\.(jpeg|jpg|gif|png|webp|bmp|svg)$/i.test(fileName) ? undefined : fileName;
+}
+
 function formatDateTimeLocal(date = new Date()) {
   const next = new Date(date);
   next.setMinutes(next.getMinutes() - next.getTimezoneOffset());
@@ -5358,6 +5362,7 @@ export default function DepartmentItemsClient({
                         <a
                           key={attachment.id}
                           href={attachment.fileUrl}
+                          download={getAttachmentDownloadName(attachment.fileName)}
                           target="_blank"
                           rel="noreferrer"
                           className="flex min-w-0 items-center gap-2.5 border-b px-3 py-2.5 text-sm text-foreground last:border-b-0 hover:bg-accent/50"

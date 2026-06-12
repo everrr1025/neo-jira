@@ -132,13 +132,14 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
         <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {attachments.map((file) => {
             const fileType = getFileIcon(file.fileName);
+            const downloadFileName = fileType === "IMAGE" ? undefined : file.fileName;
 
             return (
               <div
                 key={file.id}
                 className="group relative flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2 transition-all hover:border-blue-400 hover:shadow-sm"
               >
-                <a href={file.fileUrl} target="_blank" rel="noopener noreferrer" className="block focus:outline-none">
+                <a href={file.fileUrl} download={downloadFileName} target="_blank" rel="noopener noreferrer" className="block focus:outline-none">
                   <div className="relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border border-slate-100 bg-slate-50 transition-colors hover:bg-slate-100">
                     {fileType === "IMAGE" && (
                       <img src={file.fileUrl} alt={file.fileName} className="h-full w-full object-cover" />
@@ -153,6 +154,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
                 <div className="flex items-center justify-between px-1">
                   <a
                     href={file.fileUrl}
+                    download={downloadFileName}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block w-full truncate pr-2 text-xs font-medium text-slate-700 outline-none hover:text-blue-600"
