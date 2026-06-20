@@ -180,7 +180,7 @@ export default function CommentSection({
 
   return (
     <div className="mt-8 border-t pt-8">
-      <h3 className="font-bold text-lg text-slate-800 mb-6">{translations.commentSection.title} ({comments.length})</h3>
+      <h3 className="mb-6 text-lg font-semibold text-foreground">{translations.commentSection.title} ({comments.length})</h3>
       
       <div className="space-y-6 mb-8">
         {comments.map((comment) => {
@@ -209,23 +209,27 @@ export default function CommentSection({
                     {formatRelativeTime(comment.createdAt, locale)}
                   </span>
                   {isAuthor && !isEditing && (
-                    <div className="flex items-center gap-3">
-                      <button
+                    <div className="flex items-center gap-1">
+                      <Button
                         type="button"
                         onClick={() => handleStartEdit(comment)}
-                        className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-800"
+                        variant="ghost"
+                        size="xs"
                       >
                         {translations.commentSection.editComment}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => handleDeleteComment(comment.id)}
                         disabled={isDeleting}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-red-600 disabled:opacity-50"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground hover:text-red-600"
+                        title={translations.commentSection.deleteComment}
+                        aria-label={translations.commentSection.deleteComment}
                       >
                         {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        {translations.commentSection.deleteComment}
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -243,23 +247,24 @@ export default function CommentSection({
                       currentUserId={currentUserId}
                     />
                     <div className="flex justify-end gap-2">
-                      <button
+                      <Button
                         type="button"
                         onClick={handleCancelEdit}
                         disabled={isSaving}
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                        variant="outline"
+                        size="sm"
                       >
                         {translations.commentSection.cancelEdit}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => handleSaveEdit(comment.id)}
                         disabled={isSaving || !editingContent.trim()}
-                        className="flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                        size="sm"
                       >
                         {isSaving && <Loader2 size={14} className="animate-spin" />}
                         {translations.commentSection.saveComment}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (

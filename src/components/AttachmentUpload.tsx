@@ -108,7 +108,7 @@ export default function AttachmentUpload({ issueId, locale }: { issueId: string;
     <div className="mt-8">
       <div className="mb-4 flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-800">
+          <h3 className="text-lg font-semibold text-foreground">
             {text.title} ({attachments.length})
           </h3>
           <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200">

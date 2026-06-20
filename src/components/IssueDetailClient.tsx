@@ -576,16 +576,16 @@ export default function IssueDetailClient({
 
   return (
     <>
-    <Card className="gap-0 overflow-hidden py-0 shadow-sm">
-      <CardContent className="flex flex-col gap-8 p-6 md:p-8 lg:flex-row">
+    <Card className="gap-0 overflow-visible border-0 bg-transparent py-0 shadow-sm">
+      <CardContent className="flex flex-col gap-8 p-0 lg:flex-row">
       <div className="flex-1 space-y-6">
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+        <div className="relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             onClick={handleBack}
-            className="mt-1 shrink-0"
+            className="absolute -left-10 mt-1 shrink-0"
             title={translations.issueDetail.back}
             aria-label={translations.issueDetail.back}
           >
@@ -690,7 +690,7 @@ export default function IssueDetailClient({
             className={
               isEditingDescription
                 ? ""
-                : "min-h-[200px] rounded-lg border bg-muted/35 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                : "min-h-[200px] rounded-lg border bg-white px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             }
           >
             {isEditingDescription ? (

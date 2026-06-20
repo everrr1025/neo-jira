@@ -88,10 +88,10 @@ export default function ParentIssuePicker({
                 issue={{ ...selectedIssue, status: selectedIssue.status }}
                 locale={locale}
                 workflowStatuses={workflowStatuses}
-                className="rounded-lg border px-4"
+                className="rounded-lg border bg-card px-4"
               />
             ) : (
-              <div className="flex min-w-0 items-center gap-2 rounded-lg border px-4 py-2">
+              <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-card px-4 py-2">
                 <span className="shrink-0 text-xs font-semibold text-muted-foreground">{selectedIssue.key}</span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{selectedIssue.title}</span>
                 <span className="shrink-0 rounded-md border px-2 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
