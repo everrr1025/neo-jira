@@ -67,11 +67,15 @@ interface RichTextEditorProps {
   onToggleFullscreen?: () => void;
   fullscreenLabel?: string;
   exitFullscreenLabel?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onEscapeKeyDown?: () => void;
 }
 
 export type RichTextEditorHandle = {
   commitPendingUploads: () => void;
   discardPendingUploads: () => Promise<void>;
+  focus: () => void;
 };
 
 type TextAlignValue = "left" | "center" | "right";
@@ -655,6 +659,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     onToggleFullscreen,
     fullscreenLabel,
     exitFullscreenLabel,
+    onFocus,
+    onBlur,
+    onEscapeKeyDown,
   }: RichTextEditorProps,
   ref: ForwardedRef<RichTextEditorHandle>,
 ) {
@@ -665,14 +672,29 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
   const [lastTextColor, setLastTextColor] = useState(PRESET_COLORS[0].value);
   const [lastTextBackgroundColor, setLastTextBackgroundColor] = useState(PRESET_BACKGROUND_COLORS[1].value);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const lastSelectionRef = useRef<SelectionSnapshot>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadedImageUrlsRef = useRef(new Set<string>());
   const latestContentRef = useRef(value || "");
+  const lastExternalValueRef = useRef(value || "");
   const editorInstanceRef = useRef<Editor | null>(null);
   const mentionStateRef = useRef<MentionState>(null);
   const mentionMenuItemsRef = useRef<MentionMenuItem[]>([]);
   const selectedMentionIndexRef = useRef(0);
+  const onChangeRef = useRef(onChange);
+  const onFocusRef = useRef(onFocus);
+  const onBlurRef = useRef(onBlur);
+  const onEscapeKeyDownRef = useRef(onEscapeKeyDown);
+  const onIssueLinkClickRef = useRef(onIssueLinkClick);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    onFocusRef.current = onFocus;
+    onBlurRef.current = onBlur;
+    onEscapeKeyDownRef.current = onEscapeKeyDown;
+    onIssueLinkClickRef.current = onIssueLinkClick;
+  }, [onBlur, onChange, onEscapeKeyDown, onFocus, onIssueLinkClick]);
 
   const cleanupRemovedPendingUploads = (content: string) => {
     latestContentRef.current = content;
@@ -710,6 +732,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   useImperativeHandle(ref, () => ({
     commitPendingUploads,
     discardPendingUploads,
+    focus: () => editorInstanceRef.current?.chain().focus("end").run(),
   }));
 
   const handleImageUpload = async (file: File, view: Editor["view"], pos: number | null = null) => {
@@ -733,14 +756,15 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   };
 
   const handleIssueLinkEvent = (event: MouseEvent) => {
+    const handleIssueLinkClick = onIssueLinkClickRef.current;
     const issueId = getIssueIdFromLinkElement(event.target as HTMLElement | null);
-    if (!issueId || !onIssueLinkClick) {
+    if (!issueId || !handleIssueLinkClick) {
       return false;
     }
 
     event.preventDefault();
     event.stopPropagation();
-    onIssueLinkClick(issueId);
+    handleIssueLinkClick(issueId);
     return true;
   };
 
@@ -810,6 +834,12 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         return false;
       },
       handleKeyDown: (_view, event) => {
+        if (event.key === "Escape" && !readOnly) {
+          const handleEscapeKeyDown = onEscapeKeyDownRef.current;
+          handleEscapeKeyDown?.();
+          return Boolean(handleEscapeKeyDown);
+        }
+
         const currentMentionState = mentionStateRef.current;
         const currentMentionItems = mentionMenuItemsRef.current;
 
@@ -821,7 +851,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
               (selectedMentionIndexRef.current + direction + currentMentionItems.length) %
               currentMentionItems.length;
             selectedMentionIndexRef.current = nextIndex;
-            setUiVersion((currentValue) => currentValue + 1);
+            setSelectedMentionIndex(nextIndex);
             return true;
           }
 
@@ -883,8 +913,9 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     },
     onUpdate: ({ editor: nextEditor }) => {
       const serializedContent = serializeContent(nextEditor);
+      lastExternalValueRef.current = serializedContent;
       cleanupRemovedPendingUploads(serializedContent);
-      onChange(serializedContent);
+      onChangeRef.current(serializedContent);
     },
     immediatelyRender: false,
   }, [readOnly]);
@@ -912,17 +943,21 @@ const RichTextEditor = forwardRef(function RichTextEditor(
         to: editor.state.selection.to,
       };
     };
+    const handleFocus = () => {
+      syncEditorUi();
+      onFocusRef.current?.();
+    };
 
     syncEditorUi();
     editor.on("selectionUpdate", syncEditorUi);
     editor.on("transaction", syncEditorUi);
-    editor.on("focus", syncEditorUi);
+    editor.on("focus", handleFocus);
     editor.on("blur", syncEditorUi);
 
     return () => {
       editor.off("selectionUpdate", syncEditorUi);
       editor.off("transaction", syncEditorUi);
-      editor.off("focus", syncEditorUi);
+      editor.off("focus", handleFocus);
       editor.off("blur", syncEditorUi);
     };
   }, [editor]);
@@ -941,6 +976,13 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     }
 
     const nextValue = value || "";
+    if (nextValue === lastExternalValueRef.current) {
+      latestContentRef.current = nextValue;
+      cleanupRemovedPendingUploads(nextValue);
+      return;
+    }
+
+    lastExternalValueRef.current = nextValue;
     const currentValue = serializeContent(editor);
     latestContentRef.current = nextValue;
 
@@ -1067,6 +1109,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
 
     setMentionState(null);
     selectedMentionIndexRef.current = 0;
+    setSelectedMentionIndex(0);
   }
 
   const handleInsertMention = (item: MentionMenuItem) => {
@@ -1077,7 +1120,6 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     insertMentionItem(item, mentionState);
   };
 
-  const selectedMentionIndex = selectedMentionIndexRef.current;
   const activeMentionLabel = issueMentionOptions.length > 0 ? issueMentionLabel : mentionLabel;
 
   const handleInsertLink = () => {
@@ -1198,7 +1240,22 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   };
 
   return (
-    <div className={`relative h-full w-full ${mentionState ? "z-50" : "z-10"}`} ref={setContainerElement}>
+    <div
+      className={`relative h-full w-full ${mentionState ? "z-50" : "z-10"}`}
+      ref={setContainerElement}
+      onBlurCapture={(event) => {
+        const handleBlur = onBlurRef.current;
+        if (readOnly || !handleBlur) return;
+        const container = event.currentTarget;
+        const nextFocusedElement = event.relatedTarget as Node | null;
+        if (nextFocusedElement && container.contains(nextFocusedElement)) return;
+        window.setTimeout(() => {
+          const activeElement = document.activeElement;
+          if (activeElement && container.contains(activeElement)) return;
+          handleBlur();
+        }, 0);
+      }}
+    >
       <div
         className={`h-full w-full ${readOnly ? "neo-rich-text-editor--readonly" : ""} ${
           readOnly
@@ -1270,7 +1327,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => {
                     selectedMentionIndexRef.current = index;
-                    setUiVersion((currentValue) => currentValue + 1);
+                    setSelectedMentionIndex(index);
                   }}
                   onClick={() => handleInsertMention(item)}
                   className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${

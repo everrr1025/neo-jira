@@ -2,12 +2,10 @@ import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
 import IssueDetailClient from "@/components/IssueDetailClient";
-import BackButton from "@/components/BackButton";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere, buildVisibleProjectsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
-import { getTranslations } from "@/lib/i18n";
-import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
+import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 
@@ -15,7 +13,6 @@ export const dynamic = "force-dynamic";
 
 export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
   const locale = await getCurrentLocale();
-  const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -68,6 +65,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           key: true,
           title: true,
           type: true,
+          status: true,
         },
       },
       childIssues: {
@@ -138,6 +136,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       key: true,
       title: true,
       type: true,
+      status: true,
       parentIssueId: true,
     },
     orderBy: [{ createdAt: "desc" }, { key: "asc" }],
@@ -145,14 +144,8 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
 
   const role = await getProjectRole(userId, issue.projectId);
   const canDeleteIssue = role === "ADMIN";
-  const canManageIssueFields = await canConfigureProjectFields(userId, issue.projectId);
-
   return (
     <div className="mx-auto flex h-full w-full max-w-5xl flex-col pb-10">
-      <div className="mb-6">
-        <BackButton label={translations.issueDetail.back} fallbackHref="/issues" />
-      </div>
-
       <IssueDetailClient
         initialIssue={issue}
         users={users}
@@ -165,7 +158,6 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         canDeleteIssue={canDeleteIssue}
         canManagePlans={canDeleteIssue}
         issueFieldDefinitions={issueFieldDefinitions}
-        canManageIssueFields={canManageIssueFields}
         parentIssueOptions={parentIssueOptions}
       />
     </div>

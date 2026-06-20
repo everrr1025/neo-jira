@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import { Bug, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { deleteIssue, toggleIssueWatcher, updateIssue, updateIssueFieldValue } from "@/app/actions/issues";
@@ -19,9 +18,6 @@ import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
-  getWorkflowStatusBadgeClass,
-  getWorkflowStatusName,
-  isDoneWorkflowStatus,
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
@@ -30,12 +26,17 @@ import AlertPopup from "./AlertPopup";
 import AttachmentUpload from "./AttachmentUpload";
 import CommentSection from "./CommentSection";
 import CreateIssueModal from "./CreateIssueModal";
-import { DropdownField } from "./DropdownField";
-import LocalizedDateInput from "./LocalizedDateInput";
+import IssueRelationRow from "./IssueRelationRow";
 import ParentIssuePicker from "./ParentIssuePicker";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import ShadcnDatePicker from "./ShadcnDatePicker";
+import { Button } from "./ui/button";
+import { Card, CardContent } from "./ui/card";
+import { Checkbox } from "./ui/checkbox";
+import { Input } from "./ui/input";
 import { NumberInput } from "./ui/number-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Textarea } from "./ui/textarea";
 
 type IssueUser = {
   id: string;
@@ -71,6 +72,7 @@ type IssueRecord = {
     key: string;
     title: string;
     type: string;
+    status: string;
   } | null;
   childIssues: ChildIssueRecord[];
   assigneeId: string | null;
@@ -106,6 +108,7 @@ type ParentIssueOption = {
   key: string;
   title: string;
   type: string;
+  status: string;
   parentIssueId: string | null;
 };
 
@@ -131,6 +134,78 @@ type IssueFieldValue = {
 
 type IssueWorkflowStatus = WorkflowStatusRecord;
 type IssueWorkflowTransition = WorkflowTransitionRecord;
+const emptySelectValue = "__empty__";
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+function PropertySelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-muted-foreground">
+        {label}
+      </label>
+      <Select value={value || emptySelectValue} onValueChange={(nextValue) => onChange(nextValue === emptySelectValue ? "" : nextValue)}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={`${id}-${option.value || emptySelectValue}`} value={option.value || emptySelectValue}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AutoGrowTextarea({
+  defaultValue,
+  onBlur,
+}: {
+  defaultValue: string;
+  onBlur: (value: string) => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const resize = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "36px";
+    textarea.style.height = `${Math.max(36, textarea.scrollHeight)}px`;
+  };
+
+  useEffect(() => {
+    resize();
+  }, [defaultValue]);
+
+  return (
+    <Textarea
+      ref={textareaRef}
+      defaultValue={defaultValue}
+      rows={1}
+      onInput={resize}
+      onBlur={(event) => onBlur(event.target.value)}
+      className="min-h-9 resize-none overflow-hidden"
+    />
+  );
+}
 
 export default function IssueDetailClient({
   initialIssue,
@@ -144,7 +219,6 @@ export default function IssueDetailClient({
   canDeleteIssue,
   canManagePlans,
   issueFieldDefinitions = [],
-  canManageIssueFields,
   parentIssueOptions = [],
 }: {
   initialIssue: IssueRecord;
@@ -158,7 +232,6 @@ export default function IssueDetailClient({
   canDeleteIssue: boolean;
   canManagePlans: boolean;
   issueFieldDefinitions?: IssueFieldDefinition[];
-  canManageIssueFields: boolean;
   parentIssueOptions?: ParentIssueOption[];
 }) {
   const router = useRouter();
@@ -170,25 +243,23 @@ export default function IssueDetailClient({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(initialIssue.title);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
   const [isIssueFieldsExpanded, setIsIssueFieldsExpanded] = useState(true);
   const [isChildModalOpen, setIsChildModalOpen] = useState(false);
-  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
   const [childModalKey, setChildModalKey] = useState(0);
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
   const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const noIssueFieldsLabel = locale === "zh" ? "暂无扩展字段" : "No custom fields";
-  const parentIssueLabel = locale === "zh" ? "父级问题" : "Parent issue";
   const searchParentIssuePlaceholder = locale === "zh" ? "搜索 key、标题或类型" : "Search key, title, or type";
   const noParentCandidatesLabel = locale === "zh" ? "没有可关联的父级问题" : "No available parent issues";
   const childIssuesLabel = locale === "zh" ? "子项" : "Child issues";
-  const addChildLabel = locale === "zh" ? "新增子项" : "Add child";
-  const addBugLabel = locale === "zh" ? "提缺陷" : "Report bug";
+  const parentItemLabel = locale === "zh" ? "父项" : "Parent item";
+  const noParentItemLabel = locale === "zh" ? "暂无父项" : "No parent item";
+  const addChildLabel = locale === "zh" ? "新建" : "New";
   const noChildIssuesLabel = locale === "zh" ? "暂无子项" : "No child issues";
-  const childProgressLabel = locale === "zh" ? "完成率" : "Progress";
-  const overdueLabel = locale === "zh" ? "逾期" : "Overdue";
   const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
   const allowedChildTypes = getAllowedChildIssueTypes(issue.type);
   const canCreateChildIssues = allowedChildTypes.length > 0;
@@ -213,16 +284,7 @@ export default function IssueDetailClient({
     .filter((candidate) => candidate.id !== issue.id)
     .filter((candidate) => canNestIssueType(candidate.type, issue.type))
     .filter((candidate) => !isDescendantIssue(candidate));
-  const childDoneCount = issue.childIssues.filter((childIssue) => isDoneWorkflowStatus(childIssue.status, workflowStatuses)).length;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const overdueChildCount = issue.childIssues.filter((childIssue) => {
-    if (!childIssue.dueDate || isDoneWorkflowStatus(childIssue.status, workflowStatuses)) return false;
-    return new Date(childIssue.dueDate) < todayStart;
-  }).length;
-  const childProgress = issue.childIssues.length > 0 ? Math.round((childDoneCount / issue.childIssues.length) * 100) : 0;
   const childModalParentLabel = `${issue.key} ${issue.title}`;
-  const defaultChildType = allowedChildTypes.includes("TASK") ? "TASK" : allowedChildTypes[0];
 
   const isWatching = useMemo(
     () => watchers.some((watcher) => watcher.id === currentUserId),
@@ -233,6 +295,11 @@ export default function IssueDetailClient({
     setIssue(initialIssue);
     setWatchers(initialIssue.watchers);
   }, [initialIssue]);
+
+  useEffect(() => {
+    if (!isEditingDescription) return;
+    window.requestAnimationFrame(() => descriptionEditorRef.current?.focus());
+  }, [isEditingDescription]);
 
   const statusOptions = useMemo(() => {
     const transitionMap = buildWorkflowTransitionMap(workflowTransitions, workflowStatuses);
@@ -311,6 +378,33 @@ export default function IssueDetailClient({
         emitIssueActivityUpdated(issue.id);
       } else {
         setIssue((prev) => ({ ...prev, [field]: previousValue }));
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
+  const handleTypeChange = (value: string) => {
+    const previousType = issue.type;
+    const previousParentIssue = issue.parentIssue;
+    const previousParentIssueId = issue.parentIssueId;
+    const nextPatch = value === "EPIC" ? { type: value, parentIssueId: null } : { type: value };
+    setIssue((prev) => ({
+      ...prev,
+      type: value,
+      ...(value === "EPIC" ? { parentIssueId: null, parentIssue: null } : {}),
+    }));
+    startTransition(async () => {
+      const result = await updateIssue(issue.id, nextPatch);
+      if (result.success) {
+        emitIssueActivityUpdated(issue.id);
+        if (value === "EPIC") router.refresh();
+      } else {
+        setIssue((prev) => ({
+          ...prev,
+          type: previousType,
+          parentIssueId: previousParentIssueId,
+          parentIssue: previousParentIssue,
+        }));
         setAlertMessage(result.error || translations.issueDetail.failedToSave);
       }
     });
@@ -405,14 +499,12 @@ export default function IssueDetailClient({
     router.refresh();
   };
 
-  const openBugModal = () => {
-    setChildModalKey((value) => value + 1);
-    setIsBugModalOpen(true);
-  };
-
-  const closeBugModal = () => {
-    setIsBugModalOpen(false);
-    router.refresh();
+  const handleBack = () => {
+    if (window.history.length <= 1) {
+      router.push("/issues");
+      return;
+    }
+    router.back();
   };
 
   const handleParentIssueChange = (parentIssueId: string) => {
@@ -427,6 +519,7 @@ export default function IssueDetailClient({
           key: selectedParentIssue.key,
           title: selectedParentIssue.title,
           type: selectedParentIssue.type,
+          status: selectedParentIssue.status,
         }
       : null;
 
@@ -459,6 +552,14 @@ export default function IssueDetailClient({
   };
 
   const handleSaveDescription = () => {
+    if (isSavingDescription) return;
+
+    if (draftDescription === (issue.description || "")) {
+      setIsEditingDescription(false);
+      return;
+    }
+
+    setIsSavingDescription(true);
     startTransition(async () => {
       const result = await updateIssue(issue.id, { description: draftDescription });
       if (result.success) {
@@ -469,14 +570,27 @@ export default function IssueDetailClient({
       } else {
         setAlertMessage(translations.issueDetail.failedToSave);
       }
+      setIsSavingDescription(false);
     });
   };
 
   return (
     <>
-    <div className="flex flex-col gap-8 rounded-xl border bg-white p-6 shadow-sm md:p-8 lg:flex-row">
+    <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+      <CardContent className="flex flex-col gap-8 p-6 md:p-8 lg:flex-row">
       <div className="flex-1 space-y-6">
-        <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleBack}
+            className="mt-1 shrink-0"
+            title={translations.issueDetail.back}
+            aria-label={translations.issueDetail.back}
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
           <div className="min-w-0">
             {isEditingTitle ? (
               <textarea
@@ -497,7 +611,7 @@ export default function IssueDetailClient({
                 }}
                 autoFocus
                 rows={2}
-                className="-ml-2 block w-full min-w-0 resize-none rounded-md border-2 border-blue-500 bg-white px-2 py-1 text-2xl font-bold leading-snug text-slate-900 outline-none transition-all"
+                className="-ml-2 block w-full min-w-0 resize-none rounded-md border-2 border-blue-500 bg-white px-2 py-1 text-xl font-bold leading-snug text-slate-900 outline-none transition-all"
                 placeholder={translations.issueDetail.issueSummaryPlaceholder}
               />
             ) : (
@@ -514,7 +628,7 @@ export default function IssueDetailClient({
                       handleStartEditingTitle();
                     }
                   }}
-                  className="block w-full min-w-0 cursor-text rounded-md border-2 border-transparent px-2 py-1 text-left text-2xl font-bold leading-snug text-slate-900 outline-none transition-all hover:border-slate-200 focus:border-blue-500 focus:bg-white"
+                  className="block w-full min-w-0 cursor-text rounded-md border-2 border-transparent px-2 py-1 text-left text-xl font-bold leading-snug text-slate-900 outline-none transition-all hover:border-slate-200 focus:border-blue-500 focus:bg-white"
                 >
                   <span
                     className="block w-full max-w-full overflow-hidden whitespace-normal break-words [overflow-wrap:anywhere]"
@@ -535,66 +649,50 @@ export default function IssueDetailClient({
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            <button
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
               type="button"
               onClick={handleToggleWatcher}
-              className={`inline-flex items-center gap-1.5 rounded-md border p-1.5 text-sm font-medium transition-colors ${
+              variant="ghost"
+              size="icon-sm"
+              className={
                 isWatching
-                  ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
+                  ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  : "text-muted-foreground"
+              }
               title={isWatching ? translations.issueDetail.unwatch : translations.issueDetail.watch}
             >
               {isWatching ? <EyeOff size={16} /> : <Eye size={16} />}
-              <span className="text-xs font-semibold">
-                {watchers.length}
-              </span>
-            </button>
+            </Button>
 
             {canDeleteIssue && (
-              <button
+              <Button
+                type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="flex items-center rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground hover:bg-red-50 hover:text-red-500"
                 title={translations.issueDetail.deleteIssue}
               >
                 {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-800">{translations.issueDetail.description}</h3>
-            {!isEditingDescription ? (
-              <button
-                onClick={handleStartEditingDescription}
-                className="flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 hover:text-blue-800"
-                title={translations.issueDetail.edit}
-              >
-                {translations.issueDetail.edit}
-              </button>
-            ) : (
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSaveDescription}
-                  className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-                >
-                  {isPending && <Loader2 size={12} className="animate-spin" />}
-                  {translations.issueDetail.save}
-                </button>
-                <button
-                  onClick={() => void handleCancelEditingDescription()}
-                  className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                >
-                  {translations.issueDetail.cancel}
-                </button>
-              </div>
-            )}
-          </div>
-          <div className={isEditingDescription ? "" : "min-h-[200px] rounded-lg bg-slate-50 px-4 py-3"}>
+          <div
+            role={isEditingDescription ? undefined : "button"}
+            tabIndex={isEditingDescription ? undefined : 0}
+            onFocus={isEditingDescription ? undefined : handleStartEditingDescription}
+            onClick={isEditingDescription ? undefined : handleStartEditingDescription}
+            className={
+              isEditingDescription
+                ? ""
+                : "min-h-[200px] rounded-lg border bg-muted/35 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            }
+          >
             {isEditingDescription ? (
               <RichTextEditor
                 ref={descriptionEditorRef}
@@ -604,6 +702,8 @@ export default function IssueDetailClient({
                 mentionUsers={users}
                 mentionLabel={translations.issueDetail.mentionSomeone}
                 currentUserId={currentUserId}
+                onBlur={handleSaveDescription}
+                onEscapeKeyDown={() => void handleCancelEditingDescription()}
               />
             ) : (
               <RichTextEditor
@@ -620,91 +720,56 @@ export default function IssueDetailClient({
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div>
             <ParentIssuePicker
               value={issue.parentIssueId || ""}
               options={parentIssueCandidates}
               locale={locale}
               disabled={issue.type === "EPIC" || isPending}
               disabledLabel={issue.type === "EPIC" ? (locale === "zh" ? "史诗不能关联父级问题" : "Epics cannot have a parent issue") : undefined}
-              label={parentIssueLabel}
+              label={parentItemLabel}
+              emptyLabel={noParentItemLabel}
               searchPlaceholder={searchParentIssuePlaceholder}
               noResultsLabel={noParentCandidatesLabel}
+              workflowStatuses={workflowStatuses}
               onChange={handleParentIssueChange}
             />
           </div>
 
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">{childIssuesLabel}</h3>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500">
-                  <span>{issue.childIssues.length}</span>
-                  <span>{childProgressLabel}: {childProgress}%</span>
-                  <span>{childDoneCount}/{issue.childIssues.length}</span>
-                  <span>{overdueLabel}: {overdueChildCount}</span>
-                </div>
-              </div>
+              <h3 className="text-lg font-semibold text-foreground">{childIssuesLabel}</h3>
               {canCreateChildIssues ? (
                 <div className="flex flex-wrap gap-2">
-                  {allowedChildTypes.includes("BUG") ? (
-                    <button
-                      type="button"
-                      onClick={openBugModal}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                    >
-                      <Bug size={14} />
-                      {addBugLabel}
-                    </button>
-                  ) : null}
-                  <button
+                  <Button
                     type="button"
                     onClick={openChildModal}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                    variant="link"
+                    size="sm"
+                    className="px-0"
                   >
-                    <Plus size={14} />
                     {addChildLabel}
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </div>
 
             {issue.childIssues.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-slate-200">
-                <div className="h-1 bg-slate-100">
-                  <div className="h-full bg-emerald-500" style={{ width: `${childProgress}%` }} />
-                </div>
-                <div className="divide-y divide-slate-100">
+              <Card className="gap-0 overflow-hidden py-0">
+                <div className="divide-y">
                   {issue.childIssues.map((childIssue) => (
-                    <Link
+                    <IssueRelationRow
                       key={childIssue.id}
-                      href={`/issues/${childIssue.id}`}
-                      className="grid gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_120px_120px]"
-                    >
-                      <div className="min-w-0">
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-semibold text-slate-500">{childIssue.key}</span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
-                            {getIssueTypeLabel(childIssue.type, locale)}
-                          </span>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${getWorkflowStatusBadgeClass(childIssue.status, workflowStatuses)}`}>
-                            {getWorkflowStatusName(childIssue.status, workflowStatuses, locale)}
-                          </span>
-                        </div>
-                        <div className="truncate text-sm font-semibold text-slate-800">{childIssue.title}</div>
-                      </div>
-                      <div className="text-sm font-medium text-slate-600 md:text-right">
-                        {childIssue.assignee?.name || translations.issueList.unassigned}
-                      </div>
-                      <div className="text-sm font-medium text-slate-500 md:text-right">
-                        {childIssue.dueDate ? new Date(childIssue.dueDate).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US") : ""}
-                      </div>
-                    </Link>
+                      issue={childIssue}
+                      locale={locale}
+                      workflowStatuses={workflowStatuses}
+                      className="rounded-none px-4"
+                    />
                   ))}
                 </div>
-              </div>
+              </Card>
             ) : (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              <div className="rounded-lg border border-dashed bg-muted/35 px-4 py-6 text-sm text-muted-foreground">
                 {noChildIssuesLabel}
               </div>
             )}
@@ -713,81 +778,77 @@ export default function IssueDetailClient({
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-lg font-bold text-slate-800">{issueFieldsLabel}</h3>
-            <button
+            <h3 className="text-lg font-semibold text-foreground">{issueFieldsLabel}</h3>
+            <Button
               type="button"
               onClick={() => setIsIssueFieldsExpanded((current) => !current)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+              variant="outline"
+              size="icon-sm"
               aria-label={isIssueFieldsExpanded ? (locale === "zh" ? "收起扩展字段" : "Collapse custom fields") : (locale === "zh" ? "展开扩展字段" : "Expand custom fields")}
               title={isIssueFieldsExpanded ? (locale === "zh" ? "收起扩展字段" : "Collapse custom fields") : (locale === "zh" ? "展开扩展字段" : "Expand custom fields")}
             >
               {isIssueFieldsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+            </Button>
           </div>
           {isIssueFieldsExpanded && issueFieldDefinitions.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+            <div className="rounded-lg border border-dashed bg-muted/35 px-4 py-6 text-sm text-muted-foreground">
               {noIssueFieldsLabel}
             </div>
           ) : null}
           {isIssueFieldsExpanded && issueFieldDefinitions.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <Card className="gap-0 overflow-hidden py-0">
+              <div className="divide-y">
               {issueFieldDefinitions.map((field) => {
                 const fieldValue = issue.issueFieldValues?.find((value) => value.fieldDefinitionId === field.id);
                 const displayValue = getFieldValueForDisplay(field, fieldValue);
                 const isLongText = field.type === "LONG_TEXT";
-                const fieldSpanClass =
-                  field.type === "BOOLEAN" || field.type === "NUMBER"
-                    ? "md:col-span-1"
-                    : isLongText
-                      ? "md:col-span-4"
-                      : "md:col-span-2";
-                const fieldShellClass = `rounded-lg border border-slate-200 bg-white p-3 ${
-                  fieldSpanClass
-                }`;
+                const rowClassName = "grid min-h-14 gap-3 px-4 py-2 md:grid-cols-[180px_minmax(0,1fr)] md:items-center";
+                const labelClassName = "text-sm font-medium text-muted-foreground";
 
                 if (field.type === "BOOLEAN") {
                   return (
-                    <label key={field.id} className={`${fieldShellClass} flex items-center gap-2`}>
-                      <input
-                        type="checkbox"
+                    <div key={field.id} className={rowClassName}>
+                      <span className={labelClassName}>{field.name}</span>
+                      <Checkbox
                         checked={fieldValue?.valueBoolean || false}
-                        onChange={(event) => handleIssueFieldValueUpdate(field, event.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        onCheckedChange={(checked) => handleIssueFieldValueUpdate(field, checked === true)}
                       />
-                      <span className="text-sm font-semibold text-slate-700">{field.name}</span>
-                    </label>
+                    </div>
                   );
                 }
 
                 if (field.type === "SELECT") {
                   return (
-                    <div key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
-                      <span className="text-xs font-semibold text-slate-500">{field.name}</span>
-                      <DropdownField
-                        id={`issue-field-${field.id}`}
-                        label={field.name}
-                        value={displayValue}
-                        onChange={(value) => handleIssueFieldValueUpdate(field, value || null)}
-                        hideLabel
-                        options={[
-                          { value: "", label: locale === "zh" ? "未选择" : "Not set" },
-                          ...getFieldOptions(field).map((option) => ({ value: option, label: option })),
-                        ]}
-                      />
+                    <div key={field.id} className={rowClassName}>
+                      <span className={labelClassName}>{field.name}</span>
+                      <Select
+                        value={displayValue || emptySelectValue}
+                        onValueChange={(value) => handleIssueFieldValueUpdate(field, value === emptySelectValue ? null : value)}
+                      >
+                        <SelectTrigger id={`issue-field-${field.id}`} className="w-full">
+                          <SelectValue placeholder={locale === "zh" ? "未选择" : "Not set"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={emptySelectValue}>{locale === "zh" ? "未选择" : "Not set"}</SelectItem>
+                          {getFieldOptions(field).map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   );
                 }
 
                 if (isLongText) {
                   return (
-                    <label key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
-                      <span className="text-xs font-semibold text-slate-500">{field.name}</span>
-                      <textarea
+                    <label key={field.id} className={rowClassName}>
+                      <span className={labelClassName}>{field.name}</span>
+                      <AutoGrowTextarea
                         key={`${field.id}-${displayValue}`}
                         defaultValue={displayValue}
-                        rows={3}
-                        onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
-                        className="w-full resize-y rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onBlur={(value) => handleIssueFieldValueUpdate(field, value)}
                       />
                     </label>
                   );
@@ -795,7 +856,8 @@ export default function IssueDetailClient({
 
                 if (field.type === "DATE") {
                   return (
-                    <div key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5 [&_label]:text-xs [&_label]:font-semibold [&_label]:text-slate-500`}>
+                    <div key={field.id} className={`${rowClassName} [&_label]:sr-only`}>
+                      <span className={labelClassName}>{field.name}</span>
                       <ShadcnDatePicker
                         id={`issue-field-${field.id}`}
                         label={field.name}
@@ -808,29 +870,28 @@ export default function IssueDetailClient({
                 }
 
                 return (
-                  <label key={field.id} className={`${fieldShellClass} flex flex-col gap-1.5`}>
-                    <span className="text-xs font-semibold text-slate-500">{field.name}</span>
+                  <label key={field.id} className={rowClassName}>
+                    <span className={labelClassName}>{field.name}</span>
                     {field.type === "NUMBER" ? (
                       <NumberInput
                         key={`${field.id}-${displayValue}`}
                         defaultValue={displayValue}
                         onBlur={(event) => handleIssueFieldValueUpdate(field, event.currentTarget.value)}
                         onStepValueChange={(value) => handleIssueFieldValueUpdate(field, value)}
-                        inputClassName="border-slate-200 bg-white text-sm font-medium text-slate-700 focus-visible:ring-blue-500"
                       />
                     ) : (
-                      <input
+                      <Input
                         key={`${field.id}-${displayValue}`}
                         type="text"
                         defaultValue={displayValue}
                         onBlur={(event) => handleIssueFieldValueUpdate(field, event.target.value)}
-                        className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     )}
                   </label>
                 );
               })}
-            </div>
+              </div>
+            </Card>
           ) : null}
         </div>
 
@@ -842,15 +903,10 @@ export default function IssueDetailClient({
       </div>
 
       <div className="flex w-full shrink-0 flex-col gap-6 lg:w-56 xl:w-52">
-        <div className="flex flex-col gap-4 rounded-lg border border-slate-100 bg-slate-50 p-5">
-          <div className="flex items-center gap-2 border-b pb-2">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-800">
-              {translations.issueDetail.properties}
-            </h3>
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">{issue.key}</span>
-          </div>
+        <Card className="gap-4 py-5">
+          <CardContent className="flex flex-col gap-4 px-5">
 
-          <DropdownField
+          <PropertySelect
             id="status"
             label={translations.issueDetail.status}
             value={issue.status}
@@ -859,21 +915,21 @@ export default function IssueDetailClient({
           />
 
           {canManagePlans ? (
-            <DropdownField
+            <PropertySelect
               id="plan"
-            label={locale === "zh" ? "计划" : "Plan"}
-            value={issue.planId || ""}
-            onChange={(value) => handleAutoSave("planId", value || null)}
-            options={[
-              { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
-              ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
-            ]}
+              label={locale === "zh" ? "计划" : "Plan"}
+              value={issue.planId || ""}
+              onChange={(value) => handleAutoSave("planId", value || null)}
+              options={[
+                { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
+                ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+              ]}
             />
           ) : (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500">{locale === "zh" ? "计划" : "Plan"}</label>
+              <label className="text-sm font-medium text-muted-foreground">{locale === "zh" ? "计划" : "Plan"}</label>
               <div
-                className="rounded-md border border-slate-200 bg-white p-2 text-sm font-medium text-slate-700 break-words"
+                className="rounded-md border bg-background p-2 text-sm font-medium break-words"
                 title={issue.planId ? plans.find((plan) => plan.id === issue.planId)?.name || issue.planId : noPlanLabel}
               >
                 {issue.planId ? plans.find((plan) => plan.id === issue.planId)?.name || issue.planId : noPlanLabel}
@@ -881,7 +937,7 @@ export default function IssueDetailClient({
             </div>
           )}
 
-          <DropdownField
+          <PropertySelect
             id="iteration"
             label={translations.issueDetail.sprint}
             value={issue.iterationId || ""}
@@ -892,11 +948,11 @@ export default function IssueDetailClient({
             ]}
           />
 
-          <DropdownField
+          <PropertySelect
             id="type"
             label={translations.issueDetail.type}
             value={issue.type}
-            onChange={(value) => handleAutoSave("type", value)}
+            onChange={handleTypeChange}
             options={[
               { value: "TASK", label: getIssueTypeLabel("TASK", locale) },
               { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
@@ -905,7 +961,7 @@ export default function IssueDetailClient({
             ]}
           />
 
-          <DropdownField
+          <PropertySelect
             id="priority"
             label={translations.issueDetail.priority}
             value={issue.priority}
@@ -918,7 +974,7 @@ export default function IssueDetailClient({
             ]}
           />
 
-          <DropdownField
+          <PropertySelect
             id="assignee"
             label={translations.issueDetail.assignee}
             value={issue.assigneeId || ""}
@@ -929,17 +985,15 @@ export default function IssueDetailClient({
             ]}
           />
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.dueDate}</label>
-            <LocalizedDateInput
-              locale={locale}
-              value={issue.dueDate ? new Date(issue.dueDate).toISOString().split("T")[0] : ""}
-              onChange={(event) =>
-                handleAutoSave("dueDate", event.target.value ? new Date(event.target.value).toISOString() : null)
-              }
-              className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          <ShadcnDatePicker
+            id="due-date"
+            label={translations.issueDetail.dueDate}
+            locale={locale}
+            value={issue.dueDate ? new Date(issue.dueDate).toISOString().split("T")[0] : ""}
+            onChange={(value) => handleAutoSave("dueDate", value ? new Date(`${value}T00:00:00.000Z`).toISOString() : null)}
+            labelClassName="text-sm font-medium text-muted-foreground"
+            contentAlign="end"
+          />
 
           <div className="mt-2 border-t pt-2">
             <label className="text-xs font-semibold text-slate-500">{translations.issueDetail.watchers}</label>
@@ -988,7 +1042,8 @@ export default function IssueDetailClient({
               </div>
             </div>
           </div>
-        </div>
+          </CardContent>
+        </Card>
 
         <div className="px-1 text-xs font-medium text-slate-400">
           {translations.issueDetail.created}:{" "}
@@ -1002,7 +1057,8 @@ export default function IssueDetailClient({
           </span>
         </div>
       </div>
-    </div>
+      </CardContent>
+    </Card>
     {canCreateChildIssues ? (
       <CreateIssueModal
         key={`child-${childModalKey}`}
@@ -1016,25 +1072,7 @@ export default function IssueDetailClient({
         canManagePlans={canManagePlans}
         defaultParentIssueId={issue.id}
         parentIssueLabel={childModalParentLabel}
-        defaultType={defaultChildType}
         allowedTypes={allowedChildTypes}
-      />
-    ) : null}
-    {allowedChildTypes.includes("BUG") ? (
-      <CreateIssueModal
-        key={`bug-${childModalKey}`}
-        isOpen={isBugModalOpen}
-        onClose={closeBugModal}
-        users={users}
-        plans={plans}
-        iterations={iterations}
-        locale={locale}
-        currentUserId={currentUserId}
-        canManagePlans={canManagePlans}
-        defaultParentIssueId={issue.id}
-        parentIssueLabel={childModalParentLabel}
-        defaultType="BUG"
-        allowedTypes={["BUG"]}
       />
     ) : null}
     </>

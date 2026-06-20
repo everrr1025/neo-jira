@@ -7,6 +7,7 @@ import { getTranslations, Locale } from "@/lib/i18n";
 import { getDefaultAvatar } from "@/lib/avatar";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
+import { Button } from "@/components/ui/button";
 
 type CommentUser = {
   id: string;
@@ -290,14 +291,14 @@ export default function CommentSection({
         </div>
 
         <div className="flex justify-end">
-          <button
+          <Button
+            type="button"
             onClick={handleSubmit}
             disabled={submitting || !newComment.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md font-medium text-sm transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
           >
             {submitting && <Loader2 size={16} className="animate-spin" />}
             {translations.commentSection.postComment}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

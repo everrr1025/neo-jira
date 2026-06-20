@@ -156,6 +156,7 @@ export default function CreateIssueModal({
   const [isPending, startTransition] = useTransition();
   const translations = getTranslations(locale);
   const text = translations.createIssue;
+  const noParentAssociationLabel = locale === "zh" ? "暂无关联" : "No association";
 
   const getInitialFormData = (): FormDataState => {
     const fallbackIteration = iterations.find((item) => item.id === defaultIterationId);
@@ -372,7 +373,10 @@ export default function CreateIssueModal({
                     return {
                       ...prev,
                       type: value,
-                      parentIssueId: selectedParent && value !== "EPIC" && canNestIssueType(selectedParent.type, value) ? prev.parentIssueId : "",
+                      parentIssueId:
+                        value !== "EPIC" && (defaultParentIssueId || (selectedParent && canNestIssueType(selectedParent.type, value)))
+                          ? prev.parentIssueId
+                          : "",
                     };
                   })
                 }
@@ -410,11 +414,13 @@ export default function CreateIssueModal({
                 locale={locale}
                 disabled
                 disabledLabel={locale === "zh" ? "史诗不能关联父级问题" : "Epics cannot have a parent issue"}
+                label={locale === "zh" ? "父项" : "Parent item"}
+                emptyLabel={noParentAssociationLabel}
                 onChange={() => undefined}
               />
             ) : parentIssueLabel ? (
               <div className="flex flex-col gap-1.5">
-                <Label>{locale === "zh" ? "父级问题" : "Parent issue"}</Label>
+                <Label>{locale === "zh" ? "父项" : "Parent item"}</Label>
                 <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
                   {parentIssueLabel}
                 </div>
@@ -427,6 +433,8 @@ export default function CreateIssueModal({
                 locale={locale}
                 disabled={!formData.type}
                 disabledLabel={locale === "zh" ? "请先选择类型" : "Select a type first"}
+                label={locale === "zh" ? "父项" : "Parent item"}
+                emptyLabel={noParentAssociationLabel}
               />
             ) : null}
 

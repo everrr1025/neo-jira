@@ -20,6 +20,7 @@ type ShadcnDatePickerProps = {
   onChange: (value: string) => void;
   required?: boolean;
   className?: string;
+  labelClassName?: string;
   contentAlign?: "start" | "center" | "end";
 };
 
@@ -61,6 +62,7 @@ export default function ShadcnDatePicker({
   onChange,
   required = false,
   className = "flex flex-col gap-1.5",
+  labelClassName,
   contentAlign = "start",
 }: ShadcnDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -70,7 +72,7 @@ export default function ShadcnDatePicker({
 
   return (
     <div className={className}>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className={labelClassName}>{label}</Label>
       <input
         tabIndex={-1}
         aria-hidden="true"
