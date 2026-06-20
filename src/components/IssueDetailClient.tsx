@@ -32,10 +32,9 @@ import CommentSection from "./CommentSection";
 import CreateIssueModal from "./CreateIssueModal";
 import { DropdownField } from "./DropdownField";
 import LocalizedDateInput from "./LocalizedDateInput";
+import ParentIssuePicker from "./ParentIssuePicker";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import ShadcnDatePicker from "./ShadcnDatePicker";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
 import { NumberInput } from "./ui/number-input";
 
 type IssueUser = {
@@ -175,8 +174,6 @@ export default function IssueDetailClient({
   const [isIssueFieldsExpanded, setIsIssueFieldsExpanded] = useState(true);
   const [isChildModalOpen, setIsChildModalOpen] = useState(false);
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
-  const [isParentDialogOpen, setIsParentDialogOpen] = useState(false);
-  const [parentSearch, setParentSearch] = useState("");
   const [childModalKey, setChildModalKey] = useState(0);
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
@@ -184,7 +181,6 @@ export default function IssueDetailClient({
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const noIssueFieldsLabel = locale === "zh" ? "暂无扩展字段" : "No custom fields";
   const parentIssueLabel = locale === "zh" ? "父级问题" : "Parent issue";
-  const chooseParentIssueLabel = locale === "zh" ? "选择父级问题" : "Choose parent issue";
   const searchParentIssuePlaceholder = locale === "zh" ? "搜索 key、标题或类型" : "Search key, title, or type";
   const noParentCandidatesLabel = locale === "zh" ? "没有可关联的父级问题" : "No available parent issues";
   const childIssuesLabel = locale === "zh" ? "子项" : "Child issues";
@@ -217,14 +213,6 @@ export default function IssueDetailClient({
     .filter((candidate) => candidate.id !== issue.id)
     .filter((candidate) => canNestIssueType(candidate.type, issue.type))
     .filter((candidate) => !isDescendantIssue(candidate));
-  const filteredParentIssueCandidates = parentIssueCandidates.filter((candidate) => {
-    const query = parentSearch.trim().toLowerCase();
-    if (!query) return true;
-
-    return `${candidate.key} ${candidate.title} ${getIssueTypeLabel(candidate.type, locale)} ${candidate.type}`
-      .toLowerCase()
-      .includes(query);
-  });
   const childDoneCount = issue.childIssues.filter((childIssue) => isDoneWorkflowStatus(childIssue.status, workflowStatuses)).length;
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -427,22 +415,9 @@ export default function IssueDetailClient({
     router.refresh();
   };
 
-  const clearParentIssue = () => {
-    const previousParentIssue = issue.parentIssue;
-    setIssue((prev) => ({ ...prev, parentIssueId: null, parentIssue: null }));
-    startTransition(async () => {
-      const result = await updateIssue(issue.id, { parentIssueId: null });
-      if (result.success) {
-        emitIssueActivityUpdated(issue.id);
-        router.refresh();
-      } else {
-        setIssue((prev) => ({ ...prev, parentIssueId: previousParentIssue?.id || null, parentIssue: previousParentIssue }));
-        setAlertMessage(result.error || translations.issueDetail.failedToSave);
-      }
-    });
-  };
-
   const handleParentIssueChange = (parentIssueId: string) => {
+    if ((parentIssueId || null) === issue.parentIssueId) return;
+
     const previousParentIssue = issue.parentIssue;
     const previousParentIssueId = issue.parentIssueId;
     const selectedParentIssue = parentIssueId ? parentIssueOptionById.get(parentIssueId) || null : null;
@@ -646,60 +621,17 @@ export default function IssueDetailClient({
 
         <div className="space-y-4">
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setParentSearch("");
-                  setIsParentDialogOpen(true);
-                }}
-                className="text-xs font-semibold uppercase tracking-wide text-slate-500 transition-colors hover:text-slate-800"
-              >
-                {parentIssueLabel}
-              </button>
-              {issue.parentIssue ? (
-                <button
-                  type="button"
-                  onClick={clearParentIssue}
-                  className="text-xs font-semibold text-slate-500 transition-colors hover:text-red-600"
-                >
-                  {locale === "zh" ? "清空" : "Clear"}
-                </button>
-              ) : null}
-            </div>
-            {issue.parentIssue ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <Link href={`/issues/${issue.parentIssue.id}`} className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm font-semibold text-slate-800 hover:text-primary hover:underline">
-                  <span className="shrink-0 text-slate-500">{issue.parentIssue.key}</span>
-                  <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
-                    {getIssueTypeLabel(issue.parentIssue.type, locale)}
-                  </span>
-                  <span className="truncate">{issue.parentIssue.title}</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setParentSearch("");
-                    setIsParentDialogOpen(true);
-                  }}
-                  className="text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800"
-                >
-                  {locale === "zh" ? "更换" : "Change"}
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setParentSearch("");
-                  setIsParentDialogOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <Plus size={14} />
-                {parentIssueLabel}
-              </button>
-            )}
+            <ParentIssuePicker
+              value={issue.parentIssueId || ""}
+              options={parentIssueCandidates}
+              locale={locale}
+              disabled={issue.type === "EPIC" || isPending}
+              disabledLabel={issue.type === "EPIC" ? (locale === "zh" ? "史诗不能关联父级问题" : "Epics cannot have a parent issue") : undefined}
+              label={parentIssueLabel}
+              searchPlaceholder={searchParentIssuePlaceholder}
+              noResultsLabel={noParentCandidatesLabel}
+              onChange={handleParentIssueChange}
+            />
           </div>
 
           <div>
@@ -1105,65 +1037,6 @@ export default function IssueDetailClient({
         allowedTypes={["BUG"]}
       />
     ) : null}
-    <Dialog open={isParentDialogOpen} onOpenChange={setIsParentDialogOpen}>
-      <DialogContent className="flex max-h-[82vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle>{chooseParentIssueLabel}</DialogTitle>
-          <DialogDescription className="sr-only">
-            {searchParentIssuePlaceholder}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="border-b px-6 py-4">
-          <Input
-            value={parentSearch}
-            onChange={(event) => setParentSearch(event.target.value)}
-            placeholder={searchParentIssuePlaceholder}
-            autoFocus
-          />
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {filteredParentIssueCandidates.length > 0 ? (
-            <div className="divide-y rounded-md border">
-              {filteredParentIssueCandidates.map((candidate) => {
-                const isSelected = candidate.id === issue.parentIssueId;
-                return (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    onClick={() => {
-                      handleParentIssueChange(candidate.id);
-                      setIsParentDialogOpen(false);
-                    }}
-                    className={`flex w-full min-w-0 flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
-                      isSelected ? "bg-blue-50" : "bg-white"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-muted-foreground">{candidate.key}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-                        {getIssueTypeLabel(candidate.type, locale)}
-                      </span>
-                      {isSelected ? (
-                        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                          {locale === "zh" ? "当前父级" : "Current"}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="truncate text-sm font-semibold text-foreground">{candidate.title}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed px-4 text-center text-sm font-medium text-muted-foreground">
-              {noParentCandidatesLabel}
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
     </>
   );
 }

@@ -13,6 +13,7 @@ import { canNestIssueType } from "@/lib/issueHierarchy";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
+import ParentIssuePicker from "./ParentIssuePicker";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import ShadcnDatePicker from "./ShadcnDatePicker";
 
@@ -95,6 +96,7 @@ function SelectField({
   options,
   onChange,
   className = "",
+  required = false,
 }: {
   id: string;
   label: string;
@@ -102,10 +104,14 @@ function SelectField({
   options: DropdownOption[];
   onChange: (value: string) => void;
   className?: string;
+  required?: boolean;
 }) {
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id}>
+        {label}
+        {required ? <span className="text-red-500"> *</span> : null}
+      </Label>
       <Select value={toSelectValue(value)} onValueChange={(nextValue) => onChange(fromSelectValue(nextValue))}>
         <SelectTrigger id={id} className="w-full">
           <SelectValue />
@@ -156,7 +162,7 @@ export default function CreateIssueModal({
     return {
       title: "",
       description: "",
-      type: defaultType || allowedTypes?.[0] || "TASK",
+      type: defaultType || "",
       priority: "MEDIUM",
       planId: canManagePlans ? plans.find((plan) => plan.id === defaultPlanId)?.id || "" : "",
       iterationId: fallbackIteration?.id || "",
@@ -168,22 +174,9 @@ export default function CreateIssueModal({
   };
 
   const [formData, setFormData] = useState<FormDataState>(getInitialFormData);
-  const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
-
-  const handleSprintChange = (iterationId: string) => {
-    setFormData((prev) => {
-      const selectedIteration = iterations.find((item) => item.id === iterationId);
-      const syncedDueDate = selectedIteration ? toDateInputValue(selectedIteration.endDate) : "";
-      return {
-        ...prev,
-        iterationId,
-        dueDate: isDueDateManuallyEdited ? prev.dueDate : syncedDueDate,
-      };
-    });
-  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
@@ -265,7 +258,6 @@ export default function CreateIssueModal({
     }
 
     setFormData(getInitialFormData());
-    setIsDueDateManuallyEdited(false);
     onClose();
   };
 
@@ -279,10 +271,6 @@ export default function CreateIssueModal({
 
   if (!isOpen) return null;
 
-  const iterationOptions: DropdownOption[] = [
-    { value: "", label: translations.issueList.backlog },
-    ...iterations.map((item) => ({ value: item.id, label: item.name })),
-  ];
   const assigneeOptions: DropdownOption[] = [
     { value: "", label: translations.issueList.unassigned },
     ...users
@@ -290,24 +278,12 @@ export default function CreateIssueModal({
       .map((user) => ({ value: user.id, label: user.name || user.id })),
   ];
   const typeOptions: DropdownOption[] = [
+    { value: "", label: locale === "zh" ? "请选择类型" : "Select type" },
     { value: "TASK", label: getIssueTypeLabel("TASK", locale) },
     { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
     { value: "BUG", label: getIssueTypeLabel("BUG", locale) },
     { value: "EPIC", label: getIssueTypeLabel("EPIC", locale) },
-  ].filter((option) => !allowedTypes || allowedTypes.includes(option.value));
-  const parentIssueOptions: DropdownOption[] = [
-    { value: "", label: locale === "zh" ? "不关联父级" : "No parent" },
-    ...parentIssues
-      .filter((issue) => canNestIssueType(issue.type, formData.type))
-      .map((issue) => ({
-        value: issue.id,
-        label: `${issue.key} ${issue.title}`,
-      })),
-  ];
-  const planOptions: DropdownOption[] = [
-    { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
-    ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
-  ];
+  ].filter((option) => option.value === "" || !allowedTypes || allowedTypes.includes(option.value));
   const priorityOptions: DropdownOption[] = [
     { value: "LOW", label: getPriorityLabel("LOW", locale) },
     { value: "MEDIUM", label: getPriorityLabel("MEDIUM", locale) },
@@ -317,7 +293,7 @@ export default function CreateIssueModal({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!formData.title.trim()) return;
+    if (!formData.title.trim() || !formData.type) return;
 
     setErrorMessage("");
     startTransition(async () => {
@@ -326,7 +302,7 @@ export default function CreateIssueModal({
         description: formData.description,
         type: formData.type,
         priority: formData.priority,
-        parentIssueId: formData.parentIssueId || defaultParentIssueId || null,
+        parentIssueId: formData.type === "EPIC" ? null : formData.parentIssueId || defaultParentIssueId || null,
         planId: canManagePlans ? formData.planId || null : null,
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
@@ -341,7 +317,6 @@ export default function CreateIssueModal({
       if (result.success) {
         descriptionEditorRef.current?.commitPendingUploads();
         setFormData(getInitialFormData());
-        setIsDueDateManuallyEdited(false);
         onClose();
       } else {
         setErrorMessage(`${text.failedCreateIssue}: ${result.error}`);
@@ -386,7 +361,7 @@ export default function CreateIssueModal({
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
               <SelectField
                 id="type"
                 label={text.issueType}
@@ -397,11 +372,12 @@ export default function CreateIssueModal({
                     return {
                       ...prev,
                       type: value,
-                      parentIssueId: selectedParent && canNestIssueType(selectedParent.type, value) ? prev.parentIssueId : "",
+                      parentIssueId: selectedParent && value !== "EPIC" && canNestIssueType(selectedParent.type, value) ? prev.parentIssueId : "",
                     };
                   })
                 }
                 options={typeOptions}
+                required
               />
               <SelectField
                 id="priority"
@@ -410,46 +386,6 @@ export default function CreateIssueModal({
                 onChange={(value) => setFormData((prev) => ({ ...prev, priority: value }))}
                 options={priorityOptions}
               />
-            </div>
-
-            {parentIssueLabel ? (
-              <div className="flex flex-col gap-1.5">
-                <Label>{locale === "zh" ? "父级问题" : "Parent issue"}</Label>
-                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
-                  {parentIssueLabel}
-                </div>
-              </div>
-            ) : parentIssues.length > 0 ? (
-              <SelectField
-                id="parentIssue"
-                label={locale === "zh" ? "父级问题" : "Parent issue"}
-                value={formData.parentIssueId}
-                onChange={(value) => setFormData((prev) => ({ ...prev, parentIssueId: value }))}
-                options={parentIssueOptions}
-              />
-            ) : null}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {canManagePlans ? (
-                <SelectField
-                  id="plan"
-                  label={locale === "zh" ? "计划" : "Plan"}
-                  value={formData.planId}
-                  onChange={(value) => setFormData((prev) => ({ ...prev, planId: value }))}
-                  options={planOptions}
-                />
-              ) : null}
-              <SelectField
-                id="iteration"
-                label={text.sprint}
-                value={formData.iterationId}
-                onChange={handleSprintChange}
-                options={iterationOptions}
-                className={canManagePlans ? "" : "sm:col-span-2"}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
               <SelectField
                 id="assignee"
                 label={text.assignee}
@@ -462,12 +398,37 @@ export default function CreateIssueModal({
                 label={text.dueDate}
                 locale={locale}
                 value={formData.dueDate}
-                onChange={(dueDate) => {
-                  setIsDueDateManuallyEdited(true);
-                  setFormData((prev) => ({ ...prev, dueDate }));
-                }}
+                onChange={(dueDate) => setFormData((prev) => ({ ...prev, dueDate }))}
+                contentAlign="end"
               />
             </div>
+
+            {formData.type === "EPIC" ? (
+              <ParentIssuePicker
+                value=""
+                options={[]}
+                locale={locale}
+                disabled
+                disabledLabel={locale === "zh" ? "史诗不能关联父级问题" : "Epics cannot have a parent issue"}
+                onChange={() => undefined}
+              />
+            ) : parentIssueLabel ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{locale === "zh" ? "父级问题" : "Parent issue"}</Label>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
+                  {parentIssueLabel}
+                </div>
+              </div>
+            ) : parentIssues.length > 0 ? (
+              <ParentIssuePicker
+                value={formData.parentIssueId}
+                onChange={(value) => setFormData((prev) => ({ ...prev, parentIssueId: value }))}
+                options={parentIssues.filter((issue) => canNestIssueType(issue.type, formData.type))}
+                locale={locale}
+                disabled={!formData.type}
+                disabledLabel={locale === "zh" ? "请先选择类型" : "Select a type first"}
+              />
+            ) : null}
 
             <div className="relative mb-2 flex flex-col gap-1.5">
               <Label htmlFor="description">{text.description}</Label>
@@ -550,7 +511,7 @@ export default function CreateIssueModal({
             </Button>
             <Button
               type="submit"
-              disabled={isPending || !formData.title.trim()}
+              disabled={isPending || !formData.title.trim() || !formData.type}
             >
               {isPending ? <Loader2 className="animate-spin" /> : null}
               {isPending ? text.creating : text.create}
