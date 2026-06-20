@@ -29,6 +29,7 @@ export type IssueAuditSnapshot = {
   priority: string;
   type: string;
   assigneeId: string | null;
+  parentIssueId: string | null;
   planId: string | null;
   iterationId: string | null;
   dueDate: Date | null;
@@ -101,6 +102,7 @@ export function buildIssueUpdateAuditLogs({
     "priority",
     "type",
     "assigneeId",
+    "parentIssueId",
     "planId",
     "iterationId",
     "dueDate",

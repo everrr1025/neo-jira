@@ -13,6 +13,7 @@ import {
 import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } from "@/lib/audit";
 import { authOptions } from "@/lib/authOptions";
 import { getNextIssueKey, isIssueKeyUniqueConstraintError } from "@/lib/issueKeys";
+import { canNestIssueType, getIssueParentValidationMessage, isIssueType, wouldCreateIssueHierarchyCycle } from "@/lib/issueHierarchy";
 import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
 import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
@@ -106,11 +107,100 @@ const issueAuditSelect = {
   priority: true,
   type: true,
   assigneeId: true,
+  parentIssueId: true,
   planId: true,
   iterationId: true,
   dueDate: true,
   description: true,
 } as const;
+
+type IssueHierarchyDbClient = Pick<Prisma.TransactionClient, "issue">;
+
+async function assertIssueParentAllowed({
+  tx,
+  issueId,
+  projectId,
+  type,
+  parentIssueId,
+  locale,
+}: {
+  tx: IssueHierarchyDbClient;
+  issueId?: string;
+  projectId: string;
+  type: string;
+  parentIssueId?: string | null;
+  locale: "zh" | "en";
+}) {
+  if (!parentIssueId) {
+    if (!issueId) return;
+
+    const existingChildren = await tx.issue.findMany({
+      where: { parentIssueId: issueId },
+      select: { type: true },
+    });
+
+    const invalidChild = existingChildren.find((child) => !canNestIssueType(type, child.type));
+    if (invalidChild) {
+      throw new Error(getIssueParentValidationMessage(type, invalidChild.type, locale) || "Invalid issue hierarchy");
+    }
+    return;
+  }
+
+  if (issueId && parentIssueId === issueId) {
+    throw new Error(locale === "zh" ? "不能将问题设置为自己的父级" : "An issue cannot be its own parent");
+  }
+
+  const parentIssue = await tx.issue.findUnique({
+    where: { id: parentIssueId },
+    select: { id: true, projectId: true, type: true, parentIssueId: true },
+  });
+
+  if (!parentIssue) {
+    throw new Error(locale === "zh" ? "父级问题不存在" : "Parent issue not found");
+  }
+
+  if (parentIssue.projectId !== projectId) {
+    throw new Error(locale === "zh" ? "父级问题必须属于同一项目" : "Parent issue must belong to the same project");
+  }
+
+  const invalidParentMessage = getIssueParentValidationMessage(parentIssue.type, type, locale);
+  if (invalidParentMessage) {
+    throw new Error(invalidParentMessage);
+  }
+
+  if (issueId) {
+    let ancestorId = parentIssue.parentIssueId;
+    const ancestorIds = [parentIssue.id];
+    const visitedAncestorIds = new Set<string>([parentIssue.id]);
+
+    while (ancestorId) {
+      ancestorIds.push(ancestorId);
+      if (visitedAncestorIds.has(ancestorId)) break;
+      visitedAncestorIds.add(ancestorId);
+
+      const ancestor = await tx.issue.findUnique({
+        where: { id: ancestorId },
+        select: { id: true, parentIssueId: true },
+      });
+      ancestorId = ancestor?.parentIssueId || null;
+    }
+
+    if (wouldCreateIssueHierarchyCycle(issueId, ancestorIds)) {
+      throw new Error(locale === "zh" ? "不能创建循环父子关系" : "Issue hierarchy cannot contain cycles");
+    }
+  }
+
+  if (!issueId) return;
+
+  const existingChildren = await tx.issue.findMany({
+    where: { parentIssueId: issueId },
+    select: { type: true },
+  });
+  const invalidChild = existingChildren.find((child) => !canNestIssueType(type, child.type));
+  if (invalidChild) {
+    throw new Error(getIssueParentValidationMessage(type, invalidChild.type, locale) || "Invalid issue hierarchy");
+  }
+}
 
 const workflowSelect = {
   workflowStatuses: {
@@ -278,6 +368,7 @@ export async function createIssue(data: {
   planId?: string | null;
   iterationId?: string | null;
   assigneeId?: string | null;
+  parentIssueId?: string | null;
   dueDate?: string | null;
   attachments?: { fileName: string; fileUrl: string }[];
 }) {
@@ -345,11 +436,14 @@ export async function createIssue(data: {
       throw new Error("Cannot add issues to a completed sprint");
     }
 
-    let targetProjectId = selectedIteration?.projectId || selectedPlan?.projectId || activeProjectId || null;
+    const targetProjectId = selectedIteration?.projectId || selectedPlan?.projectId || activeProjectId || null;
 
     if (!targetProjectId) throw new Error("Project not found or no access");
     await checkProjectMember(targetProjectId);
     const title = normalizeNameOrThrow(data.title, "issueTitle", ISSUE_TITLE_MAX_LENGTH, locale);
+    if (!isIssueType(data.type)) {
+      throw new Error(locale === "zh" ? "问题类型无效" : "Invalid issue type");
+    }
 
     const project = await prisma.$transaction(async (tx) => {
       const existingProject = await tx.project.findUnique({
@@ -406,11 +500,20 @@ export async function createIssue(data: {
 
     const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
     const watcherIds = Array.from(new Set([userId, data.assigneeId].filter((value): value is string => Boolean(value))));
+    const parentIssueId = typeof data.parentIssueId === "string" && data.parentIssueId ? data.parentIssueId : null;
 
     let newIssue: Awaited<ReturnType<typeof prisma.issue.create>> | null = null;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         newIssue = await prisma.$transaction(async (tx) => {
+          await assertIssueParentAllowed({
+            tx,
+            projectId: project.id,
+            type: data.type,
+            parentIssueId,
+            locale,
+          });
+
           const issueKey = await getNextIssueKey(tx, project.id, project.key);
           const createdIssue = await tx.issue.create({
             data: {
@@ -421,6 +524,7 @@ export async function createIssue(data: {
               priority: data.priority,
               type: data.type,
               projectId: project.id,
+              parentIssueId,
               planId: data.planId ?? null,
               iterationId: data.iterationId ?? null,
               assigneeId: data.assigneeId,
@@ -812,6 +916,15 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         await assertAssignableAssignee(previousIssue.projectId, nextAssigneeId, tx);
       }
 
+      if (Object.prototype.hasOwnProperty.call(data, "parentIssueId")) {
+        if (data.parentIssueId !== null && typeof data.parentIssueId !== "string") {
+          throw new Error("Invalid parent issue");
+        }
+        if (data.parentIssueId === "") {
+          data.parentIssueId = null;
+        }
+      }
+
       if (typeof data.planId === "string" && data.planId) {
         const targetPlan = await tx.plan.findUnique({
           where: { id: data.planId },
@@ -869,6 +982,24 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
         ) {
           throw new Error("This status transition is not allowed");
         }
+      }
+
+      const nextType = typeof data.type === "string" ? data.type : previousIssue.type;
+      if (!isIssueType(nextType)) {
+        throw new Error(locale === "zh" ? "问题类型无效" : "Invalid issue type");
+      }
+      const nextParentIssueId = Object.prototype.hasOwnProperty.call(data, "parentIssueId")
+        ? (data.parentIssueId as string | null)
+        : previousIssue.parentIssueId;
+      if (nextType !== previousIssue.type || nextParentIssueId !== previousIssue.parentIssueId) {
+        await assertIssueParentAllowed({
+          tx,
+          issueId: previousIssue.id,
+          projectId: previousIssue.projectId,
+          type: nextType,
+          parentIssueId: nextParentIssueId,
+          locale,
+        });
       }
 
       if (Object.prototype.hasOwnProperty.call(data, "title")) {

@@ -154,6 +154,25 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         },
         reporter: true,
         iteration: true,
+        parentIssue: {
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            type: true,
+          },
+        },
+        childIssues: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+        _count: {
+          select: {
+            childIssues: true,
+          },
+        },
         watchers: {
           select: { id: true },
         },

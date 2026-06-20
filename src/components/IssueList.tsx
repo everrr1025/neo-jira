@@ -55,6 +55,7 @@ import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
   getWorkflowStatusBadgeClass,
+  isDoneWorkflowStatus,
   sortWorkflowStatuses,
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
@@ -69,6 +70,10 @@ type Issue = {
   status: string;
   priority: string;
   type: string;
+  parentIssueId?: string | null;
+  parentIssue?: { id: string; key: string; title: string; type: string } | null;
+  childIssues?: { id: string; status: string }[];
+  _count?: { childIssues: number };
   planId?: string | null;
   plan?: { id: string; name: string } | null;
   iterationId?: string | null;
@@ -136,7 +141,7 @@ type IssuePlan = {
   name: string;
 };
 
-type ColumnId = "key" | "title" | "plan" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
+type ColumnId = "key" | "title" | "parent" | "children" | "plan" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
 type ColumnConfig = {
   id: ColumnId;
   label: string;
@@ -936,6 +941,8 @@ export default function IssueList({
   const columnsButtonLabel = locale === "zh" ? "显示列" : "Columns";
   const resetColumnsLabel = locale === "zh" ? "重置列" : "Reset columns";
   const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
+  const parentIssueColumnLabel = locale === "zh" ? "父级" : "Parent";
+  const childProgressColumnLabel = locale === "zh" ? "子项进度" : "Children";
   const selectedIssuesLabel = locale === "zh" ? "已选" : "Selected";
   const bulkAddToPlanLabel = locale === "zh" ? "加入计划" : "Add to plan";
   const bulkRemovePlanLabel = locale === "zh" ? "移出计划" : "Remove plan";
@@ -1069,6 +1076,8 @@ export default function IssueList({
     () => [
       { id: "key", label: translations.issueList.key, width: 80 },
       { id: "title", label: translations.issueList.summary, width: 320 },
+      { id: "parent", label: parentIssueColumnLabel, width: 190 },
+      { id: "children", label: childProgressColumnLabel, width: 130 },
       ...(lockedPlanId ? [] : [{ id: "plan" as const, label: planLabel, width: 180 }]),
       { id: "iteration", label: translations.issueList.sprint, width: 160 },
       { id: "status", label: translations.issueList.status, width: 140 },
@@ -1079,6 +1088,8 @@ export default function IssueList({
     ],
     [
       lockedPlanId,
+      childProgressColumnLabel,
+      parentIssueColumnLabel,
       planLabel,
       translations.issueList.assignee,
       translations.issueList.due,
@@ -1911,6 +1922,47 @@ export default function IssueList({
           <Link href={`/issues/${issue.id}`} className="hover:text-primary block w-full truncate border-b border-transparent">
             {issue.title}
           </Link>
+        </td>
+      );
+    }
+
+    if (col.id === "parent") {
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          {issue.parentIssue ? (
+            <Link href={`/issues/${issue.parentIssue.id}`} className="block min-w-0 text-sm font-medium text-foreground hover:text-primary hover:underline">
+              <span className="mr-1 text-xs font-semibold text-muted-foreground">{issue.parentIssue.key}</span>
+              <span className="truncate align-middle">{issue.parentIssue.title}</span>
+            </Link>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          )}
+        </td>
+      );
+    }
+
+    if (col.id === "children") {
+      const childIssues = issue.childIssues || [];
+      const childCount = issue._count?.childIssues ?? childIssues.length;
+      const doneChildCount = childIssues.filter((childIssue) =>
+        isDoneWorkflowStatus(childIssue.status, getWorkflowForProject(issue.projectId).statuses)
+      ).length;
+      const progress = childCount > 0 ? Math.round((doneChildCount / childCount) * 100) : 0;
+
+      return (
+        <td key={`column:${col.id}`} className="px-5 py-3.5">
+          {childCount > 0 ? (
+            <div className="min-w-0">
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">
+                {doneChildCount}/{childCount} · {progress}%
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          )}
         </td>
       );
     }

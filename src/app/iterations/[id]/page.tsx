@@ -69,7 +69,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
   const doneStatusKeys = iteration.project.workflowStatuses
     .filter((status) => status.category === "DONE")
     .map((status) => status.key);
-  const [users, plans, iterations, backlogIssues] = await Promise.all([
+  const [users, plans, iterations, backlogIssues, parentIssues] = await Promise.all([
     prisma.user.findMany({
       where: buildProjectUsersWhere(iteration.project.id, false),
       orderBy: { name: "asc" },
@@ -101,6 +101,17 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
           orderBy: { updatedAt: "desc" },
         })
       : Promise.resolve([]),
+    prisma.issue.findMany({
+      where: { projectId: iteration.project.id },
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        type: true,
+        parentIssueId: true,
+      },
+      orderBy: [{ createdAt: "desc" }, { key: "asc" }],
+    }),
   ]);
   const defaultDueDate = iteration.endDate.toISOString().slice(0, 10);
   const unfinishedIssueCount = issues.filter((issue) => !doneStatusKeys.includes(issue.status)).length;
@@ -157,6 +168,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
                   iterations={iterations}
                   currentUserId={userId}
                   defaultDueDate={defaultDueDate}
+                  parentIssues={parentIssues}
                 />
               )}
             </SprintActionButton>
@@ -170,6 +182,7 @@ export default async function IterationKanbanPage({ params }: { params: Promise<
               canManagePlans={false}
               defaultIterationId={iteration.id}
               defaultDueDate={defaultDueDate}
+              parentIssues={parentIssues}
             />
           )}
         </div>

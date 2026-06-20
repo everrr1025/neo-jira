@@ -129,6 +129,10 @@ model Issue {
   projectId String
   project   Project @relation(fields: [projectId], references: [id])
 
+  parentIssueId String?
+  parentIssue   Issue?  @relation("IssueHierarchy", fields: [parentIssueId], references: [id], onDelete: SetNull)
+  childIssues   Issue[] @relation("IssueHierarchy")
+
   planId String?
   plan   Plan?   @relation(fields: [planId], references: [id], onDelete: SetNull)
 
@@ -154,6 +158,7 @@ model Issue {
   updatedAt DateTime @updatedAt
 
   @@index([planId])
+  @@index([parentIssueId])
 }
 
 model PlanFieldDefinition {

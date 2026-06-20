@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CreateIssueModal, {
   type CreateIssueIteration,
+  type CreateIssueParentIssue,
   type CreateIssuePlan,
   type CreateIssueUser,
 } from "./CreateIssueModal";
@@ -18,6 +19,7 @@ type CreateIssueButtonProps = {
   locale: Locale;
   currentUserId?: string;
   canManagePlans?: boolean;
+  parentIssues?: CreateIssueParentIssue[];
   defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
@@ -30,6 +32,7 @@ export default function CreateIssueButton({
   locale,
   currentUserId,
   canManagePlans = false,
+  parentIssues = [],
   defaultPlanId,
   defaultIterationId,
   defaultDueDate,
@@ -61,6 +64,7 @@ export default function CreateIssueButton({
         locale={locale}
         currentUserId={currentUserId}
         canManagePlans={canManagePlans}
+        parentIssues={parentIssues}
         defaultPlanId={defaultPlanId}
         defaultIterationId={defaultIterationId}
         defaultDueDate={defaultDueDate}

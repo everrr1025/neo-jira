@@ -49,6 +49,7 @@ function getFieldLabel(field: string | null, locale: Locale) {
   if (field === "priority") return translations.issueDetail.priority;
   if (field === "type") return translations.issueDetail.type;
   if (field === "assigneeId") return translations.issueDetail.assignee;
+  if (field === "parentIssueId") return locale === "zh" ? "父级问题" : "Parent issue";
   if (field === "planId") return locale === "zh" ? "计划" : "Plan";
   if (field === "iterationId") return translations.issueDetail.sprint;
   if (field === "dueDate") return translations.issueDetail.dueDate;

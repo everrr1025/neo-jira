@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { canNestIssueType } from "@/lib/issueHierarchy";
 import { getIssueTypeLabel, getPriorityLabel, getTranslations, type Locale } from "@/lib/i18n";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
@@ -27,6 +28,11 @@ type CreateIssueModalProps = {
   defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
+  defaultType?: string;
+  defaultParentIssueId?: string | null;
+  parentIssueLabel?: string;
+  parentIssues?: CreateIssueParentIssue[];
+  allowedTypes?: string[];
 };
 
 export type CreateIssueUser = {
@@ -46,6 +52,14 @@ export type CreateIssueIteration = {
   endDate: string | Date;
 };
 
+export type CreateIssueParentIssue = {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  parentIssueId?: string | null;
+};
+
 type FormDataState = {
   title: string;
   description: string;
@@ -54,6 +68,7 @@ type FormDataState = {
   planId: string;
   iterationId: string;
   assigneeId: string;
+  parentIssueId: string;
   dueDate: string;
   attachments: { fileName: string; fileUrl: string; id: string }[];
 };
@@ -126,6 +141,11 @@ export default function CreateIssueModal({
   defaultPlanId,
   defaultIterationId,
   defaultDueDate,
+  defaultType,
+  defaultParentIssueId,
+  parentIssueLabel,
+  parentIssues = [],
+  allowedTypes,
 }: CreateIssueModalProps) {
   const [isPending, startTransition] = useTransition();
   const translations = getTranslations(locale);
@@ -136,11 +156,12 @@ export default function CreateIssueModal({
     return {
       title: "",
       description: "",
-      type: "TASK",
+      type: defaultType || allowedTypes?.[0] || "TASK",
       priority: "MEDIUM",
       planId: canManagePlans ? plans.find((plan) => plan.id === defaultPlanId)?.id || "" : "",
       iterationId: fallbackIteration?.id || "",
       assigneeId: "",
+      parentIssueId: defaultParentIssueId || "",
       dueDate: defaultDueDate || toDateInputValue(fallbackIteration?.endDate),
       attachments: [],
     };
@@ -273,6 +294,15 @@ export default function CreateIssueModal({
     { value: "STORY", label: getIssueTypeLabel("STORY", locale) },
     { value: "BUG", label: getIssueTypeLabel("BUG", locale) },
     { value: "EPIC", label: getIssueTypeLabel("EPIC", locale) },
+  ].filter((option) => !allowedTypes || allowedTypes.includes(option.value));
+  const parentIssueOptions: DropdownOption[] = [
+    { value: "", label: locale === "zh" ? "不关联父级" : "No parent" },
+    ...parentIssues
+      .filter((issue) => canNestIssueType(issue.type, formData.type))
+      .map((issue) => ({
+        value: issue.id,
+        label: `${issue.key} ${issue.title}`,
+      })),
   ];
   const planOptions: DropdownOption[] = [
     { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
@@ -296,6 +326,7 @@ export default function CreateIssueModal({
         description: formData.description,
         type: formData.type,
         priority: formData.priority,
+        parentIssueId: formData.parentIssueId || defaultParentIssueId || null,
         planId: canManagePlans ? formData.planId || null : null,
         iterationId: formData.iterationId || null,
         assigneeId: formData.assigneeId || null,
@@ -360,7 +391,16 @@ export default function CreateIssueModal({
                 id="type"
                 label={text.issueType}
                 value={formData.type}
-                onChange={(value) => setFormData((prev) => ({ ...prev, type: value }))}
+                onChange={(value) =>
+                  setFormData((prev) => {
+                    const selectedParent = parentIssues.find((issue) => issue.id === prev.parentIssueId);
+                    return {
+                      ...prev,
+                      type: value,
+                      parentIssueId: selectedParent && canNestIssueType(selectedParent.type, value) ? prev.parentIssueId : "",
+                    };
+                  })
+                }
                 options={typeOptions}
               />
               <SelectField
@@ -371,6 +411,23 @@ export default function CreateIssueModal({
                 options={priorityOptions}
               />
             </div>
+
+            {parentIssueLabel ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>{locale === "zh" ? "父级问题" : "Parent issue"}</Label>
+                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
+                  {parentIssueLabel}
+                </div>
+              </div>
+            ) : parentIssues.length > 0 ? (
+              <SelectField
+                id="parentIssue"
+                label={locale === "zh" ? "父级问题" : "Parent issue"}
+                value={formData.parentIssueId}
+                onChange={(value) => setFormData((prev) => ({ ...prev, parentIssueId: value }))}
+                options={parentIssueOptions}
+              />
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               {canManagePlans ? (

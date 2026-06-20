@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { Bug, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { deleteIssue, toggleIssueWatcher, updateIssue, updateIssueFieldValue } from "@/app/actions/issues";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
+import { canNestIssueType, getAllowedChildIssueTypes } from "@/lib/issueHierarchy";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -17,6 +19,9 @@ import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
+  getWorkflowStatusBadgeClass,
+  getWorkflowStatusName,
+  isDoneWorkflowStatus,
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
@@ -24,10 +29,13 @@ import ActivityLogSection from "./ActivityLogSection";
 import AlertPopup from "./AlertPopup";
 import AttachmentUpload from "./AttachmentUpload";
 import CommentSection from "./CommentSection";
+import CreateIssueModal from "./CreateIssueModal";
 import { DropdownField } from "./DropdownField";
 import LocalizedDateInput from "./LocalizedDateInput";
 import RichTextEditor, { type RichTextEditorHandle } from "./RichTextEditor";
 import ShadcnDatePicker from "./ShadcnDatePicker";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
 import { NumberInput } from "./ui/number-input";
 
 type IssueUser = {
@@ -41,6 +49,7 @@ type IssueUser = {
 type IssueIteration = {
   id: string;
   name: string;
+  endDate: string | Date;
 };
 
 type IssuePlan = {
@@ -56,6 +65,15 @@ type IssueRecord = {
   status: string;
   type: string;
   priority: string;
+  projectId: string;
+  parentIssueId: string | null;
+  parentIssue: {
+    id: string;
+    key: string;
+    title: string;
+    type: string;
+  } | null;
+  childIssues: ChildIssueRecord[];
   assigneeId: string | null;
   planId: string | null;
   iterationId: string | null;
@@ -70,6 +88,26 @@ type IssueRecord = {
   } | null;
   watchers: IssueUser[];
   issueFieldValues?: IssueFieldValue[];
+};
+
+type ChildIssueRecord = {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  status: string;
+  dueDate: string | Date | null;
+  assignee: {
+    name: string | null;
+  } | null;
+};
+
+type ParentIssueOption = {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  parentIssueId: string | null;
 };
 
 type IssueFieldDefinition = {
@@ -108,6 +146,7 @@ export default function IssueDetailClient({
   canManagePlans,
   issueFieldDefinitions = [],
   canManageIssueFields,
+  parentIssueOptions = [],
 }: {
   initialIssue: IssueRecord;
   users: IssueUser[];
@@ -121,6 +160,7 @@ export default function IssueDetailClient({
   canManagePlans: boolean;
   issueFieldDefinitions?: IssueFieldDefinition[];
   canManageIssueFields: boolean;
+  parentIssueOptions?: ParentIssueOption[];
 }) {
   const router = useRouter();
   const [issue, setIssue] = useState(initialIssue);
@@ -133,17 +173,78 @@ export default function IssueDetailClient({
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [draftDescription, setDraftDescription] = useState(initialIssue.description || "");
   const [isIssueFieldsExpanded, setIsIssueFieldsExpanded] = useState(true);
+  const [isChildModalOpen, setIsChildModalOpen] = useState(false);
+  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+  const [isParentDialogOpen, setIsParentDialogOpen] = useState(false);
+  const [parentSearch, setParentSearch] = useState("");
+  const [childModalKey, setChildModalKey] = useState(0);
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const translations = getTranslations(locale);
   const noPlanLabel = locale === "zh" ? "未设置计划" : "No plan";
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const noIssueFieldsLabel = locale === "zh" ? "暂无扩展字段" : "No custom fields";
+  const parentIssueLabel = locale === "zh" ? "父级问题" : "Parent issue";
+  const chooseParentIssueLabel = locale === "zh" ? "选择父级问题" : "Choose parent issue";
+  const searchParentIssuePlaceholder = locale === "zh" ? "搜索 key、标题或类型" : "Search key, title, or type";
+  const noParentCandidatesLabel = locale === "zh" ? "没有可关联的父级问题" : "No available parent issues";
+  const childIssuesLabel = locale === "zh" ? "子项" : "Child issues";
+  const addChildLabel = locale === "zh" ? "新增子项" : "Add child";
+  const addBugLabel = locale === "zh" ? "提缺陷" : "Report bug";
+  const noChildIssuesLabel = locale === "zh" ? "暂无子项" : "No child issues";
+  const childProgressLabel = locale === "zh" ? "完成率" : "Progress";
+  const overdueLabel = locale === "zh" ? "逾期" : "Overdue";
   const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
+  const allowedChildTypes = getAllowedChildIssueTypes(issue.type);
+  const canCreateChildIssues = allowedChildTypes.length > 0;
+  const parentIssueOptionById = useMemo(
+    () => new Map(parentIssueOptions.map((option) => [option.id, option] as const)),
+    [parentIssueOptions]
+  );
+  const isDescendantIssue = (candidate: ParentIssueOption) => {
+    let ancestorId = candidate.parentIssueId;
+    const visitedIds = new Set<string>([candidate.id]);
+
+    while (ancestorId) {
+      if (ancestorId === issue.id) return true;
+      if (visitedIds.has(ancestorId)) return true;
+      visitedIds.add(ancestorId);
+      ancestorId = parentIssueOptionById.get(ancestorId)?.parentIssueId || null;
+    }
+
+    return false;
+  };
+  const parentIssueCandidates = parentIssueOptions
+    .filter((candidate) => candidate.id !== issue.id)
+    .filter((candidate) => canNestIssueType(candidate.type, issue.type))
+    .filter((candidate) => !isDescendantIssue(candidate));
+  const filteredParentIssueCandidates = parentIssueCandidates.filter((candidate) => {
+    const query = parentSearch.trim().toLowerCase();
+    if (!query) return true;
+
+    return `${candidate.key} ${candidate.title} ${getIssueTypeLabel(candidate.type, locale)} ${candidate.type}`
+      .toLowerCase()
+      .includes(query);
+  });
+  const childDoneCount = issue.childIssues.filter((childIssue) => isDoneWorkflowStatus(childIssue.status, workflowStatuses)).length;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const overdueChildCount = issue.childIssues.filter((childIssue) => {
+    if (!childIssue.dueDate || isDoneWorkflowStatus(childIssue.status, workflowStatuses)) return false;
+    return new Date(childIssue.dueDate) < todayStart;
+  }).length;
+  const childProgress = issue.childIssues.length > 0 ? Math.round((childDoneCount / issue.childIssues.length) * 100) : 0;
+  const childModalParentLabel = `${issue.key} ${issue.title}`;
+  const defaultChildType = allowedChildTypes.includes("TASK") ? "TASK" : allowedChildTypes[0];
 
   const isWatching = useMemo(
     () => watchers.some((watcher) => watcher.id === currentUserId),
     [currentUserId, watchers]
   );
+
+  useEffect(() => {
+    setIssue(initialIssue);
+    setWatchers(initialIssue.watchers);
+  }, [initialIssue]);
 
   const statusOptions = useMemo(() => {
     const transitionMap = buildWorkflowTransitionMap(workflowTransitions, workflowStatuses);
@@ -214,13 +315,15 @@ export default function IssueDetailClient({
   };
 
   const handleAutoSave = <K extends keyof IssueRecord>(field: K, value: IssueRecord[K]) => {
+    const previousValue = issue[field];
     setIssue((prev) => ({ ...prev, [field]: value }));
     startTransition(async () => {
       const result = await updateIssue(issue.id, { [field]: value });
       if (result.success) {
         emitIssueActivityUpdated(issue.id);
       } else {
-        setAlertMessage(translations.issueDetail.failedToSave);
+        setIssue((prev) => ({ ...prev, [field]: previousValue }));
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
       }
     });
   };
@@ -304,6 +407,71 @@ export default function IssueDetailClient({
     }
   };
 
+  const openChildModal = () => {
+    setChildModalKey((value) => value + 1);
+    setIsChildModalOpen(true);
+  };
+
+  const closeChildModal = () => {
+    setIsChildModalOpen(false);
+    router.refresh();
+  };
+
+  const openBugModal = () => {
+    setChildModalKey((value) => value + 1);
+    setIsBugModalOpen(true);
+  };
+
+  const closeBugModal = () => {
+    setIsBugModalOpen(false);
+    router.refresh();
+  };
+
+  const clearParentIssue = () => {
+    const previousParentIssue = issue.parentIssue;
+    setIssue((prev) => ({ ...prev, parentIssueId: null, parentIssue: null }));
+    startTransition(async () => {
+      const result = await updateIssue(issue.id, { parentIssueId: null });
+      if (result.success) {
+        emitIssueActivityUpdated(issue.id);
+        router.refresh();
+      } else {
+        setIssue((prev) => ({ ...prev, parentIssueId: previousParentIssue?.id || null, parentIssue: previousParentIssue }));
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
+  const handleParentIssueChange = (parentIssueId: string) => {
+    const previousParentIssue = issue.parentIssue;
+    const previousParentIssueId = issue.parentIssueId;
+    const selectedParentIssue = parentIssueId ? parentIssueOptionById.get(parentIssueId) || null : null;
+    const nextParentIssue = selectedParentIssue
+      ? {
+          id: selectedParentIssue.id,
+          key: selectedParentIssue.key,
+          title: selectedParentIssue.title,
+          type: selectedParentIssue.type,
+        }
+      : null;
+
+    setIssue((prev) => ({ ...prev, parentIssueId: parentIssueId || null, parentIssue: nextParentIssue }));
+    startTransition(async () => {
+      const result = await updateIssue(issue.id, { parentIssueId: parentIssueId || null });
+      if (result.success) {
+        emitIssueActivityUpdated(issue.id);
+        router.refresh();
+      } else {
+        setIssue((prev) => ({
+          ...prev,
+          parentIssueId: previousParentIssueId,
+          parentIssue: previousParentIssue,
+        }));
+        setAlertMessage(result.error || translations.issueDetail.failedToSave);
+      }
+    });
+  };
+
   const handleStartEditingDescription = () => {
     setDraftDescription(issue.description || "");
     setIsEditingDescription(true);
@@ -330,6 +498,7 @@ export default function IssueDetailClient({
   };
 
   return (
+    <>
     <div className="flex flex-col gap-8 rounded-xl border bg-white p-6 shadow-sm md:p-8 lg:flex-row">
       <div className="flex-1 space-y-6">
         <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
@@ -471,6 +640,141 @@ export default function IssueDetailClient({
                 currentUserId={currentUserId}
                 readOnly
               />
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setParentSearch("");
+                  setIsParentDialogOpen(true);
+                }}
+                className="text-xs font-semibold uppercase tracking-wide text-slate-500 transition-colors hover:text-slate-800"
+              >
+                {parentIssueLabel}
+              </button>
+              {issue.parentIssue ? (
+                <button
+                  type="button"
+                  onClick={clearParentIssue}
+                  className="text-xs font-semibold text-slate-500 transition-colors hover:text-red-600"
+                >
+                  {locale === "zh" ? "清空" : "Clear"}
+                </button>
+              ) : null}
+            </div>
+            {issue.parentIssue ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Link href={`/issues/${issue.parentIssue.id}`} className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm font-semibold text-slate-800 hover:text-primary hover:underline">
+                  <span className="shrink-0 text-slate-500">{issue.parentIssue.key}</span>
+                  <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                    {getIssueTypeLabel(issue.parentIssue.type, locale)}
+                  </span>
+                  <span className="truncate">{issue.parentIssue.title}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setParentSearch("");
+                    setIsParentDialogOpen(true);
+                  }}
+                  className="text-xs font-semibold text-slate-500 transition-colors hover:text-slate-800"
+                >
+                  {locale === "zh" ? "更换" : "Change"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setParentSearch("");
+                  setIsParentDialogOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900"
+              >
+                <Plus size={14} />
+                {parentIssueLabel}
+              </button>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">{childIssuesLabel}</h3>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-slate-500">
+                  <span>{issue.childIssues.length}</span>
+                  <span>{childProgressLabel}: {childProgress}%</span>
+                  <span>{childDoneCount}/{issue.childIssues.length}</span>
+                  <span>{overdueLabel}: {overdueChildCount}</span>
+                </div>
+              </div>
+              {canCreateChildIssues ? (
+                <div className="flex flex-wrap gap-2">
+                  {allowedChildTypes.includes("BUG") ? (
+                    <button
+                      type="button"
+                      onClick={openBugModal}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                    >
+                      <Bug size={14} />
+                      {addBugLabel}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={openChildModal}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                  >
+                    <Plus size={14} />
+                    {addChildLabel}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {issue.childIssues.length > 0 ? (
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="h-1 bg-slate-100">
+                  <div className="h-full bg-emerald-500" style={{ width: `${childProgress}%` }} />
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {issue.childIssues.map((childIssue) => (
+                    <Link
+                      key={childIssue.id}
+                      href={`/issues/${childIssue.id}`}
+                      className="grid gap-2 px-4 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_120px_120px]"
+                    >
+                      <div className="min-w-0">
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-500">{childIssue.key}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                            {getIssueTypeLabel(childIssue.type, locale)}
+                          </span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${getWorkflowStatusBadgeClass(childIssue.status, workflowStatuses)}`}>
+                            {getWorkflowStatusName(childIssue.status, workflowStatuses, locale)}
+                          </span>
+                        </div>
+                        <div className="truncate text-sm font-semibold text-slate-800">{childIssue.title}</div>
+                      </div>
+                      <div className="text-sm font-medium text-slate-600 md:text-right">
+                        {childIssue.assignee?.name || translations.issueList.unassigned}
+                      </div>
+                      <div className="text-sm font-medium text-slate-500 md:text-right">
+                        {childIssue.dueDate ? new Date(childIssue.dueDate).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US") : ""}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                {noChildIssuesLabel}
+              </div>
             )}
           </div>
         </div>
@@ -767,5 +1071,99 @@ export default function IssueDetailClient({
         </div>
       </div>
     </div>
+    {canCreateChildIssues ? (
+      <CreateIssueModal
+        key={`child-${childModalKey}`}
+        isOpen={isChildModalOpen}
+        onClose={closeChildModal}
+        users={users}
+        plans={plans}
+        iterations={iterations}
+        locale={locale}
+        currentUserId={currentUserId}
+        canManagePlans={canManagePlans}
+        defaultParentIssueId={issue.id}
+        parentIssueLabel={childModalParentLabel}
+        defaultType={defaultChildType}
+        allowedTypes={allowedChildTypes}
+      />
+    ) : null}
+    {allowedChildTypes.includes("BUG") ? (
+      <CreateIssueModal
+        key={`bug-${childModalKey}`}
+        isOpen={isBugModalOpen}
+        onClose={closeBugModal}
+        users={users}
+        plans={plans}
+        iterations={iterations}
+        locale={locale}
+        currentUserId={currentUserId}
+        canManagePlans={canManagePlans}
+        defaultParentIssueId={issue.id}
+        parentIssueLabel={childModalParentLabel}
+        defaultType="BUG"
+        allowedTypes={["BUG"]}
+      />
+    ) : null}
+    <Dialog open={isParentDialogOpen} onOpenChange={setIsParentDialogOpen}>
+      <DialogContent className="flex max-h-[82vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b px-6 py-4">
+          <DialogTitle>{chooseParentIssueLabel}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {searchParentIssuePlaceholder}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="border-b px-6 py-4">
+          <Input
+            value={parentSearch}
+            onChange={(event) => setParentSearch(event.target.value)}
+            placeholder={searchParentIssuePlaceholder}
+            autoFocus
+          />
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {filteredParentIssueCandidates.length > 0 ? (
+            <div className="divide-y rounded-md border">
+              {filteredParentIssueCandidates.map((candidate) => {
+                const isSelected = candidate.id === issue.parentIssueId;
+                return (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    onClick={() => {
+                      handleParentIssueChange(candidate.id);
+                      setIsParentDialogOpen(false);
+                    }}
+                    className={`flex w-full min-w-0 flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
+                      isSelected ? "bg-blue-50" : "bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-muted-foreground">{candidate.key}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
+                        {getIssueTypeLabel(candidate.type, locale)}
+                      </span>
+                      {isSelected ? (
+                        <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                          {locale === "zh" ? "当前父级" : "Current"}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="truncate text-sm font-semibold text-foreground">{candidate.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex min-h-[180px] items-center justify-center rounded-md border border-dashed px-4 text-center text-sm font-medium text-muted-foreground">
+              {noParentCandidatesLabel}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

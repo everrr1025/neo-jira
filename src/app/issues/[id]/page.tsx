@@ -62,6 +62,30 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
           name: "asc",
         },
       },
+      parentIssue: {
+        select: {
+          id: true,
+          key: true,
+          title: true,
+          type: true,
+        },
+      },
+      childIssues: {
+        select: {
+          id: true,
+          key: true,
+          title: true,
+          type: true,
+          status: true,
+          dueDate: true,
+          assignee: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: "asc" }, { key: "asc" }],
+      },
       issueFieldValues: {
         select: {
           id: true,
@@ -107,6 +131,17 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
     where: { projectId: issue.projectId },
     orderBy: { position: "asc" },
   });
+  const parentIssueOptions = await prisma.issue.findMany({
+    where: { projectId: issue.projectId },
+    select: {
+      id: true,
+      key: true,
+      title: true,
+      type: true,
+      parentIssueId: true,
+    },
+    orderBy: [{ createdAt: "desc" }, { key: "asc" }],
+  });
 
   const role = await getProjectRole(userId, issue.projectId);
   const canDeleteIssue = role === "ADMIN";
@@ -131,6 +166,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
         canManagePlans={canDeleteIssue}
         issueFieldDefinitions={issueFieldDefinitions}
         canManageIssueFields={canManageIssueFields}
+        parentIssueOptions={parentIssueOptions}
       />
     </div>
   );

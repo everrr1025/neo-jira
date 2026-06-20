@@ -89,6 +89,25 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
       },
       reporter: true,
       iteration: true,
+      parentIssue: {
+        select: {
+          id: true,
+          key: true,
+          title: true,
+          type: true,
+        },
+      },
+      childIssues: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+      _count: {
+        select: {
+          childIssues: true,
+        },
+      },
       watchers: {
         select: { id: true },
       },
@@ -124,6 +143,17 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+  const parentIssues = await prisma.issue.findMany({
+    where: { projectId: activeProject.id },
+    select: {
+      id: true,
+      key: true,
+      title: true,
+      type: true,
+      parentIssueId: true,
+    },
+    orderBy: [{ createdAt: "desc" }, { key: "asc" }],
+  });
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -141,6 +171,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
               locale={locale}
               currentUserId={userId}
               canManagePlans={canManagePlans}
+              parentIssues={parentIssues}
             />
           ) : null}
         </div>

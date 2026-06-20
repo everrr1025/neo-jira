@@ -15,7 +15,7 @@ import {
 } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
 import CreateIssueButton from "./CreateIssueButton";
-import { type CreateIssueIteration, type CreateIssuePlan, type CreateIssueUser } from "./CreateIssueModal";
+import { type CreateIssueIteration, type CreateIssueParentIssue, type CreateIssuePlan, type CreateIssueUser } from "./CreateIssueModal";
 import {
   getWorkflowStatusBadgeClass,
   getWorkflowStatusName,
@@ -42,6 +42,7 @@ type AddExistingIssuesButtonProps = {
   users: CreateIssueUser[];
   plans: CreateIssuePlan[];
   iterations: CreateIssueIteration[];
+  parentIssues?: CreateIssueParentIssue[];
   currentUserId?: string;
   defaultDueDate?: string;
 };
@@ -55,6 +56,7 @@ export default function AddExistingIssuesButton({
   users,
   plans,
   iterations,
+  parentIssues = [],
   currentUserId,
   defaultDueDate,
 }: AddExistingIssuesButtonProps) {
@@ -258,6 +260,7 @@ export default function AddExistingIssuesButton({
                   locale={locale}
                   currentUserId={currentUserId}
                   canManagePlans
+                  parentIssues={parentIssues}
                   defaultIterationId={sprintId}
                   defaultDueDate={defaultDueDate}
                 />
