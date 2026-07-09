@@ -20,13 +20,11 @@ const PLAN_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT", "D
 type PlanFieldType = (typeof PLAN_FIELD_TYPES)[number];
 
 function normalizeFieldKey(input: string) {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_\-\s]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .slice(0, 40);
+  return input.trim().slice(0, 40);
+}
+
+function isValidFieldKey(input: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(input);
 }
 
 function parseSelectOptions(optionsText?: string) {
@@ -36,6 +34,17 @@ function parseSelectOptions(optionsText?: string) {
     .filter(Boolean);
 
   return [...new Set(options)];
+}
+
+function parseStoredSelectOptions(optionsJson?: string | null) {
+  if (!optionsJson) return [];
+
+  try {
+    const parsed = JSON.parse(optionsJson);
+    return Array.isArray(parsed) ? parsed.filter((option): option is string => typeof option === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function assertPlanFieldType(type: string): asserts type is PlanFieldType {
@@ -302,10 +311,24 @@ export async function createPlanFieldDefinition(data: {
 
     const key = normalizeFieldKey(data.key || "");
     if (!key) throw new Error("Field key is required");
+    if (!isValidFieldKey(key)) {
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "标识只能包含字母、数字和下划线，且不能以数字开头" : "Field key can only contain letters, numbers, and underscores, and cannot start with a number");
+    }
+
+    const existingField = await prisma.planFieldDefinition.findFirst({
+      where: { planId: plan.id, key },
+      select: { id: true },
+    });
+    if (existingField) {
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "标识已存在" : "Field key already exists");
+    }
 
     const options = parseSelectOptions(data.optionsText);
     if (data.type === "SELECT" && options.length === 0) {
-      throw new Error("Select fields require at least one option");
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "下拉选择至少需要一个选项" : "Select fields require at least one option");
     }
 
     const lastField = await prisma.planFieldDefinition.findFirst({
@@ -345,7 +368,7 @@ export async function updatePlanFieldDefinition(data: {
     const plan = await getAuthorizedPlan(data.planId, "fieldConfig");
     const existing = await prisma.planFieldDefinition.findFirst({
       where: { id: data.id, planId: plan.id },
-      select: { id: true, type: true },
+      select: { id: true, type: true, optionsJson: true },
     });
 
     if (!existing) throw new Error("Field not found");
@@ -355,7 +378,15 @@ export async function updatePlanFieldDefinition(data: {
 
     const options = parseSelectOptions(data.optionsText);
     if (existing.type === "SELECT" && options.length === 0) {
-      throw new Error("Select fields require at least one option");
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "下拉选择至少需要一个选项" : "Select fields require at least one option");
+    }
+    if (existing.type === "SELECT") {
+      const existingOptions = parseStoredSelectOptions(existing.optionsJson);
+      if (existingOptions.some((option, index) => options[index] !== option)) {
+        const locale = await getCurrentLocale();
+        throw new Error(locale === "zh" ? "已有选项不可删除或重命名，只能追加新选项" : "Existing options cannot be deleted or renamed. You can only add new options.");
+      }
     }
 
     const field = await prisma.planFieldDefinition.update({

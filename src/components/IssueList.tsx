@@ -20,12 +20,14 @@ import {
   bulkUpdateIssues,
   createIssueFieldDefinition,
   deleteIssueFieldDefinition,
+  updateIssueFieldDefinition,
   updateIssue,
   updateIssueFieldValue,
 } from "@/app/actions/issues";
 import {
   createPlanFieldDefinition,
   deletePlanFieldDefinition,
+  updatePlanFieldDefinition,
   updatePlanIssueFieldValue,
 } from "@/app/actions/plans";
 import { Button } from "@/components/ui/button";
@@ -171,8 +173,29 @@ const DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH = 80;
 const DATE_FIELD_INPUT_WIDTH = 180;
 const TABLE_CELL_HORIZONTAL_PADDING = 40;
 const DATE_FIELD_COLUMN_MIN_WIDTH = DATE_FIELD_INPUT_WIDTH + TABLE_CELL_HORIZONTAL_PADDING;
+const INLINE_SELECT_MAX_MENU_HEIGHT = 340;
+const INLINE_SELECT_MIN_MENU_HEIGHT = 120;
 const issueListCheckboxClassName =
   "size-4 shrink-0 rounded-sm border border-input accent-primary transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+
+function normalizeFieldKeyInput(input: string) {
+  return input.trim().slice(0, 40);
+}
+
+function isValidFieldKeyInput(input: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(input);
+}
+
+function parseSelectOptionsInput(input: string) {
+  return input
+    .split(/[,\s，]+/)
+    .map((option) => option.trim())
+    .filter(Boolean);
+}
+
+function hasSelectOptionsInput(input: string) {
+  return parseSelectOptionsInput(input).length > 0;
+}
 
 const TYPE_ORDER: Record<string, number> = {
   EPIC: 1,
@@ -674,21 +697,29 @@ function InlineSelect({
     bottom?: number;
     left: number;
     width: number;
+    maxHeight: number;
     openingUpward: boolean;
-  }>({ left: 0, width: 0, openingUpward: false });
+  }>({ left: 0, width: 0, maxHeight: INLINE_SELECT_MAX_MENU_HEIGHT, openingUpward: false });
 
   const updateMenuPosition = useCallback(() => {
     const rect = summaryRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     const spaceBelow = window.innerHeight - rect.bottom;
-    const openingUpward = spaceBelow < 280;
+    const spaceAbove = rect.top;
+    const openingUpward = spaceBelow < 280 && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(
+      INLINE_SELECT_MIN_MENU_HEIGHT,
+      Math.floor((openingUpward ? spaceAbove : spaceBelow) - 16)
+    );
+    const maxHeight = Math.min(INLINE_SELECT_MAX_MENU_HEIGHT, availableHeight);
 
     if (openingUpward) {
       setMenuPosition({
         bottom: window.innerHeight - rect.top + 8,
         left: rect.left,
         width: rect.width,
+        maxHeight,
         openingUpward: true,
       });
     } else {
@@ -696,6 +727,7 @@ function InlineSelect({
         top: rect.bottom + 8,
         left: rect.left,
         width: rect.width,
+        maxHeight,
         openingUpward: false,
       });
     }
@@ -747,12 +779,13 @@ function InlineSelect({
       </summary>
       {isOpen && (
         <div
-          className="fixed z-50 flex max-w-56 flex-col gap-1 rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl"
+          className="fixed z-50 flex max-w-56 flex-col gap-1 overflow-y-auto rounded-lg border bg-popover p-2 text-popover-foreground shadow-xl"
           style={{
             top: menuPosition.top,
             bottom: menuPosition.bottom,
             left: menuPosition.left,
             minWidth: menuPosition.width,
+            maxHeight: menuPosition.maxHeight,
           }}
         >
           {options.map((option) => (
@@ -952,13 +985,20 @@ export default function IssueList({
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const fieldManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const addFieldLabel = locale === "zh" ? "添加" : "Add field";
-  const fieldNameLabel = locale === "zh" ? "字段名称" : "Field name";
-  const fieldKeyLabel = locale === "zh" ? "字段标识" : "Field key";
-  const fieldTypeLabel = locale === "zh" ? "字段类型" : "Field type";
-  const fieldOptionsLabel = locale === "zh" ? "下拉选项" : "Select options";
+  const fieldNameLabel = locale === "zh" ? "名称" : "Field name";
+  const fieldKeyLabel = locale === "zh" ? "标识" : "Field key";
+  const fieldTypeLabel = locale === "zh" ? "类型" : "Field type";
+  const fieldOptionsLabel = locale === "zh" ? "选项" : "Select options";
+  const fieldNewOptionsLabel = locale === "zh" ? "新增选项" : "New options";
   const fieldOptionsPlaceholder = locale === "zh" ? "用逗号或者空格分隔" : "Separate with commas or spaces";
+  const fieldKeyInvalidLabel = locale === "zh" ? "标识只能包含字母、数字和下划线，且不能以数字开头" : "Field key can only contain letters, numbers, and underscores, and cannot start with a number";
+  const fieldKeyExistsLabel = locale === "zh" ? "标识已存在" : "Field key already exists";
+  const fieldOptionsRequiredLabel = locale === "zh" ? "下拉选择至少需要一个选项" : "Select fields require at least one option";
   const noFieldsLabel = locale === "zh" ? "还没有配置扩展列" : "No custom fields yet";
   const saveFailedLabel = locale === "zh" ? "保存失败" : "Save failed";
+  const saveLabel = locale === "zh" ? "保存" : "Save";
+  const cancelLabel = locale === "zh" ? "取消" : "Cancel";
+  const editFieldLabel = locale === "zh" ? "编辑字段" : "Edit field";
   const deleteFieldLabel = locale === "zh" ? "删除字段" : "Delete field";
   const closeLabel = locale === "zh" ? "关闭" : "Close";
   const fieldTypeOptions = useMemo<FilterOption[]>(
@@ -1058,13 +1098,36 @@ export default function IssueList({
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeFieldManager, setActiveFieldManager] = useState<"issue" | "plan" | null>(null);
+  const fieldManagerScrollRef = useRef<HTMLDivElement>(null);
   const [fieldForm, setFieldForm] = useState({
     name: "",
     key: "",
     type: "BOOLEAN" as PlanFieldType,
     optionsText: "",
   });
+  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editFieldForm, setEditFieldForm] = useState({
+    name: "",
+    key: "",
+    type: "BOOLEAN" as PlanFieldType,
+    newOptionsText: "",
+  });
   const [fieldManagerError, setFieldManagerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeFieldManager) return;
+
+    setEditingFieldId(null);
+    setFieldManagerError(null);
+    const frameId = requestAnimationFrame(() => {
+      const scrollContainer = fieldManagerScrollRef.current;
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [activeFieldManager]);
 
   const [, startTransition] = useTransition();
   const columnStorageKey = useMemo(
@@ -1797,11 +1860,25 @@ export default function IssueList({
     if (!lockedPlanId) return;
 
     setFieldManagerError(null);
+    const key = normalizeFieldKeyInput(fieldForm.key);
+    if (!isValidFieldKeyInput(key)) {
+      setFieldManagerError(fieldKeyInvalidLabel);
+      return;
+    }
+    if (planFields.some((field) => field.key === key)) {
+      setFieldManagerError(fieldKeyExistsLabel);
+      return;
+    }
+    if (fieldForm.type === "SELECT" && !hasSelectOptionsInput(fieldForm.optionsText)) {
+      setFieldManagerError(fieldOptionsRequiredLabel);
+      return;
+    }
+
     startTransition(async () => {
       const result = await createPlanFieldDefinition({
         planId: lockedPlanId,
         name: fieldForm.name,
-        key: fieldForm.key,
+        key,
         type: fieldForm.type,
         optionsText: fieldForm.optionsText,
       });
@@ -1820,11 +1897,25 @@ export default function IssueList({
     event.preventDefault();
 
     setFieldManagerError(null);
+    const key = normalizeFieldKeyInput(fieldForm.key);
+    if (!isValidFieldKeyInput(key)) {
+      setFieldManagerError(fieldKeyInvalidLabel);
+      return;
+    }
+    if (issueFields.some((field) => field.key === key)) {
+      setFieldManagerError(fieldKeyExistsLabel);
+      return;
+    }
+    if (fieldForm.type === "SELECT" && !hasSelectOptionsInput(fieldForm.optionsText)) {
+      setFieldManagerError(fieldOptionsRequiredLabel);
+      return;
+    }
+
     startTransition(async () => {
       const result = await createIssueFieldDefinition({
         projectId: activeProjectId,
         name: fieldForm.name,
-        key: fieldForm.key,
+        key,
         type: fieldForm.type,
         optionsText: fieldForm.optionsText,
       });
@@ -1836,6 +1927,73 @@ export default function IssueList({
 
       setIssueFields((current) => [...current, result.field as IssueFieldDefinition].sort((a, b) => a.position - b.position));
       setFieldForm({ name: "", key: "", type: "BOOLEAN", optionsText: "" });
+    });
+  };
+
+  const handleStartEditField = (field: CustomFieldDefinition) => {
+    setFieldManagerError(null);
+    setEditingFieldId(field.id);
+    setEditFieldForm({
+      name: field.name,
+      key: field.key,
+      type: field.type as PlanFieldType,
+      newOptionsText: "",
+    });
+  };
+
+  const handleCancelEditField = () => {
+    setFieldManagerError(null);
+    setEditingFieldId(null);
+  };
+
+  const handleUpdateField = (event: React.FormEvent<HTMLFormElement>, field: CustomFieldDefinition) => {
+    event.preventDefault();
+
+    setFieldManagerError(null);
+    const existingOptions = getFieldOptions(field);
+    const newOptions = parseSelectOptionsInput(editFieldForm.newOptionsText);
+    const nextOptionsText = [...existingOptions, ...newOptions].join(", ");
+    if (editFieldForm.type === "SELECT" && existingOptions.length === 0 && newOptions.length === 0) {
+      setFieldManagerError(fieldOptionsRequiredLabel);
+      return;
+    }
+
+    startTransition(async () => {
+      const result =
+        activeFieldManager === "issue"
+          ? await updateIssueFieldDefinition({
+              id: field.id,
+              projectId: activeProjectId,
+              name: editFieldForm.name,
+              required: field.required,
+              optionsText: nextOptionsText,
+            })
+          : lockedPlanId
+            ? await updatePlanFieldDefinition({
+                id: field.id,
+                planId: lockedPlanId,
+                name: editFieldForm.name,
+                required: field.required,
+                optionsText: nextOptionsText,
+              })
+            : { success: false, error: saveFailedLabel };
+
+      if (!result.success || !result.field) {
+        setFieldManagerError(result.error || saveFailedLabel);
+        return;
+      }
+
+      if (activeFieldManager === "issue") {
+        setIssueFields((current) =>
+          current.map((item) => (item.id === result.field.id ? (result.field as IssueFieldDefinition) : item))
+        );
+      } else {
+        setPlanFields((current) =>
+          current.map((item) => (item.id === result.field.id ? (result.field as PlanFieldDefinition) : item))
+        );
+      }
+
+      setEditingFieldId(null);
     });
   };
 
@@ -1853,6 +2011,9 @@ export default function IssueList({
       }
 
       setPlanFields((current) => current.filter((item) => item.id !== field.id));
+      if (editingFieldId === field.id) {
+        setEditingFieldId(null);
+      }
       setIssues((current) =>
         current.map((issue) => ({
           ...issue,
@@ -1875,6 +2036,9 @@ export default function IssueList({
       }
 
       setIssueFields((current) => current.filter((item) => item.id !== field.id));
+      if (editingFieldId === field.id) {
+        setEditingFieldId(null);
+      }
       setIssues((current) =>
         current.map((issue) => ({
           ...issue,
@@ -2872,7 +3036,7 @@ export default function IssueList({
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-y-auto p-5">
+            <div ref={fieldManagerScrollRef} className="max-h-[70vh] overflow-y-auto p-5">
               <div className="space-y-2">
                 {activeManagerFields.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
@@ -2880,39 +3044,130 @@ export default function IssueList({
                   </div>
                 ) : (
                   activeManagerFields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-slate-800">{field.name}</span>
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
-                            {field.type}
-                          </span>
+                    <div key={field.id} className="rounded-lg border border-slate-200 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-slate-800">{field.name}</span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-500">
+                              {field.type}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-slate-400">{field.key}</div>
                         </div>
-                        <div className="mt-0.5 truncate text-xs text-slate-400">{field.key}</div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditField(field)}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            aria-label={editFieldLabel}
+                            title={editFieldLabel}
+                          >
+                            <Settings2 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              activeFieldManager === "issue"
+                                ? handleDeleteIssueField(field as IssueFieldDefinition)
+                                : handleDeletePlanField(field as PlanFieldDefinition)
+                            }
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            aria-label={deleteFieldLabel}
+                            title={deleteFieldLabel}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          activeFieldManager === "issue"
-                            ? handleDeleteIssueField(field as IssueFieldDefinition)
-                            : handleDeletePlanField(field as PlanFieldDefinition)
-                        }
-                        className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                        aria-label={deleteFieldLabel}
-                        title={deleteFieldLabel}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+
+                      {editingFieldId === field.id ? (
+                        <form onSubmit={(event) => handleUpdateField(event, field)} className="mt-3 border-t border-slate-100 pt-3">
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <label className="space-y-1 text-sm">
+                              <span className="font-medium text-slate-600">{fieldNameLabel}</span>
+                              <input
+                                type="text"
+                                value={editFieldForm.name}
+                                onChange={(event) => {
+                                  setFieldManagerError(null);
+                                  setEditFieldForm((current) => ({ ...current, name: event.target.value }));
+                                }}
+                                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
+                                required
+                              />
+                            </label>
+                            <label className="space-y-1 text-sm">
+                              <span className="font-medium text-slate-600">{fieldKeyLabel}</span>
+                              <input
+                                type="text"
+                                value={editFieldForm.key}
+                                disabled
+                                className="h-9 w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-500"
+                              />
+                            </label>
+                            <label className="space-y-1 text-sm">
+                              <span className="font-medium text-slate-600">{fieldTypeLabel}</span>
+                              <input
+                                type="text"
+                                value={fieldTypeOptions.find((option) => option.value === editFieldForm.type)?.label || editFieldForm.type}
+                                disabled
+                                className="h-9 w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-500"
+                              />
+                            </label>
+                            {editFieldForm.type === "SELECT" ? (
+                              <>
+                                <label className="space-y-1 text-sm md:col-span-3">
+                                  <span className="font-medium text-slate-600">{fieldOptionsLabel}</span>
+                                  <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-2">
+                                    {getFieldOptions(field).map((option) => (
+                                      <span key={option} className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-500">
+                                        {option}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </label>
+                                <label className="space-y-1 text-sm md:col-span-3">
+                                  <span className="font-medium text-slate-600">{fieldNewOptionsLabel}</span>
+                                  <input
+                                    type="text"
+                                    value={editFieldForm.newOptionsText}
+                                    onChange={(event) => {
+                                      setFieldManagerError(null);
+                                      setEditFieldForm((current) => ({ ...current, newOptionsText: event.target.value }));
+                                    }}
+                                    className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
+                                    placeholder={fieldOptionsPlaceholder}
+                                  />
+                                </label>
+                              </>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditField}
+                              className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                            >
+                              {cancelLabel}
+                            </button>
+                            <button
+                              type="submit"
+                              className="inline-flex h-8 items-center rounded-md bg-slate-900 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+                            >
+                              {saveLabel}
+                            </button>
+                          </div>
+                          {fieldManagerError ? <p className="mt-3 text-sm text-red-600">{fieldManagerError}</p> : null}
+                        </form>
+                      ) : null}
                     </div>
                   ))
                 )}
               </div>
 
               <form onSubmit={activeManagerSubmit} className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-3">
                   <label className="space-y-1 text-sm">
                     <span className="font-medium text-slate-600">{fieldNameLabel}</span>
                     <input
@@ -2928,33 +3183,56 @@ export default function IssueList({
                     <input
                       type="text"
                       value={fieldForm.key}
-                      onChange={(event) => setFieldForm((current) => ({ ...current, key: event.target.value }))}
+                      onChange={(event) => {
+                        setFieldManagerError(null);
+                        setFieldForm((current) => ({ ...current, key: event.target.value }));
+                      }}
                       className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
                       placeholder="api_count"
+                      pattern="[A-Za-z_][A-Za-z0-9_]*"
+                      maxLength={40}
+                      title={fieldKeyInvalidLabel}
                       required
                     />
                   </label>
-                  <DropdownField
-                    id="plan-field-type"
-                    label={fieldTypeLabel}
-                    value={fieldForm.type}
-                    onChange={(value) => setFieldForm((current) => ({ ...current, type: value as PlanFieldType }))}
-                    options={fieldTypeOptions}
-                  />
+                  <label className="space-y-1 text-sm">
+                    <span className="font-medium text-slate-600">{fieldTypeLabel}</span>
+                    <Select
+                      value={fieldForm.type}
+                      onValueChange={(value) => {
+                        setFieldManagerError(null);
+                        setFieldForm((current) => ({ ...current, type: value as PlanFieldType }));
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-full border-slate-200 bg-white text-slate-700">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fieldTypeOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
                   {fieldForm.type === "SELECT" ? (
-                    <label className="space-y-1 text-sm">
+                    <label className="space-y-1 text-sm md:col-span-3">
                       <span className="font-medium text-slate-600">{fieldOptionsLabel}</span>
                       <input
                         type="text"
                         value={fieldForm.optionsText}
-                        onChange={(event) => setFieldForm((current) => ({ ...current, optionsText: event.target.value }))}
+                        onChange={(event) => {
+                          setFieldManagerError(null);
+                          setFieldForm((current) => ({ ...current, optionsText: event.target.value }));
+                        }}
                         className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-500"
                         placeholder={fieldOptionsPlaceholder}
                       />
                     </label>
                   ) : null}
                 </div>
-                {fieldManagerError ? <p className="mt-3 text-sm text-red-600">{fieldManagerError}</p> : null}
+                {!editingFieldId && fieldManagerError ? <p className="mt-3 text-sm text-red-600">{fieldManagerError}</p> : null}
                 <div className="mt-4 flex justify-end">
                   <button
                     type="submit"

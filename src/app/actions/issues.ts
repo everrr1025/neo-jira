@@ -33,13 +33,11 @@ const ISSUE_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT", "
 type IssueFieldType = (typeof ISSUE_FIELD_TYPES)[number];
 
 function normalizeFieldKey(input: string) {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_\-\s]/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .slice(0, 40);
+  return input.trim().slice(0, 40);
+}
+
+function isValidFieldKey(input: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(input);
 }
 
 function parseSelectOptions(optionsText?: string) {
@@ -49,6 +47,17 @@ function parseSelectOptions(optionsText?: string) {
     .filter(Boolean);
 
   return [...new Set(options)];
+}
+
+function parseStoredSelectOptions(optionsJson?: string | null) {
+  if (!optionsJson) return [];
+
+  try {
+    const parsed = JSON.parse(optionsJson);
+    return Array.isArray(parsed) ? parsed.filter((option): option is string => typeof option === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function assertIssueFieldType(type: string): asserts type is IssueFieldType {
@@ -717,10 +726,24 @@ export async function createIssueFieldDefinition(data: {
 
     const key = normalizeFieldKey(data.key || "");
     if (!key) throw new Error("Field key is required");
+    if (!isValidFieldKey(key)) {
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "标识只能包含字母、数字和下划线，且不能以数字开头" : "Field key can only contain letters, numbers, and underscores, and cannot start with a number");
+    }
+
+    const existingField = await prisma.issueFieldDefinition.findFirst({
+      where: { projectId: data.projectId, key },
+      select: { id: true },
+    });
+    if (existingField) {
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "标识已存在" : "Field key already exists");
+    }
 
     const options = parseSelectOptions(data.optionsText);
     if (data.type === "SELECT" && options.length === 0) {
-      throw new Error("Select fields require at least one option");
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "下拉选择至少需要一个选项" : "Select fields require at least one option");
     }
 
     const lastField = await prisma.issueFieldDefinition.findFirst({
@@ -746,6 +769,69 @@ export async function createIssueFieldDefinition(data: {
   } catch (error: unknown) {
     console.error("Failed to create issue field:", error);
     return { success: false, error: error instanceof Error ? error.message : "Failed to create issue field" };
+  }
+}
+
+export async function updateIssueFieldDefinition(data: {
+  id: string;
+  projectId: string;
+  name: string;
+  required?: boolean;
+  optionsText?: string;
+}) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) throw new Error("Unauthorized");
+
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
+    if (!userId) throw new Error("Unauthorized");
+
+    const userRole = sessionUser.role ?? "USER";
+    const activeProject = await getActiveProjectForUser(userId, userRole);
+    if (!isProjectInActiveContext({ activeProjectId: activeProject?.id || null, projectId: data.projectId })) {
+      throw new Error("Unauthorized");
+    }
+
+    await checkProjectFieldConfig(data.projectId);
+
+    const existing = await prisma.issueFieldDefinition.findFirst({
+      where: { id: data.id, projectId: data.projectId },
+      select: { id: true, type: true, required: true, optionsJson: true },
+    });
+
+    if (!existing) throw new Error("Field not found");
+
+    const name = data.name.trim();
+    if (!name) throw new Error("Field name is required");
+
+    const options = parseSelectOptions(data.optionsText);
+    if (existing.type === "SELECT" && options.length === 0) {
+      const locale = await getCurrentLocale();
+      throw new Error(locale === "zh" ? "下拉选择至少需要一个选项" : "Select fields require at least one option");
+    }
+    if (existing.type === "SELECT") {
+      const existingOptions = parseStoredSelectOptions(existing.optionsJson);
+      if (existingOptions.some((option, index) => options[index] !== option)) {
+        const locale = await getCurrentLocale();
+        throw new Error(locale === "zh" ? "已有选项不可删除或重命名，只能追加新选项" : "Existing options cannot be deleted or renamed. You can only add new options.");
+      }
+    }
+
+    const field = await prisma.issueFieldDefinition.update({
+      where: { id: existing.id },
+      data: {
+        name,
+        required: data.required ?? existing.required,
+        optionsJson: existing.type === "SELECT" ? JSON.stringify(options) : null,
+      },
+    });
+
+    revalidatePath("/issues");
+    return { success: true, field };
+  } catch (error: unknown) {
+    console.error("Failed to update issue field:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update issue field" };
   }
 }
 
