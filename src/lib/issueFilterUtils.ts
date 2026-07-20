@@ -43,6 +43,17 @@ function isDateFieldValue(value: string) {
 
 function fieldValueWhere(fieldType: string, op: string, value: string) {
   if (op === "EMPTY") {
+    if (fieldType === "TEXT" || fieldType === "LONG_TEXT") {
+      return {
+        OR: [{ valueText: null }, { valueText: "" }],
+      };
+    }
+
+    if (fieldType === "BOOLEAN") return { valueBoolean: null };
+    if (fieldType === "NUMBER") return { valueNumber: null };
+    if (fieldType === "SELECT") return { valueOption: null };
+    if (fieldType === "DATE") return { valueText: null };
+
     return {
       valueBoolean: null,
       valueNumber: null,
@@ -52,6 +63,17 @@ function fieldValueWhere(fieldType: string, op: string, value: string) {
   }
 
   if (op === "NOT_EMPTY") {
+    if (fieldType === "TEXT" || fieldType === "LONG_TEXT") {
+      return {
+        AND: [{ valueText: { not: null } }, { valueText: { not: "" } }],
+      };
+    }
+
+    if (fieldType === "BOOLEAN") return { valueBoolean: { not: null } };
+    if (fieldType === "NUMBER") return { valueNumber: { not: null } };
+    if (fieldType === "SELECT") return { valueOption: { not: null } };
+    if (fieldType === "DATE") return { valueText: { not: null } };
+
     return {
       OR: [
         { valueBoolean: { not: null } },
