@@ -2092,11 +2092,11 @@ export default function IssueList({
 
     if (col.id === "parent") {
       return (
-        <td key={`column:${col.id}`} className="px-5 py-3.5">
+        <td key={`column:${col.id}`} className="overflow-hidden text-ellipsis px-5 py-3.5">
           {issue.parentIssue ? (
-            <Link href={`/issues/${issue.parentIssue.id}`} className="block min-w-0 text-sm font-medium text-foreground hover:text-primary hover:underline">
+            <Link href={`/issues/${issue.parentIssue.id}`} className="block w-full truncate text-sm font-medium text-foreground hover:text-primary hover:underline">
               <span className="mr-1 text-xs font-semibold text-muted-foreground">{issue.parentIssue.key}</span>
-              <span className="truncate align-middle">{issue.parentIssue.title}</span>
+              <span className="align-middle">{issue.parentIssue.title}</span>
             </Link>
           ) : (
             <span className="text-sm text-muted-foreground">-</span>

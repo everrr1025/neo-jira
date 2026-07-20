@@ -63,7 +63,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
         type="button"
         onClick={() => setIsOpen(true)}
       >
-        <Plus /> {translations.createSprint.createSprint}
+        <Plus /> {locale === "zh" ? "迭代" : translations.createSprint.createSprint}
       </Button>
 
       <Dialog open={isOpen} onOpenChange={(open) => (!open ? handleClose() : setIsOpen(true))}>
@@ -125,6 +125,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                   required
                   locale={locale}
                   value={formData.startDate}
+                  contentSide="top"
                   onChange={(startDate) => {
                     setFormData((prev) => ({
                       ...prev,
@@ -139,6 +140,7 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
                   required
                   locale={locale}
                   value={formData.endDate}
+                  contentSide="top"
                   onChange={(endDate) => {
                     setIsEndDateManuallyEdited(true);
                     setFormData((prev) => ({ ...prev, endDate }));

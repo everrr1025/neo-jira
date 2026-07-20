@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import {
   Bell,
   Building2,
@@ -21,9 +21,31 @@ import {
 import { getTranslations, type Locale } from "@/lib/i18n";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { AvatarPicker } from "./AvatarPicker";
 import { SidebarUserMenu } from "./SidebarUserMenu";
+
+function CollapsedSidebarTooltip({
+  collapsed,
+  label,
+  children,
+}: {
+  collapsed: boolean;
+  label: string;
+  children: ReactElement;
+}) {
+  if (!collapsed) return children;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function SidebarClient({
   isAdmin,
@@ -53,6 +75,7 @@ export function SidebarClient({
   const scheduleLabel = locale === "zh" ? "日程" : "Schedule";
   const notesLabel = locale === "zh" ? "笔记" : "Notes";
   const projectSettingsLabel = locale === "zh" ? "设置" : "Settings";
+  const expandSidebarLabel = locale === "zh" ? "展开侧栏" : "Expand sidebar";
   const returnHref = departmentContext
     ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
     : "/projects/select?projectId=clear";
@@ -183,20 +206,24 @@ export function SidebarClient({
       ];
 
   return (
-    <aside
-      className={`relative sticky top-0 z-30 flex h-screen shrink-0 flex-col items-start overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 ease-in-out ${
-        collapsed ? "w-20" : "w-64"
-      }`}
-    >
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-xs"
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute right-0 top-8 z-40 translate-x-1/2 rounded-full border-sidebar-border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+    <TooltipProvider delayDuration={200}>
+      <aside
+        className={`relative sticky top-0 z-30 flex h-screen shrink-0 flex-col items-start overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 ease-in-out ${
+          collapsed ? "w-20" : "w-64"
+        }`}
       >
-        <ChevronLeft className={`size-4 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
-      </Button>
+        <CollapsedSidebarTooltip collapsed={collapsed} label={expandSidebarLabel}>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            onClick={() => setCollapsed(!collapsed)}
+            className="absolute right-0 top-8 z-40 translate-x-1/2 rounded-full border-sidebar-border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+            aria-label={collapsed ? expandSidebarLabel : undefined}
+          >
+            <ChevronLeft className={`size-4 transition-transform duration-300 ${collapsed ? "rotate-180" : ""}`} />
+          </Button>
+        </CollapsedSidebarTooltip>
 
       <div className={`flex h-16 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6 pb-4"}`}>
         {((departmentContext && !inProjectContext) || inProjectContext) && !collapsed ? (
@@ -221,18 +248,20 @@ export function SidebarClient({
 
       <nav className="w-full flex-1 space-y-1 overflow-hidden px-4">
         {inProjectContext ? (
-          <a
-            href={returnHref}
-            className={`group flex items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
-              collapsed ? "mx-3 justify-center" : "gap-3 px-3"
-            }`}
-            title={returnLabel}
-          >
-            <ChevronLeft className={navIconClass} />
-            <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-              {returnLabel}
-            </span>
-          </a>
+          <CollapsedSidebarTooltip collapsed={collapsed} label={returnLabel}>
+            <a
+              href={returnHref}
+              aria-label={collapsed ? returnLabel : undefined}
+              className={`group flex items-center whitespace-nowrap rounded-md py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:[&_svg]:text-sidebar-accent-foreground ${
+                collapsed ? "mx-3 justify-center" : "gap-3 px-3"
+              }`}
+            >
+              <ChevronLeft className={navIconClass} />
+              <span className={`text-sm font-medium ${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                {returnLabel}
+              </span>
+            </a>
+          </CollapsedSidebarTooltip>
         ) : null}
 
         {topLevelItems
@@ -241,44 +270,52 @@ export function SidebarClient({
             return true;
           })
           .map((item) => (
-            <Link key={item.id} href={item.href} className={getNavClass(item.href)} title={item.label}>
-              {item.icon}
-              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {item.label}
-              </span>
-            </Link>
+            <CollapsedSidebarTooltip key={item.id} collapsed={collapsed} label={item.label}>
+              <Link href={item.href} className={getNavClass(item.href)} aria-label={collapsed ? item.label : undefined}>
+                {item.icon}
+                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                  {item.label}
+                </span>
+              </Link>
+            </CollapsedSidebarTooltip>
           ))}
 
         {isAdmin ? (
           <>
-            <Link href="/admin/users" className={getNavClass("/admin/users")} title={locale === "zh" ? "用户" : "Users"}>
-              <Users className={navIconClass} />
-              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {locale === "zh" ? "用户" : "Users"}
-              </span>
-            </Link>
-            <Link href="/admin/departments" className={getNavClass("/admin/departments")} title={locale === "zh" ? "部门" : "Departments"}>
-              <Building2 className={navIconClass} />
-              <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                {locale === "zh" ? "部门" : "Departments"}
-              </span>
-            </Link>
+            <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "用户" : "Users"}>
+              <Link href="/admin/users" className={getNavClass("/admin/users")} aria-label={collapsed ? (locale === "zh" ? "用户" : "Users") : undefined}>
+                <Users className={navIconClass} />
+                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                  {locale === "zh" ? "用户" : "Users"}
+                </span>
+              </Link>
+            </CollapsedSidebarTooltip>
+            <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "部门" : "Departments"}>
+              <Link href="/admin/departments" className={getNavClass("/admin/departments")} aria-label={collapsed ? (locale === "zh" ? "部门" : "Departments") : undefined}>
+                <Building2 className={navIconClass} />
+                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                  {locale === "zh" ? "部门" : "Departments"}
+                </span>
+              </Link>
+            </CollapsedSidebarTooltip>
           </>
         ) : null}
       </nav>
 
       <div className={`flex w-full border-t border-sidebar-border p-4 text-sm ${collapsed ? "justify-center px-0" : ""}`}>
         {collapsed ? (
-          <Link href="/settings">
-            <AvatarPicker
-              userKey={user?.id || user?.email || user?.name || "anonymous"}
-              userName={user?.name || translations.sidebar.userFallback}
-              locale={locale}
-              initialAvatar={user?.avatar}
-              size="sm"
-              editable={false}
-            />
-          </Link>
+          <CollapsedSidebarTooltip collapsed label={user?.name || translations.sidebar.userFallback}>
+            <Link href="/settings">
+              <AvatarPicker
+                userKey={user?.id || user?.email || user?.name || "anonymous"}
+                userName={user?.name || translations.sidebar.userFallback}
+                locale={locale}
+                initialAvatar={user?.avatar}
+                size="sm"
+                editable={false}
+              />
+            </Link>
+          </CollapsedSidebarTooltip>
         ) : (
           <SidebarUserMenu
             userId={user?.id || user?.email || user?.name || "anonymous"}
@@ -296,7 +333,8 @@ export function SidebarClient({
             }
           />
         )}
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </TooltipProvider>
   );
 }

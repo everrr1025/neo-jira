@@ -164,7 +164,7 @@ export function SprintActionButton({
               }}
             >
               <Pencil />
-              {locale === "zh" ? "编辑" : "Edit Sprint"}
+              {locale === "zh" ? "编辑" : "Edit iteration"}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"

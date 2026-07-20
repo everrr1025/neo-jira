@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { getTranslations, Locale } from "@/lib/i18n";
 import { ITERATION_NAME_MAX_LENGTH } from "@/lib/validation";
 import AlertPopup from "./AlertPopup";
-import LocalizedDateInput from "./LocalizedDateInput";
+import ShadcnDatePicker from "./ShadcnDatePicker";
 
 type SprintData = {
   id: string;
@@ -18,9 +18,6 @@ type SprintData = {
   startDate: string;
   endDate: string;
 };
-
-const dateInputClassName =
-  "h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export function EditSprintModal({
   isOpen,
@@ -63,7 +60,7 @@ export function EditSprintModal({
         <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
           <DialogHeader className="border-b px-6 py-4">
             <div className="flex items-center justify-between gap-4">
-              <DialogTitle>{locale === "zh" ? "编辑迭代" : "Edit Sprint"}</DialogTitle>
+              <DialogTitle>{locale === "zh" ? "编辑迭代" : "Edit iteration"}</DialogTitle>
               <Button
                 type="button"
                 variant="ghost"
@@ -93,26 +90,24 @@ export function EditSprintModal({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label>{translations.createSprint.startDate}</Label>
-                  <LocalizedDateInput
-                    required
-                    locale={locale}
-                    value={formData.startDate}
-                    onChange={e => setFormData(p => ({ ...p, startDate: e.target.value }))}
-                    className={dateInputClassName}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>{translations.createSprint.endDate}</Label>
-                  <LocalizedDateInput
-                    required
-                    locale={locale}
-                    value={formData.endDate}
-                    onChange={e => setFormData(p => ({ ...p, endDate: e.target.value }))}
-                    className={dateInputClassName}
-                  />
-                </div>
+                <ShadcnDatePicker
+                  id="edit-sprint-start-date"
+                  label={translations.createSprint.startDate}
+                  required
+                  locale={locale}
+                  value={formData.startDate}
+                  contentSide="top"
+                  onChange={(startDate) => setFormData((prev) => ({ ...prev, startDate }))}
+                />
+                <ShadcnDatePicker
+                  id="edit-sprint-end-date"
+                  label={translations.createSprint.endDate}
+                  required
+                  locale={locale}
+                  value={formData.endDate}
+                  contentSide="top"
+                  onChange={(endDate) => setFormData((prev) => ({ ...prev, endDate }))}
+                />
               </div>
             </div>
 

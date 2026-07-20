@@ -22,6 +22,7 @@ type ShadcnDatePickerProps = {
   className?: string;
   labelClassName?: string;
   contentAlign?: "start" | "center" | "end";
+  contentSide?: "top" | "right" | "bottom" | "left";
 };
 
 const localeMap = {
@@ -64,6 +65,7 @@ export default function ShadcnDatePicker({
   className = "flex flex-col gap-1.5",
   labelClassName,
   contentAlign = "start",
+  contentSide = "bottom",
 }: ShadcnDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedDate = parseDateInputValue(value);
@@ -98,7 +100,7 @@ export default function ShadcnDatePicker({
             </span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align={contentAlign}>
+        <PopoverContent className="w-auto p-0" align={contentAlign} side={contentSide}>
           <Calendar
             mode="single"
             selected={selectedDate}
