@@ -21,6 +21,11 @@ const ISSUE_LIST_FILTER_KEYS = [
   "sortDirection",
 ];
 
+function hasIssueListFilterParams(params: URLSearchParams) {
+  return ISSUE_LIST_FILTER_KEYS.some((key) => params.has(key)) ||
+    Array.from(params.keys()).some((key) => key.startsWith("issueField_") || key.startsWith("planField_"));
+}
+
 function buildStoredParams(params: URLSearchParams) {
   const stored = new URLSearchParams();
   ISSUE_LIST_FILTER_KEYS.forEach((key) => {
@@ -68,18 +73,21 @@ export function useIssueListFilters() {
     if (didAttemptRestoreRef.current || typeof window === "undefined") return;
     didAttemptRestoreRef.current = true;
 
-    if (searchParams.toString()) return;
+    if (hasIssueListFilterParams(searchParams)) return;
 
     const stored = window.localStorage.getItem(storageKey);
     if (stored) {
       didRestoreStoredFiltersRef.current = true;
-      router.replace(`${pathname}?${stored}`);
+      const restored = new URLSearchParams(searchParams.toString());
+      const storedParams = new URLSearchParams(stored);
+      storedParams.forEach((value, key) => restored.set(key, value));
+      router.replace(`${pathname}?${restored.toString()}`);
     }
   }, [pathname, router, searchParams, storageKey]);
 
   useEffect(() => {
     if (!didAttemptRestoreRef.current || typeof window === "undefined") return;
-    if (didRestoreStoredFiltersRef.current && !searchParams.toString()) return;
+    if (didRestoreStoredFiltersRef.current && !hasIssueListFilterParams(searchParams)) return;
     didRestoreStoredFiltersRef.current = false;
     const stored = buildStoredParams(searchParams);
     if (stored) {

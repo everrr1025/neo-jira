@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -226,6 +226,7 @@ const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
 const ISSUE_LIST_COLUMN_STORAGE_KEYS = {
   default: "neo-jira:issue-list-columns:default:v1",
   plan: "neo-jira:issue-list-columns:plan:v1",
+  iteration: "neo-jira:issue-list-columns:iteration:v1",
 } as const;
 
 function readStoredIssueListColumnPreferences(storageKey: string): StoredIssueListColumnPreferences | null {
@@ -939,9 +940,11 @@ export default function IssueList({
   issueFieldDefinitions = [],
   canManageIssueFields,
   lockedPlanId,
+  lockedIterationId,
   planFieldDefinitions = [],
   canManagePlanFields,
   canManagePlans,
+  canMoveIssuesBetweenIterations = true,
   unframed = false,
 }: {
   initialIssues: Issue[];
@@ -962,11 +965,14 @@ export default function IssueList({
   issueFieldDefinitions?: IssueFieldDefinition[];
   canManageIssueFields: boolean;
   lockedPlanId?: string | null;
+  lockedIterationId?: string | null;
   planFieldDefinitions?: PlanFieldDefinition[];
   canManagePlanFields?: boolean;
   canManagePlans: boolean;
+  canMoveIssuesBetweenIterations?: boolean;
   unframed?: boolean;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [issues, setIssues] = useState(initialIssues);
   const translations = getTranslations(locale);
@@ -1038,7 +1044,8 @@ export default function IssueList({
   );
 
   const { filters, pagination, sorting, updateQueryParams } = useIssueListFilters();
-  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
+  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view: rawView, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
+  const view = lockedIterationId && rawView === "backlog" ? "all" : rawView;
   const { page: currentPage, pageSize: itemsPerPage } = pagination;
   const { sortBy, sortDirection } = sorting;
   const activeCustomFilterCount = Array.from(searchParams.keys()).filter((key) =>
@@ -1049,7 +1056,7 @@ export default function IssueList({
     typeFilter.length +
     priorityFilter.length +
     planFilter.length +
-    sprintFilter.length +
+    (lockedIterationId ? 0 : sprintFilter.length) +
     assigneeFilter.length +
     watcherFilter.length +
     (dueFilter !== "ALL" || (duePreset && duePreset !== "NONE") || dueDateValue ? 1 : 0) +
@@ -1131,8 +1138,13 @@ export default function IssueList({
 
   const [, startTransition] = useTransition();
   const columnStorageKey = useMemo(
-    () => (lockedPlanId ? ISSUE_LIST_COLUMN_STORAGE_KEYS.plan : ISSUE_LIST_COLUMN_STORAGE_KEYS.default),
-    [lockedPlanId]
+    () =>
+      lockedIterationId
+        ? ISSUE_LIST_COLUMN_STORAGE_KEYS.iteration
+        : lockedPlanId
+          ? ISSUE_LIST_COLUMN_STORAGE_KEYS.plan
+          : ISSUE_LIST_COLUMN_STORAGE_KEYS.default,
+    [lockedIterationId, lockedPlanId]
   );
 
   const defaultColumns = useMemo<ColumnConfig[]>(
@@ -1142,7 +1154,7 @@ export default function IssueList({
       { id: "parent", label: parentIssueColumnLabel, width: 190 },
       { id: "children", label: childProgressColumnLabel, width: 130 },
       ...(lockedPlanId ? [] : [{ id: "plan" as const, label: planLabel, width: 180 }]),
-      { id: "iteration", label: translations.issueList.sprint, width: 160 },
+      ...(lockedIterationId ? [] : [{ id: "iteration" as const, label: translations.issueList.sprint, width: 160 }]),
       { id: "status", label: translations.issueList.status, width: 140 },
       { id: "type", label: translations.issueList.type, width: 120 },
       { id: "priority", label: translations.issueList.priority, width: 140 },
@@ -1151,6 +1163,7 @@ export default function IssueList({
     ],
     [
       lockedPlanId,
+      lockedIterationId,
       childProgressColumnLabel,
       parentIssueColumnLabel,
       planLabel,
@@ -1652,7 +1665,7 @@ export default function IssueList({
   const viewOptions = useMemo<FilterOption[]>(
     () => [
       { value: "all", label: locale === "zh" ? "全部" : "All" },
-      { value: "backlog", label: translations.issueList.backlog },
+      ...(lockedIterationId ? [] : [{ value: "backlog", label: translations.issueList.backlog }]),
       { value: "overdue", label: translations.issueList.overdue },
       { value: "dueSoon", label: translations.issueList.dueSoon },
       { value: "assignedToMe", label: translations.issueList.assignedToMe },
@@ -1660,6 +1673,7 @@ export default function IssueList({
     ],
     [
       locale,
+      lockedIterationId,
       translations.issueList.assignedToMe,
       translations.issueList.backlog,
       translations.issueList.dueSoon,
@@ -2415,6 +2429,14 @@ export default function IssueList({
         return current.filter((issue) => !selectedIssueIds.includes(issue.id));
       }
 
+      if (
+        action.type === "assignIteration" &&
+        lockedIterationId &&
+        action.targetId !== lockedIterationId
+      ) {
+        return current.filter((issue) => !selectedIssueIds.includes(issue.id));
+      }
+
       return current.map((issue) => {
         if (!selectedIssueIds.includes(issue.id)) return issue;
 
@@ -2455,6 +2477,9 @@ export default function IssueList({
 
     setSelectedIssueIds([]);
     setBulkAction(null);
+    if (action.type === "assignIteration" && lockedIterationId) {
+      router.refresh();
+    }
     return null;
   };
 
@@ -2614,7 +2639,7 @@ export default function IssueList({
         </div>
         {isFilterRowOpen ? (
         <div className="flex w-full flex-wrap items-center gap-2">
-          {view !== "backlog" ? (
+          {!lockedIterationId && view !== "backlog" ? (
             <MultiFilter
               label={translations.issueList.sprint}
               options={sprintOptions}
@@ -2781,7 +2806,7 @@ export default function IssueList({
                 {bulkRemovePlanLabel}
               </Button>
             ) : null}
-            {!lockedPlanId ? (
+            {!lockedPlanId && (!lockedIterationId || canMoveIssuesBetweenIterations) ? (
               <Button
                 type="button"
                 variant="secondary"

@@ -62,6 +62,50 @@ async function run() {
     ],
   });
 
+  const lockedIterationResult = await parseIssueSearchParams(
+    {
+      sprint: "iteration-2,__BACKLOG__",
+      view: "backlog",
+      status: "TODO,IN_PROGRESS",
+      assignee: "user-1",
+      plan: "plan-1",
+      dueFilter: "GTE",
+      dueDate: "2026-07-20",
+      page: "2",
+      pageSize: "20",
+      sortBy: "priority",
+      sortDirection: "asc",
+      "issueField_interface-status_op": "NOT_EMPTY",
+    },
+    "project-1",
+    {
+      lockedIterationId: "iteration-1",
+      issueFieldDefinitions: [longTextField],
+    }
+  );
+
+  assert.deepEqual(lockedIterationResult.where, {
+    projectId: "project-1",
+    AND: [
+      { status: { in: ["TODO", "IN_PROGRESS"] } },
+      { planId: { in: ["plan-1"] } },
+      { OR: [{ assigneeId: { in: ["user-1"] } }] },
+      { dueDate: { gte: new Date(2026, 6, 20) } },
+      { iterationId: "iteration-1" },
+      {
+        issueFieldValues: {
+          some: {
+            fieldDefinitionId: "interface-status",
+            AND: [{ valueText: { not: null } }, { valueText: { not: "" } }],
+          },
+        },
+      },
+    ],
+  });
+  assert.equal(lockedIterationResult.skip, 20);
+  assert.equal(lockedIterationResult.take, 20);
+  assert.deepEqual(lockedIterationResult.orderBy, { priority: "asc" });
+
   console.log("issue filter checks passed");
 }
 

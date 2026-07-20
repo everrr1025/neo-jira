@@ -13,6 +13,7 @@ type CustomFieldFilterDefinition = {
 
 type ParseIssueSearchParamsOptions = {
   lockedPlanId?: string | null;
+  lockedIterationId?: string | null;
   currentUserId?: string | null;
   doneStatusKeys?: string[];
   issueFieldDefinitions?: CustomFieldFilterDefinition[];
@@ -193,6 +194,7 @@ export async function parseIssueSearchParams(
     typeof options === "string" ? { lockedPlanId: options } : options || {};
   const {
     lockedPlanId,
+    lockedIterationId,
     currentUserId,
     doneStatusKeys = ["DONE"],
     issueFieldDefinitions = [],
@@ -222,7 +224,8 @@ export async function parseIssueSearchParams(
   const dueDate = getString(searchParams.dueDate);
   const duePreset = getString(searchParams.duePreset);
   const rawView = getString(searchParams.view);
-  const view = isIssueView(rawView) ? rawView : "all";
+  const parsedView = isIssueView(rawView) ? rawView : "all";
+  const view = lockedIterationId && parsedView === "backlog" ? "all" : parsedView;
 
   const andFilters: Prisma.IssueWhereInput[] = [];
 
@@ -230,7 +233,7 @@ export async function parseIssueSearchParams(
   if (type.length > 0) andFilters.push({ type: { in: type } });
   if (priority.length > 0) andFilters.push({ priority: { in: priority } });
   
-  if (sprint.length > 0 && view !== "backlog") {
+  if (!lockedIterationId && sprint.length > 0 && view !== "backlog") {
     if (sprint.includes("__BACKLOG__") && sprint.length === 1) {
       andFilters.push({ iterationId: null });
     } else if (sprint.includes("__BACKLOG__")) {
@@ -322,6 +325,10 @@ export async function parseIssueSearchParams(
     andFilters.push({ assigneeId: currentUserId });
   } else if (view === "watching" && currentUserId) {
     andFilters.push({ watchers: { some: { id: currentUserId } } });
+  }
+
+  if (lockedIterationId) {
+    andFilters.push({ iterationId: lockedIterationId });
   }
 
   andFilters.push(...buildCustomFieldFilters(searchParams, issueFieldDefinitions));

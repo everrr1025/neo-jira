@@ -198,6 +198,8 @@ type TranslationBundle = {
   iterationDetail: {
     backToSprints: string;
     board: string;
+    list: string;
+    viewMode: string;
     ends: string;
   };
   addExistingIssues: {
@@ -524,6 +526,8 @@ const translations: Record<Locale, TranslationBundle> = {
     iterationDetail: {
       backToSprints: "Back to iterations",
       board: "Board",
+      list: "List",
+      viewMode: "Iteration view",
       ends: "Ends",
     },
     addExistingIssues: {
@@ -849,6 +853,8 @@ const translations: Record<Locale, TranslationBundle> = {
     iterationDetail: {
       backToSprints: "返回迭代列表",
       board: "看板",
+      list: "列表",
+      viewMode: "迭代显示模式",
       ends: "结束于",
     },
     addExistingIssues: {
