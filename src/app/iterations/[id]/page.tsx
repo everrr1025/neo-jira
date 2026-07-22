@@ -18,6 +18,7 @@ import { ITERATION_LAYOUT_COOKIE, parseIterationLayout } from "@/lib/iterationLa
 import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { isDoneWorkflowStatus } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -83,10 +84,10 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
   const canManage = role === "ADMIN";
   const canChangeSprintIssues = iteration.status !== "COMPLETED";
   const doneStatusKeys = iteration.project.workflowStatuses
-    .filter((status) => status.category === "DONE")
+    .filter((status) => isDoneWorkflowStatus(status.key, iteration.project.workflowStatuses))
     .map((status) => status.key);
 
-  const [users, plans, iterations, backlogIssues, parentIssues, currentUser, iterationIssueStatuses, issueFieldDefinitions] =
+  const [users, plans, iterations, backlogIssuePage, parentIssues, currentUser, iterationIssueStatuses, issueFieldDefinitions] =
     await Promise.all([
       prisma.user.findMany({
         where: buildProjectUsersWhere(iteration.project.id, false),
@@ -116,7 +117,8 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
               type: true,
               assignee: { select: { name: true } },
             },
-            orderBy: { updatedAt: "desc" },
+            orderBy: [{ status: "asc" }, { key: "asc" }],
+            take: 21,
           })
         : Promise.resolve([]),
       prisma.issue.findMany({
@@ -142,6 +144,9 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
           })
         : Promise.resolve([]),
     ]);
+
+  const backlogIssues = backlogIssuePage.slice(0, 20);
+  const backlogIssuesHasMore = backlogIssuePage.length > 20;
 
   const boardIssues =
     layout === "board"
@@ -255,19 +260,27 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
               }}
             >
               {canChangeSprintIssues && (
-                <AddExistingIssuesButton
-                  sprintId={iteration.id}
-                  sprintName={iteration.name}
-                  issues={backlogIssues}
-                  locale={locale}
-                  workflowStatuses={iteration.project.workflowStatuses}
-                  users={users}
-                  plans={plans}
-                  iterations={iterations}
-                  currentUserId={userId}
-                  defaultDueDate={defaultDueDate}
-                  parentIssues={parentIssues}
-                />
+                <>
+                  <CreateIssueButton
+                    locale={locale}
+                    users={users}
+                    plans={plans}
+                    iterations={iterations}
+                    currentUserId={userId}
+                    canManagePlans
+                    defaultIterationId={iteration.id}
+                    defaultDueDate={defaultDueDate}
+                    parentIssues={parentIssues}
+                  />
+                  <AddExistingIssuesButton
+                    sprintId={iteration.id}
+                    sprintName={iteration.name}
+                    issues={backlogIssues}
+                    initialHasMore={backlogIssuesHasMore}
+                    locale={locale}
+                    workflowStatuses={iteration.project.workflowStatuses}
+                  />
+                </>
               )}
             </SprintActionButton>
           )}

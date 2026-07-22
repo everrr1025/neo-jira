@@ -205,9 +205,13 @@ type TranslationBundle = {
   addExistingIssues: {
     button: string;
     modalTitle: string;
+    scopeDescription: string;
     searchPlaceholder: string;
     allUnfinished: string;
+    loadMore: string;
+    loading: string;
     empty: string;
+    emptyForStatus: string;
     selected: string;
     selectedSuffix: string;
     addToSprint: string;
@@ -533,9 +537,13 @@ const translations: Record<Locale, TranslationBundle> = {
     addExistingIssues: {
       button: "Add issues",
       modalTitle: "Add issues to",
+      scopeDescription: "Only unfinished issues in this project that are not assigned to any iteration are shown.",
       searchPlaceholder: "Search by key, title, or assignee...",
       allUnfinished: "All unfinished",
+      loadMore: "Load more",
+      loading: "Loading...",
       empty: "No unfinished backlog issues available.",
+      emptyForStatus: "No {status} issues are available in the backlog.",
       selected: "Selected",
       selectedSuffix: "issues",
       addToSprint: "Add to iteration",
@@ -860,9 +868,13 @@ const translations: Record<Locale, TranslationBundle> = {
     addExistingIssues: {
       button: "添加问题",
       modalTitle: "添加问题到",
+      scopeDescription: "仅显示当前项目中未加入任何迭代且未完成的问题。",
       searchPlaceholder: "按编号、标题或经办人搜索...",
       allUnfinished: "全部未完成",
+      loadMore: "加载更多",
+      loading: "加载中...",
       empty: "待办池中暂无可添加的未完成问题。",
+      emptyForStatus: "待办池中暂无可添加的{status}问题。",
       selected: "已选择",
       selectedSuffix: "个问题",
       addToSprint: "添加到迭代",

@@ -328,7 +328,7 @@ export default function CreateIssueModal({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(open) => (!open ? void handleCancelAndClose() : undefined)}>
-        <DialogContent showCloseButton={false} className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent showCloseButton={false} className="flex max-h-[94vh] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b px-6 py-4">
             <div className="flex items-center justify-between gap-4">
               <DialogTitle>{text.modalTitle}</DialogTitle>
@@ -346,7 +346,7 @@ export default function CreateIssueModal({
           </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="title">
                 {text.summary} <span className="text-red-500">*</span>
@@ -415,6 +415,7 @@ export default function CreateIssueModal({
                 disabled
                 disabledLabel={locale === "zh" ? "史诗不能关联父级问题" : "Epics cannot have a parent issue"}
                 label={locale === "zh" ? "父项" : "Parent item"}
+                labelClassName="text-sm font-medium"
                 emptyLabel={noParentAssociationLabel}
                 onChange={() => undefined}
               />
@@ -434,6 +435,7 @@ export default function CreateIssueModal({
                 disabled={!formData.type}
                 disabledLabel={locale === "zh" ? "请先选择类型" : "Select a type first"}
                 label={locale === "zh" ? "父项" : "Parent item"}
+                labelClassName="text-sm font-medium"
                 emptyLabel={noParentAssociationLabel}
               />
             ) : null}

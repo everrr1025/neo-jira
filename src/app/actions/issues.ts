@@ -628,6 +628,81 @@ export async function createIssue(data: {
   }
 }
 
+export async function searchBacklogIssuesForSprint(
+  sprintId: string,
+  options: { query?: string; status?: string; offset?: number }
+) {
+  try {
+    const sprint = await prisma.iteration.findUnique({
+      where: { id: sprintId },
+      select: {
+        projectId: true,
+        project: { select: workflowSelect },
+      },
+    });
+
+    if (!sprint) throw new Error("Sprint not found");
+    await checkProjectAdmin(sprint.projectId);
+
+    const workflowStatuses = sprint.project.workflowStatuses as WorkflowStatusRecord[];
+    const doneStatuses = workflowStatuses
+      .filter((status) => isDoneWorkflowStatus(status.key, workflowStatuses))
+      .map((status) => status.key);
+    const status = options.status?.trim();
+    if (
+      status &&
+      status !== "ALL" &&
+      (!workflowStatuses.some((item) => item.key === status) || doneStatuses.includes(status))
+    ) {
+      throw new Error("Invalid status filter");
+    }
+
+    const query = options.query?.trim().slice(0, 100) || "";
+    const offset = Math.max(0, Math.floor(options.offset || 0));
+    const where: Prisma.IssueWhereInput = {
+      projectId: sprint.projectId,
+      iterationId: null,
+      ...(doneStatuses.length > 0 ? { status: { notIn: doneStatuses } } : {}),
+      ...(status && status !== "ALL" ? { status } : {}),
+      ...(query
+        ? {
+            OR: [
+              { key: { contains: query } },
+              { title: { contains: query } },
+              { assignee: { is: { name: { contains: query } } } },
+            ],
+          }
+        : {}),
+    };
+
+    const issues = await prisma.issue.findMany({
+      where,
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        status: true,
+        priority: true,
+        type: true,
+        assignee: { select: { name: true } },
+      },
+      orderBy: [{ status: "asc" }, { key: "asc" }],
+      skip: offset,
+      take: 21,
+    });
+
+    return { success: true, issues: issues.slice(0, 20), hasMore: issues.length > 20 };
+  } catch (error: unknown) {
+    console.error("Failed to search backlog issues:", error);
+    return {
+      success: false,
+      issues: [],
+      hasMore: false,
+      error: error instanceof Error ? error.message : "Failed to search issues",
+    };
+  }
+}
+
 export async function addBacklogIssuesToSprint(sprintId: string, issueIds: string[]) {
   try {
     const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);

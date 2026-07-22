@@ -27,6 +27,7 @@ type ParentIssuePickerProps = {
   disabled?: boolean;
   disabledLabel?: string;
   label?: string;
+  labelClassName?: string;
   emptyLabel?: string;
   searchPlaceholder?: string;
   noResultsLabel?: string;
@@ -41,6 +42,7 @@ export default function ParentIssuePicker({
   disabled = false,
   disabledLabel,
   label,
+  labelClassName,
   emptyLabel,
   searchPlaceholder,
   noResultsLabel,
@@ -75,7 +77,7 @@ export default function ParentIssuePicker({
       <PopoverAnchor asChild>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <Label className="text-lg font-semibold text-foreground">{parentLabel}</Label>
+            <Label className={cn("text-lg font-semibold text-foreground", labelClassName)}>{parentLabel}</Label>
             <PopoverTrigger asChild>
               <Button type="button" variant="link" size="sm" disabled={disabled} className="h-auto px-0">
                 {disabled ? disabledLabel || linkLabel : linkLabel}
