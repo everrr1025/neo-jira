@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { DragDropContext, Droppable, Draggable, type DragStart, type DropResult } from "@hello-pangea/dnd";
 import { updateIssueStatus } from "@/app/actions/issues";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -19,6 +19,7 @@ import {
   type WorkflowStatusRecord,
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
+import { buildIssueDetailHref } from "@/lib/issueNavigation";
 
 type Issue = {
   id: string;
@@ -48,6 +49,9 @@ export default function KanbanBoard({
   const [, startTransition] = useTransition();
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const returnTo = `${pathname}${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`;
   const translations = getTranslations(locale);
   void currentUserId;
   const transitionMap = useMemo(
@@ -153,7 +157,7 @@ export default function KanbanBoard({
                             ref={provided.innerRef}
                             {...provided.draggableProps}
                             {...provided.dragHandleProps}
-                            onClick={() => router.push(`/issues/${ticket.id}`)}
+                            onClick={() => router.push(buildIssueDetailHref(ticket.id, returnTo))}
                             className={`bg-white p-3.5 rounded-lg border shadow-sm cursor-pointer hover:shadow-md transition-shadow group ${snapshot.isDragging ? 'shadow-lg ring-2 ring-blue-500/50 opacity-90 rotate-2' : ''}`}
                             style={{...provided.draggableProps.style}}
                           >

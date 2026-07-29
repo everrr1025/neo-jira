@@ -1,7 +1,7 @@
 "use client";
 
-import { ReactNode, useMemo, useState, useTransition } from "react";
-import { AlertTriangle, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { AlertTriangle, ChevronDown, Loader2, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { completeSprint, deleteSprint, reopenSprint, startSprint } from "@/app/actions/sprints";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getTranslations, Locale, localeDateMap } from "@/lib/i18n";
 import AlertPopup from "./AlertPopup";
+import AddExistingIssuesButton, { type AddExistingIssuesButtonProps } from "./AddExistingIssuesButton";
+import CreateIssueButton, { type CreateIssueButtonProps } from "./CreateIssueButton";
 import { EditSprintModal } from "./EditSprintModal";
 
 type PlannedSprintOption = {
@@ -34,7 +36,8 @@ type SprintActionButtonProps = {
   plannedSprints: PlannedSprintOption[];
   unfinishedIssueCount: number;
   sprintData: SprintData;
-  children?: ReactNode;
+  createIssue?: Omit<CreateIssueButtonProps, "open" | "onOpenChange" | "showTrigger" | "buttonLabel">;
+  addExistingIssues?: Omit<AddExistingIssuesButtonProps, "open" | "onOpenChange" | "showTrigger">;
 };
 
 export function SprintActionButton({
@@ -44,13 +47,18 @@ export function SprintActionButton({
   plannedSprints,
   unfinishedIssueCount,
   sprintData,
-  children,
+  createIssue,
+  addExistingIssues,
 }: SprintActionButtonProps) {
   const [isPending, startTransition] = useTransition();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isCompleteOpen, setIsCompleteOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isCreateIssueOpen, setIsCreateIssueOpen] = useState(false);
+  const [createIssueKey, setCreateIssueKey] = useState(0);
+  const [isAddIssuesOpen, setIsAddIssuesOpen] = useState(false);
+  const [addIssuesKey, setAddIssuesKey] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState<"BACKLOG" | "SPRINT">("BACKLOG");
   const [targetSprintId, setTargetSprintId] = useState("");
@@ -148,7 +156,35 @@ export function SprintActionButton({
           </Button>
         )}
 
-        {children}
+        {createIssue && addExistingIssues ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button">
+                <Plus />
+                {locale === "zh" ? "问题" : "Issue"}
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                onSelect={() => {
+                  setCreateIssueKey((value) => value + 1);
+                  setIsCreateIssueOpen(true);
+                }}
+              >
+                {locale === "zh" ? "新建" : "New"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setAddIssuesKey((value) => value + 1);
+                  setIsAddIssuesOpen(true);
+                }}
+              >
+                {locale === "zh" ? "添加已有" : "Add existing"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
 
         <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
           <DropdownMenuTrigger asChild>
@@ -156,7 +192,7 @@ export function SprintActionButton({
               {isDeleting ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem
               onClick={() => {
                 setIsMenuOpen(false);
@@ -185,6 +221,26 @@ export function SprintActionButton({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {createIssue ? (
+        <CreateIssueButton
+          key={`create-issue-${createIssueKey}`}
+          {...createIssue}
+          open={isCreateIssueOpen}
+          onOpenChange={setIsCreateIssueOpen}
+          showTrigger={false}
+        />
+      ) : null}
+
+      {addExistingIssues ? (
+        <AddExistingIssuesButton
+          key={`add-existing-issues-${addIssuesKey}`}
+          {...addExistingIssues}
+          open={isAddIssuesOpen}
+          onOpenChange={setIsAddIssuesOpen}
+          showTrigger={false}
+        />
+      ) : null}
 
       <Dialog open={isCompleteOpen} onOpenChange={(open) => (!open && !isPending ? setIsCompleteOpen(false) : null)}>
         <DialogContent className="max-w-xl gap-0 overflow-hidden p-0">

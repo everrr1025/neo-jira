@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -30,6 +30,7 @@ import {
   updatePlanFieldDefinition,
   updatePlanIssueFieldValue,
 } from "@/app/actions/plans";
+import { buildIssueDetailHref } from "@/lib/issueNavigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -973,7 +974,10 @@ export default function IssueList({
   unframed?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const returnTo = `${pathname}${searchParams.size > 0 ? `?${searchParams.toString()}` : ""}`;
+  const getIssueHref = (issueId: string) => buildIssueDetailHref(issueId, returnTo);
   const [issues, setIssues] = useState(initialIssues);
   const translations = getTranslations(locale);
   const planLabel = locale === "zh" ? "计划" : "Plan";
@@ -2087,7 +2091,7 @@ export default function IssueList({
     if (col.id === "key") {
       return (
         <td key={`column:${col.id}`} className="px-5 py-3.5 text-muted-foreground font-medium">
-          <Link href={`/issues/${issue.id}`} className="hover:text-primary hover:underline">
+          <Link href={getIssueHref(issue.id)} className="hover:text-primary hover:underline">
             {issue.key}
           </Link>
         </td>
@@ -2097,7 +2101,7 @@ export default function IssueList({
     if (col.id === "title") {
       return (
         <td key={`column:${col.id}`} className="px-5 py-3.5 font-semibold text-foreground overflow-hidden text-ellipsis">
-          <Link href={`/issues/${issue.id}`} className="hover:text-primary block w-full truncate border-b border-transparent">
+          <Link href={getIssueHref(issue.id)} className="hover:text-primary block w-full truncate border-b border-transparent">
             {issue.title}
           </Link>
         </td>
@@ -2108,13 +2112,11 @@ export default function IssueList({
       return (
         <td key={`column:${col.id}`} className="overflow-hidden text-ellipsis px-5 py-3.5">
           {issue.parentIssue ? (
-            <Link href={`/issues/${issue.parentIssue.id}`} className="block w-full truncate text-sm font-medium text-foreground hover:text-primary hover:underline">
+            <Link href={getIssueHref(issue.parentIssue.id)} className="block w-full truncate text-sm font-medium text-foreground hover:text-primary hover:underline">
               <span className="mr-1 text-xs font-semibold text-muted-foreground">{issue.parentIssue.key}</span>
               <span className="align-middle">{issue.parentIssue.title}</span>
             </Link>
-          ) : (
-            <span className="text-sm text-muted-foreground">-</span>
-          )}
+          ) : null}
         </td>
       );
     }
@@ -2138,9 +2140,7 @@ export default function IssueList({
                 <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
               </div>
             </div>
-          ) : (
-            <span className="text-sm text-muted-foreground">-</span>
-          )}
+          ) : null}
         </td>
       );
     }

@@ -12,7 +12,7 @@ import CreateIssueModal, {
 } from "./CreateIssueModal";
 import { getTranslations, Locale } from "@/lib/i18n";
 
-type CreateIssueButtonProps = {
+export type CreateIssueButtonProps = {
   users?: CreateIssueUser[];
   plans?: CreateIssuePlan[];
   iterations?: CreateIssueIteration[];
@@ -23,6 +23,10 @@ type CreateIssueButtonProps = {
   defaultPlanId?: string;
   defaultIterationId?: string;
   defaultDueDate?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+  buttonLabel?: string;
 };
 
 export default function CreateIssueButton({
@@ -36,24 +40,35 @@ export default function CreateIssueButton({
   defaultPlanId,
   defaultIterationId,
   defaultDueDate,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+  buttonLabel,
 }: CreateIssueButtonProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [modalKey, setModalKey] = useState(0);
   const translations = getTranslations(locale);
+  const isModalOpen = controlledOpen ?? internalOpen;
+  const setIsModalOpen = (open: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(open);
+    onOpenChange?.(open);
+  };
 
   return (
     <>
-      <Button
-        type="button"
-        onClick={() => {
-          setModalKey((value) => value + 1);
-          setIsModalOpen(true);
-        }}
-        title={translations.createIssue.createNewIssue}
-      >
-        <Plus className="size-4" />
-        {translations.createIssue.create}
-      </Button>
+      {showTrigger ? (
+        <Button
+          type="button"
+          onClick={() => {
+            setModalKey((value) => value + 1);
+            setIsModalOpen(true);
+          }}
+          title={translations.createIssue.createNewIssue}
+        >
+          <Plus className="size-4" />
+          {buttonLabel ?? translations.createIssue.create}
+        </Button>
+      ) : null}
       <CreateIssueModal 
         key={modalKey}
         isOpen={isModalOpen} 

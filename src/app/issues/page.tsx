@@ -172,6 +172,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
               currentUserId={userId}
               canManagePlans={canManagePlans}
               parentIssues={parentIssues}
+              buttonLabel={locale === "zh" ? "问题" : "Issue"}
             />
           ) : null}
         </div>

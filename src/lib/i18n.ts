@@ -535,7 +535,7 @@ const translations: Record<Locale, TranslationBundle> = {
       ends: "Ends",
     },
     addExistingIssues: {
-      button: "Add issues",
+      button: "Add existing issues",
       modalTitle: "Add issues to",
       scopeDescription: "Only unfinished issues in this project that are not assigned to any iteration are shown.",
       searchPlaceholder: "Search by key, title, or assignee...",
@@ -825,9 +825,9 @@ const translations: Record<Locale, TranslationBundle> = {
       perPage: "每页",
     },
     createIssue: {
-      create: "创建",
-      createNewIssue: "创建新问题",
-      modalTitle: "创建问题",
+      create: "新建",
+      createNewIssue: "新建问题",
+      modalTitle: "新建问题",
       summary: "摘要",
       summaryPlaceholder: "需要完成什么？",
       issueType: "类型",
@@ -866,7 +866,7 @@ const translations: Record<Locale, TranslationBundle> = {
       ends: "结束于",
     },
     addExistingIssues: {
-      button: "添加问题",
+      button: "添加已有问题",
       modalTitle: "添加问题到",
       scopeDescription: "仅显示当前项目中未加入任何迭代且未完成的问题。",
       searchPlaceholder: "按编号、标题或经办人搜索...",

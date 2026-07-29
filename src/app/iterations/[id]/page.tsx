@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 
-import AddExistingIssuesButton from "@/components/AddExistingIssuesButton";
 import CreateIssueButton from "@/components/CreateIssueButton";
 import IssueList from "@/components/IssueList";
 import IssueSearchInput from "@/components/IssueSearchInput";
@@ -258,31 +257,34 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
                 startDate: iteration.startDate.toISOString(),
                 endDate: iteration.endDate.toISOString(),
               }}
-            >
-              {canChangeSprintIssues && (
-                <>
-                  <CreateIssueButton
-                    locale={locale}
-                    users={users}
-                    plans={plans}
-                    iterations={iterations}
-                    currentUserId={userId}
-                    canManagePlans
-                    defaultIterationId={iteration.id}
-                    defaultDueDate={defaultDueDate}
-                    parentIssues={parentIssues}
-                  />
-                  <AddExistingIssuesButton
-                    sprintId={iteration.id}
-                    sprintName={iteration.name}
-                    issues={backlogIssues}
-                    initialHasMore={backlogIssuesHasMore}
-                    locale={locale}
-                    workflowStatuses={iteration.project.workflowStatuses}
-                  />
-                </>
-              )}
-            </SprintActionButton>
+              createIssue={
+                canChangeSprintIssues
+                  ? {
+                      locale,
+                      users,
+                      plans,
+                      iterations,
+                      currentUserId: userId,
+                      canManagePlans: true,
+                      defaultIterationId: iteration.id,
+                      defaultDueDate,
+                      parentIssues,
+                    }
+                  : undefined
+              }
+              addExistingIssues={
+                canChangeSprintIssues
+                  ? {
+                      sprintId: iteration.id,
+                      sprintName: iteration.name,
+                      issues: backlogIssues,
+                      initialHasMore: backlogIssuesHasMore,
+                      locale,
+                      workflowStatuses: iteration.project.workflowStatuses,
+                    }
+                  : undefined
+              }
+            />
           )}
           {canChangeSprintIssues && !canManage && canCreateIssues && (
             <CreateIssueButton
@@ -294,6 +296,7 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
               defaultIterationId={iteration.id}
               defaultDueDate={defaultDueDate}
               parentIssues={parentIssues}
+              buttonLabel={locale === "zh" ? "问题" : "Issue"}
             />
           )}
           <IterationLayoutToggle layout={layout} locale={locale} />

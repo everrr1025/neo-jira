@@ -33,13 +33,16 @@ export type BacklogIssueOption = {
   assignee: { name: string | null } | null;
 };
 
-type AddExistingIssuesButtonProps = {
+export type AddExistingIssuesButtonProps = {
   sprintId: string;
   sprintName: string;
   issues: BacklogIssueOption[];
   initialHasMore: boolean;
   locale: Locale;
   workflowStatuses: WorkflowStatusRecord[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
 };
 
 export default function AddExistingIssuesButton({
@@ -49,8 +52,11 @@ export default function AddExistingIssuesButton({
   initialHasMore,
   locale,
   workflowStatuses,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
 }: AddExistingIssuesButtonProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [visibleIssues, setVisibleIssues] = useState(issues);
@@ -64,6 +70,11 @@ export default function AddExistingIssuesButton({
   const router = useRouter();
   const translations = getTranslations(locale);
   const text = translations.addExistingIssues;
+  const isOpen = controlledOpen ?? internalOpen;
+  const setIsOpen = (open: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(open);
+    onOpenChange?.(open);
+  };
 
   const statusFilters = useMemo(
     () => [
@@ -166,13 +177,15 @@ export default function AddExistingIssuesButton({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={openModal}
-      >
-        {text.button}
-      </Button>
+      {showTrigger ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={openModal}
+        >
+          {text.button}
+        </Button>
+      ) : null}
 
       <Dialog open={isOpen} onOpenChange={(open) => (!open ? closeModal() : setIsOpen(true))}>
         <DialogContent

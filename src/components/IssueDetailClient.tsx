@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { deleteIssue, toggleIssueWatcher, updateIssue, updateIssueFieldValue } from "@/app/actions/issues";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
 import { canNestIssueType, getAllowedChildIssueTypes } from "@/lib/issueHierarchy";
+import { resolveIssueReturnTo } from "@/lib/issueNavigation";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -235,6 +236,8 @@ export default function IssueDetailClient({
   parentIssueOptions?: ParentIssueOption[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = resolveIssueReturnTo(searchParams.get("returnTo"));
   const [issue, setIssue] = useState(initialIssue);
   const [watchers, setWatchers] = useState(initialIssue.watchers);
   const [isPending, startTransition] = useTransition();
@@ -479,7 +482,7 @@ export default function IssueDetailClient({
         return;
       }
 
-      router.replace("/issues");
+      router.replace(returnTo);
       router.refresh();
       setIsDeleting(false);
     } catch (error) {
