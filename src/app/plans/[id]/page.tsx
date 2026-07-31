@@ -12,6 +12,15 @@ import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
+import {
+  hasExplicitIssueListParams,
+  searchParamsRecordToUrlSearchParams,
+  type IssueListPreferenceScope,
+} from "@/lib/issueListPreferences";
+import {
+  getIssueListInitialPreferences,
+  getSavedIssueListFilterQuery,
+} from "@/lib/issueListPreferenceServer";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +102,11 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   if (!plan) return notFound();
 
   const searchParamsData = await searchParams;
+  const preferenceScope: IssueListPreferenceScope = {
+    projectId: activeProject.id,
+    surface: "PLAN",
+    contextKey: plan.id,
+  };
   const [issueFieldDefinitions, planFieldDefinitions, workflowProjects] = await Promise.all([
     prisma.issueFieldDefinition.findMany({
       where: { projectId: activeProject.id },
@@ -118,6 +132,17 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
       },
     }),
   ]);
+  const [initialPreferences, savedFilterQuery] = await Promise.all([
+    getIssueListInitialPreferences(userId, preferenceScope),
+    hasExplicitIssueListParams(searchParamsData)
+      ? Promise.resolve("")
+      : getSavedIssueListFilterQuery(userId, preferenceScope),
+  ]);
+  if (savedFilterQuery) {
+    const restored = searchParamsRecordToUrlSearchParams(searchParamsData);
+    new URLSearchParams(savedFilterQuery).forEach((value, key) => restored.set(key, value));
+    redirect(`/plans/${plan.id}?${restored.toString()}`);
+  }
   const doneStatusKeys = workflowProjects[0]?.workflowStatuses
     .filter((status) => status.category === "DONE")
     .map((status) => status.key);
@@ -308,6 +333,8 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         planFieldDefinitions={planFieldDefinitions}
         canManagePlanFields={canManageIssueFields}
         canManagePlans={canManagePlans}
+        preferenceScope={preferenceScope}
+        initialPreferences={initialPreferences}
       />
     </div>
   );

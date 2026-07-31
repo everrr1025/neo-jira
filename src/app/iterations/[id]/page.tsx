@@ -18,6 +18,15 @@ import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { isDoneWorkflowStatus } from "@/lib/workflows";
+import {
+  hasExplicitIssueListParams,
+  searchParamsRecordToUrlSearchParams,
+  type IssueListPreferenceScope,
+} from "@/lib/issueListPreferences";
+import {
+  getIssueListInitialPreferences,
+  getSavedIssueListFilterQuery,
+} from "@/lib/issueListPreferenceServer";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +91,11 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
   const canCreateIssues = Boolean(role);
   const canManage = role === "ADMIN";
   const canChangeSprintIssues = iteration.status !== "COMPLETED";
+  const preferenceScope: IssueListPreferenceScope = {
+    projectId: iteration.project.id,
+    surface: "ITERATION",
+    contextKey: iteration.id,
+  };
   const doneStatusKeys = iteration.project.workflowStatuses
     .filter((status) => isDoneWorkflowStatus(status.key, iteration.project.workflowStatuses))
     .map((status) => status.key);
@@ -146,6 +160,20 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
 
   const backlogIssues = backlogIssuePage.slice(0, 20);
   const backlogIssuesHasMore = backlogIssuePage.length > 20;
+  const [initialPreferences, savedFilterQuery] =
+    layout === "list"
+      ? await Promise.all([
+          getIssueListInitialPreferences(userId, preferenceScope),
+          hasExplicitIssueListParams(searchParamsData)
+            ? Promise.resolve("")
+            : getSavedIssueListFilterQuery(userId, preferenceScope),
+        ])
+      : [{ baseLayout: null, contextLayout: null }, ""];
+  if (savedFilterQuery) {
+    const restored = searchParamsRecordToUrlSearchParams(searchParamsData);
+    new URLSearchParams(savedFilterQuery).forEach((value, key) => restored.set(key, value));
+    redirect(`/iterations/${iteration.id}?${restored.toString()}`);
+  }
 
   const boardIssues =
     layout === "board"
@@ -329,6 +357,8 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
           lockedIterationId={iteration.id}
           canManagePlans={canManage}
           canMoveIssuesBetweenIterations={canChangeSprintIssues}
+          preferenceScope={preferenceScope}
+          initialPreferences={initialPreferences}
         />
       ) : null}
     </div>

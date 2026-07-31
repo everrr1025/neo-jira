@@ -64,6 +64,20 @@ import {
   type WorkflowTransitionRecord,
 } from "@/lib/workflows";
 import ShadcnDatePicker from "./ShadcnDatePicker";
+import {
+  resetIssueListLayoutPreference,
+  saveIssueListFilterPreference,
+  saveIssueListLayoutPreference,
+} from "@/app/actions/issueListPreferences";
+import {
+  buildPersistedIssueListQuery,
+  mergePlanContextLayout,
+  normalizeLayoutPreference,
+  replaceVisibleKeyOrder,
+  type IssueListInitialPreferences,
+  type IssueListLayoutPreference,
+  type IssueListPreferenceScope,
+} from "@/lib/issueListPreferences";
 
 type Issue = {
   id: string;
@@ -156,16 +170,6 @@ type ResizableColumn =
   | { type: "issueField"; id: string; field: IssueFieldDefinition; width: number }
   | { type: "planField"; id: string; field: PlanFieldDefinition; width: number };
 
-type StoredIssueListColumnPreferences = {
-  visibleColumnIds?: ColumnId[];
-  columnWidths?: Partial<Record<ColumnId, number>>;
-  visibleIssueFieldIds?: string[];
-  issueFieldWidths?: Partial<Record<string, number>>;
-  visiblePlanFieldIds?: string[];
-  planFieldWidths?: Partial<Record<string, number>>;
-  columnOrder?: string[];
-};
-
 type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
 type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
 
@@ -223,26 +227,6 @@ const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   dueDate: "dueDate",
   assignee: "assignee",
 };
-
-const ISSUE_LIST_COLUMN_STORAGE_KEYS = {
-  default: "neo-jira:issue-list-columns:default:v1",
-  plan: "neo-jira:issue-list-columns:plan:v1",
-  iteration: "neo-jira:issue-list-columns:iteration:v1",
-} as const;
-
-function readStoredIssueListColumnPreferences(storageKey: string): StoredIssueListColumnPreferences | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as StoredIssueListColumnPreferences;
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
 
 function parseDateInputValue(value: string) {
   const [year, month, day] = value.split("-").map(Number);
@@ -947,6 +931,8 @@ export default function IssueList({
   canManagePlans,
   canMoveIssuesBetweenIterations = true,
   unframed = false,
+  preferenceScope,
+  initialPreferences,
 }: {
   initialIssues: Issue[];
   totalIssues?: number;
@@ -972,6 +958,8 @@ export default function IssueList({
   canManagePlans: boolean;
   canMoveIssuesBetweenIterations?: boolean;
   unframed?: boolean;
+  preferenceScope: IssueListPreferenceScope;
+  initialPreferences: IssueListInitialPreferences;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1074,39 +1062,7 @@ export default function IssueList({
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
   const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
   const [issueFields, setIssueFields] = useState(issueFieldDefinitions);
-  const [visibleIssueFieldIds, setVisibleIssueFieldIds] = useState<string[]>(() =>
-    issueFieldDefinitions.map((field) => field.id)
-  );
-  const [issueFieldWidths, setIssueFieldWidths] = useState<Record<string, number>>(() =>
-    issueFieldDefinitions.reduce(
-      (acc, field) => {
-        acc[field.id] = getDefaultFieldWidth(field);
-        return acc;
-      },
-      {} as Record<string, number>
-    )
-  );
   const [planFields, setPlanFields] = useState(planFieldDefinitions);
-  const [visiblePlanFieldIds, setVisiblePlanFieldIds] = useState<string[]>(() =>
-    planFieldDefinitions.map((field) => field.id)
-  );
-  const [planFieldWidths, setPlanFieldWidths] = useState<Record<string, number>>(() =>
-    planFieldDefinitions.reduce(
-      (acc, field) => {
-        acc[field.id] = getDefaultFieldWidth(field);
-        return acc;
-      },
-      {} as Record<string, number>
-    )
-  );
-  const visiblePlanFields = useMemo(
-    () => planFields.filter((field) => visiblePlanFieldIds.includes(field.id)),
-    [planFields, visiblePlanFieldIds]
-  );
-  const visibleIssueFields = useMemo(
-    () => issueFields.filter((field) => visibleIssueFieldIds.includes(field.id)),
-    [issueFields, visibleIssueFieldIds]
-  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeFieldManager, setActiveFieldManager] = useState<"issue" | "plan" | null>(null);
   const fieldManagerScrollRef = useRef<HTMLDivElement>(null);
@@ -1141,15 +1097,6 @@ export default function IssueList({
   }, [activeFieldManager]);
 
   const [, startTransition] = useTransition();
-  const columnStorageKey = useMemo(
-    () =>
-      lockedIterationId
-        ? ISSUE_LIST_COLUMN_STORAGE_KEYS.iteration
-        : lockedPlanId
-          ? ISSUE_LIST_COLUMN_STORAGE_KEYS.plan
-          : ISSUE_LIST_COLUMN_STORAGE_KEYS.default,
-    [lockedIterationId, lockedPlanId]
-  );
 
   const defaultColumns = useMemo<ColumnConfig[]>(
     () => [
@@ -1201,10 +1148,77 @@ export default function IssueList({
     [defaultColumns]
   );
 
-  const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(defaultVisibleColumnIds);
-  const [columnOrderKeys, setColumnOrderKeys] = useState<string[]>([]);
-  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
-  const [hasLoadedColumnPreferences, setHasLoadedColumnPreferences] = useState(false);
+  const defaultLayoutKeys = useMemo(
+    () => [
+      ...defaultColumns.map((column) => `column:${column.id}`),
+      ...issueFields.map((field) => `issueField:${field.id}`),
+      ...planFields.map((field) => `planField:${field.id}`),
+    ],
+    [defaultColumns, issueFields, planFields]
+  );
+  const initialLayoutKeys = useMemo(
+    () => [
+      ...defaultColumns.map((column) => `column:${column.id}`),
+      ...issueFieldDefinitions.map((field) => `issueField:${field.id}`),
+      ...planFieldDefinitions.map((field) => `planField:${field.id}`),
+    ],
+    [defaultColumns, issueFieldDefinitions, planFieldDefinitions]
+  );
+  const initialLayoutWidths = useMemo(
+    () => ({
+      ...Object.fromEntries(defaultColumns.map((column) => [`column:${column.id}`, column.width])),
+      ...Object.fromEntries(
+        issueFieldDefinitions.map((field) => [`issueField:${field.id}`, getDefaultFieldWidth(field)])
+      ),
+      ...Object.fromEntries(
+        planFieldDefinitions.map((field) => [`planField:${field.id}`, getDefaultFieldWidth(field)])
+      ),
+    }),
+    [defaultColumns, issueFieldDefinitions, planFieldDefinitions]
+  );
+  const resolvedInitialLayout = useMemo(
+    () => {
+      const base = normalizeLayoutPreference(initialPreferences.baseLayout, initialLayoutKeys, initialLayoutWidths);
+      return lockedPlanId
+        ? mergePlanContextLayout(base, initialPreferences.contextLayout, initialLayoutKeys, initialLayoutWidths)
+        : base;
+    },
+    [initialLayoutKeys, initialLayoutWidths, initialPreferences, lockedPlanId]
+  );
+  const [visibleColumnIds, setVisibleColumnIds] = useState<ColumnId[]>(() =>
+    defaultVisibleColumnIds.filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`column:${id}`))
+  );
+  const [visibleIssueFieldIds, setVisibleIssueFieldIds] = useState<string[]>(() =>
+    issueFields.map((field) => field.id).filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`issueField:${id}`))
+  );
+  const [visiblePlanFieldIds, setVisiblePlanFieldIds] = useState<string[]>(() =>
+    planFields.map((field) => field.id).filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`planField:${id}`))
+  );
+  const [columnOrderKeys, setColumnOrderKeys] = useState<string[]>(resolvedInitialLayout.orderedKeys);
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(() =>
+    Object.fromEntries(
+      defaultColumns.map((column) => [
+        column.id,
+        resolvedInitialLayout.widths[`column:${column.id}`] ?? column.width,
+      ])
+    ) as Record<ColumnId, number>
+  );
+  const [issueFieldWidths, setIssueFieldWidths] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      issueFields.map((field) => [
+        field.id,
+        resolvedInitialLayout.widths[`issueField:${field.id}`] ?? getDefaultFieldWidth(field),
+      ])
+    )
+  );
+  const [planFieldWidths, setPlanFieldWidths] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      planFields.map((field) => [
+        field.id,
+        resolvedInitialLayout.widths[`planField:${field.id}`] ?? getDefaultFieldWidth(field),
+      ])
+    )
+  );
   const columns = useMemo(
     () =>
       visibleColumnIds
@@ -1219,41 +1233,55 @@ export default function IssueList({
         .filter((column): column is ColumnConfig => Boolean(column)),
     [columnWidths, defaultColumnsById, visibleColumnIds]
   );
-  const availableColumns = useMemo<ResizableColumn[]>(
+  const allAvailableColumns = useMemo<ResizableColumn[]>(
     () => [
-      ...columns.map((column) => ({ type: "column" as const, id: column.id, label: column.label, width: column.width })),
-      ...visibleIssueFields.map((field) => ({
+      ...defaultColumns.map((column) => ({
+        type: "column" as const,
+        id: column.id,
+        label: column.label,
+        width: columnWidths[column.id] ?? column.width,
+      })),
+      ...issueFields.map((field) => ({
         type: "issueField" as const,
         id: field.id,
         field,
         width: issueFieldWidths[field.id] ?? getDefaultFieldWidth(field),
       })),
-      ...visiblePlanFields.map((field) => ({
+      ...planFields.map((field) => ({
         type: "planField" as const,
         id: field.id,
         field,
         width: planFieldWidths[field.id] ?? getDefaultFieldWidth(field),
       })),
     ],
-    [columns, issueFieldWidths, planFieldWidths, visibleIssueFields, visiblePlanFields]
-  );
-  const defaultColumnOrderKeys = useMemo(
-    () => availableColumns.map(getColumnOrderKey),
-    [availableColumns]
+    [columnWidths, defaultColumns, issueFieldWidths, issueFields, planFieldWidths, planFields]
   );
   const availableColumnsByKey = useMemo(
-    () => new Map(availableColumns.map((column) => [getColumnOrderKey(column), column] as const)),
-    [availableColumns]
+    () => new Map(allAvailableColumns.map((column) => [getColumnOrderKey(column), column] as const)),
+    [allAvailableColumns]
   );
   const orderedColumnKeys = useMemo(() => {
-    const storedKeys = columnOrderKeys.length > 0 ? columnOrderKeys : defaultColumnOrderKeys;
+    const storedKeys = columnOrderKeys.length > 0 ? columnOrderKeys : defaultLayoutKeys;
     const orderedKeys = storedKeys.filter((key) => availableColumnsByKey.has(key));
-    const missingKeys = defaultColumnOrderKeys.filter((key) => !orderedKeys.includes(key));
+    const missingKeys = defaultLayoutKeys.filter((key) => !orderedKeys.includes(key));
     return [...orderedKeys, ...missingKeys];
-  }, [availableColumnsByKey, columnOrderKeys, defaultColumnOrderKeys]);
+  }, [availableColumnsByKey, columnOrderKeys, defaultLayoutKeys]);
+  const visibleKeySet = useMemo(
+    () =>
+      new Set([
+        ...visibleColumnIds.map((id) => `column:${id}`),
+        ...visibleIssueFieldIds.map((id) => `issueField:${id}`),
+        ...visiblePlanFieldIds.map((id) => `planField:${id}`),
+      ]),
+    [visibleColumnIds, visibleIssueFieldIds, visiblePlanFieldIds]
+  );
   const resizableColumns = useMemo(
-    () => orderedColumnKeys.map((key) => availableColumnsByKey.get(key)).filter((column): column is ResizableColumn => Boolean(column)),
-    [availableColumnsByKey, orderedColumnKeys]
+    () =>
+      orderedColumnKeys
+        .filter((key) => visibleKeySet.has(key))
+        .map((key) => availableColumnsByKey.get(key))
+        .filter((column): column is ResizableColumn => Boolean(column)),
+    [availableColumnsByKey, orderedColumnKeys, visibleKeySet]
   );
   const columnsTotalWidth = useMemo(
     () => resizableColumns.reduce((total, column) => total + column.width, 0),
@@ -1269,6 +1297,12 @@ export default function IssueList({
   const [dragSourceIndex, setDragSourceIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverSide, setDragOverSide] = useState<"left" | "right" | null>(null);
+  const [layoutSaveVersion, setLayoutSaveVersion] = useState(0);
+  const [preferenceSaveError, setPreferenceSaveError] = useState(false);
+  const layoutSavePromiseRef = useRef<Promise<unknown> | null>(null);
+  const filterSavePromiseRef = useRef<Promise<unknown> | null>(null);
+  const preferenceScopeIdentity = `${preferenceScope.projectId}:${preferenceScope.surface}:${preferenceScope.contextKey}`;
+  const loadedPreferenceScopeRef = useRef(preferenceScopeIdentity);
 
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
@@ -1276,8 +1310,9 @@ export default function IssueList({
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
       if (sourceIndex !== targetIndex) {
-        const nextColumnOrderKeys = resizableColumns.map(getColumnOrderKey);
-        const [removed] = nextColumnOrderKeys.splice(sourceIndex, 1);
+        const visibleOrderKeys = resizableColumns.map(getColumnOrderKey);
+        const nextVisibleOrderKeys = [...visibleOrderKeys];
+        const [removed] = nextVisibleOrderKeys.splice(sourceIndex, 1);
         const adjustedTarget =
           dragOverSide === "right"
             ? sourceIndex < targetIndex
@@ -1286,23 +1321,11 @@ export default function IssueList({
             : sourceIndex < targetIndex
               ? targetIndex - 1
               : targetIndex;
-        nextColumnOrderKeys.splice(Math.max(0, adjustedTarget), 0, removed);
-        setColumnOrderKeys(nextColumnOrderKeys);
-        setVisibleColumnIds(
-          nextColumnOrderKeys
-            .filter((key) => key.startsWith("column:"))
-            .map((key) => key.slice("column:".length) as ColumnId)
+        nextVisibleOrderKeys.splice(Math.max(0, adjustedTarget), 0, removed);
+        setColumnOrderKeys(
+          replaceVisibleKeyOrder(orderedColumnKeys, visibleOrderKeys, nextVisibleOrderKeys)
         );
-        setVisibleIssueFieldIds(
-          nextColumnOrderKeys
-            .filter((key) => key.startsWith("issueField:"))
-            .map((key) => key.slice("issueField:".length))
-        );
-        setVisiblePlanFieldIds(
-          nextColumnOrderKeys
-            .filter((key) => key.startsWith("planField:"))
-            .map((key) => key.slice("planField:".length))
-        );
+        setLayoutSaveVersion((current) => current + 1);
       }
     }
     setDragSourceIndex(null);
@@ -1380,6 +1403,7 @@ export default function IssueList({
         document.removeEventListener("mouseup", onMouseUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        setLayoutSaveVersion((current) => current + 1);
       };
 
       document.addEventListener("mousemove", onMouseMove);
@@ -1395,147 +1419,125 @@ export default function IssueList({
   }, [initialIssues]);
 
   useEffect(() => {
+    if (loadedPreferenceScopeRef.current === preferenceScopeIdentity) return;
+    loadedPreferenceScopeRef.current = preferenceScopeIdentity;
     setIssueFields(issueFieldDefinitions);
-    setVisibleIssueFieldIds(issueFieldDefinitions.map((field) => field.id));
-    setIssueFieldWidths(
-      issueFieldDefinitions.reduce(
-        (acc, field) => {
-          acc[field.id] = getDefaultFieldWidth(field);
-          return acc;
-        },
-        {} as Record<string, number>
-      )
-    );
-  }, [activeProjectId, issueFieldDefinitions]);
-
-  useEffect(() => {
     setPlanFields(planFieldDefinitions);
-    setVisiblePlanFieldIds(planFieldDefinitions.map((field) => field.id));
-    setPlanFieldWidths(
-      planFieldDefinitions.reduce(
-        (acc, field) => {
-          acc[field.id] = getDefaultFieldWidth(field);
-          return acc;
-        },
-        {} as Record<string, number>
-      )
+    setVisibleColumnIds(
+      defaultVisibleColumnIds.filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`column:${id}`))
     );
-    // Only reset local field edits when navigating to another plan.
-    // Server props for this array can be referentially new during refreshes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedPlanId]);
-
-  useEffect(() => {
-    const storedPreferences = readStoredIssueListColumnPreferences(columnStorageKey);
-    const validVisibleColumnIds = storedPreferences?.visibleColumnIds?.filter((columnId) =>
-      defaultColumnsById.has(columnId)
+    setVisibleIssueFieldIds(
+      issueFieldDefinitions
+        .map((field) => field.id)
+        .filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`issueField:${id}`))
     );
-    const validColumnWidths = Object.entries(storedPreferences?.columnWidths || {}).reduce(
-      (acc, [columnId, width]) => {
-        if (defaultColumnsById.has(columnId as ColumnId) && typeof width === "number" && width >= 60) {
-          acc[columnId as ColumnId] = width;
-        }
-        return acc;
-      },
-      {} as Record<ColumnId, number>
+    setVisiblePlanFieldIds(
+      planFieldDefinitions
+        .map((field) => field.id)
+        .filter((id) => !resolvedInitialLayout.hiddenKeys.includes(`planField:${id}`))
     );
-    const issueFieldsById = new Map(issueFields.map((field) => [field.id, field]));
-    const currentIssueFieldIds = new Set(issueFields.map((field) => field.id));
-    const validVisibleIssueFieldIds = storedPreferences?.visibleIssueFieldIds?.filter((fieldId) =>
-      currentIssueFieldIds.has(fieldId)
+    setColumnOrderKeys(resolvedInitialLayout.orderedKeys);
+    setColumnWidths(
+      Object.fromEntries(
+        defaultColumns.map((column) => [
+          column.id,
+          resolvedInitialLayout.widths[`column:${column.id}`] ?? column.width,
+        ])
+      ) as Record<ColumnId, number>
     );
-    const validIssueFieldWidths = Object.entries(storedPreferences?.issueFieldWidths || {}).reduce(
-      (acc, [fieldId, width]) => {
-        const field = issueFieldsById.get(fieldId);
-        const minWidth = field?.type === "DATE" ? DATE_FIELD_COLUMN_MIN_WIDTH : DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH;
-        if (field && typeof width === "number" && width >= minWidth) {
-          acc[fieldId] = width;
-        }
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-    const planFieldsById = new Map(planFields.map((field) => [field.id, field]));
-    const currentPlanFieldIds = new Set(planFields.map((field) => field.id));
-    const validVisiblePlanFieldIds = storedPreferences?.visiblePlanFieldIds?.filter((fieldId) =>
-      currentPlanFieldIds.has(fieldId)
-    );
-    const validPlanFieldWidths = Object.entries(storedPreferences?.planFieldWidths || {}).reduce(
-      (acc, [fieldId, width]) => {
-        const field = planFieldsById.get(fieldId);
-        const minWidth = field?.type === "DATE" ? DATE_FIELD_COLUMN_MIN_WIDTH : DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH;
-        if (field && typeof width === "number" && width >= minWidth) {
-          acc[fieldId] = width;
-        }
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-
-    const nextVisibleColumnIds = validVisibleColumnIds && validVisibleColumnIds.length > 0 ? validVisibleColumnIds : defaultVisibleColumnIds;
-    setVisibleColumnIds(nextVisibleColumnIds);
-    setColumnWidths({ ...defaultColumnWidths, ...validColumnWidths });
-    const allIssueFieldIds = issueFields.map((field) => field.id);
-    const mergedVisibleIssueFieldIds =
-      validVisibleIssueFieldIds && validVisibleIssueFieldIds.length > 0
-        ? [...validVisibleIssueFieldIds, ...allIssueFieldIds.filter((fieldId) => !validVisibleIssueFieldIds.includes(fieldId))]
-        : allIssueFieldIds;
-    setVisibleIssueFieldIds(mergedVisibleIssueFieldIds);
     setIssueFieldWidths(
-      issueFields.reduce(
-        (acc, field) => {
-          acc[field.id] = validIssueFieldWidths[field.id] ?? getDefaultFieldWidth(field);
-          return acc;
-        },
-        {} as Record<string, number>
+      Object.fromEntries(
+        issueFieldDefinitions.map((field) => [
+          field.id,
+          resolvedInitialLayout.widths[`issueField:${field.id}`] ?? getDefaultFieldWidth(field),
+        ])
       )
     );
-    const allPlanFieldIds = planFields.map((field) => field.id);
-    const mergedVisiblePlanFieldIds =
-      validVisiblePlanFieldIds && validVisiblePlanFieldIds.length > 0
-        ? [...validVisiblePlanFieldIds, ...allPlanFieldIds.filter((fieldId) => !validVisiblePlanFieldIds.includes(fieldId))]
-        : allPlanFieldIds;
-
-    setVisiblePlanFieldIds(mergedVisiblePlanFieldIds);
     setPlanFieldWidths(
-      planFields.reduce(
-        (acc, field) => {
-          acc[field.id] = validPlanFieldWidths[field.id] ?? getDefaultFieldWidth(field);
-          return acc;
-        },
-        {} as Record<string, number>
+      Object.fromEntries(
+        planFieldDefinitions.map((field) => [
+          field.id,
+          resolvedInitialLayout.widths[`planField:${field.id}`] ?? getDefaultFieldWidth(field),
+        ])
       )
     );
-    const availableOrderKeys = [
-      ...nextVisibleColumnIds.map((columnId) => `column:${columnId}`),
-      ...mergedVisibleIssueFieldIds.map((fieldId) => `issueField:${fieldId}`),
-      ...mergedVisiblePlanFieldIds.map((fieldId) => `planField:${fieldId}`),
-    ];
-    const validColumnOrderKeys = storedPreferences?.columnOrder?.filter((key) => availableOrderKeys.includes(key));
-    setColumnOrderKeys(
-      validColumnOrderKeys && validColumnOrderKeys.length > 0
-        ? [...validColumnOrderKeys, ...availableOrderKeys.filter((key) => !validColumnOrderKeys.includes(key))]
-        : availableOrderKeys
-    );
-    setHasLoadedColumnPreferences(true);
-  }, [columnStorageKey, defaultColumnWidths, defaultColumnsById, defaultVisibleColumnIds, issueFields, planFields]);
+    setLayoutSaveVersion(0);
+    setPreferenceSaveError(false);
+  }, [
+    defaultColumns,
+    defaultVisibleColumnIds,
+    issueFieldDefinitions,
+    planFieldDefinitions,
+    preferenceScopeIdentity,
+    resolvedInitialLayout,
+  ]);
 
   useEffect(() => {
-    if (!hasLoadedColumnPreferences || typeof window === "undefined") return;
+    try {
+      const cleanupKey = "neo-jira:issue-list-preferences:server:v1";
+      if (window.localStorage.getItem(cleanupKey)) return;
+      for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+        const key = window.localStorage.key(index);
+        if (
+          key?.startsWith("neo-jira:issue-list-columns:") ||
+          key?.startsWith("neo-jira:issue-list-filters:")
+        ) {
+          window.localStorage.removeItem(key);
+        }
+      }
+      window.localStorage.setItem(cleanupKey, "1");
+    } catch {
+      // Server preferences remain authoritative when browser storage is unavailable.
+    }
+  }, []);
 
-    window.localStorage.setItem(
-      columnStorageKey,
-      JSON.stringify({
-        visibleColumnIds,
-        columnWidths,
-        visibleIssueFieldIds,
-        issueFieldWidths,
-        visiblePlanFieldIds,
-        planFieldWidths,
-        columnOrder: resizableColumns.map(getColumnOrderKey),
-      } satisfies StoredIssueListColumnPreferences)
-    );
-  }, [columnStorageKey, columnWidths, hasLoadedColumnPreferences, issueFieldWidths, planFieldWidths, resizableColumns, visibleColumnIds, visibleIssueFieldIds, visiblePlanFieldIds]);
+  useEffect(() => {
+    if (layoutSaveVersion === 0) return;
+    const hiddenKeys = defaultLayoutKeys.filter((key) => !visibleKeySet.has(key));
+    const widths = {
+      ...Object.fromEntries(
+        Object.entries(columnWidths).map(([id, width]) => [`column:${id}`, Math.min(width, 1200)])
+      ),
+      ...Object.fromEntries(
+        Object.entries(issueFieldWidths).map(([id, width]) => [`issueField:${id}`, Math.min(width, 1200)])
+      ),
+      ...Object.fromEntries(
+        Object.entries(planFieldWidths).map(([id, width]) => [`planField:${id}`, Math.min(width, 1200)])
+      ),
+    };
+    const layout: IssueListLayoutPreference = {
+      orderedKeys: orderedColumnKeys,
+      hiddenKeys,
+      widths,
+    };
+    const timer = window.setTimeout(async () => {
+      const savePromise = saveIssueListLayoutPreference({ scope: preferenceScope, layout });
+      layoutSavePromiseRef.current = savePromise;
+      const result = await savePromise;
+      setPreferenceSaveError(!result.success);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    columnWidths,
+    defaultLayoutKeys,
+    issueFieldWidths,
+    layoutSaveVersion,
+    orderedColumnKeys,
+    planFieldWidths,
+    preferenceScope,
+    visibleKeySet,
+  ]);
+
+  useEffect(() => {
+    const query = buildPersistedIssueListQuery(new URLSearchParams(searchParams.toString()));
+    const timer = window.setTimeout(async () => {
+      const savePromise = saveIssueListFilterPreference({ scope: preferenceScope, query });
+      filterSavePromiseRef.current = savePromise;
+      const result = await savePromise;
+      setPreferenceSaveError(!result.success);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [preferenceScope, searchParams]);
 
   useEffect(() => {
     const availableIssueIds = new Set(issues.map((issue) => issue.id));
@@ -1726,7 +1728,20 @@ export default function IssueList({
       }
     }
 
-    updateQueryParams(updates);
+    const retained = new URLSearchParams();
+    for (const key of ["pageSize", "sortBy", "sortDirection"]) {
+      const value = searchParams.get(key);
+      if (value) retained.set(key, value);
+    }
+    startTransition(async () => {
+      await filterSavePromiseRef.current;
+      const result = await saveIssueListFilterPreference({
+        scope: preferenceScope,
+        query: retained.toString(),
+      });
+      setPreferenceSaveError(!result.success);
+      updateQueryParams(updates);
+    });
   };
 
   const handleSortByColumn = (columnId: ColumnId) => {
@@ -1907,6 +1922,12 @@ export default function IssueList({
       }
 
       setPlanFields((current) => [...current, result.field as PlanFieldDefinition].sort((a, b) => a.position - b.position));
+      setVisiblePlanFieldIds((current) => [...current, result.field!.id]);
+      setPlanFieldWidths((current) => ({
+        ...current,
+        [result.field!.id]: getDefaultFieldWidth(result.field as PlanFieldDefinition),
+      }));
+      setLayoutSaveVersion((current) => current + 1);
       setFieldForm({ name: "", key: "", type: "BOOLEAN", optionsText: "" });
     });
   };
@@ -1944,6 +1965,12 @@ export default function IssueList({
       }
 
       setIssueFields((current) => [...current, result.field as IssueFieldDefinition].sort((a, b) => a.position - b.position));
+      setVisibleIssueFieldIds((current) => [...current, result.field!.id]);
+      setIssueFieldWidths((current) => ({
+        ...current,
+        [result.field!.id]: getDefaultFieldWidth(result.field as IssueFieldDefinition),
+      }));
+      setLayoutSaveVersion((current) => current + 1);
       setFieldForm({ name: "", key: "", type: "BOOLEAN", optionsText: "" });
     });
   };
@@ -2029,6 +2056,9 @@ export default function IssueList({
       }
 
       setPlanFields((current) => current.filter((item) => item.id !== field.id));
+      setVisiblePlanFieldIds((current) => current.filter((id) => id !== field.id));
+      setColumnOrderKeys((current) => current.filter((key) => key !== `planField:${field.id}`));
+      setLayoutSaveVersion((current) => current + 1);
       if (editingFieldId === field.id) {
         setEditingFieldId(null);
       }
@@ -2054,6 +2084,9 @@ export default function IssueList({
       }
 
       setIssueFields((current) => current.filter((item) => item.id !== field.id));
+      setVisibleIssueFieldIds((current) => current.filter((id) => id !== field.id));
+      setColumnOrderKeys((current) => current.filter((key) => key !== `issueField:${field.id}`));
+      setLayoutSaveVersion((current) => current + 1);
       if (editingFieldId === field.id) {
         setEditingFieldId(null);
       }
@@ -2496,18 +2529,21 @@ export default function IssueList({
 
       return [...current, columnId];
     });
+    setLayoutSaveVersion((current) => current + 1);
   };
 
   const handleTogglePlanFieldVisibility = (fieldId: string) => {
     setVisiblePlanFieldIds((current) =>
       current.includes(fieldId) ? current.filter((id) => id !== fieldId) : [...current, fieldId]
     );
+    setLayoutSaveVersion((current) => current + 1);
   };
 
   const handleToggleIssueFieldVisibility = (fieldId: string) => {
     setVisibleIssueFieldIds((current) =>
       current.includes(fieldId) ? current.filter((id) => id !== fieldId) : [...current, fieldId]
     );
+    setLayoutSaveVersion((current) => current + 1);
   };
 
   const handleResetColumns = () => {
@@ -2538,6 +2574,12 @@ export default function IssueList({
       ...issueFields.map((field) => `issueField:${field.id}`),
       ...planFields.map((field) => `planField:${field.id}`),
     ]);
+    setLayoutSaveVersion(0);
+    startTransition(async () => {
+      await layoutSavePromiseRef.current;
+      const result = await resetIssueListLayoutPreference(preferenceScope);
+      setPreferenceSaveError(!result.success);
+    });
   };
 
   const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
@@ -2584,6 +2626,11 @@ export default function IssueList({
             </Button>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {preferenceSaveError ? (
+              <span className="text-xs text-red-600" role="status">
+                {locale === "zh" ? "视图偏好保存失败，请再次调整后重试" : "Could not save view preferences; change the view to retry"}
+              </span>
+            ) : null}
             <ColumnVisibilityMenu
               buttonLabel={columnsButtonLabel}
               resetLabel={resetColumnsLabel}
