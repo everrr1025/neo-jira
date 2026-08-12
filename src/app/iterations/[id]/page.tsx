@@ -8,7 +8,8 @@ import IssueSearchInput from "@/components/IssueSearchInput";
 import IterationLayoutToggle from "@/components/IterationLayoutToggle";
 import KanbanBoard from "@/components/KanbanBoard";
 import { SprintActionButton } from "@/components/SprintActionButton";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
+import { getProjectPath } from "@/lib/projectRoutes";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
@@ -59,6 +60,9 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
     searchParams,
     cookies(),
   ]);
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id, "iterations", resolvedParams.id));
+  }
   const layout =
     parseIterationLayout(searchParamsData.layout) ??
     parseIterationLayout(cookieStore.get(ITERATION_LAYOUT_COOKIE)?.value) ??
@@ -85,7 +89,7 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
     },
   });
 
-  if (!iteration) redirect("/iterations");
+  if (!iteration) redirect(getProjectPath(activeProject.departmentId, activeProject.id, "iterations"));
 
   const role = await getProjectRole(userId, iteration.project.id);
   const canCreateIssues = Boolean(role);
@@ -172,7 +176,7 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
   if (savedFilterQuery) {
     const restored = searchParamsRecordToUrlSearchParams(searchParamsData);
     new URLSearchParams(savedFilterQuery).forEach((value, key) => restored.set(key, value));
-    redirect(`/iterations/${iteration.id}?${restored.toString()}`);
+    redirect(`${getProjectPath(activeProject.departmentId, activeProject.id, "iterations", iteration.id)}?${restored.toString()}`);
   }
 
   const boardIssues =

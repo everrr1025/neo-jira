@@ -1,11 +1,12 @@
 "use client";
 
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { deletePlan } from "@/app/actions/plans";
 import { Button } from "@/components/ui/button";
+import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import AlertPopup from "./AlertPopup";
@@ -38,6 +39,7 @@ function getDeletePlanText(locale: "en" | "zh") {
 
 export default function DeletePlanButton({ planId, projectId, locale }: DeletePlanButtonProps) {
   const router = useRouter();
+  const projectRoute = parseProjectPath(usePathname());
   const [errorMessage, setErrorMessage] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -55,7 +57,11 @@ export default function DeletePlanButton({ planId, projectId, locale }: DeletePl
       }
 
       setIsDialogOpen(false);
-      router.push("/plans");
+      router.push(
+        projectRoute
+          ? getProjectPath(projectRoute.departmentId, projectRoute.projectId, "plans")
+          : "/plans",
+      );
       router.refresh();
     });
   };

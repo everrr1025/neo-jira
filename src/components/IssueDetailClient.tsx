@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { deleteIssue, toggleIssueWatcher, updateIssue, updateIssueFieldValue } from "@/app/actions/issues";
 import { emitIssueActivityUpdated } from "@/lib/issueActivityEvents";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/i18n";
 import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
+import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
@@ -236,6 +237,7 @@ export default function IssueDetailClient({
   parentIssueOptions?: ParentIssueOption[];
 }) {
   const router = useRouter();
+  const projectRoute = parseProjectPath(usePathname());
   const searchParams = useSearchParams();
   const returnTo = resolveIssueReturnTo(searchParams.get("returnTo"));
   const [issue, setIssue] = useState(initialIssue);
@@ -504,7 +506,11 @@ export default function IssueDetailClient({
 
   const handleBack = () => {
     if (window.history.length <= 1) {
-      router.push("/issues");
+      router.push(
+        projectRoute
+          ? getProjectPath(projectRoute.departmentId, projectRoute.projectId, "issues")
+          : "/issues",
+      );
       return;
     }
     router.back();

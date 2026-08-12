@@ -7,6 +7,7 @@ export type BasicProject = {
   id: string;
   name: string;
   key: string;
+  departmentId: string;
 };
 
 export { buildDepartmentProjectAccessWhere };
@@ -23,9 +24,11 @@ export function buildActiveProjectWhere(
   userId: string,
   userRole: string | undefined,
   projectId: string,
+  departmentId?: string | null,
 ) {
   return {
     id: projectId,
+    ...(departmentId ? { departmentId } : {}),
     ...buildVisibleDepartmentProjectsWhere(userId),
   };
 }

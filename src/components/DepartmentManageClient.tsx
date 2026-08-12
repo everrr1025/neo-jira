@@ -21,6 +21,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 import {
   createDepartmentProject,
@@ -1376,7 +1377,7 @@ export default function DepartmentManageClient({
         <td key={column.id} className="overflow-hidden px-5 py-4">
           <div className="min-w-0">
             <a
-              href={`/projects/select?projectId=${project.id}`}
+              href={getProjectPath(department.id, project.id)}
               className="block truncate font-semibold text-foreground transition-colors hover:text-primary"
             >
               {project.name}
@@ -1438,7 +1439,7 @@ export default function DepartmentManageClient({
       <td key={column.id} className="overflow-hidden px-5 py-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button asChild size="xs" variant="outline">
-            <a href={`/projects/select?projectId=${project.id}`}>{t.viewProject}</a>
+            <Link href={getProjectPath(department.id, project.id)}>{t.viewProject}</Link>
           </Button>
           <Button asChild size="xs" variant="outline">
             <Link href={`/departments/${department.id}/projects/${project.id}/members`}>{t.memberButton}</Link>
@@ -1784,7 +1785,7 @@ export default function DepartmentManageClient({
                     {selectedMyProject ? (
                       <div className="flex min-w-0 items-center gap-1">
                         <a
-                          href={`/projects/select?projectId=${selectedMyProject.id}&redirectTo=${encodeURIComponent("/")}`}
+                          href={getProjectPath(department.id, selectedMyProject.id)}
                           className="max-w-[240px] truncate rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                           title={selectedMyProject.name}
                         >
@@ -1844,7 +1845,7 @@ export default function DepartmentManageClient({
                           {selectedMyProject.priorityIssues.map((issue) => (
                             <Link
                               key={issue.id}
-                              href={`/issues/${issue.id}`}
+                              href={getProjectPath(department.id, selectedMyProject.id, "issues", issue.id)}
                               className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 transition-colors hover:bg-muted/45"
                             >
                               <div className="min-w-0">

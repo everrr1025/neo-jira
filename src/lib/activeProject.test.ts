@@ -13,8 +13,8 @@ const {
 } = require("./activeProjectUtils.ts");
 
 const projects = [
-  { id: "project-a", name: "Alpha", key: "ALPHA" },
-  { id: "project-b", name: "Beta", key: "BETA" },
+  { id: "project-a", name: "Alpha", key: "ALPHA", departmentId: "department-a" },
+  { id: "project-b", name: "Beta", key: "BETA", departmentId: "department-a" },
 ];
 
 assert.deepEqual(findProjectById(projects, "project-b"), projects[1]);
@@ -62,6 +62,26 @@ assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a"), {
         some: { userId: "user-1" },
       },
     },
+    {
+      department: {
+        members: {
+          some: {
+            userId: "user-1",
+            OR: [{ isDepartmentAdmin: true }, { projectScopeType: "ALL_PROJECTS" }],
+          },
+        },
+      },
+    },
+  ],
+});
+
+assert.deepEqual(buildActiveProjectWhere("user-1", "USER", "project-a", "department-a"), {
+  id: "project-a",
+  departmentId: "department-a",
+  OR: [
+    { ownerId: "user-1" },
+    { members: { some: { userId: "user-1" } } },
+    { managedByDepartmentMembers: { some: { userId: "user-1" } } },
     {
       department: {
         members: {

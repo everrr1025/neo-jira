@@ -23,6 +23,7 @@ import ProjectNavIcon from "@/components/ProjectNavIcon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 import { AvatarPicker } from "./AvatarPicker";
 import { SidebarUserMenu } from "./SidebarUserMenu";
 
@@ -56,7 +57,7 @@ export function SidebarClient({
   departmentContext,
 }: {
   isAdmin: boolean;
-  activeProject: { id: string; name: string; key: string } | null;
+  activeProject: { id: string; name: string; key: string; departmentId: string } | null;
   canManageActiveProject: boolean;
   user: { id?: string; name?: string | null; email?: string | null; avatar?: string | null } | null | undefined;
   locale: Locale;
@@ -66,8 +67,9 @@ export function SidebarClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const translations = getTranslations(locale);
-  const isDepartmentRoute = pathname.startsWith("/departments/");
-  const inProjectContext = Boolean(activeProject) && !isDepartmentRoute;
+  const projectRoute = parseProjectPath(pathname);
+  const isDepartmentRoute = pathname.startsWith("/departments/") && !projectRoute;
+  const inProjectContext = Boolean(activeProject) && Boolean(projectRoute);
   const plansLabel = locale === "zh" ? "计划" : "Plans";
   const membersLabel = locale === "zh" ? "成员" : "Members";
   const notificationsLabel = locale === "zh" ? "通知" : "Notifications";
@@ -76,9 +78,7 @@ export function SidebarClient({
   const notesLabel = locale === "zh" ? "笔记" : "Notes";
   const projectSettingsLabel = locale === "zh" ? "设置" : "Settings";
   const expandSidebarLabel = locale === "zh" ? "展开侧栏" : "Expand sidebar";
-  const returnHref = departmentContext
-    ? `/projects/select?projectId=clear&redirectTo=${encodeURIComponent(`/departments/${departmentContext.id}`)}`
-    : "/projects/select?projectId=clear";
+  const returnHref = departmentContext ? `/departments/${departmentContext.id}` : "/";
   const returnLabel = departmentContext ? (locale === "zh" ? "返回部门" : "Back to Department") : "Return to Portal";
   const sidebarTitle =
     inProjectContext && activeProject
@@ -101,6 +101,11 @@ export function SidebarClient({
       const tab = new URLSearchParams(href.split("?")[1]).get("tab");
       const currentTab = searchParams.get("tab") || "tasks";
       isActive = pathname === hrefPath && tab === currentTab;
+    } else if (
+      projectRoute &&
+      href === getProjectPath(projectRoute.departmentId, projectRoute.projectId)
+    ) {
+      isActive = pathname === href;
     } else if (departmentContext && href === `/departments/${departmentContext.id}`) {
       isActive = pathname === href;
     } else {
@@ -116,6 +121,9 @@ export function SidebarClient({
   };
 
   const navIconClass = "size-5 flex-shrink-0 text-sidebar-foreground/55 transition-colors";
+  const projectBasePath = activeProject
+    ? getProjectPath(activeProject.departmentId, activeProject.id)
+    : "";
 
   const topLevelItems = !inProjectContext
     ? [
@@ -171,25 +179,25 @@ export function SidebarClient({
     : [
         {
           id: "dashboard",
-          href: "/",
+          href: projectBasePath,
           icon: <Home className={navIconClass} />,
           label: translations.sidebar.dashboard,
         },
         {
           id: "kanban",
-          href: "/iterations",
+          href: `${projectBasePath}/iterations`,
           icon: <RefreshCw className={navIconClass} />,
           label: translations.sidebar.iterations,
         },
         {
           id: "issues",
-          href: "/issues",
+          href: `${projectBasePath}/issues`,
           icon: <FileText className={navIconClass} />,
           label: translations.sidebar.issues,
         },
         {
           id: "plans",
-          href: "/plans",
+          href: `${projectBasePath}/plans`,
           icon: <ClipboardCheck className={navIconClass} />,
           label: plansLabel,
         },
@@ -197,7 +205,7 @@ export function SidebarClient({
           ? [
               {
                 id: "project-settings",
-                href: `/projects/${activeProject.id}/settings`,
+                href: `${projectBasePath}/settings`,
                 icon: <Settings className={navIconClass} />,
                 label: projectSettingsLabel,
               },

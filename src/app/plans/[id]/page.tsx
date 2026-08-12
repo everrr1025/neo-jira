@@ -5,7 +5,8 @@ import DeletePlanButton from "@/components/DeletePlanButton";
 import EditPlanButton from "@/components/EditPlanButton";
 import IssueList from "@/components/IssueList";
 import PlanIssueActionButton from "@/components/PlanIssueActionButton";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
+import { getProjectPath } from "@/lib/projectRoutes";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
@@ -93,6 +94,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   if (!activeProject) redirect("/projects");
 
   const resolvedParams = await params;
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id, "plans", resolvedParams.id));
+  }
   const plan = await prisma.plan.findFirst({
     where: {
       id: resolvedParams.id,
@@ -145,7 +149,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   if (savedFilterQuery) {
     const restored = searchParamsRecordToUrlSearchParams(searchParamsData);
     new URLSearchParams(savedFilterQuery).forEach((value, key) => restored.set(key, value));
-    redirect(`/plans/${plan.id}?${restored.toString()}`);
+    redirect(`${getProjectPath(activeProject.departmentId, activeProject.id, "plans", plan.id)}?${restored.toString()}`);
   }
   const doneStatusKeys = workflowProjects[0]?.workflowStatuses
     .filter((status) => status.category === "DONE")

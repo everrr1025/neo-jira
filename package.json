@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx src/lib/activeProject.test.ts && tsx src/lib/issueHierarchy.test.ts && tsx src/lib/issueFilterUtils.test.ts && tsx src/lib/issueNavigation.test.ts && tsx src/lib/issueListPreferences.test.ts",
+    "test": "tsx src/lib/activeProject.test.ts && tsx src/lib/issueHierarchy.test.ts && tsx src/lib/issueFilterUtils.test.ts && tsx src/lib/issueNavigation.test.ts && tsx src/lib/projectRoutes.test.ts && tsx src/lib/issueListPreferences.test.ts",
     "test:e2e": "playwright test",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",

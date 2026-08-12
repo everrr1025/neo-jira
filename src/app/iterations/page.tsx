@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { redirect } from "next/navigation";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { canManageProjectPlanning } from "@/lib/permissions";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { CircleDot } from "lucide-react";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,9 @@ export default async function IterationsPage() {
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id, "iterations"));
+  }
 
   const canCreateSprints = await canManageProjectPlanning(userId, activeProject.id);
   const sprintCreateProjects = canCreateSprints ? [activeProject] : [];
@@ -119,7 +123,7 @@ export default async function IterationsPage() {
                     <TableRow key={iteration.id}>
                       <TableCell className="max-w-[280px]">
                         <Link
-                          href={`/iterations/${iteration.id}`}
+                          href={getProjectPath(activeProject.departmentId, activeProject.id, "iterations", iteration.id)}
                           className="block truncate font-medium text-foreground hover:text-primary hover:underline"
                           title={iteration.name}
                         >

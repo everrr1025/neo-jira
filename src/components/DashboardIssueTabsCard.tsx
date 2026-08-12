@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   getWorkflowStatusName,
   type WorkflowStatusRecord,
 } from "@/lib/workflows";
+import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 
 type DashboardIssue = {
   id: string;
@@ -46,6 +48,7 @@ export default function DashboardIssueTabsCard({
   }>;
 }) {
   const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? "");
+  const projectRoute = parseProjectPath(usePathname());
   const translations = getTranslations(locale);
   const workflowStatusByProject = useMemo(
     () => new Map(workflowProjects.map((project) => [project.id, project.workflowStatuses])),
@@ -103,7 +106,7 @@ export default function DashboardIssueTabsCard({
           currentTab.issues.map((issue) => (
             <Link
               key={issue.id}
-              href={`/issues/${issue.id}`}
+              href={projectRoute ? getProjectPath(projectRoute.departmentId, projectRoute.projectId, "issues", issue.id) : `/issues/${issue.id}`}
               className={`block rounded-xl border p-3 transition-colors ${accentClass}`}
             >
               <div className="flex items-start justify-between gap-3">

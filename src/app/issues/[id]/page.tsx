@@ -2,12 +2,13 @@ import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
 import IssueDetailClient from "@/components/IssueDetailClient";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere, buildVisibleProjectsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +27,26 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       id: resolvedParams.id,
       project: buildVisibleProjectsWhere(userId, userRole),
     },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, project: { select: { departmentId: true } } },
   });
 
   if (!issueProject) return notFound();
+  if (!issueProject.project.departmentId) return notFound();
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
-  if (activeProject?.id !== issueProject.projectId) {
-    redirect(`/projects/select?projectId=${issueProject.projectId}&redirectTo=${encodeURIComponent(`/issues/${resolvedParams.id}`)}`);
+  const canonicalPath = getProjectPath(
+    issueProject.project.departmentId,
+    issueProject.projectId,
+    "issues",
+    resolvedParams.id,
+  );
+  const routeContext = await getRequestedProjectRouteContext();
+  if (
+    activeProject?.id !== issueProject.projectId ||
+    !routeContext ||
+    routeContext.departmentId !== issueProject.project.departmentId
+  ) {
+    redirect(canonicalPath);
   }
 
   const issue = await prisma.issue.findFirst({

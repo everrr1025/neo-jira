@@ -7,7 +7,7 @@ import CreatePlanButton from "@/components/CreatePlanButton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { canManageProjectPlanning } from "@/lib/permissions";
@@ -15,6 +15,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,9 @@ export default async function PlansPage() {
   if (!userId) redirect("/login");
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id, "plans"));
+  }
 
   const [plans, workflowProject] = await Promise.all([
     prisma.plan.findMany({
@@ -200,7 +204,7 @@ export default async function PlansPage() {
                   <TableRow key={plan.id}>
                     <TableCell className="max-w-[280px]">
                       <Link
-                        href={`/plans/${plan.id}`}
+                        href={getProjectPath(activeProject.departmentId, activeProject.id, "plans", plan.id)}
                         className="block truncate font-medium text-foreground hover:text-primary hover:underline"
                         title={plan.name}
                       >

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getActiveProjectForUser, getVisibleProjectsForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext, getVisibleProjectsForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
@@ -28,6 +28,7 @@ import {
   getWorkflowStatusName,
   type WorkflowStatusRecord,
 } from "@/lib/workflows";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,10 @@ export default async function Dashboard({
   const isGlobalAdmin = userRole === "ADMIN";
   const query = typeof params?.search === "string" ? params.search.trim() : "";
   const activeProject = await getActiveProjectForUser(userId, userRole);
+  const projectRouteContext = await getRequestedProjectRouteContext();
+  if (activeProject && !projectRouteContext) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id));
+  }
   if (!activeProject && !isGlobalAdmin && !query) {
     const departmentMembership = await getUserDepartmentMembership(userId);
     if (departmentMembership) {
@@ -317,11 +322,15 @@ export default async function Dashboard({
     },
   ];
 
-  const assignedToMeHref = `/issues?assignee=ME`;
-  const watchedIssuesHref = `/issues?watcher=ME`;
-  const highPriorityHref = `/issues?priority=HIGH,URGENT`;
-  const overdueHref = `/issues?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
-  const dueSoonHref = `/issues?duePreset=NEXT_3_DAYS`;
+  const projectBasePath = activeProject
+    ? getProjectPath(activeProject.departmentId, activeProject.id)
+    : "";
+  const issuesPath = activeProject ? `${projectBasePath}/issues` : "/issues";
+  const assignedToMeHref = `${issuesPath}?assignee=ME`;
+  const watchedIssuesHref = `${issuesPath}?watcher=ME`;
+  const highPriorityHref = `${issuesPath}?priority=HIGH,URGENT`;
+  const overdueHref = `${issuesPath}?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
+  const dueSoonHref = `${issuesPath}?duePreset=NEXT_3_DAYS`;
 
   if (query) {
     return (
@@ -332,7 +341,7 @@ export default async function Dashboard({
               <p className="text-sm font-medium text-slate-500">{translations.dashboard.searchResultsFor}</p>
               <h3 className="text-lg font-semibold text-slate-900">{query}</h3>
             </div>
-            <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
+            <Link href={projectBasePath || "/"} className="text-sm font-medium text-blue-600 hover:underline">
               {translations.dashboard.clearSearch}
             </Link>
           </div>
@@ -341,7 +350,7 @@ export default async function Dashboard({
               searchResults.map((issue) => (
                 <Link
                   key={issue.id}
-                  href={`/issues/${issue.id}`}
+                  href={`${issuesPath}/${issue.id}`}
                   className="group block rounded-xl border p-4 transition-colors hover:border-blue-300 hover:bg-slate-50"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -507,7 +516,7 @@ export default async function Dashboard({
               <p className="text-sm font-medium text-slate-500">{translations.dashboard.searchResultsFor}</p>
               <h3 className="font-semibold text-slate-900 text-lg">{query}</h3>
             </div>
-            <Link href="/" className="text-sm font-medium text-blue-600 hover:underline">
+            <Link href={projectBasePath} className="text-sm font-medium text-blue-600 hover:underline">
               {translations.dashboard.clearSearch}
             </Link>
           </div>
@@ -516,7 +525,7 @@ export default async function Dashboard({
               searchResults.map((issue) => (
                 <Link
                   key={issue.id}
-                  href={`/issues/${issue.id}`}
+                  href={`${issuesPath}/${issue.id}`}
                   className="block p-4 border rounded-xl hover:border-blue-300 hover:bg-slate-50 transition-colors group"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -561,7 +570,7 @@ export default async function Dashboard({
                     </div>
                     <CardAction>
                       <Button asChild>
-                        <Link href={`/iterations/${typedActiveIteration.id}`}>
+                        <Link href={`${projectBasePath}/iterations/${typedActiveIteration.id}`}>
                           {translations.dashboard.viewBoard}
                         </Link>
                       </Button>
@@ -618,7 +627,7 @@ export default async function Dashboard({
                   </CardHeader>
                   <CardContent>
                     <Button asChild>
-                      <Link href="/iterations">
+                      <Link href={`${projectBasePath}/iterations`}>
                         {translations.sidebar.iterations}
                       </Link>
                     </Button>

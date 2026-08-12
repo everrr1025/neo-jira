@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { getIssueTypeLabel, type Locale } from "@/lib/i18n";
 import { getWorkflowStatusBadgeClass, getWorkflowStatusName, type WorkflowStatusRecord } from "@/lib/workflows";
 import { cn } from "@/lib/utils";
+import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 
 export type IssueRelationRowIssue = {
   id: string;
@@ -30,6 +32,7 @@ export default function IssueRelationRow({
   asLink = true,
   className,
 }: IssueRelationRowProps) {
+  const projectRoute = parseProjectPath(usePathname());
   const content = (
     <>
       <span className="shrink-0 text-xs font-semibold text-muted-foreground">{issue.key}</span>
@@ -56,7 +59,10 @@ export default function IssueRelationRow({
   }
 
   return (
-    <Link href={`/issues/${issue.id}`} className={rowClassName}>
+    <Link
+      href={projectRoute ? getProjectPath(projectRoute.departmentId, projectRoute.projectId, "issues", issue.id) : `/issues/${issue.id}`}
+      className={rowClassName}
+    >
       {content}
     </Link>
   );

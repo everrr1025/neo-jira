@@ -5,11 +5,12 @@ import IssueSearchInput from "@/components/IssueSearchInput";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { redirect } from "next/navigation";
-import { getActiveProjectForUser } from "@/lib/activeProject";
+import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getTranslations } from "@/lib/i18n";
 import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 import {
@@ -43,6 +44,9 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
 
   const activeProject = await getActiveProjectForUser(userId, userRole);
   if (!activeProject) redirect("/projects");
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(activeProject.departmentId, activeProject.id, "issues"));
+  }
   const projectRole = await getProjectRole(userId, activeProject.id);
   const canCreateIssues = Boolean(projectRole);
   const canManagePlans = projectRole === "ADMIN";
@@ -84,7 +88,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   if (savedFilterQuery) {
     const restored = searchParamsRecordToUrlSearchParams(searchParamsData);
     new URLSearchParams(savedFilterQuery).forEach((value, key) => restored.set(key, value));
-    redirect(`/issues?${restored.toString()}`);
+    redirect(`${getProjectPath(activeProject.departmentId, activeProject.id, "issues")}?${restored.toString()}`);
   }
   const doneStatusKeys = workflowProjects[0]?.workflowStatuses
     .filter((status) => status.category === "DONE")

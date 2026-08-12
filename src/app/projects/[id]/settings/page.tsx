@@ -7,6 +7,8 @@ import { authOptions } from "@/lib/authOptions";
 import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { getRequestedProjectRouteContext } from "@/lib/activeProject";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 export const dynamic = "force-dynamic";
 
@@ -72,8 +74,12 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     },
   });
 
-  if (!project) {
+  if (!project || !project.departmentId) {
     notFound();
+  }
+
+  if (!(await getRequestedProjectRouteContext())) {
+    redirect(getProjectPath(project.departmentId, project.id, "settings"));
   }
 
   return (

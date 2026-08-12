@@ -86,6 +86,7 @@ import type { Locale } from "@/lib/i18n";
 import type { NoteFolderListItem, NoteListItem, NoteTaskOption } from "@/lib/notes";
 import { getWorkflowStatusName } from "@/lib/workflows";
 import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
+import { getProjectPath } from "@/lib/projectRoutes";
 
 const TEXT = {
   en: {
@@ -4526,7 +4527,7 @@ export default function DepartmentItemsClient({
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
                 <Link
-                  href={`/issues/${selectedNoteIssue.id}`}
+                  href={getProjectPath(departmentId, selectedNoteIssue.projectId, "issues", selectedNoteIssue.id)}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
@@ -4999,7 +5000,7 @@ export default function DepartmentItemsClient({
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
               <Link
-                href={`/issues/${selectedNoteIssue.id}`}
+                href={getProjectPath(departmentId, selectedNoteIssue.projectId, "issues", selectedNoteIssue.id)}
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
