@@ -295,7 +295,7 @@ function MultiFilter({
             <DropdownMenuSeparator />
             <Button
               type="button"
-              variant="ghost"
+              variant="link"
               size="sm"
               onClick={onClear}
               className="w-full justify-start text-primary hover:text-primary"
@@ -975,9 +975,8 @@ export default function IssueList({
   const parentIssueColumnLabel = locale === "zh" ? "父级" : "Parent";
   const childProgressColumnLabel = locale === "zh" ? "子项进度" : "Children";
   const selectedIssuesLabel = locale === "zh" ? "已选" : "Selected";
-  const bulkAddToPlanLabel = locale === "zh" ? "加入计划" : "Add to plan";
   const bulkRemovePlanLabel = locale === "zh" ? "移出计划" : "Remove plan";
-  const bulkAddToSprintLabel = locale === "zh" ? "加入迭代" : "Add to sprint";
+  const bulkRemoveSprintLabel = locale === "zh" ? "移出迭代" : "Remove sprint";
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
   const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
@@ -1056,6 +1055,10 @@ export default function IssueList({
     (view && view !== "all" ? 1 : 0) +
     activeCustomFilterCount;
   const activeAdvancedFilterCount = activeFilterCount - (view && view !== "all" ? 1 : 0);
+  const canSelectIssues = Boolean(
+    (lockedPlanId && canManagePlans) ||
+      (lockedIterationId && canMoveIssuesBetweenIterations)
+  );
   const [isFilterRowOpen, setIsFilterRowOpen] = useState(false);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
@@ -2446,11 +2449,13 @@ export default function IssueList({
     const normalizedAction =
       action.type === "assignPlan" && action.targetId
         ? { type: "assignPlan" as const, targetId: action.targetId }
-        : action.type === "removePlan"
-          ? { type: "removePlan" as const }
+        : action.type === "removePlan" && lockedPlanId
+          ? { type: "removePlan" as const, targetId: lockedPlanId }
           : action.type === "assignIteration" && action.targetId
             ? { type: "assignIteration" as const, targetId: action.targetId }
-            : { type: "assignAssignee" as const, targetId: action.targetId ?? null };
+            : action.type === "removeIteration" && lockedIterationId
+              ? { type: "removeIteration" as const, targetId: lockedIterationId }
+              : { type: "assignAssignee" as const, targetId: action.targetId ?? null };
 
     const result = await bulkUpdateIssues(selectedIssueIds, normalizedAction);
     if (!result.success) {
@@ -2459,6 +2464,10 @@ export default function IssueList({
 
     setIssues((current) => {
       if (action.type === "removePlan" && lockedPlanId) {
+        return current.filter((issue) => !selectedIssueIds.includes(issue.id));
+      }
+
+      if (action.type === "removeIteration" && lockedIterationId) {
         return current.filter((issue) => !selectedIssueIds.includes(issue.id));
       }
 
@@ -2510,7 +2519,7 @@ export default function IssueList({
 
     setSelectedIssueIds([]);
     setBulkAction(null);
-    if (action.type === "assignIteration" && lockedIterationId) {
+    if ((action.type === "assignIteration" || action.type === "removeIteration") && lockedIterationId) {
       router.refresh();
     }
     return null;
@@ -2593,7 +2602,7 @@ export default function IssueList({
       }`}
     >
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1">
             {viewOptions.map((option) => {
               const isActive = (view || "all") === option.value || (!view && option.value === "all");
@@ -2685,7 +2694,7 @@ export default function IssueList({
           </div>
         </div>
         {isFilterRowOpen ? (
-        <div className="flex w-full flex-wrap items-center gap-2">
+        <div className="mt-3 flex w-full flex-wrap items-center gap-2">
           {!lockedIterationId && view !== "backlog" ? (
             <MultiFilter
               label={translations.issueList.sprint}
@@ -2828,70 +2837,67 @@ export default function IssueList({
           </div>
         ) : null}
 
-        {selectedIssueIds.length > 0 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 shadow-xs">
-            <span className="text-sm font-semibold text-primary">
-              {selectedIssuesLabel} {selectedIssueIds.length}
-            </span>
-            {!lockedPlanId && canManagePlans ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => openBulkAction("assignPlan")}
-              >
-                {bulkAddToPlanLabel}
-              </Button>
-            ) : null}
-            {canManagePlans ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => openBulkAction("removePlan")}
-              >
-                {bulkRemovePlanLabel}
-              </Button>
-            ) : null}
-            {!lockedPlanId && (!lockedIterationId || canMoveIssuesBetweenIterations) ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => openBulkAction("assignIteration")}
-              >
-                {bulkAddToSprintLabel}
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedIssueIds([])}
-            >
-              {bulkClearLabel}
-            </Button>
-          </div>
-        ) : null}
       </div>
 
+      {canSelectIssues && selectedIssueIds.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-0 px-1">
+          <span className="text-sm font-semibold text-foreground">
+            {selectedIssuesLabel} {selectedIssueIds.length}
+          </span>
+          {lockedPlanId && canManagePlans ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="px-1.5"
+              onClick={() => openBulkAction("removePlan")}
+            >
+              {bulkRemovePlanLabel}
+            </Button>
+          ) : null}
+          {lockedIterationId && canMoveIssuesBetweenIterations ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="px-1.5"
+              onClick={() => openBulkAction("removeIteration")}
+            >
+              {bulkRemoveSprintLabel}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="px-1.5"
+            onClick={() => setSelectedIssueIds([])}
+          >
+            {bulkClearLabel}
+          </Button>
+        </div>
+      ) : null}
+
       <div className={`flex flex-1 flex-col overflow-hidden bg-card ${unframed ? "" : "rounded-xl border shadow-sm"}`}>
+
         <div className="relative overflow-x-auto flex-1">
           <table
             className="text-left text-sm whitespace-nowrap"
-            style={{ tableLayout: "fixed", width: `max(100%, ${columnsTotalWidth + 48}px)` }}
+            style={{ tableLayout: "fixed", width: `max(100%, ${columnsTotalWidth + (canSelectIssues ? 48 : 0)}px)` }}
           >
             <thead className="sticky top-0 z-10 border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
-                <th className="h-12 w-12 px-4 py-0 align-middle">
-                  <input
-                    type="checkbox"
-                    checked={allCurrentPageSelected}
-                    onChange={toggleCurrentPageSelection}
-                    aria-label={locale === "zh" ? "选择当前页全部问题" : "Select all issues on this page"}
-                    className={issueListCheckboxClassName}
-                  />
-                </th>
+                {canSelectIssues ? (
+                  <th className="h-12 w-12 px-4 py-0 align-middle">
+                    <input
+                      type="checkbox"
+                      checked={allCurrentPageSelected}
+                      onChange={toggleCurrentPageSelection}
+                      aria-label={locale === "zh" ? "选择当前页全部问题" : "Select all issues on this page"}
+                      className={issueListCheckboxClassName}
+                    />
+                  </th>
+                ) : null}
                 {resizableColumns.map((column, index) => {
                   const columnKey = getColumnOrderKey(column);
                   const columnSortField = column.type === "column" ? COLUMN_SORT_FIELD_MAP[column.id] : undefined;
@@ -2969,15 +2975,17 @@ export default function IssueList({
             <tbody className="divide-y divide-border">
               {paginatedIssues.map((issue) => (
                 <tr key={issue.id} className="hover:bg-muted/45 transition-colors group">
-                  <td className="px-4 py-3.5">
-                    <input
-                      type="checkbox"
-                      checked={selectedIssueIds.includes(issue.id)}
-                      onChange={() => toggleIssueSelection(issue.id)}
-                      aria-label={locale === "zh" ? `选择问题 ${issue.key}` : `Select issue ${issue.key}`}
-                      className={issueListCheckboxClassName}
-                    />
-                  </td>
+                  {canSelectIssues ? (
+                    <td className="px-4 py-3.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIssueIds.includes(issue.id)}
+                        onChange={() => toggleIssueSelection(issue.id)}
+                        aria-label={locale === "zh" ? `选择问题 ${issue.key}` : `Select issue ${issue.key}`}
+                        className={issueListCheckboxClassName}
+                      />
+                    </td>
+                  ) : null}
                   {resizableColumns.map((column) => renderIssueTableCell(issue, column))}
                 </tr>
               ))}

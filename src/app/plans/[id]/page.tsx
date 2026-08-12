@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import DeletePlanButton from "@/components/DeletePlanButton";
 import EditPlanButton from "@/components/EditPlanButton";
 import IssueList from "@/components/IssueList";
+import PlanIssueActionButton from "@/components/PlanIssueActionButton";
 import { getActiveProjectForUser } from "@/lib/activeProject";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
@@ -101,6 +102,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
 
   if (!plan) return notFound();
 
+  const projectRole = await getProjectRole(userId, activeProject.id);
+  const canManagePlans = projectRole === "ADMIN";
+
   const searchParamsData = await searchParams;
   const preferenceScope: IssueListPreferenceScope = {
     projectId: activeProject.id,
@@ -166,7 +170,17 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     }
   );
 
-  const [issues, totalIssues, basicPlanIssues, users, plans, iterations, currentUser] = await Promise.all([
+  const [
+    issues,
+    totalIssues,
+    basicPlanIssues,
+    users,
+    plans,
+    iterations,
+    currentUser,
+    unplannedIssuePage,
+    parentIssues,
+  ] = await Promise.all([
     prisma.issue.findMany({
       where: parsedWhere,
       include: {
@@ -249,10 +263,39 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
       orderBy: { startDate: "desc" },
     }),
     prisma.user.findUnique({ where: { id: userId } }),
+    canManagePlans
+      ? prisma.issue.findMany({
+          where: { projectId: activeProject.id, planId: null },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            status: true,
+            priority: true,
+            type: true,
+            assignee: { select: { name: true } },
+          },
+          orderBy: [{ status: "asc" }, { key: "asc" }],
+          take: 21,
+        })
+      : Promise.resolve([]),
+    canManagePlans
+      ? prisma.issue.findMany({
+          where: { projectId: activeProject.id },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            type: true,
+            parentIssueId: true,
+          },
+          orderBy: [{ createdAt: "desc" }, { key: "asc" }],
+        })
+      : Promise.resolve([]),
   ]);
-  const projectRole = await getProjectRole(userId, activeProject.id);
-  const canManagePlans = projectRole === "ADMIN";
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
+  const unplannedIssues = unplannedIssuePage.slice(0, 20);
+  const unplannedIssuesHasMore = unplannedIssuePage.length > 20;
   const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
 
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
@@ -310,6 +353,28 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {canManagePlans ? (
+            <PlanIssueActionButton
+              locale={locale}
+              createIssue={{
+                locale,
+                users,
+                plans,
+                iterations,
+                currentUserId: userId,
+                canManagePlans: true,
+                defaultPlanId: plan.id,
+                parentIssues,
+              }}
+              addExistingIssues={{
+                target: { type: "plan", id: plan.id, name: plan.name },
+                issues: unplannedIssues,
+                initialHasMore: unplannedIssuesHasMore,
+                locale,
+                workflowStatuses,
+              }}
+            />
+          ) : null}
           {canManagePlans ? <EditPlanButton plan={plan} locale={locale} /> : null}
           {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} /> : null}
         </div>

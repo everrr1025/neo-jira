@@ -10,7 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import AlertPopup from "./AlertPopup";
 
-export type BulkIssueActionType = "assignPlan" | "removePlan" | "assignIteration" | "assignAssignee";
+export type BulkIssueActionType =
+  | "assignPlan"
+  | "removePlan"
+  | "assignIteration"
+  | "removeIteration"
+  | "assignAssignee";
 
 type BulkIssueActionModalProps = {
   isOpen: boolean;
@@ -30,6 +35,7 @@ function getBulkIssueActionText(locale: "en" | "zh") {
       addToPlan: "加入计划",
       removeFromPlan: "移出计划",
       addToSprint: "加入迭代",
+      removeFromSprint: "移出迭代",
       updateAssignee: "修改负责人",
       plan: "计划",
       sprint: "迭代",
@@ -41,6 +47,7 @@ function getBulkIssueActionText(locale: "en" | "zh") {
       cancel: "取消",
       confirm: "确认",
       removePlanHint: "确认将所选问题从当前计划中移除。",
+      removeSprintHint: "确认将所选问题移出当前迭代并放回待办池。",
     };
   }
 
@@ -48,6 +55,7 @@ function getBulkIssueActionText(locale: "en" | "zh") {
     addToPlan: "Add To Plan",
     removeFromPlan: "Remove From Plan",
     addToSprint: "Add To Sprint",
+    removeFromSprint: "Remove From Sprint",
     updateAssignee: "Update Assignee",
     plan: "Plan",
     sprint: "Sprint",
@@ -59,6 +67,7 @@ function getBulkIssueActionText(locale: "en" | "zh") {
     cancel: "Cancel",
     confirm: "Confirm",
     removePlanHint: "Remove the selected issues from their current plan.",
+    removeSprintHint: "Remove the selected issues from this sprint and return them to the backlog.",
   };
 }
 
@@ -101,6 +110,7 @@ export default function BulkIssueActionModal({
     if (currentAction === "assignPlan") return text.addToPlan;
     if (currentAction === "removePlan") return text.removeFromPlan;
     if (currentAction === "assignIteration") return text.addToSprint;
+    if (currentAction === "removeIteration") return text.removeFromSprint;
     if (currentAction === "assignAssignee") return text.updateAssignee;
     return "";
   }, [currentAction, text]);
@@ -135,7 +145,8 @@ export default function BulkIssueActionModal({
     startTransition(async () => {
       const nextError = await onSubmit({
         type: currentAction,
-        targetId: currentAction === "removePlan" ? undefined : targetId || null,
+        targetId:
+          currentAction === "removePlan" || currentAction === "removeIteration" ? undefined : targetId || null,
       });
 
       if (nextError) {
@@ -173,9 +184,9 @@ export default function BulkIssueActionModal({
           </DialogHeader>
 
           <div className="space-y-5 px-6 py-5">
-            {currentAction === "removePlan" ? (
+            {currentAction === "removePlan" || currentAction === "removeIteration" ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {text.removePlanHint}
+                {currentAction === "removePlan" ? text.removePlanHint : text.removeSprintHint}
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">

@@ -303,8 +303,7 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
               addExistingIssues={
                 canChangeSprintIssues
                   ? {
-                      sprintId: iteration.id,
-                      sprintName: iteration.name,
+                      target: { type: "iteration" as const, id: iteration.id, name: iteration.name },
                       issues: backlogIssues,
                       initialHasMore: backlogIssuesHasMore,
                       locale,

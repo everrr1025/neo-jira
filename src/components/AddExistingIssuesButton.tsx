@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Info, Loader2, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { addBacklogIssuesToSprint, searchBacklogIssuesForSprint } from "@/app/actions/issues";
+import {
+  addBacklogIssuesToSprint,
+  addUnplannedIssuesToPlan,
+  searchBacklogIssuesForSprint,
+  searchUnplannedIssuesForPlan,
+} from "@/app/actions/issues";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -34,8 +39,7 @@ export type BacklogIssueOption = {
 };
 
 export type AddExistingIssuesButtonProps = {
-  sprintId: string;
-  sprintName: string;
+  target: { type: "iteration" | "plan"; id: string; name: string };
   issues: BacklogIssueOption[];
   initialHasMore: boolean;
   locale: Locale;
@@ -46,8 +50,7 @@ export type AddExistingIssuesButtonProps = {
 };
 
 export default function AddExistingIssuesButton({
-  sprintId,
-  sprintName,
+  target,
   issues,
   initialHasMore,
   locale,
@@ -70,6 +73,24 @@ export default function AddExistingIssuesButton({
   const router = useRouter();
   const translations = getTranslations(locale);
   const text = translations.addExistingIssues;
+  const isPlanTarget = target.type === "plan";
+  const targetText = isPlanTarget
+    ? {
+        scopeDescription:
+          locale === "zh"
+            ? "仅显示当前项目中尚未加入任何计划的问题。"
+            : "Only issues in the current project that are not in a plan are shown.",
+        empty:
+          locale === "zh" ? "当前项目中没有可添加到计划的问题。" : "There are no issues available to add to this plan.",
+        all: locale === "zh" ? "全部状态" : "All statuses",
+        submit: locale === "zh" ? "添加到计划" : "Add to plan",
+      }
+    : {
+        scopeDescription: text.scopeDescription,
+        empty: text.empty,
+        all: text.allUnfinished,
+        submit: text.addToSprint,
+      };
   const isOpen = controlledOpen ?? internalOpen;
   const setIsOpen = (open: boolean) => {
     if (controlledOpen === undefined) setInternalOpen(open);
@@ -80,14 +101,14 @@ export default function AddExistingIssuesButton({
     () => [
       "ALL",
       ...sortWorkflowStatuses(workflowStatuses)
-        .filter((status) => !isDoneWorkflowStatus(status.key, workflowStatuses))
+        .filter((status) => isPlanTarget || !isDoneWorkflowStatus(status.key, workflowStatuses))
         .map((status) => status.key),
     ],
-    [workflowStatuses]
+    [isPlanTarget, workflowStatuses]
   );
   const emptyMessage =
     statusFilter === "ALL"
-      ? text.empty
+      ? targetText.empty
       : text.emptyForStatus.replace(
           "{status}",
           getWorkflowStatusName(statusFilter, workflowStatuses, locale)
@@ -97,11 +118,14 @@ export default function AddExistingIssuesButton({
     setIsLoadingIssues(true);
     setErrorMessage("");
 
-    const result = await searchBacklogIssuesForSprint(sprintId, {
+    const searchOptions = {
       query: search,
       status: statusFilter,
       offset: reset ? 0 : visibleIssues.length,
-    });
+    };
+    const result = isPlanTarget
+      ? await searchUnplannedIssuesForPlan(target.id, searchOptions)
+      : await searchBacklogIssuesForSprint(target.id, searchOptions);
 
     if (requestId !== requestIdRef.current) return;
     setIsLoadingIssues(false);
@@ -164,7 +188,9 @@ export default function AddExistingIssuesButton({
 
     setErrorMessage("");
     startTransition(async () => {
-      const result = await addBacklogIssuesToSprint(sprintId, selectedIds);
+      const result = isPlanTarget
+        ? await addUnplannedIssuesToPlan(target.id, selectedIds)
+        : await addBacklogIssuesToSprint(target.id, selectedIds);
       if (result.success) {
         setSelectedIds([]);
         setIsOpen(false);
@@ -196,20 +222,20 @@ export default function AddExistingIssuesButton({
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <DialogTitle className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate">{text.modalTitle} {sprintName}</span>
+                  <span className="truncate">{text.modalTitle} {target.name}</span>
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
                           className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={text.scopeDescription}
+                          aria-label={targetText.scopeDescription}
                         >
                           <Info className="size-4" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" sideOffset={6} className="max-w-xs">
-                        {text.scopeDescription}
+                        {targetText.scopeDescription}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -252,7 +278,7 @@ export default function AddExistingIssuesButton({
                   onClick={() => setStatusFilter(status)}
                   className="h-8"
                 >
-                  {status === "ALL" ? text.allUnfinished : getWorkflowStatusName(status, workflowStatuses, locale)}
+                  {status === "ALL" ? targetText.all : getWorkflowStatusName(status, workflowStatuses, locale)}
                 </Button>
               ))}
             </div>
@@ -331,7 +357,7 @@ export default function AddExistingIssuesButton({
               </Button>
               <Button type="button" onClick={handleSubmit} disabled={isPending || selectedIds.length === 0}>
                 {isPending ? <Loader2 className="animate-spin" /> : null}
-                {isPending ? text.adding : text.addToSprint}
+                {isPending ? text.adding : targetText.submit}
               </Button>
             </div>
           </DialogFooter>
