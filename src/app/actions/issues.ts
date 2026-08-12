@@ -508,7 +508,6 @@ export async function createIssue(data: {
       : null;
 
     const initialStatus = getInitialWorkflowStatusKey(project.workflowStatuses as WorkflowStatusRecord[]);
-    const watcherIds = Array.from(new Set([userId, data.assigneeId].filter((value): value is string => Boolean(value))));
     const parentIssueId = typeof data.parentIssueId === "string" && data.parentIssueId ? data.parentIssueId : null;
 
     let newIssue: Awaited<ReturnType<typeof prisma.issue.create>> | null = null;
@@ -539,12 +538,6 @@ export async function createIssue(data: {
               assigneeId: data.assigneeId,
               reporterId: userId,
               dueDate: dueDateValue,
-              watchers:
-                watcherIds.length > 0
-                  ? {
-                      connect: watcherIds.map((watcherId) => ({ id: watcherId })),
-                    }
-                  : undefined,
               attachments:
                 data.attachments && data.attachments.length > 0
                   ? {
