@@ -2841,7 +2841,7 @@ export default function IssueList({
 
       {canSelectIssues && selectedIssueIds.length > 0 ? (
         <div className="flex flex-wrap items-center gap-0 px-1">
-          <span className="text-sm font-semibold text-foreground">
+          <span className="mr-2 text-sm font-semibold text-foreground">
             {selectedIssuesLabel} {selectedIssueIds.length}
           </span>
           {lockedPlanId && canManagePlans ? (

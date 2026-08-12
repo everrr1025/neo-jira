@@ -137,6 +137,7 @@ const TEXT = {
     dateOnOrAfter: "On or after",
     dateOnOrBefore: "On or before",
     filter: "Filter",
+    advanced: "Advanced",
     reset: "Reset",
     department: "Department",
     projectLevel: "Project",
@@ -197,6 +198,7 @@ const TEXT = {
     dateOnOrAfter: "晚于或等于",
     dateOnOrBefore: "早于或等于",
     filter: "筛选",
+    advanced: "高级",
     reset: "重置",
     department: "部门",
     projectLevel: "项目",
@@ -227,7 +229,7 @@ const TEXT = {
     createdAt: "创建时间",
     createdBy: "创建人",
     status: "状态",
-    columns: "列",
+    columns: "显示列",
     resetColumns: "重置列",
     actions: "操作",
     notificationsUnit: "条通知",
@@ -423,6 +425,7 @@ export default function DepartmentNotificationsClient({
       : null,
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [form, setForm] = useState({
     level: permission.canCreateDepartment ? "DEPARTMENT" : "PROJECT",
@@ -529,6 +532,10 @@ export default function DepartmentNotificationsClient({
     return maxWidth;
   }, [notifications, t.actions, t.delete, t.revoke]);
   const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
+  const activeAdvancedFilterCount =
+    (filters.projectId ? 1 : 0) +
+    (filters.read || filters.publishStatus ? 1 : 0) +
+    (hasActiveCreatedFilter ? 1 : 0);
   const createdFilterOptions = useMemo<FilterOption[]>(
     () => [
       { value: "ALL", label: t.allCreated },
@@ -1028,28 +1035,92 @@ export default function DepartmentNotificationsClient({
       </div>
 
       <div className="rounded-lg border bg-card p-3 shadow-sm">
-        {currentView === "received" ? (
-          <div className="mb-3 flex flex-wrap items-center gap-1 border-b pb-3">
-            {[
-              { value: "", label: t.all },
-              { value: "ANNOUNCEMENT", label: t.announcementsTab },
-              { value: "REMINDER", label: t.remindersTab },
-              { value: "UPDATE", label: t.updatesTab },
-            ].map((option) => (
-              <Button
-                key={option.value || "ALL"}
-                type="button"
-                size="sm"
-                variant={currentCategory === option.value ? "default" : "ghost"}
-                onClick={() => updateQueryParams({ category: option.value || null, page: 1 })}
-              >
-                {option.label}
-              </Button>
-            ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1">
+            {currentView === "received"
+              ? [
+                  { value: "", label: t.all },
+                  { value: "ANNOUNCEMENT", label: t.announcementsTab },
+                  { value: "REMINDER", label: t.remindersTab },
+                  { value: "UPDATE", label: t.updatesTab },
+                ].map((option) => (
+                  <Button
+                    key={option.value || "ALL"}
+                    type="button"
+                    size="sm"
+                    variant={currentCategory === option.value ? "default" : "ghost"}
+                    onClick={() => updateQueryParams({ category: option.value || null, page: 1 })}
+                  >
+                    {option.label}
+                  </Button>
+                ))
+              : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="link"
+              className="gap-1 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setIsAdvancedFilterOpen((current) => !current)}
+              aria-expanded={isAdvancedFilterOpen}
+            >
+              <span>{t.advanced}</span>
+              {activeAdvancedFilterCount > 0 ? (
+                <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">
+                  {activeAdvancedFilterCount}
+                </span>
+              ) : null}
+              <ChevronDown className={`size-4 transition-transform ${isAdvancedFilterOpen ? "rotate-180" : ""}`} />
+            </Button>
           </div>
-        ) : null}
 
-        <div className="flex w-full flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="icon" aria-label={t.columns} title={t.columns}>
+                <Eye className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={8} className="w-64">
+              <DropdownMenuLabel className="flex items-center justify-between gap-3">
+                <span>{t.columns}</span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                  {visibleColumns.length}/{DEFAULT_COLUMN_ORDER.length}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {DEFAULT_COLUMN_ORDER.map((columnId) => {
+                const column = columnsById.get(columnId);
+                if (!column) return null;
+                const isChecked = visibleColumns.includes(column.id);
+                const isDisabled = isChecked && visibleColumns.length === 1;
+
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    checked={isChecked}
+                    disabled={isDisabled}
+                    onCheckedChange={() => handleToggleColumnVisibility(column.id)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {column.label}
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+              <DropdownMenuSeparator />
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={handleResetColumns}
+                className="w-full justify-start text-primary hover:text-primary"
+              >
+                {t.resetColumns}
+              </Button>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {isAdvancedFilterOpen ? (
+          <div className="mt-3 flex w-full flex-wrap items-center gap-2">
           <MultiFilter
             label={t.project}
             options={projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` }))}
@@ -1114,68 +1185,19 @@ export default function DepartmentNotificationsClient({
             </div>
           ) : null}
 
-          {(filters.category || filters.projectId || filters.read || filters.publishStatus || hasActiveCreatedFilter || filters.search) ? (
+          {activeAdvancedFilterCount > 0 ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => updateQueryParams({ category: null, projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, search: null, page: 1 })}
+              onClick={() => updateQueryParams({ projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, page: 1 })}
             >
               {t.reset}
             </Button>
           ) : null}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label={t.columns}
-                title={t.columns}
-              >
-                <Eye className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={8} className="w-60">
-              <DropdownMenuLabel className="flex items-center justify-between gap-3">
-                <span>{t.columns}</span>
-                <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                  {visibleColumns.length}/{DEFAULT_COLUMN_ORDER.length}
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {DEFAULT_COLUMN_ORDER.map((columnId) => {
-                const column = columnsById.get(columnId);
-                if (!column) return null;
-                const isChecked = visibleColumns.includes(column.id);
-                const isDisabled = isChecked && visibleColumns.length === 1;
-
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    checked={isChecked}
-                    disabled={isDisabled}
-                    onCheckedChange={() => handleToggleColumnVisibility(column.id)}
-                    onSelect={(event) => event.preventDefault()}
-                  >
-                    {column.label}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-              <DropdownMenuSeparator />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleResetColumns}
-                className="w-full justify-start text-primary hover:text-primary"
-              >
-                {t.resetColumns}
-              </Button>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
