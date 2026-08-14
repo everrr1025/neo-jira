@@ -24,6 +24,9 @@ type EditPlanButtonProps = {
     endDate: Date | string;
   };
   locale: "en" | "zh";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
 };
 
 function formatDateInputValue(date: Date | string) {
@@ -62,10 +65,11 @@ function getEditPlanText(locale: "en" | "zh") {
   };
 }
 
-export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export default function EditPlanButton({ plan, locale, open, onOpenChange, showTrigger = true }: EditPlanButtonProps) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const isOpen = open ?? internalIsOpen;
   const text = getEditPlanText(locale);
   const initialFormData = useMemo(
     () => ({
@@ -80,6 +84,11 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
 
   const resetForm = () => {
     setFormData(initialFormData);
+  };
+
+  const setIsOpen = (nextOpen: boolean) => {
+    if (open === undefined) setInternalIsOpen(nextOpen);
+    onOpenChange?.(nextOpen);
   };
 
   const handleOpen = () => {
@@ -118,14 +127,16 @@ export default function EditPlanButton({ plan, locale }: EditPlanButtonProps) {
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleOpen}
-      >
-        <Pencil />
-        {text.button}
-      </Button>
+      {showTrigger ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleOpen}
+        >
+          <Pencil />
+          {text.button}
+        </Button>
+      ) : null}
 
       <Dialog open={isOpen} onOpenChange={(open) => (!open ? handleClose() : handleOpen())}>
         <DialogContent showCloseButton={false} className="max-w-2xl gap-0 overflow-hidden p-0">

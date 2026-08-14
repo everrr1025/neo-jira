@@ -1,11 +1,10 @@
 import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
-import DeletePlanButton from "@/components/DeletePlanButton";
-import EditPlanButton from "@/components/EditPlanButton";
 import IssueList from "@/components/IssueList";
 import PlanIssueActionButton from "@/components/PlanIssueActionButton";
 import PlanLifecycleActions from "@/components/PlanLifecycleActions";
+import PlanMoreActions from "@/components/PlanMoreActions";
 import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { getProjectPath } from "@/lib/projectRoutes";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
@@ -14,7 +13,7 @@ import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
-import { getPlanDateHint, getPlanStatusPresentation, isTerminalPlanStatus } from "@/lib/planLifecycle";
+import { getPlanStatusPresentation, isTerminalPlanStatus } from "@/lib/planLifecycle";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 import {
   hasExplicitIssueListParams,
@@ -33,27 +32,8 @@ type SessionUser = {
   role?: string | null;
 };
 
-function getPlanDetailText(locale: "en" | "zh") {
-  if (locale === "zh") {
-    return {
-      total: "问题数",
-      done: "已完成",
-      inProgress: "进行中",
-      todo: "未开始",
-    };
-  }
-
-  return {
-    total: "Issue Count",
-    done: "Done",
-    inProgress: "In progress",
-    todo: "Not started",
-  };
-}
-
 export default async function PlanDetailPage({ params, searchParams }: { params: Promise<{ id: string }>, searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const locale = await getCurrentLocale();
-  const text = getPlanDetailText(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -274,69 +254,30 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   const unplannedIssues = unplannedIssuePage.slice(0, 20);
   const unplannedIssuesHasMore = unplannedIssuePage.length > 20;
   const status = getPlanStatusPresentation(plan.status, locale);
-  const dateHint = getPlanDateHint(plan, locale);
   const isTerminal = isTerminalPlanStatus(plan.status);
 
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
   const planTotalIssues = basicPlanIssues.length;
   const doneIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE").length;
-  const inProgressIssues = basicPlanIssues.filter(
-    (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "IN_PROGRESS"
-  ).length;
-  const todoIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "TODO").length;
   const blockingIssueKeys = basicPlanIssues
     .filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) !== "DONE")
     .slice(0, 5)
     .map((issue) => issue.key);
-  const summaryItems = [
-    {
-      label: text.total,
-      value: planTotalIssues,
-    },
-    {
-      label: text.done,
-      value: doneIssues,
-    },
-    {
-      label: text.inProgress,
-      value: inProgressIssues,
-    },
-    {
-      label: text.todo,
-      value: todoIssues,
-    },
-  ];
-
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>{plan.name}</h2>
-            <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${status.className}`}>
-              {status.label}
-            </span>
-            {dateHint ? <span className={`text-xs font-medium ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</span> : null}
-            <span className="whitespace-nowrap text-sm text-slate-500">
-              <span aria-hidden="true" className="mr-2 text-slate-300">
-                ·
-              </span>
-              {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
-              {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
-            </span>
-            {summaryItems.map((item) => (
-              <span key={item.label} className="whitespace-nowrap text-sm text-slate-500">
-                <span aria-hidden="true" className="mr-2 text-slate-300">
-                  ·
-                </span>
-                <span>{item.label}</span>{" "}
-                <span className="font-semibold text-slate-700">{item.value}</span>
-              </span>
-            ))}
-          </div>
+    <div className="flex h-full flex-col">
+      <div className="mb-6 flex flex-col gap-4 py-[3px] xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>
+            {plan.name}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {status.label} | {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
+            {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} |{" "}
+            {locale === "zh" ? "完成度" : "Completion"} {doneIssues}/{planTotalIssues}
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           {canManagePlans && !isTerminal ? (
             <PlanIssueActionButton
               locale={locale}
@@ -360,8 +301,14 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
             />
           ) : null}
           {canManagePlans ? <PlanLifecycleActions planId={plan.id} status={plan.status} totalIssues={planTotalIssues} unfinishedIssues={planTotalIssues - doneIssues} blockingIssueKeys={blockingIssueKeys} locale={locale} /> : null}
-          {canManagePlans && !isTerminal ? <EditPlanButton plan={plan} locale={locale} /> : null}
-          {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} status={plan.status} /> : null}
+          {canManagePlans ? (
+            <PlanMoreActions
+              plan={plan}
+              locale={locale}
+              totalIssues={planTotalIssues}
+              unfinishedIssues={planTotalIssues - doneIssues}
+            />
+          ) : null}
         </div>
       </div>
 

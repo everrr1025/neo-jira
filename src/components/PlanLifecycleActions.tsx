@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertTriangle, Loader2, Play, RotateCcw, SquareCheckBig, XCircle } from "lucide-react";
+import { Loader2, Play, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { cancelPlan, completePlan, reopenPlan, startPlan } from "@/app/actions/plans";
+import { completePlan, reopenPlan, startPlan } from "@/app/actions/plans";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import AlertPopup from "./AlertPopup";
@@ -26,7 +26,7 @@ export default function PlanLifecycleActions({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [dialog, setDialog] = useState<"complete" | "cancel" | null>(null);
+  const [isCompleteOpen, setIsCompleteOpen] = useState(false);
   const [error, setError] = useState("");
   const canComplete = totalIssues > 0 && unfinishedIssues === 0;
 
@@ -38,7 +38,7 @@ export default function PlanLifecycleActions({
         setError(result.error || (locale === "zh" ? "操作失败" : "Action failed"));
         return;
       }
-      setDialog(null);
+      setIsCompleteOpen(false);
       router.refresh();
     });
   };
@@ -52,15 +52,8 @@ export default function PlanLifecycleActions({
         </Button>
       ) : null}
       {status === "ACTIVE" ? (
-        <Button type="button" disabled={isPending} className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setDialog("complete")}>
-          <SquareCheckBig />
+        <Button type="button" disabled={isPending} className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setIsCompleteOpen(true)}>
           {locale === "zh" ? "完成计划" : "Complete plan"}
-        </Button>
-      ) : null}
-      {status === "PLANNED" || status === "ACTIVE" ? (
-        <Button type="button" variant="outline" disabled={isPending} onClick={() => setDialog("cancel")}>
-          <XCircle />
-          {locale === "zh" ? "取消计划" : "Cancel plan"}
         </Button>
       ) : null}
       {status === "COMPLETED" || status === "CANCELLED" ? (
@@ -70,7 +63,7 @@ export default function PlanLifecycleActions({
         </Button>
       ) : null}
 
-      <Dialog open={dialog === "complete"} onOpenChange={(open) => !open && !isPending && setDialog(null)}>
+      <Dialog open={isCompleteOpen} onOpenChange={(open) => !open && !isPending && setIsCompleteOpen(false)}>
         <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>{locale === "zh" ? "完成计划" : "Complete plan"}</DialogTitle>
@@ -88,27 +81,9 @@ export default function PlanLifecycleActions({
             )}
           </div>
           <DialogFooter className="border-t bg-muted/35 px-6 py-4">
-            <Button variant="outline" onClick={() => setDialog(null)} disabled={isPending}>{locale === "zh" ? "返回" : "Back"}</Button>
+            <Button variant="outline" onClick={() => setIsCompleteOpen(false)} disabled={isPending}>{locale === "zh" ? "返回" : "Back"}</Button>
             <Button className="bg-emerald-600 text-white hover:bg-emerald-700" disabled={!canComplete || isPending} onClick={() => run(() => completePlan(planId))}>
               {isPending ? <Loader2 className="animate-spin" /> : null}{locale === "zh" ? "确认完成" : "Confirm"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={dialog === "cancel"} onOpenChange={(open) => !open && !isPending && setDialog(null)}>
-        <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b bg-amber-50 px-6 py-4">
-            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="size-5 text-amber-600" />{locale === "zh" ? "取消计划" : "Cancel plan"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 px-6 py-5 text-sm">
-            <p>{locale === "zh" ? `将保留 ${totalIssues - unfinishedIssues} 个已完成问题，释放 ${unfinishedIssues} 个未完成问题。` : `${totalIssues - unfinishedIssues} completed issues will remain; ${unfinishedIssues} unfinished issues will be released.`}</p>
-            <p className="text-muted-foreground">{locale === "zh" ? "被释放问题的计划字段值会同时清除。" : "Plan field values for released issues will be removed."}</p>
-          </div>
-          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
-            <Button variant="outline" onClick={() => setDialog(null)} disabled={isPending}>{locale === "zh" ? "返回" : "Back"}</Button>
-            <Button variant="destructive" disabled={isPending} onClick={() => run(() => cancelPlan(planId))}>
-              {isPending ? <Loader2 className="animate-spin" /> : null}{locale === "zh" ? "确认取消" : "Confirm cancellation"}
             </Button>
           </DialogFooter>
         </DialogContent>

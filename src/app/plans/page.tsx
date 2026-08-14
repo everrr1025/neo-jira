@@ -40,7 +40,6 @@ function getPlanPageText(locale: "en" | "zh") {
       current: "问题数",
       done: "已完成",
       progress: "进度",
-      target: "目标数",
       period: "周期",
       status: "状态",
     };
@@ -53,7 +52,6 @@ function getPlanPageText(locale: "en" | "zh") {
     current: "Issues",
     done: "Done",
     progress: "Progress",
-    target: "Target",
     period: "Period",
     status: "Status",
   };
@@ -144,7 +142,6 @@ export default async function PlansPage() {
                 <TableHead className="w-[280px]">{text.title}</TableHead>
                 <TableHead>{text.status}</TableHead>
                 <TableHead>{text.period}</TableHead>
-                <TableHead className="text-right">{text.target}</TableHead>
                 <TableHead className="text-right">{text.current}</TableHead>
                 <TableHead className="text-right">{text.done}</TableHead>
                 <TableHead className="w-[180px]">{text.progress}</TableHead>
@@ -173,17 +170,16 @@ export default async function PlansPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={status.className}>
-                        {status.label}
-                      </Badge>
-                      {dateHint ? <p className={`mt-1 text-xs ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</p> : null}
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <Badge variant="outline" className={status.className}>
+                          {status.label}
+                        </Badge>
+                        {dateHint ? <span className={`text-xs ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</span> : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
                       {plan.endDate.toLocaleDateString(localeDateMap[locale])}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {typeof plan.targetCount === "number" ? plan.targetCount : null}
                     </TableCell>
                     <TableCell className="text-right font-medium">{totalIssues}</TableCell>
                     <TableCell className="text-right font-medium">{doneIssues}</TableCell>

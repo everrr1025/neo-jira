@@ -17,6 +17,9 @@ type DeletePlanButtonProps = {
   projectId: string;
   locale: "en" | "zh";
   status?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
 };
 
 function getDeletePlanText(locale: "en" | "zh") {
@@ -39,13 +42,27 @@ function getDeletePlanText(locale: "en" | "zh") {
   };
 }
 
-export default function DeletePlanButton({ planId, projectId, locale, status }: DeletePlanButtonProps) {
+export default function DeletePlanButton({
+  planId,
+  projectId,
+  locale,
+  status,
+  open,
+  onOpenChange,
+  showTrigger = true,
+}: DeletePlanButtonProps) {
   const router = useRouter();
   const projectRoute = parseProjectPath(usePathname());
   const [errorMessage, setErrorMessage] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [internalIsDialogOpen, setInternalIsDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const text = getDeletePlanText(locale);
+  const isDialogOpen = open ?? internalIsDialogOpen;
+
+  const setIsDialogOpen = (nextOpen: boolean) => {
+    if (open === undefined) setInternalIsDialogOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   const handleDelete = () => {
     if (isPending) return;
@@ -70,16 +87,18 @@ export default function DeletePlanButton({ planId, projectId, locale, status }: 
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setIsDialogOpen(true)}
-        disabled={isPending}
-        className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-      >
-        {isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-        {text.button}
-      </Button>
+      {showTrigger ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setIsDialogOpen(true)}
+          disabled={isPending}
+          className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          {isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          {text.button}
+        </Button>
+      ) : null}
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => (!open && !isPending ? setIsDialogOpen(false) : null)}>
         <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
