@@ -8,6 +8,7 @@ import { deletePlan } from "@/app/actions/plans";
 import { Button } from "@/components/ui/button";
 import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { isTerminalPlanStatus } from "@/lib/planLifecycle";
 
 import AlertPopup from "./AlertPopup";
 
@@ -15,6 +16,7 @@ type DeletePlanButtonProps = {
   planId: string;
   projectId: string;
   locale: "en" | "zh";
+  status?: string;
 };
 
 function getDeletePlanText(locale: "en" | "zh") {
@@ -37,7 +39,7 @@ function getDeletePlanText(locale: "en" | "zh") {
   };
 }
 
-export default function DeletePlanButton({ planId, projectId, locale }: DeletePlanButtonProps) {
+export default function DeletePlanButton({ planId, projectId, locale, status }: DeletePlanButtonProps) {
   const router = useRouter();
   const projectRoute = parseProjectPath(usePathname());
   const [errorMessage, setErrorMessage] = useState("");
@@ -88,7 +90,11 @@ export default function DeletePlanButton({ planId, projectId, locale }: DeletePl
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 px-6 py-5">
-            <p className="text-sm font-medium text-foreground">{text.confirm}</p>
+            <p className="text-sm font-medium text-foreground">
+              {isTerminalPlanStatus(status)
+                ? (locale === "zh" ? "删除后该计划及其成果记录不可恢复，关联问题将保留并解除计划关联。" : "The plan and its result record cannot be recovered. Issues will remain and be unlinked.")
+                : text.confirm}
+            </p>
           </div>
           <DialogFooter className="border-t bg-muted/35 px-6 py-4">
             <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isPending}>

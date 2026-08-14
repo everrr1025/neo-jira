@@ -78,6 +78,7 @@ import {
   type IssueListLayoutPreference,
   type IssueListPreferenceScope,
 } from "@/lib/issueListPreferences";
+import { getPlanStatusPresentation, getTerminalPlanIssueMessage, isTerminalPlanStatus } from "@/lib/planLifecycle";
 
 type Issue = {
   id: string;
@@ -92,7 +93,7 @@ type Issue = {
   childIssues?: { id: string; status: string }[];
   _count?: { childIssues: number };
   planId?: string | null;
-  plan?: { id: string; name: string } | null;
+  plan?: { id: string; name: string; status?: string } | null;
   iterationId?: string | null;
   iteration?: { name: string } | null;
   assigneeId?: string | null;
@@ -156,6 +157,7 @@ type IssueIteration = {
 type IssuePlan = {
   id: string;
   name: string;
+  status?: string;
 };
 
 type ColumnId = "key" | "title" | "parent" | "children" | "plan" | "iteration" | "status" | "type" | "priority" | "dueDate" | "assignee";
@@ -925,6 +927,7 @@ export default function IssueList({
   issueFieldDefinitions = [],
   canManageIssueFields,
   lockedPlanId,
+  lockedPlanStatus,
   lockedIterationId,
   planFieldDefinitions = [],
   canManagePlanFields,
@@ -952,6 +955,7 @@ export default function IssueList({
   issueFieldDefinitions?: IssueFieldDefinition[];
   canManageIssueFields: boolean;
   lockedPlanId?: string | null;
+  lockedPlanStatus?: string | null;
   lockedIterationId?: string | null;
   planFieldDefinitions?: PlanFieldDefinition[];
   canManagePlanFields?: boolean;
@@ -1666,7 +1670,7 @@ export default function IssueList({
   const planInlineOptions = useMemo<FilterOption[]>(
     () => [
       { value: "", label: noPlanLabel },
-      ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+      ...plans.filter((plan) => !isTerminalPlanStatus(plan.status)).map((plan) => ({ value: plan.id, label: plan.name })),
     ],
     [noPlanLabel, plans]
   );
@@ -2182,9 +2186,10 @@ export default function IssueList({
     }
 
     if (col.id === "plan") {
+      const terminalPlanStatus = issue.plan?.status;
       return (
         <td key={`column:${col.id}`} className="px-5 py-3.5">
-          {canManagePlans ? (
+          {canManagePlans && !isTerminalPlanStatus(terminalPlanStatus) ? (
             <InlineSelect
               value={issue.planId || ""}
               options={planInlineOptions}
@@ -2197,8 +2202,9 @@ export default function IssueList({
               )}
             />
           ) : (
-            <span className="block w-full truncate text-sm font-medium text-foreground">
+            <span className="block w-full truncate text-sm font-medium text-foreground" title={isTerminalPlanStatus(terminalPlanStatus) ? getTerminalPlanIssueMessage(terminalPlanStatus, locale) : undefined}>
               {issue.plan?.name || noPlanLabel}
+              {isTerminalPlanStatus(terminalPlanStatus) ? ` · ${getPlanStatusPresentation(terminalPlanStatus, locale).label}` : ""}
             </span>
           )}
         </td>
@@ -2231,6 +2237,16 @@ export default function IssueList({
         workflow.statuses.filter((status) => status.key === issue.status || allowedTargets?.has(status.key)),
         locale
       );
+      const terminalPlanStatus = issue.plan?.status || lockedPlanStatus;
+      if (isTerminalPlanStatus(terminalPlanStatus)) {
+        return (
+          <td key={`column:${col.id}`} className="px-5 py-3.5" title={getTerminalPlanIssueMessage(terminalPlanStatus, locale)}>
+            <span className={`inline-block rounded-full px-2 py-0.5 text-sm font-medium ${getWorkflowStatusBadgeClass(issue.status, workflow.statuses)}`}>
+              {statusInlineOptions.find((option) => option.value === issue.status)?.label || issue.status}
+            </span>
+          </td>
+        );
+      }
       return (
         <td key={`column:${col.id}`} className="px-5 py-3.5">
           <InlineSelect
@@ -2420,6 +2436,13 @@ export default function IssueList({
     }
 
     const fieldValue = issue.planFieldValues?.find((value) => value.fieldDefinitionId === column.id);
+    if (isTerminalPlanStatus(lockedPlanStatus)) {
+      return (
+        <td key={`planField:${column.id}`} className="px-5 py-3.5 text-sm font-medium text-foreground">
+          {getFieldValueForDisplay(column.field, fieldValue)}
+        </td>
+      );
+    }
     return renderCustomFieldCell(
       issue,
       column.field,
@@ -2601,6 +2624,11 @@ export default function IssueList({
         isFullscreen ? "fixed inset-0 z-40 bg-white p-4" : ""
       }`}
     >
+      {lockedPlanStatus && isTerminalPlanStatus(lockedPlanStatus) ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          {getTerminalPlanIssueMessage(lockedPlanStatus, locale)}
+        </div>
+      ) : null}
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1">

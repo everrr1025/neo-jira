@@ -5,6 +5,7 @@ import DeletePlanButton from "@/components/DeletePlanButton";
 import EditPlanButton from "@/components/EditPlanButton";
 import IssueList from "@/components/IssueList";
 import PlanIssueActionButton from "@/components/PlanIssueActionButton";
+import PlanLifecycleActions from "@/components/PlanLifecycleActions";
 import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { getProjectPath } from "@/lib/projectRoutes";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
@@ -13,6 +14,7 @@ import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
+import { getPlanDateHint, getPlanStatusPresentation, isTerminalPlanStatus } from "@/lib/planLifecycle";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 import {
   hasExplicitIssueListParams,
@@ -30,36 +32,6 @@ type SessionUser = {
   id?: string;
   role?: string | null;
 };
-
-function getPlanStatus(dateRange: { startDate: Date; endDate: Date }, locale: "en" | "zh") {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const startDate = new Date(dateRange.startDate);
-  startDate.setHours(0, 0, 0, 0);
-
-  const endDate = new Date(dateRange.endDate);
-  endDate.setHours(0, 0, 0, 0);
-
-  if (today < startDate) {
-    return {
-      label: locale === "zh" ? "未开始" : "Planned",
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    };
-  }
-
-  if (today > endDate) {
-    return {
-      label: locale === "zh" ? "已结束" : "Completed",
-      className: "border-slate-200 bg-slate-100 text-slate-700",
-    };
-  }
-
-  return {
-    label: locale === "zh" ? "进行中" : "Active",
-    className: "border-blue-200 bg-blue-50 text-blue-700",
-  };
-}
 
 function getPlanDetailText(locale: "en" | "zh") {
   if (locale === "zh") {
@@ -193,6 +165,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
           select: {
             id: true,
             name: true,
+            status: true,
           },
         },
         reporter: true,
@@ -252,7 +225,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         projectId: activeProject.id,
         planId: plan.id,
       },
-      select: { status: true },
+      select: { key: true, status: true },
     }),
     prisma.user.findMany({
       where: buildProjectUsersWhere(activeProject.id, false),
@@ -300,7 +273,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
   const unplannedIssues = unplannedIssuePage.slice(0, 20);
   const unplannedIssuesHasMore = unplannedIssuePage.length > 20;
-  const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
+  const status = getPlanStatusPresentation(plan.status, locale);
+  const dateHint = getPlanDateHint(plan, locale);
+  const isTerminal = isTerminalPlanStatus(plan.status);
 
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
   const planTotalIssues = basicPlanIssues.length;
@@ -309,6 +284,10 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "IN_PROGRESS"
   ).length;
   const todoIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "TODO").length;
+  const blockingIssueKeys = basicPlanIssues
+    .filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) !== "DONE")
+    .slice(0, 5)
+    .map((issue) => issue.key);
   const summaryItems = [
     {
       label: text.total,
@@ -337,6 +316,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
             <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${status.className}`}>
               {status.label}
             </span>
+            {dateHint ? <span className={`text-xs font-medium ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</span> : null}
             <span className="whitespace-nowrap text-sm text-slate-500">
               <span aria-hidden="true" className="mr-2 text-slate-300">
                 ·
@@ -357,7 +337,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {canManagePlans ? (
+          {canManagePlans && !isTerminal ? (
             <PlanIssueActionButton
               locale={locale}
               createIssue={{
@@ -379,8 +359,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
               }}
             />
           ) : null}
-          {canManagePlans ? <EditPlanButton plan={plan} locale={locale} /> : null}
-          {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} /> : null}
+          {canManagePlans ? <PlanLifecycleActions planId={plan.id} status={plan.status} totalIssues={planTotalIssues} unfinishedIssues={planTotalIssues - doneIssues} blockingIssueKeys={blockingIssueKeys} locale={locale} /> : null}
+          {canManagePlans && !isTerminal ? <EditPlanButton plan={plan} locale={locale} /> : null}
+          {canManagePlans ? <DeletePlanButton planId={plan.id} projectId={plan.projectId} locale={locale} status={plan.status} /> : null}
         </div>
       </div>
 
@@ -400,8 +381,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         canManageIssueFields={false}
         lockedPlanId={plan.id}
         planFieldDefinitions={planFieldDefinitions}
-        canManagePlanFields={canManageIssueFields}
-        canManagePlans={canManagePlans}
+        canManagePlanFields={canManageIssueFields && !isTerminal}
+        canManagePlans={canManagePlans && !isTerminal}
+        lockedPlanStatus={plan.status}
         preferenceScope={preferenceScope}
         initialPreferences={initialPreferences}
       />

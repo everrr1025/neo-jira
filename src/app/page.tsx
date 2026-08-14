@@ -13,15 +13,8 @@ import {
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { getUserDepartmentMembership } from "@/lib/departmentAccess";
+import { getIterationTiming, selectInitialDashboardIssueTab } from "@/lib/projectDashboard";
 import {
   getWorkflowStatusBadgeClass,
   getWorkflowStatusCategory,
@@ -47,19 +40,18 @@ type ActiveIterationSummary = {
   }[];
 };
 
+type ActivePlanSummary = {
+  id: string;
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  issues: { status: string }[];
+};
+
 type SessionUser = {
   id?: string;
   role?: string | null;
 };
-
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
-function formatDateQueryValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 export default async function Dashboard({
   searchParams,
@@ -102,9 +94,6 @@ export default async function Dashboard({
   const nextThreeDays = new Date(startOfToday);
   nextThreeDays.setDate(nextThreeDays.getDate() + 3);
 
-  const yesterday = new Date(startOfToday);
-  yesterday.setDate(yesterday.getDate() - 1);
-
   const [
     statusSummaryIssues,
     myAssignedIssuesRaw,
@@ -113,6 +102,8 @@ export default async function Dashboard({
     overdueIssuesRaw,
     dueSoonIssuesRaw,
     activeIteration,
+    activePlans,
+    projectDetails,
     searchResults,
     workflowProjects,
   ] = await Promise.all([
@@ -220,6 +211,29 @@ export default async function Dashboard({
           orderBy: { endDate: "asc" },
         })
       : Promise.resolve(null),
+    activeProject
+      ? prisma.plan.findMany({
+          where: { projectId: activeProject.id, status: "ACTIVE" },
+          select: {
+            id: true,
+            name: true,
+            startDate: true,
+            endDate: true,
+            issues: { select: { status: true } },
+          },
+          orderBy: [{ endDate: "asc" }],
+        })
+      : Promise.resolve([]),
+    activeProject
+      ? prisma.project.findUnique({
+          where: { id: activeProject.id },
+          select: {
+            description: true,
+            owner: { select: { name: true } },
+            _count: { select: { members: true } },
+          },
+        })
+      : Promise.resolve(null),
     query
       ? prisma.issue.findMany({
           where: {
@@ -283,44 +297,9 @@ export default async function Dashboard({
     ).length ?? 0;
   const sprintProgress =
     sprintIssueCount > 0 ? Math.round((sprintCompletedCount / sprintIssueCount) * 100) : 0;
-  const sprintDaysLeft = typedActiveIteration
-    ? Math.max(0, Math.ceil((typedActiveIteration.endDate.getTime() - startOfToday.getTime()) / DAY_IN_MS))
+  const iterationTiming = typedActiveIteration
+    ? getIterationTiming(typedActiveIteration.endDate, startOfToday)
     : null;
-
-  const stats = [
-    {
-      id: "total",
-      label: translations.dashboard.totalIssues,
-      value: totalIssues,
-      tone: "text-slate-900",
-      rail: "bg-slate-200",
-      fill: "bg-slate-800",
-    },
-    {
-      id: "todo",
-      label: translations.dashboard.toDo,
-      value: todoCount,
-      tone: "text-amber-700",
-      rail: "bg-amber-100",
-      fill: "bg-amber-500",
-    },
-    {
-      id: "in-progress",
-      label: translations.dashboard.inProgress,
-      value: inProgressCount,
-      tone: "text-blue-700",
-      rail: "bg-blue-100",
-      fill: "bg-blue-500",
-    },
-    {
-      id: "done",
-      label: translations.dashboard.done,
-      value: doneCount,
-      tone: "text-emerald-700",
-      rail: "bg-emerald-100",
-      fill: "bg-emerald-500",
-    },
-  ];
 
   const projectBasePath = activeProject
     ? getProjectPath(activeProject.departmentId, activeProject.id)
@@ -329,8 +308,101 @@ export default async function Dashboard({
   const assignedToMeHref = `${issuesPath}?assignee=ME`;
   const watchedIssuesHref = `${issuesPath}?watcher=ME`;
   const highPriorityHref = `${issuesPath}?priority=HIGH,URGENT`;
-  const overdueHref = `${issuesPath}?dueOp=LTE&dueDate=${formatDateQueryValue(yesterday)}`;
-  const dueSoonHref = `${issuesPath}?duePreset=NEXT_3_DAYS`;
+  const overdueHref = `${issuesPath}?view=overdue`;
+  const dueSoonHref = `${issuesPath}?view=dueSoon`;
+  const activeWorkflowStatuses = activeProject
+    ? workflowStatusByProjectId.get(activeProject.id) || []
+    : [];
+  const getStatusHref = (category: "TODO" | "IN_PROGRESS" | "DONE") => {
+    const keys = activeWorkflowStatuses
+      .filter((status) => status.category === category)
+      .map((status) => status.key);
+    const legacyKeys = category === "TODO"
+      ? ["TODO"]
+      : category === "IN_PROGRESS"
+        ? ["IN_PROGRESS", "IN_TESTING"]
+        : ["DONE"];
+    return `${issuesPath}?status=${encodeURIComponent((keys.length > 0 ? keys : legacyKeys).join(","))}`;
+  };
+  const completionRate = totalIssues > 0 ? Math.round((doneCount / totalIssues) * 100) : 0;
+  const initialIssueTabId = selectInitialDashboardIssueTab({
+    assigned: myIssuesTotal,
+    watched: watchedIssuesTotal,
+    priority: highPriorityIssuesTotal,
+    overdue: overdueIssuesTotal,
+    "due-soon": dueSoonIssuesTotal,
+  });
+  const healthStats = [
+    {
+      id: "todo",
+      label: translations.dashboard.toDo,
+      value: String(todoCount),
+      detail: `${totalIssues > 0 ? Math.round((todoCount / totalIssues) * 100) : 0}%`,
+      percentage: totalIssues > 0 ? Math.round((todoCount / totalIssues) * 100) : 0,
+      tone: "text-slate-800",
+      rail: "bg-slate-200",
+      fill: "bg-slate-600",
+      href: getStatusHref("TODO"),
+    },
+    {
+      id: "in-progress",
+      label: translations.dashboard.inProgress,
+      value: String(inProgressCount),
+      detail: `${totalIssues > 0 ? Math.round((inProgressCount / totalIssues) * 100) : 0}%`,
+      percentage: totalIssues > 0 ? Math.round((inProgressCount / totalIssues) * 100) : 0,
+      tone: "text-blue-700",
+      rail: "bg-blue-100",
+      fill: "bg-blue-500",
+      href: getStatusHref("IN_PROGRESS"),
+    },
+    {
+      id: "overdue",
+      label: translations.dashboard.overdue,
+      value: String(overdueIssuesTotal),
+      detail: `${totalIssues > 0 ? Math.round((overdueIssuesTotal / totalIssues) * 100) : 0}%`,
+      percentage: totalIssues > 0 ? Math.round((overdueIssuesTotal / totalIssues) * 100) : 0,
+      tone: overdueIssuesTotal > 0 ? "text-destructive" : "text-slate-800",
+      rail: "bg-rose-100",
+      fill: "bg-rose-500",
+      href: overdueHref,
+    },
+    {
+      id: "completion",
+      label: translations.dashboard.completionRate,
+      value: `${completionRate}%`,
+      detail: `${doneCount} / ${totalIssues}`,
+      percentage: completionRate,
+      tone: "text-emerald-700",
+      rail: "bg-emerald-100",
+      fill: "bg-emerald-500",
+      href: getStatusHref("DONE"),
+    },
+  ];
+  const iterationTimingText = iterationTiming
+    ? iterationTiming.state === "ends-today"
+      ? translations.dashboard.endsToday
+      : locale === "zh"
+        ? iterationTiming.state === "overdue"
+          ? `${translations.dashboard.overdue} ${iterationTiming.days} ${translations.dashboard.daysOverdue}`
+          : `${translations.dashboard.daysRemaining} ${iterationTiming.days} ${translations.dashboard.daysOverdue}`
+        : iterationTiming.state === "overdue"
+          ? `${iterationTiming.days} ${translations.dashboard.daysOverdue}`
+          : `${iterationTiming.days} ${translations.dashboard.daysRemaining}`
+    : "";
+  const typedActivePlans = activePlans as ActivePlanSummary[];
+  const visibleActivePlans = typedActivePlans.slice(0, 3).map((plan) => {
+    const completedIssues = plan.issues.filter(
+      (issue) => getWorkflowStatusCategory(issue.status, activeWorkflowStatuses) === "DONE",
+    ).length;
+    return {
+      ...plan,
+      completedIssues,
+      progress: plan.issues.length > 0
+        ? Math.round((completedIssues / plan.issues.length) * 100)
+        : 0,
+      timing: getIterationTiming(plan.endDate, startOfToday),
+    };
+  });
 
   if (query) {
     return (
@@ -548,41 +620,84 @@ export default async function Dashboard({
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.35fr)]">
-            <Card>
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div className="rounded-xl border bg-background p-5">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
+                    {activeProject.name}
+                  </h1>
+                  <Badge variant="secondary" className="font-mono">{activeProject.key}</Badge>
+                </div>
+                <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
+                  {projectDetails?.description || translations.dashboard.noProjectDescription}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                  <span>
+                    {translations.dashboard.projectOwner}: {projectDetails?.owner?.name || translations.dashboard.unassignedOwner}
+                  </span>
+                  <span>
+                    {translations.dashboard.projectMembers}: {projectDetails?._count.members ?? 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-full overflow-hidden rounded-xl border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                <h2 className="text-sm font-semibold text-foreground">{translations.dashboard.projectHealth}</h2>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {translations.dashboard.totalIssues} {totalIssues}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                {healthStats.map((stat) => (
+                  <IssueOverviewStat
+                    key={stat.id}
+                    label={stat.label}
+                    value={stat.value}
+                    tone={stat.tone}
+                    rail={stat.rail}
+                    fill={stat.fill}
+                    detail={stat.detail}
+                    percentage={stat.percentage}
+                    href={stat.href}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+            <div className="overflow-hidden rounded-xl border bg-background">
               {typedActiveIteration ? (
                 <>
-                  <CardHeader>
-                    <div>
+                  <div className="flex items-start justify-between gap-4 border-b bg-muted/35 px-4 py-3">
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <CardTitle className="text-2xl tracking-tight">
+                        <h2 className="truncate text-base font-semibold text-foreground">
                           {typedActiveIteration.name}
-                        </CardTitle>
-                        <Badge variant="secondary" className="text-blue-700">
-                          {translations.dashboard.activeStatus}
+                        </h2>
+                        <Badge
+                          variant={iterationTiming?.state === "overdue" ? "destructive" : "secondary"}
+                        >
+                          {iterationTimingText}
                         </Badge>
                       </div>
-                      {isGlobalAdmin && (
-                        <CardDescription className="mt-1">
-                          {typedActiveIteration.project.name} ({typedActiveIteration.project.key})
-                        </CardDescription>
-                      )}
                     </div>
-                    <CardAction>
-                      <Button asChild>
-                        <Link href={`${projectBasePath}/iterations/${typedActiveIteration.id}`}>
-                          {translations.dashboard.viewBoard}
-                        </Link>
-                      </Button>
-                    </CardAction>
-                  </CardHeader>
+                    <Link
+                      href={`${projectBasePath}/iterations/${typedActiveIteration.id}`}
+                      className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
+                    >
+                        {iterationTiming?.state === "overdue"
+                          ? translations.dashboard.processIteration
+                          : translations.dashboard.viewBoard}
+                    </Link>
+                  </div>
 
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-3 gap-3">
-                      <SprintMetric
-                        label={translations.dashboard.daysLeft}
-                        value={String(sprintDaysLeft ?? 0)}
-                      />
+                  <div className="space-y-4 p-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <SprintMetric
                         label={translations.dashboard.issuesInSprint}
                         value={String(sprintIssueCount)}
@@ -591,9 +706,13 @@ export default async function Dashboard({
                         label={translations.dashboard.completedIssues}
                         value={String(sprintCompletedCount)}
                       />
+                      <SprintMetric
+                        label={translations.dashboard.completionRate}
+                        value={`${sprintProgress}%`}
+                      />
                     </div>
 
-                    <div className="space-y-2 pt-3">
+                    <div className="space-y-2 pt-1">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">{translations.dashboard.sprintProgress}</span>
                         <span className="font-semibold text-foreground">{sprintProgress}%</span>
@@ -615,53 +734,98 @@ export default async function Dashboard({
                         {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
                       </span>
                     </div>
-                  </CardContent>
+                  </div>
                 </>
               ) : (
-                <>
-                  <CardHeader>
-                    <CardTitle className="text-2xl tracking-tight">
-                      {translations.dashboard.noActiveSprint}
-                    </CardTitle>
-                    <CardDescription>{translations.iterationsPage.subtitle}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button asChild>
-                      <Link href={`${projectBasePath}/iterations`}>
-                        {translations.sidebar.iterations}
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </>
+                <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
+                  <div>
+                    <h2 className="font-semibold text-foreground">{translations.dashboard.noActiveSprint}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">{translations.iterationsPage.subtitle}</p>
+                  </div>
+                  <Button asChild>
+                    <Link href={`${projectBasePath}/iterations`}>
+                      {translations.sidebar.iterations}
+                    </Link>
+                  </Button>
+                </div>
               )}
-            </Card>
+            </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">
-                  {translations.issuesPage.title}
-                </CardTitle>
-              </CardHeader>
+            <div className="overflow-hidden rounded-xl border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-foreground">{translations.dashboard.activePlans}</h2>
+                  <span className="text-xs font-medium text-muted-foreground">{typedActivePlans.length}</span>
+                </div>
+                <Link
+                  href={`${projectBasePath}/plans`}
+                  className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
+                >
+                  {translations.dashboard.viewAllPlans}
+                </Link>
+              </div>
 
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {stats.map((stat) => (
-                  <IssueOverviewStat
-                    key={stat.id}
-                    label={stat.label}
-                    value={stat.value}
-                    tone={stat.tone}
-                    rail={stat.rail}
-                    fill={stat.fill}
-                    total={totalIssues}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          </section>
+              {visibleActivePlans.length > 0 ? (
+                <div className="divide-y">
+                  {visibleActivePlans.map((plan) => {
+                    const timingText = plan.timing?.state === "overdue"
+                      ? locale === "zh"
+                        ? `${translations.dashboard.overdue} ${plan.timing.days} ${translations.dashboard.daysOverdue}`
+                        : `${plan.timing.days} ${translations.dashboard.daysOverdue}`
+                      : plan.timing?.state === "ends-today"
+                        ? translations.dashboard.endsToday
+                        : locale === "zh"
+                          ? `${translations.dashboard.daysRemaining} ${plan.timing?.days ?? 0} ${translations.dashboard.daysOverdue}`
+                          : `${plan.timing?.days ?? 0} ${translations.dashboard.daysRemaining}`;
 
-          <section>
+                    return (
+                      <Link
+                        key={plan.id}
+                        href={getProjectPath(activeProject.departmentId, activeProject.id, "plans", plan.id)}
+                        className="block px-4 py-3 transition-colors hover:bg-muted/45"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h3 className="truncate text-sm font-medium text-foreground">{plan.name}</h3>
+                              <Badge
+                                variant={plan.timing?.state === "overdue" ? "destructive" : "secondary"}
+                                className="shrink-0"
+                              >
+                                {timingText}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {plan.startDate.toLocaleDateString(localeDateMap[locale])} - {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-foreground">{plan.progress}%</span>
+                        </div>
+                        <div className="mt-3 flex items-center gap-3">
+                          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-primary" style={{ width: `${plan.progress}%` }} />
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {plan.completedIssues} / {plan.issues.length}
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="m-4 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+                  {translations.dashboard.noActivePlans}
+                </div>
+              )}
+            </div>
+            </div>
+
             <DashboardIssueTabsCard
               locale={locale}
+              title={translations.dashboard.riskAndAttention}
+              initialTabId={initialIssueTabId}
+              allIssuesHref={issuesPath}
               workflowProjects={workflowProjects.map((project) => ({
                 id: project.id,
                 workflowStatuses: project.workflowStatuses as WorkflowStatusRecord[],
@@ -720,6 +884,7 @@ export default async function Dashboard({
               ]}
             />
           </section>
+
         </>
       )}
     </div>
@@ -729,34 +894,36 @@ export default async function Dashboard({
 function IssueOverviewStat({
   label,
   value,
+  detail,
+  percentage,
   tone,
   rail,
   fill,
-  total,
+  href,
 }: {
   label: string;
-  value: number;
+  value: string;
+  detail: string;
+  percentage: number;
   tone: string;
   rail: string;
   fill: string;
-  total: number;
+  href: string;
 }) {
-  const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-
   return (
-    <div className="rounded-lg border bg-muted/40 p-4">
+    <Link href={href} className="rounded-lg border bg-muted/40 p-3 transition-colors hover:bg-muted/70">
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <span className={`text-3xl font-bold ${tone}`}>{value}</span>
-        <span className="text-xs font-medium text-muted-foreground">{percentage}%</span>
+      <div className="mt-3 flex items-end justify-between gap-1">
+        <span className={`text-2xl font-bold ${tone}`}>{value}</span>
+        <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">{detail}</span>
       </div>
-      <div className={`mt-4 h-2 overflow-hidden rounded-full ${rail}`}>
+      <div className={`mt-3 h-2 overflow-hidden rounded-full ${rail}`}>
         <div
           className={`h-full rounded-full ${fill}`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
         />
       </div>
-    </div>
+    </Link>
   );
 }
 

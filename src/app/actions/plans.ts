@@ -7,6 +7,7 @@ import { getActiveProjectForUser } from "@/lib/activeProject";
 import { authOptions } from "@/lib/authOptions";
 import { isProjectInActiveContext } from "@/lib/activeProjectUtils";
 import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember, checkProjectPlanning } from "@/lib/permissions";
+import { canTransitionPlanStatus, getTerminalPlanIssueMessage, isTerminalPlanStatus, partitionPlanIssues, type PlanStatus } from "@/lib/planLifecycle";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import {
@@ -15,6 +16,7 @@ import {
   normalizeNameOrThrow,
   PLAN_NAME_MAX_LENGTH,
 } from "@/lib/validation";
+import { isDoneWorkflowStatus, type WorkflowStatusRecord } from "@/lib/workflows";
 
 const PLAN_FIELD_TYPES = ["BOOLEAN", "NUMBER", "TEXT", "LONG_TEXT", "SELECT", "DATE"] as const;
 type PlanFieldType = (typeof PLAN_FIELD_TYPES)[number];
@@ -88,10 +90,15 @@ async function getAuthorizedPlan(planId: string, requiredAccess: "admin" | "fiel
       id: planId,
       projectId: activeProjectId || undefined,
     },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, status: true },
   });
 
   if (!plan) throw new Error("Plan not found");
+
+  if (isTerminalPlanStatus(plan.status)) {
+    const locale = await getCurrentLocale();
+    throw new Error(getTerminalPlanIssueMessage(plan.status, locale));
+  }
 
   if (requiredAccess === "admin") {
     await checkProjectAdmin(plan.projectId);
@@ -163,7 +170,7 @@ export async function createPlan(data: {
         projectId: data.projectId,
         ownerId: project.ownerId || userId,
         targetCount: typeof data.targetCount === "number" && data.targetCount > 0 ? data.targetCount : null,
-        status: "ACTIVE",
+        status: "PLANNED",
       },
     });
 
@@ -221,11 +228,14 @@ export async function updatePlan(data: {
         id: data.id,
         projectId: data.projectId,
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
     if (!existingPlan) {
       throw new Error("Plan not found");
+    }
+    if (isTerminalPlanStatus(existingPlan.status)) {
+      throw new Error(getTerminalPlanIssueMessage(existingPlan.status, locale));
     }
 
     const plan = await prisma.plan.update({
@@ -246,6 +256,133 @@ export async function updatePlan(data: {
   } catch (error: unknown) {
     console.error("Failed to update plan:", error);
     return { success: false, error: error instanceof Error ? error.message : "Failed to update plan" };
+  }
+}
+
+async function changePlanStatus(planId: string, nextStatus: PlanStatus) {
+  const locale = await getCurrentLocale();
+  const session = await getServerSession(authOptions);
+  const sessionUser = session?.user as { id?: string; role?: string } | undefined;
+  if (!sessionUser?.id) throw new Error("Unauthorized");
+  const plan = await prisma.plan.findUnique({
+    where: { id: planId },
+    select: { id: true, projectId: true, status: true },
+  });
+  if (!plan) throw new Error("Plan not found");
+  const activeProject = await getActiveProjectForUser(sessionUser.id, sessionUser.role ?? "USER");
+  if (!isProjectInActiveContext({ activeProjectId: activeProject?.id || null, projectId: plan.projectId })) {
+    throw new Error("Unauthorized");
+  }
+  await checkProjectAdmin(plan.projectId);
+  if (!canTransitionPlanStatus(plan.status, nextStatus)) {
+    throw new Error(locale === "zh" ? "当前计划状态不允许此操作" : "This plan status does not allow that action");
+  }
+  return plan;
+}
+
+function revalidatePlanLifecycle(planId: string) {
+  revalidatePath("/");
+  revalidatePath("/plans");
+  revalidatePath(`/plans/${planId}`);
+  revalidatePath("/issues");
+}
+
+export async function startPlan(planId: string) {
+  try {
+    const current = await changePlanStatus(planId, "ACTIVE");
+    const updated = await prisma.plan.updateMany({ where: { id: planId, status: current.status }, data: { status: "ACTIVE" } });
+    if (updated.count !== 1) throw new Error("Plan status changed. Please try again.");
+    const plan = await prisma.plan.findUniqueOrThrow({ where: { id: planId } });
+    revalidatePlanLifecycle(planId);
+    return { success: true, plan };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to start plan" };
+  }
+}
+
+export async function completePlan(planId: string) {
+  try {
+    const locale = await getCurrentLocale();
+    await changePlanStatus(planId, "COMPLETED");
+    const result = await prisma.$transaction(async (tx) => {
+      const plan = await tx.plan.findUnique({
+        where: { id: planId },
+        select: {
+          status: true,
+          project: { select: { workflowStatuses: { orderBy: { position: "asc" } } } },
+          issues: { select: { id: true, key: true, status: true }, orderBy: { key: "asc" } },
+        },
+      });
+      if (!plan || !canTransitionPlanStatus(plan.status, "COMPLETED")) {
+        throw new Error(locale === "zh" ? "只有进行中的计划可以完成" : "Only active plans can be completed");
+      }
+      if (plan.issues.length === 0) {
+        throw new Error(locale === "zh" ? "空计划不能完成，请先关联至少一个问题" : "An empty plan cannot be completed");
+      }
+      const workflowStatuses = plan.project.workflowStatuses as WorkflowStatusRecord[];
+      const doneStatusKeys = workflowStatuses.filter((status) => isDoneWorkflowStatus(status.key, workflowStatuses)).map((status) => status.key);
+      const { unfinished } = partitionPlanIssues(plan.issues, doneStatusKeys);
+      if (unfinished.length > 0) {
+        const keys = unfinished.slice(0, 5).map((issue) => issue.key).join("、");
+        throw new Error(
+          locale === "zh"
+            ? `还有 ${unfinished.length} 个问题未完成：${keys}`
+            : `${unfinished.length} issues are unfinished: ${keys}`,
+        );
+      }
+      return tx.plan.update({ where: { id: planId }, data: { status: "COMPLETED" } });
+    });
+    revalidatePlanLifecycle(planId);
+    return { success: true, plan: result };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to complete plan" };
+  }
+}
+
+export async function cancelPlan(planId: string) {
+  try {
+    const locale = await getCurrentLocale();
+    await changePlanStatus(planId, "CANCELLED");
+    const result = await prisma.$transaction(async (tx) => {
+      const plan = await tx.plan.findUnique({
+        where: { id: planId },
+        select: {
+          status: true,
+          project: { select: { workflowStatuses: { orderBy: { position: "asc" } } } },
+          issues: { select: { id: true, status: true } },
+        },
+      });
+      if (!plan || !canTransitionPlanStatus(plan.status, "CANCELLED")) {
+        throw new Error(locale === "zh" ? "当前计划不能取消" : "This plan cannot be cancelled");
+      }
+      const workflowStatuses = plan.project.workflowStatuses as WorkflowStatusRecord[];
+      const doneStatusKeys = workflowStatuses.filter((status) => isDoneWorkflowStatus(status.key, workflowStatuses)).map((status) => status.key);
+      const { unfinished } = partitionPlanIssues(plan.issues, doneStatusKeys);
+      const unfinishedIds = unfinished.map((issue) => issue.id);
+      if (unfinishedIds.length > 0) {
+        await tx.planIssueFieldValue.deleteMany({ where: { planId, issueId: { in: unfinishedIds } } });
+        await tx.issue.updateMany({ where: { id: { in: unfinishedIds }, planId }, data: { planId: null } });
+      }
+      const updated = await tx.plan.update({ where: { id: planId }, data: { status: "CANCELLED" } });
+      return { plan: updated, releasedCount: unfinishedIds.length, retainedCount: plan.issues.length - unfinishedIds.length };
+    });
+    revalidatePlanLifecycle(planId);
+    return { success: true, ...result };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to cancel plan" };
+  }
+}
+
+export async function reopenPlan(planId: string) {
+  try {
+    const current = await changePlanStatus(planId, "ACTIVE");
+    const updated = await prisma.plan.updateMany({ where: { id: planId, status: current.status }, data: { status: "ACTIVE" } });
+    if (updated.count !== 1) throw new Error("Plan status changed. Please try again.");
+    const plan = await prisma.plan.findUniqueOrThrow({ where: { id: planId } });
+    revalidatePlanLifecycle(planId);
+    return { success: true, plan };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to reopen plan" };
   }
 }
 

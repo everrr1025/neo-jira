@@ -115,6 +115,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
         select: {
           id: true,
           name: true,
+          status: true,
         },
       },
       reporter: true,

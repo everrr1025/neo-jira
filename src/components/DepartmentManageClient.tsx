@@ -1778,7 +1778,7 @@ export default function DepartmentManageClient({
             </div>
 
             <div className="lg:col-span-2">
-              <div className="flex h-[520px] flex-col overflow-hidden rounded-xl border bg-background">
+              <div className="flex flex-col overflow-hidden rounded-xl border bg-background">
                 <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold text-foreground">{t.myProjects}</h2>
@@ -1841,7 +1841,7 @@ export default function DepartmentManageClient({
                         <Badge variant="secondary">{selectedMyProject.priorityIssues.length}</Badge>
                       </div>
                       {selectedMyProject.priorityIssues.length > 0 ? (
-                        <div className="min-h-0 max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                        <div className="space-y-2">
                           {selectedMyProject.priorityIssues.map((issue) => (
                             <Link
                               key={issue.id}

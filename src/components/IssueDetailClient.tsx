@@ -17,6 +17,7 @@ import {
 import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
 import { ISSUE_TITLE_MAX_LENGTH } from "@/lib/validation";
 import { getProjectPath, parseProjectPath } from "@/lib/projectRoutes";
+import { getTerminalPlanIssueMessage, isTerminalPlanStatus } from "@/lib/planLifecycle";
 import {
   buildWorkflowStatusOptions,
   buildWorkflowTransitionMap,
@@ -57,6 +58,7 @@ type IssueIteration = {
 type IssuePlan = {
   id: string;
   name: string;
+  status?: string;
 };
 
 type IssueRecord = {
@@ -265,6 +267,8 @@ export default function IssueDetailClient({
   const noParentItemLabel = locale === "zh" ? "暂无父项" : "No parent item";
   const addChildLabel = locale === "zh" ? "新建" : "New";
   const noChildIssuesLabel = locale === "zh" ? "暂无子项" : "No child issues";
+  const currentPlan = plans.find((plan) => plan.id === issue.planId) || null;
+  const terminalPlanStatus = isTerminalPlanStatus(currentPlan?.status) ? currentPlan.status : null;
   const assigneeUsers = useMemo(() => users.filter((user) => user.role !== "ADMIN"), [users]);
   const allowedChildTypes = getAllowedChildIssueTypes(issue.type);
   const canCreateChildIssues = allowedChildTypes.length > 0;
@@ -674,7 +678,7 @@ export default function IssueDetailClient({
               {isWatching ? <EyeOff size={16} /> : <Eye size={16} />}
             </Button>
 
-            {canDeleteIssue && (
+            {canDeleteIssue && !terminalPlanStatus && (
               <Button
                 type="button"
                 onClick={handleDelete}
@@ -904,6 +908,11 @@ export default function IssueDetailClient({
           ) : null}
         </div>
 
+        {terminalPlanStatus ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+            {getTerminalPlanIssueMessage(terminalPlanStatus, locale)}
+          </div>
+        ) : null}
         <AlertPopup message={alertMessage} onClose={() => setAlertMessage("")} autoCloseMs={5000} />
 
         <AttachmentUpload issueId={issue.id} locale={locale} />
@@ -915,15 +924,16 @@ export default function IssueDetailClient({
         <Card className="gap-4 py-5">
           <CardContent className="flex flex-col gap-4 px-5">
 
-          <PropertySelect
-            id="status"
-            label={translations.issueDetail.status}
-            value={issue.status}
-            onChange={(value) => handleAutoSave("status", value)}
-            options={statusOptions}
-          />
+          {terminalPlanStatus ? (
+            <div className="flex flex-col gap-1.5" title={getTerminalPlanIssueMessage(terminalPlanStatus, locale)}>
+              <label className="text-sm font-medium text-muted-foreground">{translations.issueDetail.status}</label>
+              <div className="rounded-md border bg-muted/40 p-2 text-sm font-medium">{statusOptions.find((option) => option.value === issue.status)?.label || issue.status}</div>
+            </div>
+          ) : (
+            <PropertySelect id="status" label={translations.issueDetail.status} value={issue.status} onChange={(value) => handleAutoSave("status", value)} options={statusOptions} />
+          )}
 
-          {canManagePlans ? (
+          {canManagePlans && !terminalPlanStatus ? (
             <PropertySelect
               id="plan"
               label={locale === "zh" ? "计划" : "Plan"}
@@ -931,7 +941,7 @@ export default function IssueDetailClient({
               onChange={(value) => handleAutoSave("planId", value || null)}
               options={[
                 { value: "", label: locale === "zh" ? "未设置计划" : "No plan" },
-                ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+                ...plans.filter((plan) => !isTerminalPlanStatus(plan.status)).map((plan) => ({ value: plan.id, label: plan.name })),
               ]}
             />
           ) : (

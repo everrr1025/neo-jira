@@ -84,6 +84,22 @@ type TranslationBundle = {
     recentActivity: string;
     noRecentActivity: string;
     activityForIssue: string;
+    projectOwner: string;
+    projectMembers: string;
+    noProjectDescription: string;
+    unassignedOwner: string;
+    viewIssues: string;
+    projectHealth: string;
+    completionRate: string;
+    endsToday: string;
+    daysOverdue: string;
+    daysRemaining: string;
+    processIteration: string;
+    riskAndAttention: string;
+    viewAllIssues: string;
+    activePlans: string;
+    noActivePlans: string;
+    viewAllPlans: string;
   };
   issuesPage: {
     title: string;
@@ -409,13 +425,29 @@ const translations: Record<Locale, TranslationBundle> = {
       overdue: "Overdue",
       noOverdueIssues: "No overdue issues",
       viewAll: "View all",
-      watchedIssues: "Watched issues",
+      watchedIssues: "My watchlist",
       notWatchingAnyActiveIssues: "You are not watching any active issues",
-      dueSoon: "Due soon (next 3 days)",
+      dueSoon: "Due soon",
       noTasksDueThisWeek: "No tasks due in the next 3 days",
       recentActivity: "Recent activity",
       noRecentActivity: "No recent activity",
       activityForIssue: "Issue",
+      projectOwner: "Owner",
+      projectMembers: "Members",
+      noProjectDescription: "No project description",
+      unassignedOwner: "Unassigned",
+      viewIssues: "View issues",
+      projectHealth: "Project health",
+      completionRate: "Completion rate",
+      endsToday: "Ends today",
+      daysOverdue: "days overdue",
+      daysRemaining: "days remaining",
+      processIteration: "Review iteration",
+      riskAndAttention: "Risks and attention",
+      viewAllIssues: "View all issues",
+      activePlans: "Active plans",
+      noActivePlans: "No active plans",
+      viewAllPlans: "View all",
     },
     issuesPage: {
       title: "All Issues",
@@ -740,13 +772,29 @@ const translations: Record<Locale, TranslationBundle> = {
       overdue: "已逾期",
       noOverdueIssues: "暂无逾期问题",
       viewAll: "查看全部",
-      watchedIssues: "我关注的问题",
+      watchedIssues: "我的关注",
       notWatchingAnyActiveIssues: "你当前没有关注中的活跃问题",
-      dueSoon: "即将到期（3天内）",
+      dueSoon: "即将到期",
       noTasksDueThisWeek: "未来 3 天内没有即将到期的任务",
       recentActivity: "最近活动",
       noRecentActivity: "暂无最近活动",
       activityForIssue: "关联问题",
+      projectOwner: "项目负责人",
+      projectMembers: "成员",
+      noProjectDescription: "暂无项目描述",
+      unassignedOwner: "未指定",
+      viewIssues: "查看问题",
+      projectHealth: "项目健康",
+      completionRate: "完成率",
+      endsToday: "今天结束",
+      daysOverdue: "天",
+      daysRemaining: "剩余",
+      processIteration: "处理迭代",
+      riskAndAttention: "风险与关注",
+      viewAllIssues: "查看全部问题",
+      activePlans: "进行中计划",
+      noActivePlans: "暂无进行中的计划",
+      viewAllPlans: "查看全部",
     },
     issuesPage: {
       title: "全部问题",

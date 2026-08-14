@@ -39,6 +39,9 @@ export default function DashboardIssueTabsCard({
   tabs,
   locale,
   workflowProjects,
+  initialTabId,
+  title,
+  allIssuesHref,
 }: {
   tabs: IssueTab[];
   locale: Locale;
@@ -46,8 +49,13 @@ export default function DashboardIssueTabsCard({
     id: string;
     workflowStatuses: WorkflowStatusRecord[];
   }>;
+  initialTabId?: string;
+  title?: string;
+  allIssuesHref?: string;
 }) {
-  const [activeTab, setActiveTab] = useState(tabs[0]?.id ?? "");
+  const [activeTab, setActiveTab] = useState(() =>
+    tabs.some((tab) => tab.id === initialTabId) ? initialTabId ?? "" : tabs[0]?.id ?? "",
+  );
   const projectRoute = parseProjectPath(usePathname());
   const translations = getTranslations(locale);
   const workflowStatusByProject = useMemo(
@@ -70,16 +78,19 @@ export default function DashboardIssueTabsCard({
         : "hover:border-rose-300 hover:bg-rose-50/40";
 
   return (
-    <section className="rounded-3xl border bg-background p-5 shadow-sm md:p-6">
-      <div className="flex flex-col gap-4 border-b pb-4">
+    <section className="overflow-hidden rounded-xl border bg-background">
+      <div className="flex flex-col gap-3 border-b bg-muted/35 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold text-foreground">{currentTab.title}</h3>
-          <Link href={currentTab.href} className="text-sm font-medium text-primary hover:underline">
+          <h3 className="text-sm font-semibold text-foreground">{title ?? currentTab.title}</h3>
+          <Link
+            href={currentTab.href}
+            className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
+          >
             {translations.dashboard.viewAll}
           </Link>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
           {tabs.map((tab) => {
             const isActive = tab.id === currentTab.id;
             return (
@@ -89,10 +100,13 @@ export default function DashboardIssueTabsCard({
                 variant={isActive ? "default" : "outline"}
                 size="sm"
                 onClick={() => setActiveTab(tab.id)}
-                className="rounded-full"
+                className={`h-7 shrink-0 gap-1 rounded-full px-2 text-xs ${tab.count === 0 && !isActive ? "text-muted-foreground opacity-60" : ""}`}
               >
                 <span>{tab.title}</span>
-                <Badge variant={isActive ? "secondary" : "outline"} className={isActive ? "bg-white/20 text-white" : ""}>
+                <Badge
+                  variant="ghost"
+                  className={`border-0 bg-transparent px-1 text-current hover:bg-transparent ${isActive ? "text-white" : "text-muted-foreground"}`}
+                >
                   {tab.count}
                 </Badge>
               </Button>
@@ -101,7 +115,7 @@ export default function DashboardIssueTabsCard({
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="space-y-3 p-4">
         {currentTab.issues.length > 0 ? (
           currentTab.issues.map((issue) => (
             <Link
@@ -119,8 +133,13 @@ export default function DashboardIssueTabsCard({
             </Link>
           ))
         ) : (
-          <div className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">
-            {currentTab.emptyText}
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+            <span>{currentTab.emptyText}</span>
+            {currentTab.count > 0 ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={allIssuesHref ?? currentTab.href}>{translations.dashboard.viewAllIssues}</Link>
+              </Button>
+            ) : null}
           </div>
         )}
       </div>

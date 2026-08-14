@@ -14,8 +14,10 @@ import { buildIssueUpdateAuditLogs, createAuditLogs, type IssueAuditSnapshot } f
 import { authOptions } from "@/lib/authOptions";
 import { getNextIssueKey, isIssueKeyUniqueConstraintError } from "@/lib/issueKeys";
 import { canNestIssueType, getIssueParentValidationMessage, isIssueType, wouldCreateIssueHierarchyCycle } from "@/lib/issueHierarchy";
+import { getEditableIssueUpdate } from "@/lib/issueUpdate";
 import { notifyAssignedUser, notifyIssueMentions, notifyIssueWatchers } from "@/lib/notifications";
 import { checkProjectAdmin, checkProjectFieldConfig, checkProjectMember } from "@/lib/permissions";
+import { getTerminalPlanIssueMessage, isTerminalPlanStatus } from "@/lib/planLifecycle";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { deleteLocalUploads, extractUploadUrlsFromContent, getRemovedUploadUrls } from "@/lib/uploadCleanup";
@@ -122,6 +124,13 @@ const issueAuditSelect = {
   dueDate: true,
   description: true,
 } as const;
+
+async function assertPlanAcceptsIssueChanges(planId: string, locale: "zh" | "en") {
+  const plan = await prisma.plan.findUnique({ where: { id: planId }, select: { status: true } });
+  if (!plan) throw new Error("Plan not found");
+  if (isTerminalPlanStatus(plan.status)) throw new Error(getTerminalPlanIssueMessage(plan.status, locale));
+  return plan;
+}
 
 type IssueHierarchyDbClient = Pick<Prisma.TransactionClient, "issue">;
 
@@ -269,6 +278,7 @@ function getIssueWatcherNotificationMessage(
 
 export async function updateIssueStatus(issueId: string, status: string) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -291,6 +301,7 @@ export async function updateIssueStatus(issueId: string, status: string) {
               ...workflowSelect,
             },
           },
+          plan: { select: { status: true } },
         },
       });
 
@@ -300,6 +311,10 @@ export async function updateIssueStatus(issueId: string, status: string) {
       }
 
       await checkProjectMember(existingIssue.projectId);
+
+      if (existingIssue.plan && isTerminalPlanStatus(existingIssue.plan.status)) {
+        throw new Error(getTerminalPlanIssueMessage(existingIssue.plan.status, locale));
+      }
 
       const workflowStatuses = existingIssue.project.workflowStatuses as WorkflowStatusRecord[];
       const workflowTransitions = existingIssue.project.workflowTransitions as WorkflowTransitionRecord[];
@@ -363,9 +378,9 @@ export async function updateIssueStatus(issueId: string, status: string) {
     }
 
     return { success: true, issue };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Failed to update issue status:", error);
-    return { success: false, error: "Failed to update issue status" };
+    return { success: false, error: error instanceof Error ? error.message : "Failed to update issue status" };
   }
 }
 
@@ -397,7 +412,7 @@ export async function createIssue(data: {
     const selectedPlan = data.planId
       ? await prisma.plan.findUnique({
           where: { id: data.planId },
-          select: { id: true, projectId: true },
+          select: { id: true, projectId: true, status: true },
         })
       : null;
 
@@ -414,6 +429,9 @@ export async function createIssue(data: {
 
     if (selectedPlan) {
       await checkProjectAdmin(selectedPlan.projectId);
+      if (isTerminalPlanStatus(selectedPlan.status)) {
+        throw new Error(getTerminalPlanIssueMessage(selectedPlan.status, locale));
+      }
     }
 
     if (data.iterationId && !selectedIteration) {
@@ -514,6 +532,13 @@ export async function createIssue(data: {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         newIssue = await prisma.$transaction(async (tx) => {
+          if (data.planId) {
+            const currentPlan = await tx.plan.findUnique({ where: { id: data.planId }, select: { status: true } });
+            if (!currentPlan) throw new Error("Plan not found");
+            if (isTerminalPlanStatus(currentPlan.status)) {
+              throw new Error(getTerminalPlanIssueMessage(currentPlan.status, locale));
+            }
+          }
           await assertIssueParentAllowed({
             tx,
             projectId: project.id,
@@ -774,11 +799,15 @@ export async function searchUnplannedIssuesForPlan(
       select: {
         projectId: true,
         project: { select: workflowSelect },
+        status: true,
       },
     });
 
     if (!plan) throw new Error("Plan not found");
     await checkProjectAdmin(plan.projectId);
+    if (isTerminalPlanStatus(plan.status)) {
+      throw new Error(getTerminalPlanIssueMessage(plan.status, await getCurrentLocale()));
+    }
 
     const workflowStatuses = plan.project.workflowStatuses as WorkflowStatusRecord[];
     const status = options.status?.trim();
@@ -833,6 +862,7 @@ export async function searchUnplannedIssuesForPlan(
 
 export async function addUnplannedIssuesToPlan(planId: string, issueIds: string[]) {
   try {
+    const locale = await getCurrentLocale();
     const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
     if (uniqueIssueIds.length === 0) {
       throw new Error("Please select at least one issue");
@@ -840,10 +870,13 @@ export async function addUnplannedIssuesToPlan(planId: string, issueIds: string[
 
     const plan = await prisma.plan.findUnique({
       where: { id: planId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, status: true },
     });
 
     if (!plan) throw new Error("Plan not found");
+    if (isTerminalPlanStatus(plan.status)) {
+      throw new Error(getTerminalPlanIssueMessage(plan.status, locale));
+    }
     const session = await checkProjectAdmin(plan.projectId);
     const actorId = (session.user as { id?: string }).id;
     if (!actorId) throw new Error("Unauthorized");
@@ -855,6 +888,11 @@ export async function addUnplannedIssuesToPlan(planId: string, issueIds: string[
     };
 
     const { count, updatedIssues } = await prisma.$transaction(async (tx) => {
+      const currentPlan = await tx.plan.findUnique({ where: { id: plan.id }, select: { status: true } });
+      if (!currentPlan) throw new Error("Plan not found");
+      if (isTerminalPlanStatus(currentPlan.status)) {
+        throw new Error(getTerminalPlanIssueMessage(currentPlan.status, locale));
+      }
       const eligibleIssues = await tx.issue.findMany({
         where: eligibleIssueFilter,
         select: issueAuditSelect,
@@ -1174,6 +1212,8 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
     const userId = sessionUser.id;
     if (!userId) throw new Error("Unauthorized");
 
+    data = getEditableIssueUpdate(data);
+
     const userRole = sessionUser.role ?? "USER";
     const activeProject = await getActiveProjectForUser(userId, userRole);
     const activeProjectId = activeProject?.id || null;
@@ -1189,6 +1229,7 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
               ...workflowSelect,
             },
           },
+          plan: { select: { status: true } },
         },
       });
 
@@ -1198,6 +1239,14 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
       }
 
       await checkProjectMember(previousIssue.projectId);
+
+      const changesLockedPlan = previousIssue.plan && isTerminalPlanStatus(previousIssue.plan.status) && (
+        (Object.prototype.hasOwnProperty.call(data, "status") && data.status !== previousIssue.status) ||
+        (Object.prototype.hasOwnProperty.call(data, "planId") && data.planId !== previousIssue.planId)
+      );
+      if (changesLockedPlan) {
+        throw new Error(getTerminalPlanIssueMessage(previousIssue.plan!.status, locale));
+      }
 
       if (Object.prototype.hasOwnProperty.call(data, "planId") && data.planId !== previousIssue.planId) {
         await checkProjectAdmin(previousIssue.projectId);
@@ -1220,7 +1269,7 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
       if (typeof data.planId === "string" && data.planId) {
         const targetPlan = await tx.plan.findUnique({
           where: { id: data.planId },
-          select: { id: true, projectId: true },
+          select: { id: true, projectId: true, status: true },
         });
 
         if (!targetPlan) {
@@ -1229,6 +1278,9 @@ export async function updateIssue(issueId: string, data: Record<string, unknown>
 
         if (targetPlan.projectId !== previousIssue.projectId) {
           throw new Error("Unauthorized");
+        }
+        if (isTerminalPlanStatus(targetPlan.status)) {
+          throw new Error(getTerminalPlanIssueMessage(targetPlan.status, locale));
         }
       }
 
@@ -1393,6 +1445,7 @@ type BulkIssueAction =
 
 export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueAction) {
   try {
+    const locale = await getCurrentLocale();
     const uniqueIssueIds = [...new Set(issueIds)].filter(Boolean);
     if (uniqueIssueIds.length === 0) {
       throw new Error("Please select at least one issue");
@@ -1433,14 +1486,21 @@ export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueActi
       if (issue.planId) affectedPlanIds.add(issue.planId);
     }
 
+    if (action.type === "removePlan") {
+      await assertPlanAcceptsIssueChanges(action.targetId, locale);
+    }
+
     if (action.type === "assignPlan") {
       const plan = await prisma.plan.findUnique({
         where: { id: action.targetId },
-        select: { id: true, projectId: true },
+        select: { id: true, projectId: true, status: true },
       });
 
       if (!plan || plan.projectId !== activeProjectId) {
         throw new Error("Plan not found in the active project");
+      }
+      if (isTerminalPlanStatus(plan.status)) {
+        throw new Error(getTerminalPlanIssueMessage(plan.status, locale));
       }
       affectedPlanIds.add(plan.id);
     }
@@ -1508,6 +1568,13 @@ export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueActi
             : { assigneeId: action.targetId };
 
     const { updatedIssues } = await prisma.$transaction(async (tx) => {
+      if (action.type === "assignPlan" || action.type === "removePlan") {
+        const currentPlan = await tx.plan.findUnique({ where: { id: action.targetId }, select: { status: true } });
+        if (!currentPlan) throw new Error("Plan not found");
+        if (isTerminalPlanStatus(currentPlan.status)) {
+          throw new Error(getTerminalPlanIssueMessage(currentPlan.status, locale));
+        }
+      }
       await tx.issue.updateMany({
         where: {
           id: { in: uniqueIssueIds },
@@ -1576,6 +1643,7 @@ export async function bulkUpdateIssues(issueIds: string[], action: BulkIssueActi
 
 export async function deleteIssue(issueId: string) {
   try {
+    const locale = await getCurrentLocale();
     const session = await getServerSession(authOptions);
     if (!session?.user) throw new Error("Unauthorized");
 
@@ -1596,6 +1664,7 @@ export async function deleteIssue(issueId: string) {
         attachments: { select: { fileUrl: true } },
         comments: { select: { content: true } },
         project: { select: { departmentId: true } },
+        plan: { select: { status: true } },
       },
     });
 
@@ -1608,6 +1677,10 @@ export async function deleteIssue(issueId: string) {
     }
 
     await checkProjectAdmin(issue.projectId);
+
+    if (issue.plan && isTerminalPlanStatus(issue.plan.status)) {
+      throw new Error(getTerminalPlanIssueMessage(issue.plan.status, locale));
+    }
 
     const issuePath = `/issues/${issueId}`;
 
@@ -1625,6 +1698,13 @@ export async function deleteIssue(issueId: string) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const currentIssue = await tx.issue.findUnique({
+        where: { id: issueId },
+        select: { plan: { select: { status: true } } },
+      });
+      if (currentIssue?.plan && isTerminalPlanStatus(currentIssue.plan.status)) {
+        throw new Error(getTerminalPlanIssueMessage(currentIssue.plan.status, locale));
+      }
       await createAuditLogs(tx, [
         {
           issueId: issue.id,

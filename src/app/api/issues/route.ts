@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from "next-auth/next";
 import prisma from '@/lib/prisma';
 import { Prisma } from "@prisma/client";
+import { authOptions } from "@/lib/authOptions";
 import { getNextIssueKey, isIssueKeyUniqueConstraintError } from "@/lib/issueKeys";
+import { getProjectRole } from "@/lib/permissions";
+import { getTerminalPlanIssueMessage, isTerminalPlanStatus } from "@/lib/planLifecycle";
+import { getCurrentLocale } from "@/lib/serverLocale";
 import {
   createDefaultWorkflowForProject,
   getInitialWorkflowStatusKey,
@@ -9,13 +14,19 @@ import {
 } from "@/lib/workflows";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const projectId = searchParams.get('projectId');
-  const planId = searchParams.get('planId');
-  const iterationId = searchParams.get('iterationId');
-
   try {
-    const whereClause: Prisma.IssueWhereInput = {};
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as { id?: string } | undefined)?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get('projectId');
+    const planId = searchParams.get('planId');
+    const iterationId = searchParams.get('iterationId');
+    const whereClause: Prisma.IssueWhereInput = {
+      project: { members: { some: { userId } } },
+    };
     if (projectId) whereClause.projectId = projectId;
     if (planId) whereClause.planId = planId;
     if (iterationId) whereClause.iterationId = iterationId;
@@ -50,14 +61,57 @@ export async function POST(request: Request) {
       planId?: string | null;
       iterationId?: string | null;
       assigneeId?: string | null;
-      reporterId?: string;
     };
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as { id?: string } | undefined)?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const locale = await getCurrentLocale();
+
     const body = await request.json();
-    const { title, description, status, priority, type, projectId, planId, iterationId, assigneeId, reporterId } =
+    const { title, description, status, priority, type, projectId, planId, iterationId, assigneeId } =
       body as CreateIssueBody;
     
-    if (!title || !projectId || !reporterId) {
+    if (!title || !projectId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const projectRole = await getProjectRole(userId, projectId);
+    if (!projectRole) {
+      return NextResponse.json({ error: "Project membership required" }, { status: 403 });
+    }
+
+    if (planId) {
+      if (projectRole !== "ADMIN") {
+        return NextResponse.json({ error: "Project admin access required to assign a plan" }, { status: 403 });
+      }
+      const plan = await prisma.plan.findFirst({
+        where: { id: planId, projectId },
+        select: { id: true, status: true },
+      });
+      if (!plan) {
+        return NextResponse.json({ error: "Plan not found in the project" }, { status: 400 });
+      }
+      if (isTerminalPlanStatus(plan.status)) {
+        return NextResponse.json(
+          { error: getTerminalPlanIssueMessage(plan.status, locale) },
+          { status: 409 },
+        );
+      }
+    }
+
+    if (iterationId) {
+      const iteration = await prisma.iteration.findFirst({
+        where: { id: iterationId, projectId },
+        select: { id: true, status: true },
+      });
+      if (!iteration) {
+        return NextResponse.json({ error: "Sprint not found in the project" }, { status: 400 });
+      }
+      if (iteration.status === "COMPLETED") {
+        return NextResponse.json({ error: "Cannot add issues to a completed sprint" }, { status: 400 });
+      }
     }
     
     // Generate Issue Key based on Project Key
@@ -127,6 +181,16 @@ export async function POST(request: Request) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         issue = await prisma.$transaction(async (tx) => {
+          if (planId) {
+            const currentPlan = await tx.plan.findUnique({ where: { id: planId }, select: { status: true } });
+            if (!currentPlan || isTerminalPlanStatus(currentPlan.status)) {
+              throw new Error(
+                currentPlan
+                  ? getTerminalPlanIssueMessage(currentPlan.status, locale)
+                  : "Plan not found",
+              );
+            }
+          }
           const issueKey = await getNextIssueKey(tx, projectId, project.key);
           return tx.issue.create({
             data: {
@@ -140,7 +204,7 @@ export async function POST(request: Request) {
               planId,
               iterationId,
               assigneeId,
-              reporterId,
+              reporterId: userId,
             }
           });
         });

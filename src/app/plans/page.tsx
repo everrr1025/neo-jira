@@ -16,6 +16,7 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import { localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { getPlanDateHint, getPlanStatusOrder, getPlanStatusPresentation } from "@/lib/planLifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -24,47 +25,10 @@ type SessionUser = {
   role?: string | null;
 };
 
-function normalizeDateOnly(date: Date) {
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-}
-
-function getPlanStatusKey(dateRange: { startDate: Date; endDate: Date }) {
-  const today = normalizeDateOnly(new Date());
-  const startDate = normalizeDateOnly(new Date(dateRange.startDate));
-  const endDate = normalizeDateOnly(new Date(dateRange.endDate));
-
-  if (today < startDate) return "PLANNED";
-  if (today > endDate) return "COMPLETED";
-  return "ACTIVE";
-}
-
-function getPlanStatus(dateRange: { startDate: Date; endDate: Date }, locale: "en" | "zh") {
-  const statusKey = getPlanStatusKey(dateRange);
-
-  if (statusKey === "PLANNED") {
-    return {
-      label: locale === "zh" ? "未开始" : "Planned",
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    };
-  }
-
-  if (statusKey === "COMPLETED") {
-    return {
-      label: locale === "zh" ? "已结束" : "Completed",
-      className: "border-slate-200 bg-slate-100 text-slate-700",
-    };
-  }
-
-  return {
-    label: locale === "zh" ? "进行中" : "Active",
-    className: "border-blue-200 bg-blue-50 text-blue-700",
-  };
-}
-
 function getProgressClassName(statusKey: string) {
-  return statusKey === "COMPLETED" ? "bg-emerald-500" : "bg-blue-500";
+  if (statusKey === "COMPLETED") return "bg-emerald-500";
+  if (statusKey === "CANCELLED") return "bg-slate-400";
+  return "bg-blue-500";
 }
 
 function getPlanPageText(locale: "en" | "zh") {
@@ -136,23 +100,19 @@ export default async function PlansPage() {
   const canCreatePlans = await canManageProjectPlanning(userId, activeProject.id);
   const workflowStatuses = workflowProject?.workflowStatuses || [];
   const sortedPlans = [...plans].sort((a, b) => {
-    const aStatus = getPlanStatusKey({ startDate: a.startDate, endDate: a.endDate });
-    const bStatus = getPlanStatusKey({ startDate: b.startDate, endDate: b.endDate });
-    const statusOrder = { ACTIVE: 0, PLANNED: 1, COMPLETED: 2 } as const;
-
-    if (statusOrder[aStatus] !== statusOrder[bStatus]) {
-      return statusOrder[aStatus] - statusOrder[bStatus];
+    if (getPlanStatusOrder(a.status) !== getPlanStatusOrder(b.status)) {
+      return getPlanStatusOrder(a.status) - getPlanStatusOrder(b.status);
     }
 
-    if (aStatus === "ACTIVE") {
+    if (a.status === "ACTIVE") {
       return new Date(a.endDate).getTime() - new Date(b.endDate).getTime();
     }
 
-    if (aStatus === "PLANNED") {
+    if (a.status === "PLANNED") {
       return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
     }
 
-    return new Date(b.endDate).getTime() - new Date(a.endDate).getTime();
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
 
   return (
@@ -193,8 +153,9 @@ export default async function PlansPage() {
             <TableBody>
               {sortedPlans.map((plan) => {
                 const totalIssues = plan.issues.length;
-                const status = getPlanStatus({ startDate: plan.startDate, endDate: plan.endDate }, locale);
-                const statusKey = getPlanStatusKey({ startDate: plan.startDate, endDate: plan.endDate });
+                const status = getPlanStatusPresentation(plan.status, locale);
+                const statusKey = plan.status;
+                const dateHint = getPlanDateHint(plan, locale);
                 const doneIssues = plan.issues.filter(
                   (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
                 ).length;
@@ -215,6 +176,7 @@ export default async function PlansPage() {
                       <Badge variant="outline" className={status.className}>
                         {status.label}
                       </Badge>
+                      {dateHint ? <p className={`mt-1 text-xs ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</p> : null}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
