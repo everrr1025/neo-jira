@@ -2,11 +2,14 @@ import { getServerSession } from "next-auth/next";
 import { notFound, redirect } from "next/navigation";
 
 import IssueList from "@/components/IssueList";
+import DeadlineHint from "@/components/DeadlineHint";
 import PlanIssueActionButton from "@/components/PlanIssueActionButton";
 import PlanLifecycleActions from "@/components/PlanLifecycleActions";
 import PlanMoreActions from "@/components/PlanMoreActions";
+import { Badge } from "@/components/ui/badge";
 import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { getIterationTiming } from "@/lib/projectDashboard";
 import { buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
 import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
@@ -259,25 +262,34 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   const workflowStatuses = workflowProjects[0]?.workflowStatuses || [];
   const planTotalIssues = basicPlanIssues.length;
   const doneIssues = basicPlanIssues.filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE").length;
+  const unfinishedIssues = planTotalIssues - doneIssues;
+  const deadlineTiming = plan.status === "ACTIVE" ? getIterationTiming(plan.endDate) : null;
   const blockingIssueKeys = basicPlanIssues
     .filter((issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) !== "DONE")
     .slice(0, 5)
     .map((issue) => issue.key);
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-6 flex flex-col gap-4 py-[3px] xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>
+      <div className="mb-6 grid gap-4 py-[3px] xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 break-words text-2xl font-bold tracking-tight text-slate-800" title={plan.name}>
             {plan.name}
           </h2>
-          <p className="text-sm text-slate-500">
-            {status.label} | {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
-            {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} |{" "}
-            {locale === "zh" ? "完成度" : "Completion"} {doneIssues}/{planTotalIssues}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+            <Badge variant="outline" className={status.className}>
+              {status.label}
+            </Badge>
+            <DeadlineHint timing={deadlineTiming} locale={locale} unfinishedCount={unfinishedIssues} />
+            <span>
+              {plan.startDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")} -{" "}
+              {plan.endDate.toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+            </span>
+            <span aria-hidden="true">|</span>
+            <span>{locale === "zh" ? "完成度" : "Completion"} {doneIssues}/{planTotalIssues}</span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+        <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-self-end">
           {canManagePlans && !isTerminal ? (
             <PlanIssueActionButton
               locale={locale}
@@ -300,13 +312,13 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
               }}
             />
           ) : null}
-          {canManagePlans ? <PlanLifecycleActions planId={plan.id} status={plan.status} totalIssues={planTotalIssues} unfinishedIssues={planTotalIssues - doneIssues} blockingIssueKeys={blockingIssueKeys} locale={locale} /> : null}
+          {canManagePlans ? <PlanLifecycleActions planId={plan.id} status={plan.status} totalIssues={planTotalIssues} unfinishedIssues={unfinishedIssues} blockingIssueKeys={blockingIssueKeys} locale={locale} /> : null}
           {canManagePlans ? (
             <PlanMoreActions
               plan={plan}
               locale={locale}
               totalIssues={planTotalIssues}
-              unfinishedIssues={planTotalIssues - doneIssues}
+              unfinishedIssues={unfinishedIssues}
             />
           ) : null}
         </div>

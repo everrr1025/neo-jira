@@ -5,6 +5,20 @@ export type IterationTiming =
   | { state: "ends-today"; days: 0 }
   | { state: "overdue"; days: number };
 
+export function getDeadlineTimingTone(timing: IterationTiming) {
+  if (timing.state === "overdue") return "danger" as const;
+  if (timing.state === "ends-today" || timing.days <= 3) return "warning" as const;
+  return "neutral" as const;
+}
+
+export function formatDeadlineTiming(timing: IterationTiming, locale: "en" | "zh") {
+  if (timing.state === "ends-today") return locale === "zh" ? "今天结束" : "Ends today";
+  if (timing.state === "overdue") {
+    return locale === "zh" ? `已逾期 ${timing.days} 天` : `${timing.days} days overdue`;
+  }
+  return locale === "zh" ? `剩余 ${timing.days} 天` : `${timing.days} days remaining`;
+}
+
 export type DashboardIssueTabId = "assigned" | "watched" | "priority" | "overdue" | "due-soon";
 
 export function getIterationTiming(endDate: Date | null, today = new Date()): IterationTiming | null {

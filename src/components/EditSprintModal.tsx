@@ -77,9 +77,15 @@ export function EditSprintModal({
           <form onSubmit={handleSubmit}>
             <div className="space-y-5 p-6">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-sprint-name">{translations.createSprint.sprintName}</Label>
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="edit-sprint-name">{translations.createSprint.sprintName}</Label>
+                  <span id="edit-sprint-name-limit" className="text-xs text-muted-foreground">
+                    {locale === "zh" ? `最多 ${ITERATION_NAME_MAX_LENGTH} 个字符` : `${ITERATION_NAME_MAX_LENGTH} characters maximum`} · {formData.name.length}/{ITERATION_NAME_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="edit-sprint-name"
+                  aria-describedby="edit-sprint-name-limit"
                   required
                   type="text"
                   value={formData.name}

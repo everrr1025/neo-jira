@@ -159,9 +159,15 @@ export default function EditPlanButton({ plan, locale, open, onOpenChange, showT
           <form onSubmit={handleSubmit}>
             <div className="space-y-5 p-6">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-plan-name">{text.name}</Label>
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="edit-plan-name">{text.name}</Label>
+                  <span id="edit-plan-name-limit" className="text-xs text-muted-foreground">
+                    {locale === "zh" ? `最多 ${PLAN_NAME_MAX_LENGTH} 个字符` : `${PLAN_NAME_MAX_LENGTH} characters maximum`} · {formData.name.length}/{PLAN_NAME_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="edit-plan-name"
+                  aria-describedby="edit-plan-name-limit"
                   value={formData.name}
                   onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))}
                   placeholder={text.namePlaceholder}

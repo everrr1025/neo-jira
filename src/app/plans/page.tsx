@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { CircleDot } from "lucide-react";
 
 import CreatePlanButton from "@/components/CreatePlanButton";
+import DeadlineHint from "@/components/DeadlineHint";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +17,7 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import { localeDateMap } from "@/lib/i18n";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { getIterationTiming } from "@/lib/projectDashboard";
 import { getPlanDateHint, getPlanStatusOrder, getPlanStatusPresentation } from "@/lib/planLifecycle";
 
 export const dynamic = "force-dynamic";
@@ -153,6 +155,7 @@ export default async function PlansPage() {
                 const status = getPlanStatusPresentation(plan.status, locale);
                 const statusKey = plan.status;
                 const dateHint = getPlanDateHint(plan, locale);
+                const deadlineTiming = plan.status === "ACTIVE" ? getIterationTiming(plan.endDate) : null;
                 const doneIssues = plan.issues.filter(
                   (issue) => getWorkflowStatusCategory(issue.status, workflowStatuses) === "DONE"
                 ).length;
@@ -174,7 +177,8 @@ export default async function PlansPage() {
                         <Badge variant="outline" className={status.className}>
                           {status.label}
                         </Badge>
-                        {dateHint ? <span className={`text-xs ${plan.status === "ACTIVE" && dateHint.includes(locale === "zh" ? "逾期" : "overdue") ? "text-red-600" : "text-muted-foreground"}`}>{dateHint}</span> : null}
+                        <DeadlineHint timing={deadlineTiming} locale={locale} />
+                        {!deadlineTiming && dateHint ? <span className="text-xs text-muted-foreground">{dateHint}</span> : null}
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">

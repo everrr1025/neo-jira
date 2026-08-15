@@ -11,6 +11,7 @@ import {
   localeDateMap,
 } from "@/lib/i18n";
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
+import DeadlineHint from "@/components/DeadlineHint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getUserDepartmentMembership } from "@/lib/departmentAccess";
@@ -378,17 +379,6 @@ export default async function Dashboard({
       href: getStatusHref("DONE"),
     },
   ];
-  const iterationTimingText = iterationTiming
-    ? iterationTiming.state === "ends-today"
-      ? translations.dashboard.endsToday
-      : locale === "zh"
-        ? iterationTiming.state === "overdue"
-          ? `${translations.dashboard.overdue} ${iterationTiming.days} ${translations.dashboard.daysOverdue}`
-          : `${translations.dashboard.daysRemaining} ${iterationTiming.days} ${translations.dashboard.daysOverdue}`
-        : iterationTiming.state === "overdue"
-          ? `${iterationTiming.days} ${translations.dashboard.daysOverdue}`
-          : `${iterationTiming.days} ${translations.dashboard.daysRemaining}`
-    : "";
   const typedActivePlans = activePlans as ActivePlanSummary[];
   const visibleActivePlans = typedActivePlans.slice(0, 3).map((plan) => {
     const completedIssues = plan.issues.filter(
@@ -679,11 +669,11 @@ export default async function Dashboard({
                         <h2 className="truncate text-base font-semibold text-foreground">
                           {typedActiveIteration.name}
                         </h2>
-                        <Badge
-                          variant={iterationTiming?.state === "overdue" ? "destructive" : "secondary"}
-                        >
-                          {iterationTimingText}
-                        </Badge>
+                        <DeadlineHint
+                          timing={iterationTiming}
+                          locale={locale}
+                          unfinishedCount={sprintIssueCount - sprintCompletedCount}
+                        />
                       </div>
                     </div>
                     <Link
@@ -768,16 +758,6 @@ export default async function Dashboard({
               {visibleActivePlans.length > 0 ? (
                 <div className="divide-y">
                   {visibleActivePlans.map((plan) => {
-                    const timingText = plan.timing?.state === "overdue"
-                      ? locale === "zh"
-                        ? `${translations.dashboard.overdue} ${plan.timing.days} ${translations.dashboard.daysOverdue}`
-                        : `${plan.timing.days} ${translations.dashboard.daysOverdue}`
-                      : plan.timing?.state === "ends-today"
-                        ? translations.dashboard.endsToday
-                        : locale === "zh"
-                          ? `${translations.dashboard.daysRemaining} ${plan.timing?.days ?? 0} ${translations.dashboard.daysOverdue}`
-                          : `${plan.timing?.days ?? 0} ${translations.dashboard.daysRemaining}`;
-
                     return (
                       <Link
                         key={plan.id}
@@ -788,12 +768,11 @@ export default async function Dashboard({
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-center gap-2">
                               <h3 className="truncate text-sm font-medium text-foreground">{plan.name}</h3>
-                              <Badge
-                                variant={plan.timing?.state === "overdue" ? "destructive" : "secondary"}
-                                className="shrink-0"
-                              >
-                                {timingText}
-                              </Badge>
+                              <DeadlineHint
+                                timing={plan.timing}
+                                locale={locale}
+                                unfinishedCount={plan.issues.length - plan.completedIssues}
+                              />
                             </div>
                             <p className="mt-1 truncate text-xs text-muted-foreground">
                               {plan.startDate.toLocaleDateString(localeDateMap[locale])} - {plan.endDate.toLocaleDateString(localeDateMap[locale])}

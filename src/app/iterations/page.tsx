@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import { CreateSprintButton } from "@/components/CreateSprintButton";
+import DeadlineHint from "@/components/DeadlineHint";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,6 +16,7 @@ import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { CircleDot } from "lucide-react";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { getIterationTiming } from "@/lib/projectDashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +81,7 @@ export default async function IterationsPage() {
     const statusOrder: Record<string, number> = { ACTIVE: 0, PLANNED: 1, COMPLETED: 2 };
     const statusDiff = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
     if (statusDiff !== 0) return statusDiff;
+    if (a.status === "ACTIVE") return a.endDate.getTime() - b.endDate.getTime();
     return b.startDate.getTime() - a.startDate.getTime();
   });
 
@@ -118,6 +121,7 @@ export default async function IterationsPage() {
                     (issue) => getWorkflowStatusCategory(issue.status, iteration.project.workflowStatuses) === "DONE"
                   ).length;
                   const progress = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
+                  const deadlineTiming = iteration.status === "ACTIVE" ? getIterationTiming(iteration.endDate) : null;
 
                   return (
                     <TableRow key={iteration.id}>
@@ -131,9 +135,12 @@ export default async function IterationsPage() {
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
-                          {getIterationStatusLabel(iteration.status, locale)}
-                        </Badge>
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
+                            {getIterationStatusLabel(iteration.status, locale)}
+                          </Badge>
+                          <DeadlineHint timing={deadlineTiming} locale={locale} />
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="rounded-md">

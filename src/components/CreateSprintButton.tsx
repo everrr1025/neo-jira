@@ -106,9 +106,15 @@ export function CreateSprintButton({ projects, locale }: { projects: ProjectOpti
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="sprint-name">{translations.createSprint.sprintName}</Label>
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="sprint-name">{translations.createSprint.sprintName}</Label>
+                  <span id="sprint-name-limit" className="text-xs text-muted-foreground">
+                    {locale === "zh" ? `最多 ${ITERATION_NAME_MAX_LENGTH} 个字符` : `${ITERATION_NAME_MAX_LENGTH} characters maximum`} · {formData.name.length}/{ITERATION_NAME_MAX_LENGTH}
+                  </span>
+                </div>
                 <Input
                   id="sprint-name"
+                  aria-describedby="sprint-name-limit"
                   required
                   type="text"
                   value={formData.name}

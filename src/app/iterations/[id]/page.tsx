@@ -3,16 +3,18 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 
 import CreateIssueButton from "@/components/CreateIssueButton";
+import DeadlineHint from "@/components/DeadlineHint";
 import IssueList from "@/components/IssueList";
-import IssueSearchInput from "@/components/IssueSearchInput";
 import IterationLayoutToggle from "@/components/IterationLayoutToggle";
 import KanbanBoard from "@/components/KanbanBoard";
 import { SprintActionButton } from "@/components/SprintActionButton";
+import { Badge } from "@/components/ui/badge";
 import { getActiveProjectForUser, getRequestedProjectRouteContext } from "@/lib/activeProject";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { getIterationTiming } from "@/lib/projectDashboard";
 import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere } from "@/lib/activeProjectUtils";
 import { authOptions } from "@/lib/authOptions";
-import { getIterationStatusLabel, getTranslations, localeDateMap } from "@/lib/i18n";
+import { getIterationStatusLabel, localeDateMap } from "@/lib/i18n";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
 import { ITERATION_LAYOUT_COOKIE, parseIterationLayout } from "@/lib/iterationLayout";
 import { getProjectRole } from "@/lib/permissions";
@@ -41,9 +43,14 @@ type IterationDetailPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function getIterationStatusClassName(status: string) {
+  if (status === "ACTIVE") return "border-blue-200 bg-blue-50 text-blue-700";
+  if (status === "PLANNED") return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
 export default async function IterationDetailPage({ params, searchParams }: IterationDetailPageProps) {
   const locale = await getCurrentLocale();
-  const translations = getTranslations(locale);
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -245,6 +252,9 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
   const unfinishedIssueCount = iterationIssueStatuses.filter(
     (issue) => !doneStatusKeys.includes(issue.status)
   ).length;
+  const totalIssueCount = iterationIssueStatuses.length;
+  const completedIssueCount = totalIssueCount - unfinishedIssueCount;
+  const deadlineTiming = iteration.status === "ACTIVE" ? getIterationTiming(iteration.endDate) : null;
   const plannedSprintOptions = iterations
     .filter((item) => item.id !== iteration.id && item.status === "PLANNED")
     .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
@@ -263,19 +273,26 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="break-words text-2xl font-bold tracking-tight text-slate-800" title={iteration.name}>
+      <div className="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 break-words text-2xl font-bold tracking-tight text-slate-800" title={iteration.name}>
             {iteration.name}
           </h2>
-          <p className="text-sm text-slate-500">
-            {getIterationStatusLabel(iteration.status, locale)} | {translations.iterationDetail.ends}{" "}
-            {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+            <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
+              {getIterationStatusLabel(iteration.status, locale)}
+            </Badge>
+            <DeadlineHint timing={deadlineTiming} locale={locale} unfinishedCount={unfinishedIssueCount} />
+            <span>
+              {iteration.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+              {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
+            </span>
+            <span aria-hidden="true">|</span>
+            <span>{locale === "zh" ? "完成度" : "Completion"} {completedIssueCount}/{totalIssueCount}</span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          {layout === "list" ? <IssueSearchInput locale={locale} /> : null}
+        <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-self-end">
           {canManage && (
             <SprintActionButton
               sprintId={iteration.id}
