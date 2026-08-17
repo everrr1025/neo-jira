@@ -39,9 +39,7 @@ function getPlanPageText(locale: "en" | "zh") {
       title: "计划",
       subtitle: "按阶段目标管理任务池，并跟踪整体推进情况。",
       empty: "当前项目下还没有计划。",
-      current: "问题数",
-      done: "已完成",
-      progress: "进度",
+      completion: "完成情况",
       period: "周期",
       status: "状态",
     };
@@ -51,9 +49,7 @@ function getPlanPageText(locale: "en" | "zh") {
     title: "Plans",
     subtitle: "Track medium-term delivery goals and their overall progress.",
     empty: "No plans have been created for the active project yet.",
-    current: "Issues",
-    done: "Done",
-    progress: "Progress",
+    completion: "Completion",
     period: "Period",
     status: "Status",
   };
@@ -138,15 +134,19 @@ export default async function PlansPage() {
         </Card>
       ) : (
         <Card className="gap-0 py-0">
-          <Table className="min-w-[900px]">
+          <Table className="table-fixed min-w-[960px]">
+            <colgroup>
+              <col />
+              <col className="w-[120px]" />
+              <col className="w-[320px]" />
+              <col className="w-[240px]" />
+            </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[280px]">{text.title}</TableHead>
+                <TableHead>{text.title}</TableHead>
                 <TableHead>{text.status}</TableHead>
                 <TableHead>{text.period}</TableHead>
-                <TableHead className="text-right">{text.current}</TableHead>
-                <TableHead className="text-right">{text.done}</TableHead>
-                <TableHead className="w-[180px]">{text.progress}</TableHead>
+                <TableHead>{text.completion}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -163,7 +163,7 @@ export default async function PlansPage() {
 
                 return (
                   <TableRow key={plan.id}>
-                    <TableCell className="max-w-[280px]">
+                    <TableCell className="min-w-0">
                       <Link
                         href={getProjectPath(activeProject.departmentId, activeProject.id, "plans", plan.id)}
                         className="block truncate font-medium text-foreground hover:text-primary hover:underline"
@@ -173,29 +173,32 @@ export default async function PlansPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2 whitespace-nowrap">
-                        <Badge variant="outline" className={status.className}>
-                          {status.label}
-                        </Badge>
-                        <DeadlineHint timing={deadlineTiming} locale={locale} />
-                        {!deadlineTiming && dateHint ? <span className="text-xs text-muted-foreground">{dateHint}</span> : null}
-                      </div>
+                      <Badge variant="outline" className={status.className}>
+                        {status.label}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
-                      {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <span>
+                          {plan.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+                          {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                        </span>
+                        <DeadlineHint timing={deadlineTiming} locale={locale} />
+                        {!deadlineTiming && dateHint ? <span className="text-xs">{dateHint}</span> : null}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right font-medium">{totalIssues}</TableCell>
-                    <TableCell className="text-right font-medium">{doneIssues}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+                          {doneIssues}/{totalIssues}
+                        </span>
+                        <div className="h-2 min-w-12 flex-1 overflow-hidden rounded-full bg-muted">
                           <div
                             className={`h-full rounded-full ${getProgressClassName(statusKey)}`}
                             style={{ width: `${progress}%` }}
                           />
                         </div>
-                        <span className="w-9 text-right text-xs font-semibold">{progress}%</span>
+                        <span className="w-9 shrink-0 text-right text-xs font-semibold tabular-nums">{progress}%</span>
                       </div>
                     </TableCell>
                   </TableRow>

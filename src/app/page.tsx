@@ -371,7 +371,7 @@ export default async function Dashboard({
       id: "completion",
       label: translations.dashboard.completionRate,
       value: `${completionRate}%`,
-      detail: `${doneCount} / ${totalIssues}`,
+      detail: `${doneCount}/${totalIssues}`,
       percentage: completionRate,
       tone: "text-emerald-700",
       rail: "bg-emerald-100",
@@ -622,13 +622,13 @@ export default async function Dashboard({
                 <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
                   {projectDetails?.description || translations.dashboard.noProjectDescription}
                 </p>
-                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-                  <span>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge variant="outline">
                     {translations.dashboard.projectOwner}: {projectDetails?.owner?.name || translations.dashboard.unassignedOwner}
-                  </span>
-                  <span>
-                    {translations.dashboard.projectMembers}: {projectDetails?._count.members ?? 0}
-                  </span>
+                  </Badge>
+                  <Badge variant="outline">
+                    {projectDetails?._count.members ?? 0} {translations.dashboard.projectMembers}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -891,11 +891,13 @@ function IssueOverviewStat({
 }) {
   return (
     <Link href={href} className="rounded-lg border bg-muted/40 p-3 transition-colors hover:bg-muted/70">
-      <p className="text-sm font-medium text-muted-foreground">{label}</p>
-      <div className="mt-3 flex items-end justify-between gap-1">
-        <span className={`text-2xl font-bold ${tone}`}>{value}</span>
-        <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">{detail}</span>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <span className="shrink-0 whitespace-nowrap text-[10px] font-medium tabular-nums text-muted-foreground">
+          {detail}
+        </span>
       </div>
+      <div className={`mt-2 text-2xl font-bold tabular-nums ${tone}`}>{value}</div>
       <div className={`mt-3 h-2 overflow-hidden rounded-full ${rail}`}>
         <div
           className={`h-full rounded-full ${fill}`}

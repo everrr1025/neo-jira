@@ -1028,7 +1028,7 @@ export default function DepartmentNotificationsClient({
               }}
             >
               <Plus size={16} />
-              {t.newNotification}
+              {locale === "zh" ? "通知" : "Notification"}
             </Button>
           ) : null}
         </div>

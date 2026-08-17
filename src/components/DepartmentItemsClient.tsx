@@ -4589,7 +4589,7 @@ export default function DepartmentItemsClient({
                 disabled={isPending}
               >
                 <Plus size={16} />
-                {t.addNote}
+                {locale === "zh" ? "笔记" : "Note"}
               </Button>
             </>
           ) : null}
@@ -4619,7 +4619,7 @@ export default function DepartmentItemsClient({
                 onClick={() => openCreateScheduleModal()}
               >
                 <Plus size={16} />
-                {locale === "zh" ? "新建日程" : "New schedule"}
+                {locale === "zh" ? "日程" : "Schedule"}
               </Button>
             </>
           ) : null}
@@ -4655,7 +4655,7 @@ export default function DepartmentItemsClient({
                 onClick={openCreateModal}
               >
                 <Plus size={16} />
-                {t.addTask}
+                {locale === "zh" ? "任务" : "Task"}
               </Button>
             </>
           ) : null}

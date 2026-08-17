@@ -111,6 +111,7 @@ type TranslationBundle = {
     issues: string;
     completed: string;
     progress: string;
+    completion: string;
     noIterations: string;
   };
   projectsPage: {
@@ -459,6 +460,7 @@ const translations: Record<Locale, TranslationBundle> = {
       issues: "Issues",
       completed: "Completed",
       progress: "Progress",
+      completion: "Completion",
       noIterations: "No iterations found.",
     },
     projectsPage: {
@@ -806,6 +808,7 @@ const translations: Record<Locale, TranslationBundle> = {
       issues: "问题数",
       completed: "已完成",
       progress: "进度",
+      completion: "完成情况",
       noIterations: "暂无迭代。",
     },
     projectsPage: {

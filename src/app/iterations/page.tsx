@@ -60,8 +60,6 @@ export default async function IterationsPage() {
     include: {
       project: {
         select: {
-          name: true,
-          key: true,
           workflowStatuses: {
             orderBy: { position: "asc" },
           },
@@ -102,16 +100,19 @@ export default async function IterationsPage() {
       <div className="grid gap-4">
         {iterations.length > 0 && (
           <Card className="gap-0 py-0">
-            <Table className="min-w-[820px]">
+            <Table className="table-fixed min-w-[960px]">
+              <colgroup>
+                <col />
+                <col className="w-[120px]" />
+                <col className="w-[320px]" />
+                <col className="w-[240px]" />
+              </colgroup>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[280px]">{translations.iterationsPage.title}</TableHead>
+                  <TableHead>{translations.iterationsPage.title}</TableHead>
                   <TableHead>{translations.issueList.status}</TableHead>
-                  <TableHead>{translations.projectsPage.key}</TableHead>
                   <TableHead>{locale === "zh" ? "周期" : "Period"}</TableHead>
-                  <TableHead className="text-right">{translations.iterationsPage.issues}</TableHead>
-                  <TableHead className="text-right">{translations.iterationsPage.completed}</TableHead>
-                  <TableHead className="w-[180px]">{translations.iterationsPage.progress}</TableHead>
+                  <TableHead>{translations.iterationsPage.completion}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -125,7 +126,7 @@ export default async function IterationsPage() {
 
                   return (
                     <TableRow key={iteration.id}>
-                      <TableCell className="max-w-[280px]">
+                      <TableCell className="min-w-0">
                         <Link
                           href={getProjectPath(activeProject.departmentId, activeProject.id, "iterations", iteration.id)}
                           className="block truncate font-medium text-foreground hover:text-primary hover:underline"
@@ -135,33 +136,31 @@ export default async function IterationsPage() {
                         </Link>
                       </TableCell>
                       <TableCell>
+                        <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
+                          {getIterationStatusLabel(iteration.status, locale)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         <div className="flex items-center gap-2 whitespace-nowrap">
-                          <Badge variant="outline" className={getIterationStatusClassName(iteration.status)}>
-                            {getIterationStatusLabel(iteration.status, locale)}
-                          </Badge>
+                          <span>
+                            {iteration.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
+                            {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
+                          </span>
                           <DeadlineHint timing={deadlineTiming} locale={locale} />
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="rounded-md">
-                          {iteration.project.key}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {iteration.startDate.toLocaleDateString(localeDateMap[locale])} -{" "}
-                        {iteration.endDate.toLocaleDateString(localeDateMap[locale])}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">{totalIssues}</TableCell>
-                      <TableCell className="text-right font-medium">{completedIssues}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
+                            {completedIssues}/{totalIssues}
+                          </span>
+                          <div className="h-2 min-w-12 flex-1 overflow-hidden rounded-full bg-muted">
                             <div
                               className={`h-full rounded-full ${getProgressClassName(iteration.status)}`}
                               style={{ width: `${progress}%` }}
                             />
                           </div>
-                          <span className="w-9 text-right text-xs font-semibold">{progress}%</span>
+                          <span className="w-9 shrink-0 text-right text-xs font-semibold tabular-nums">{progress}%</span>
                         </div>
                       </TableCell>
                     </TableRow>
