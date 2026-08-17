@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Eye,
@@ -13,10 +14,26 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
 import { createUser, deleteUser, resetUserPassword } from "@/app/actions/admin";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownField } from "./DropdownField";
 import type { Locale } from "@/lib/i18n";
 
@@ -53,8 +70,7 @@ const PASSWORD_POOLS = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxy
 const TEXT = {
   en: {
     title: "Users",
-    subtitle: "Manage workspace users and department assignment.",
-    addUser: "Add user",
+    addUser: "User",
     search: "Search name or email",
     allDepartments: "All departments",
     name: "Name",
@@ -91,8 +107,7 @@ const TEXT = {
   },
   zh: {
     title: "用户",
-    subtitle: "管理工作区用户与部门归属。",
-    addUser: "新增用户",
+    addUser: "用户",
     search: "搜索姓名或邮箱",
     allDepartments: "全部部门",
     name: "姓名",
@@ -173,24 +188,40 @@ export default function AdminUsersClient({
   const [errorMsg, setErrorMsg] = useState("");
   const [query, setQuery] = useState(search);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(true);
   const [deletingUser, setDeletingUser] = useState<UserRecord | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
-    password: generateDefaultPassword(),
+    password: "",
   });
 
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
   const rangeStart = totalUsers > 0 ? (page - 1) * pageSize + 1 : 0;
   const rangeEnd = Math.min(page * pageSize, totalUsers);
-  const departmentOptions = [
-    { value: "", label: t.allDepartments },
-    ...departments.map((department) => ({ value: department.id, label: department.name })),
-  ];
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
+
+  useEffect(() => {
+    setQuery(search);
+  }, [search]);
+
+  useEffect(() => {
+    const nextSearch = query.trim();
+    if (nextSearch === search) return;
+
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      if (nextSearch) params.set("search", nextSearch);
+      if (departmentId) params.set("departmentId", departmentId);
+      params.set("page", "1");
+      params.set("pageSize", String(pageSize));
+      router.replace(`/admin/users?${params.toString()}`);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [departmentId, pageSize, query, router, search]);
 
   const updateParams = (next: Record<string, string | null>) => {
     const params = new URLSearchParams();
@@ -210,11 +241,6 @@ export default function AdminUsersClient({
     router.push(`/admin/users?${params.toString()}`);
   };
 
-  const handleSearch = (event: React.FormEvent) => {
-    event.preventDefault();
-    updateParams({ search: query.trim() || null, page: "1" });
-  };
-
   const handleCreate = (event: React.FormEvent) => {
     event.preventDefault();
     setErrorMsg("");
@@ -225,8 +251,8 @@ export default function AdminUsersClient({
         return;
       }
 
-      setNewUser({ name: "", email: "", password: generateDefaultPassword() });
-      setShowPassword(false);
+      setNewUser({ name: "", email: "", password: "" });
+      setShowPassword(true);
       setIsCreateOpen(false);
       router.refresh();
     });
@@ -260,73 +286,74 @@ export default function AdminUsersClient({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">{t.title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{t.subtitle}</p>
-        </div>
-        <button
+    <div className="flex min-h-0 flex-1 flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+        <Button
           type="button"
           onClick={() => {
             setErrorMsg("");
+            setShowPassword(true);
             setIsCreateOpen(true);
           }}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
         >
-          <Plus size={16} />
+          <Plus />
           {t.addUser}
-        </button>
+        </Button>
       </div>
 
-      {errorMsg ? (
-        <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
+      {errorMsg && !isCreateOpen ? (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="size-4 shrink-0" />
           {errorMsg}
         </div>
       ) : null}
 
-      <div className="sticky top-0 z-20 rounded-lg border bg-white p-3 shadow-sm">
-        <form onSubmit={handleSearch} className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full lg:w-80">
-            <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t.search}
-              className="h-9 w-full rounded-md border border-slate-200 py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+      <Card className="gap-0 py-0">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t.search}
+                className="pl-9"
+              />
+            </div>
+            <Select
+              value={departmentId || "all"}
+              onValueChange={(value) => updateParams({ departmentId: value === "all" ? null : value, page: "1" })}
+            >
+              <SelectTrigger className="w-full sm:w-56" aria-label={t.departments}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t.allDepartments}</SelectItem>
+                {departments.map((department) => (
+                  <SelectItem key={department.id} value={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <DropdownField
-            id="department-filter"
-            label={t.departments}
-            value={departmentId}
-            onChange={(value) => updateParams({ departmentId: value || null, page: "1" })}
-            options={departmentOptions}
-            hideLabel
-            className="w-full sm:w-56"
-          />
-          <button
-            type="submit"
-            className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
-          >
-            {locale === "zh" ? "筛选" : "Filter"}
-          </button>
-        </form>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white shadow-sm">
+      <Card className="min-h-0 flex-1 gap-0 overflow-hidden py-0">
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="border-b bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-              <tr>
-                <th className="px-5 py-4">{t.name}</th>
-                <th className="px-5 py-4">{t.email}</th>
-                <th className="px-5 py-4">{t.departments}</th>
-                <th className="px-5 py-4">{t.createdAt}</th>
-                <th className="w-72 px-5 py-4">{t.actions}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted/50">
+              <TableRow className="hover:bg-muted/50">
+                <TableHead className="pl-6">{t.name}</TableHead>
+                <TableHead>{t.email}</TableHead>
+                <TableHead>{t.departments}</TableHead>
+                <TableHead>{t.createdAt}</TableHead>
+                <TableHead className="w-64">{t.actions}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {users.map((user) => {
                 const isSelf = user.id === currentUserId;
                 const isHead = user.headDepartmentsCount > 0;
@@ -334,93 +361,93 @@ export default function AdminUsersClient({
                 const isResettingThisUser = isResetting && resettingUserId === user.id;
 
                 return (
-                  <tr key={user.id} className="transition-colors hover:bg-slate-50/70">
-                    <td className="px-5 py-3.5">
+                  <TableRow key={user.id}>
+                    <TableCell className="pl-6">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
                           {getDisplayName(user).charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 font-semibold text-slate-800">
+                          <div className="flex items-center gap-2 font-medium text-foreground">
                             <span className="truncate">{getDisplayName(user)}</span>
                             {user.role === "ADMIN" ? (
-                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
-                                {t.adminBadge}
-                              </span>
+                              <Badge variant="secondary">{t.adminBadge}</Badge>
                             ) : null}
                           </div>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">{user.email}</td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell>
                       {user.departments.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {user.departments.map((department) => (
-                            <span key={department.id} className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                              {department.name}
-                            </span>
+                            <Badge key={department.id} variant="outline">{department.name}</Badge>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-sm text-slate-400">{t.noDepartment}</span>
+                        <span className="text-sm text-muted-foreground">{t.noDepartment}</span>
                       )}
-                    </td>
-                    <td className="px-5 py-3.5 text-xs font-medium text-slate-500">
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             disabled={isResettingThisUser}
                             onClick={() => handleResetPassword(user.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-50 disabled:opacity-50"
                           >
-                            {isResettingThisUser ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                            {isResettingThisUser ? <Loader2 className="animate-spin" /> : <KeyRound />}
                             {t.resetPassword}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="sm"
                             disabled={disableDelete}
                             onClick={() => setDeletingUser(user)}
                             title={isHead ? t.cannotDeleteHead : isSelf ? t.cannotDeleteSelf : t.delete}
-                            className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 />
                             {t.delete}
-                          </button>
+                          </Button>
                         </div>
                         {revealedPasswords[user.id] ? (
-                          <div className="max-w-72 truncate rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">
+                          <div className="max-w-64 truncate rounded-md border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground">
                             {revealedPasswords[user.id]}
                           </div>
                         ) : null}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
               {users.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-slate-500">
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                    <Users className="mx-auto mb-3 size-8 opacity-35" />
                     {t.noUsers}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : null}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-slate-50 px-5 py-3 text-sm">
-          <div className="font-medium text-slate-500">
-            {t.showing} <span className="font-bold text-slate-800">{rangeStart}</span> {t.to}{" "}
-            <span className="font-bold text-slate-800">{rangeEnd}</span> {t.of}{" "}
-            <span className="font-bold text-slate-800">{totalUsers}</span> {t.users}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
+          <div className="text-muted-foreground">
+            {t.showing} <span className="font-medium text-foreground">{rangeStart}</span> {t.to}{" "}
+            <span className="font-medium text-foreground">{rangeEnd}</span> {t.of}{" "}
+            <span className="font-medium text-foreground">{totalUsers}</span> {t.users}
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-500">
+            <div className="flex items-center gap-2 text-muted-foreground">
               <span>{t.perPage}</span>
               <DropdownField
                 id="user-page-size"
@@ -433,152 +460,166 @@ export default function AdminUsersClient({
               />
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateParams({ page: String(Math.max(1, page - 1)) })}
                 disabled={page === 1}
-                className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
               >
-                <ArrowLeft size={18} />
-              </button>
-              <span className="px-2 font-medium leading-none text-slate-700">
+                <ArrowLeft />
+              </Button>
+              <span className="px-1 font-medium leading-none text-foreground">
                 {locale === "zh" ? `${t.page} ${page} / ${totalPages} 页` : `${t.page} ${page} of ${totalPages}`}
               </span>
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="icon-sm"
                 onClick={() => updateParams({ page: String(Math.min(totalPages, page + 1)) })}
                 disabled={page >= totalPages}
-                className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-transparent"
               >
-                <ArrowRight size={18} />
-              </button>
+                <ArrowRight />
+              </Button>
             </div>
           </div>
         </div>
-      </div>
+      </Card>
 
-      {isCreateOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <h2 className="text-xl font-bold text-slate-900">{t.createTitle}</h2>
-              <button
+      <Dialog open={isCreateOpen} onOpenChange={(open) => !isPending && setIsCreateOpen(open)}>
+        <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-muted/35 px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{t.createTitle}</DialogTitle>
+              <DialogDescription className="sr-only">{t.createTitle}</DialogDescription>
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setIsCreateOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                disabled={isPending}
+                aria-label={t.cancel}
               >
-                <X size={18} />
-              </button>
+                <X />
+              </Button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-4 px-6 py-5">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-700">{t.fullName}</label>
-                <input
+          </DialogHeader>
+          <form onSubmit={handleCreate} autoComplete="off">
+            <div className="space-y-5 p-6">
+              {errorMsg ? (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertTriangle className="size-4 shrink-0" />
+                  {errorMsg}
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <Label htmlFor="new-user-name">{t.fullName}</Label>
+                <Input
+                  id="new-user-name"
+                  name="new-user-name"
                   required
+                  autoComplete="off"
                   value={newUser.name}
                   onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                   placeholder="Jane Doe"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-700">{t.email}</label>
-                <input
+              <div className="space-y-2">
+                <Label htmlFor="new-user-email">{t.email}</Label>
+                <Input
+                  id="new-user-email"
+                  name="new-user-email"
                   required
                   type="email"
+                  autoComplete="off"
                   value={newUser.email}
                   onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                   placeholder="jane@neo-jira.local"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-700">{t.password}</label>
+              <div className="space-y-2">
+                <Label htmlFor="new-user-password">{t.password}</Label>
                 <div className="flex gap-2">
-                  <input
+                  <Input
+                    id="new-user-password"
+                    name="new-user-password"
                     required
                     minLength={8}
                     type={showPassword ? "text" : "password"}
+                    autoComplete="off"
                     value={newUser.password}
                     onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))}
-                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="icon"
                     onClick={() => setShowPassword((value) => !value)}
                     title={showPassword ? t.hide : t.show}
-                    className="inline-flex items-center rounded-md border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
                   >
-                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                  <button
+                    {showPassword ? <EyeOff /> : <Eye />}
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="icon"
                     onClick={() => setNewUser((current) => ({ ...current, password: generateDefaultPassword() }))}
                     title={t.generate}
-                    className="inline-flex items-center rounded-md border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"
                   >
-                    <RefreshCw size={14} />
-                  </button>
+                    <RefreshCw />
+                  </Button>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{t.passwordRule}</p>
-              </div>
-              <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  disabled={isPending}
-                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
-                  {t.create}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {deletingUser ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-rose-100 bg-rose-50/50 px-6 py-4">
-              <h2 className="text-xl font-bold text-rose-600">{t.delete}</h2>
-            </div>
-            <div className="px-6 py-5">
-              <p className="text-sm font-medium text-slate-700">{t.deleteWarning}</p>
-              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-800">
-                {getDisplayName(deletingUser)} ({deletingUser.email})
+                <p className="text-xs leading-relaxed text-muted-foreground">{t.passwordRule}</p>
               </div>
             </div>
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
+            <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+              <Button
                 type="button"
-                onClick={() => setDeletingUser(null)}
+                variant="outline"
+                onClick={() => setIsCreateOpen(false)}
                 disabled={isPending}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
               >
                 {t.cancel}
-              </button>
-              <button
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? <Loader2 className="animate-spin" /> : null}
+                {t.create}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingUser)} onOpenChange={(open) => !open && setDeletingUser(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="size-5" />
+              {t.delete}
+            </DialogTitle>
+            <DialogDescription>{t.deleteWarning}</DialogDescription>
+          </DialogHeader>
+          {deletingUser ? (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm font-medium">
+              {getDisplayName(deletingUser)} <span className="font-normal text-muted-foreground">({deletingUser.email})</span>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeletingUser(null)} disabled={isPending}>
+              {t.cancel}
+            </Button>
+            <Button
                 type="button"
+                variant="destructive"
                 disabled={isPending}
                 onClick={handleDelete}
-                className="inline-flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
               >
-                {isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                {isPending ? <Loader2 className="animate-spin" /> : null}
                 {t.delete}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
