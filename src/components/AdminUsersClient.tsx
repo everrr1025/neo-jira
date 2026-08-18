@@ -366,7 +366,7 @@ export default function AdminUsersClient({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
@@ -400,8 +400,8 @@ export default function AdminUsersClient({
         </div>
       ) : null}
 
-      <Card className="min-h-0 flex-1 gap-0 overflow-hidden py-0">
-        <div className="min-h-0 flex-1 overflow-auto">
+      <Card className="gap-0 overflow-hidden py-0">
+        <div className="overflow-x-auto">
           <Table className="min-w-[1200px] table-auto">
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">

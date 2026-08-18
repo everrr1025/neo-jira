@@ -142,7 +142,7 @@ export default async function AdminUsersPage({
   }));
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <AdminUsersClient
         users={safeUsers}
         departments={departments}

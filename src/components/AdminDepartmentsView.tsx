@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Building2,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +58,9 @@ type Props = {
   departments: DepartmentRecord[];
   locale: Locale;
 };
+
+type DepartmentSortField = "name" | "head" | "members" | "projects" | "createdAt";
+type SortDirection = "asc" | "desc";
 
 const TEXT = {
   en: {
@@ -91,6 +106,8 @@ const TEXT = {
     nameExists: "Department name already exists.",
     notFound: "Department not found.",
     headConflict: "Selected head already belongs to another department.",
+    sortAscending: "Sort ascending",
+    sortDescending: "Sort descending",
   },
   zh: {
     title: "部门",
@@ -135,6 +152,8 @@ const TEXT = {
     nameExists: "部门名称已存在。",
     notFound: "部门不存在。",
     headConflict: "所选负责人已属于其他部门。",
+    sortAscending: "升序排列",
+    sortDescending: "降序排列",
   },
 } as const;
 
@@ -154,6 +173,8 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const [deletingDepartment, setDeletingDepartment] = useState<DepartmentRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<DepartmentSortField>("createdAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [departmentPage, setDepartmentPage] = useState(1);
   const [departmentPageSize, setDepartmentPageSize] = useState(10);
   const [departmentForm, setDepartmentForm] = useState({ name: "", key: "", description: "" });
@@ -163,9 +184,26 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
         `${department.name} ${department.key}`.toLowerCase().includes(normalizedSearch)
       )
     : departments;
+  const sortedDepartments = [...filteredDepartments].sort((left, right) => {
+    const leftHead = left.members.find((member) => member.isDepartmentAdmin);
+    const rightHead = right.members.find((member) => member.isDepartmentAdmin);
+    let comparison = 0;
+
+    if (sortBy === "name") comparison = left.name.localeCompare(right.name, locale);
+    if (sortBy === "head") comparison = (leftHead ? displayMember(leftHead) : "").localeCompare(
+      rightHead ? displayMember(rightHead) : "",
+      locale,
+    );
+    if (sortBy === "members") comparison = left.members.length - right.members.length;
+    if (sortBy === "projects") comparison = left.projectsCount - right.projectsCount;
+    if (sortBy === "createdAt") comparison = left.createdAt.localeCompare(right.createdAt);
+
+    if (comparison !== 0) return sortDirection === "asc" ? comparison : -comparison;
+    return left.name.localeCompare(right.name, locale) || left.id.localeCompare(right.id);
+  });
   const totalDepartmentPages = Math.max(1, Math.ceil(filteredDepartments.length / departmentPageSize));
   const currentDepartmentPage = Math.min(departmentPage, totalDepartmentPages);
-  const paginatedDepartments = filteredDepartments.slice(
+  const paginatedDepartments = sortedDepartments.slice(
     (currentDepartmentPage - 1) * departmentPageSize,
     currentDepartmentPage * departmentPageSize,
   );
@@ -189,6 +227,30 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const clearListError = () => setListErrorMsg("");
   const clearFormError = () => setFormErrorMsg("");
   const clearDeleteError = () => setDeleteErrorMsg("");
+
+  const renderSortableHeader = (label: string, field: DepartmentSortField) => {
+    const isSorted = sortBy === field;
+    const nextDirection: SortDirection = isSorted
+      ? sortDirection === "asc" ? "desc" : "asc"
+      : field === "createdAt" ? "desc" : "asc";
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setSortBy(field);
+          setSortDirection(nextDirection);
+          setDepartmentPage(1);
+        }}
+        className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+        aria-label={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
+        title={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
+      >
+        <span>{label}</span>
+        {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
+      </button>
+    );
+  };
 
   const resetForm = () => {
     setDepartmentForm({ name: "", key: "", description: "" });
@@ -257,7 +319,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
@@ -287,16 +349,16 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
         </div>
       ) : null}
 
-      <Card className="min-h-0 flex-1 gap-0 overflow-hidden py-0">
-        <div className="min-h-0 flex-1 overflow-auto">
+      <Card className="gap-0 overflow-hidden py-0">
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="pl-6">{t.name}</TableHead>
-                <TableHead>{t.head}</TableHead>
-                <TableHead>{t.members}</TableHead>
-                <TableHead>{t.projects}</TableHead>
-                <TableHead>{t.createdAt}</TableHead>
+                <TableHead className="pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
+                <TableHead>{renderSortableHeader(t.head, "head")}</TableHead>
+                <TableHead>{renderSortableHeader(t.members, "members")}</TableHead>
+                <TableHead>{renderSortableHeader(t.projects, "projects")}</TableHead>
+                <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
                 <TableHead className="w-px pl-0 text-left">{t.actions}</TableHead>
               </TableRow>
             </TableHeader>

@@ -45,7 +45,7 @@ export default async function AdminDepartmentsPage() {
   }));
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <AdminDepartmentsView
         departments={safeDepartments}
         locale={locale}

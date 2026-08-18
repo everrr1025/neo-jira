@@ -86,9 +86,7 @@ export function SidebarClient({
       : departmentContext
         ? departmentContext.name
         : isAdmin
-          ? locale === "zh"
-            ? "系统管理"
-            : "Neo-Jira Admin"
+          ? "SYNC ADMIN"
           : locale === "zh"
             ? "工作台"
             : "Workspace";
@@ -234,7 +232,11 @@ export function SidebarClient({
         </CollapsedSidebarTooltip>
 
       <div className={`flex h-16 w-full items-center ${collapsed ? "justify-center px-0" : "gap-3 p-6 pb-4"}`}>
-        {((departmentContext && !inProjectContext) || inProjectContext) && !collapsed ? (
+        {isAdmin ? (
+          <span className={`font-semibold tracking-wide text-sidebar-foreground ${collapsed ? "text-sm" : "text-lg"}`}>
+            {collapsed ? "SYNC" : "SYNC ADMIN"}
+          </span>
+        ) : ((departmentContext && !inProjectContext) || inProjectContext) && !collapsed ? (
           <span className="truncate text-lg font-semibold leading-6 text-sidebar-foreground transition-opacity duration-200">
             {sidebarTitle}
           </span>
