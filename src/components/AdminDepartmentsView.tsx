@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { AlertTriangle, Building2, Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 
 import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { DropdownField } from "./DropdownField";
 import type { Locale } from "@/lib/i18n";
 
 type DepartmentMemberRecord = {
@@ -49,8 +50,8 @@ type Props = {
 const TEXT = {
   en: {
     title: "Departments",
-    subtitle: "Manage departments, department admins, members, and related project totals.",
-    createDepartment: "Add department",
+    createDepartment: "Department",
+    search: "Search department name or key",
     createTitle: "Create department",
     editTitle: "Edit department",
     name: "Department",
@@ -70,8 +71,15 @@ const TEXT = {
     create: "Create department",
     save: "Save changes",
     empty: "No departments created yet.",
+    noResults: "No departments match the current search.",
     memberCount: "members",
     projectCount: "projects",
+    showing: "Showing",
+    to: "to",
+    of: "of",
+    departmentCount: "departments",
+    perPage: "Per page",
+    page: "Page",
     deleteWarning: "Delete this department? Members will be removed and linked projects will be cleared.",
     typeToConfirm: "Please type the exact department name to confirm:",
     createFailed: "Failed to create department",
@@ -86,8 +94,8 @@ const TEXT = {
   },
   zh: {
     title: "部门",
-    subtitle: "管理部门、部门管理员、成员和关联项目数量。",
-    createDepartment: "新增部门",
+    createDepartment: "部门",
+    search: "搜索部门名称或标识",
     createTitle: "创建部门",
     editTitle: "编辑部门",
     name: "部门",
@@ -107,8 +115,15 @@ const TEXT = {
     create: "创建部门",
     save: "保存修改",
     empty: "暂无部门。",
+    noResults: "没有符合当前搜索条件的部门。",
     memberCount: "名成员",
     projectCount: "个项目",
+    showing: "显示",
+    to: "到",
+    of: "共",
+    departmentCount: "个部门",
+    perPage: "每页",
+    page: "第",
     deleteWarning: "确定删除该部门吗？部门成员会被移除，关联项目会取消部门归属。",
     typeToConfirm: "请输入准确的部门名称以确认删除：",
     createFailed: "创建部门失败",
@@ -138,7 +153,27 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const [editingDepartment, setEditingDepartment] = useState<DepartmentRecord | null>(null);
   const [deletingDepartment, setDeletingDepartment] = useState<DepartmentRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [search, setSearch] = useState("");
+  const [departmentPage, setDepartmentPage] = useState(1);
+  const [departmentPageSize, setDepartmentPageSize] = useState(10);
   const [departmentForm, setDepartmentForm] = useState({ name: "", key: "", description: "" });
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredDepartments = normalizedSearch
+    ? departments.filter((department) =>
+        `${department.name} ${department.key}`.toLowerCase().includes(normalizedSearch)
+      )
+    : departments;
+  const totalDepartmentPages = Math.max(1, Math.ceil(filteredDepartments.length / departmentPageSize));
+  const currentDepartmentPage = Math.min(departmentPage, totalDepartmentPages);
+  const paginatedDepartments = filteredDepartments.slice(
+    (currentDepartmentPage - 1) * departmentPageSize,
+    currentDepartmentPage * departmentPageSize,
+  );
+  const departmentRangeStart = filteredDepartments.length > 0
+    ? (currentDepartmentPage - 1) * departmentPageSize + 1
+    : 0;
+  const departmentRangeEnd = Math.min(currentDepartmentPage * departmentPageSize, filteredDepartments.length);
+  const departmentPageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
 
   const translateDepartmentError = (message: string | undefined, fallback: string) => {
     if (!message) return fallback;
@@ -224,19 +259,25 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-10 items-center justify-center rounded-lg border bg-muted/40">
-            <Building2 className="size-5 text-muted-foreground" />
+        <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setDepartmentPage(1);
+              }}
+              placeholder={t.search}
+              className="pl-9"
+            />
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p>
-          </div>
+          <Button type="button" onClick={openCreateDialog}>
+            <Plus />
+            {t.createDepartment}
+          </Button>
         </div>
-        <Button type="button" onClick={openCreateDialog}>
-          <Plus />
-          {t.createDepartment}
-        </Button>
       </div>
 
       {listErrorMsg ? (
@@ -256,24 +297,19 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 <TableHead>{t.members}</TableHead>
                 <TableHead>{t.projects}</TableHead>
                 <TableHead>{t.createdAt}</TableHead>
-                <TableHead className="w-64">{t.actions}</TableHead>
+                <TableHead className="w-px pl-0 text-left">{t.actions}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {departments.map((department) => {
+              {paginatedDepartments.map((department) => {
                 const head = department.members.find((member) => member.isDepartmentAdmin);
 
                 return (
                   <TableRow key={department.id}>
                     <TableCell className="pl-6">
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
-                          <Building2 className="size-4 text-muted-foreground" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-foreground">{department.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground">{department.key}</div>
-                        </div>
+                      <div>
+                        <div className="font-medium text-foreground">{department.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">{department.key}</div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -296,28 +332,26 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(department.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button asChild variant="outline" size="sm">
+                    <TableCell className="pl-0 text-left">
+                      <div className="flex items-center justify-start gap-2">
+                        <Button asChild variant="outline" size="xs">
                           <Link href={`/admin/departments/${department.id}/members`}>
-                            <Users />
                             {t.manage}
                           </Link>
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
+                          size="xs"
                           onClick={() => openEditDialog(department)}
                           disabled={isPending}
                         >
-                          <Pencil />
                           {t.edit}
                         </Button>
                         <Button
                           type="button"
-                          variant="ghost"
-                          size="sm"
+                          variant="outline"
+                          size="xs"
                           onClick={() => {
                             clearListError();
                             clearDeleteError();
@@ -335,28 +369,93 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                   </TableRow>
                 );
               })}
-              {departments.length === 0 ? (
+              {filteredDepartments.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
                     <Building2 className="mx-auto mb-3 size-8 opacity-35" />
-                    {t.empty}
+                    {departments.length === 0 ? t.empty : t.noResults}
                   </TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
           </Table>
         </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
+          <div className="text-muted-foreground">
+            {t.showing} <span className="font-medium text-foreground">{departmentRangeStart}</span> {t.to}{" "}
+            <span className="font-medium text-foreground">{departmentRangeEnd}</span> {t.of}{" "}
+            <span className="font-medium text-foreground">{filteredDepartments.length}</span> {t.departmentCount}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span>{t.perPage}</span>
+              <DropdownField
+                id="department-page-size"
+                label={t.perPage}
+                value={String(departmentPageSize)}
+                onChange={(value) => {
+                  setDepartmentPageSize(Number(value));
+                  setDepartmentPage(1);
+                }}
+                options={departmentPageSizeOptions}
+                hideLabel
+                className="w-20"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setDepartmentPage(Math.max(1, currentDepartmentPage - 1))}
+                disabled={currentDepartmentPage === 1}
+              >
+                <ArrowLeft />
+              </Button>
+              <span className="px-1 font-medium leading-none text-foreground">
+                {locale === "zh"
+                  ? `${t.page} ${currentDepartmentPage} / ${totalDepartmentPages} 页`
+                  : `${t.page} ${currentDepartmentPage} of ${totalDepartmentPages}`}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setDepartmentPage(Math.min(totalDepartmentPages, currentDepartmentPage + 1))}
+                disabled={currentDepartmentPage >= totalDepartmentPages}
+              >
+                <ArrowRight />
+              </Button>
+            </div>
+          </div>
+        </div>
       </Card>
 
-      <Dialog open={isFormOpen} onOpenChange={(open) => !open && closeFormDialog()}>
-        <DialogContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <DialogHeader>
+      <Dialog open={isFormOpen} onOpenChange={(open) => !open && !isPending && closeFormDialog()}>
+        <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-muted/35 px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
               <DialogTitle>{editingDepartment ? t.editTitle : t.createTitle}</DialogTitle>
-              <DialogDescription>{t.subtitle}</DialogDescription>
-            </DialogHeader>
+              <DialogDescription className="sr-only">
+                {editingDepartment ? t.editTitle : t.createTitle}
+              </DialogDescription>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={closeFormDialog}
+                disabled={isPending}
+                aria-label={t.cancel}
+              >
+                <X />
+              </Button>
+            </div>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-5 p-6">
               {formErrorMsg ? (
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <div className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   <AlertTriangle className="size-4 shrink-0" />
                   {formErrorMsg}
                 </div>
@@ -393,20 +492,21 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                   placeholder={t.descPlaceholder}
                 />
               </div>
-              <DialogFooter className="border-t pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={closeFormDialog}
-                  disabled={isPending}
-                >
-                  {t.cancel}
-                </Button>
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? <Loader2 className="animate-spin" /> : null}
-                  {editingDepartment ? t.save : t.create}
-                </Button>
-              </DialogFooter>
+            </div>
+            <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeFormDialog}
+                disabled={isPending}
+              >
+                {t.cancel}
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? <Loader2 className="animate-spin" /> : null}
+                {editingDepartment ? t.save : t.create}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -414,66 +514,89 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
       <Dialog
         open={Boolean(deletingDepartment)}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !isPending) {
             clearDeleteError();
             setDeletingDepartment(null);
             setDeleteConfirmText("");
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="size-5" />
-              {t.delete}
-            </DialogTitle>
-            <DialogDescription>{t.deleteWarning}</DialogDescription>
-          </DialogHeader>
-              {deleteErrorMsg ? (
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                  <AlertTriangle className="size-4 shrink-0" />
-                  {deleteErrorMsg}
-                </div>
-              ) : null}
-          {deletingDepartment ? (
-            <>
-              <div className="rounded-md border bg-muted/40 p-3 text-sm font-medium">
-                {deletingDepartment.name} ({deletingDepartment.key})
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="delete-department-confirm">{t.typeToConfirm}</Label>
-                <Input
-                  id="delete-department-confirm"
-                  type="text"
-                  value={deleteConfirmText}
-                  onChange={(event) => setDeleteConfirmText(event.target.value)}
-                  placeholder={deletingDepartment.name}
-                />
-              </div>
-            </>
-          ) : null}
-          <DialogFooter>
+        <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b bg-destructive/5 px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="size-5" />
+                {t.delete}
+              </DialogTitle>
+              <DialogDescription className="sr-only">{t.deleteWarning}</DialogDescription>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => {
                   clearDeleteError();
                   setDeletingDepartment(null);
                   setDeleteConfirmText("");
                 }}
                 disabled={isPending}
+                aria-label={t.cancel}
               >
-                {t.cancel}
+                <X />
               </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isPending || !deletingDepartment || deleteConfirmText !== deletingDepartment.name}
-                onClick={handleDelete}
-              >
-                {isPending ? <Loader2 className="animate-spin" /> : null}
-                {t.delete}
-              </Button>
+            </div>
+          </DialogHeader>
+          <div className="space-y-4 p-6">
+            <p className="text-sm text-muted-foreground">{t.deleteWarning}</p>
+            {deleteErrorMsg ? (
+              <div className="flex items-center gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <AlertTriangle className="size-4 shrink-0" />
+                {deleteErrorMsg}
+              </div>
+            ) : null}
+            {deletingDepartment ? (
+              <>
+                <div
+                  className="select-none rounded-md border bg-muted/40 p-3 text-sm font-medium"
+                  onCopy={(event) => event.preventDefault()}
+                  onCut={(event) => event.preventDefault()}
+                >
+                  {deletingDepartment.name}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="delete-department-confirm">{t.typeToConfirm}</Label>
+                  <Input
+                    id="delete-department-confirm"
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(event) => setDeleteConfirmText(event.target.value)}
+                    placeholder={deletingDepartment.name}
+                  />
+                </div>
+              </>
+            ) : null}
+          </div>
+          <DialogFooter className="border-t bg-muted/35 px-6 py-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                clearDeleteError();
+                setDeletingDepartment(null);
+                setDeleteConfirmText("");
+              }}
+              disabled={isPending}
+            >
+              {t.cancel}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isPending || !deletingDepartment || deleteConfirmText !== deletingDepartment.name}
+              onClick={handleDelete}
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {t.delete}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

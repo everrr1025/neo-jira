@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Loader2, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Loader2, Search, Trash2, X } from "lucide-react";
 
 import {
   addMembersToDepartment,
@@ -11,6 +11,19 @@ import {
 } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Locale } from "@/lib/i18n";
 
 type MemberRecord = {
@@ -38,9 +51,7 @@ type DepartmentRecord = {
 const TEXT = {
   en: {
     title: "Department people",
-    subtitle: "Manage department members.",
     addMembers: "Add members",
-    currentMembers: "Current members",
     head: "Department admin",
     member: "Member",
     setHead: "Set admin",
@@ -49,16 +60,20 @@ const TEXT = {
     emptyMembers: "No members in this department yet.",
     searchUsers: "Search users",
     selected: "selected",
-    addSelected: "Add selected",
+    addSelected: "Add",
     noUsers: "No available users.",
     cancel: "Cancel",
     assignFailed: "Failed to update department people",
+    showing: "Showing",
+    to: "to",
+    of: "of",
+    people: "members",
+    perPage: "Per page",
+    page: "Page",
   },
   zh: {
     title: "部门人员管理",
-    subtitle: "管理部门成员。",
     addMembers: "添加成员",
-    currentMembers: "当前成员",
     head: "部门管理员",
     member: "成员",
     setHead: "设为管理员",
@@ -67,10 +82,16 @@ const TEXT = {
     emptyMembers: "当前部门还没有成员。",
     searchUsers: "搜索用户",
     selected: "已选",
-    addSelected: "添加所选",
+    addSelected: "添加",
     noUsers: "没有可添加的用户。",
     cancel: "取消",
     assignFailed: "更新部门人员失败",
+    showing: "显示",
+    to: "到",
+    of: "共",
+    people: "名成员",
+    perPage: "每页",
+    page: "第",
   },
 } as const;
 
@@ -98,12 +119,30 @@ export default function AdminDepartmentMembersClient({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [memberPage, setMemberPage] = useState(1);
+  const [memberPageSize, setMemberPageSize] = useState(10);
   const normalizedSearch = userSearch.trim().toLowerCase();
   const filteredUsers = availableUsers.filter((user) => {
     if (!normalizedSearch) return true;
     return `${user.name || ""} ${user.email}`.toLowerCase().includes(normalizedSearch);
   });
-  const admins = department.members.filter((member) => member.isDepartmentAdmin);
+  const totalMembers = department.members.length;
+  const totalMemberPages = Math.max(1, Math.ceil(totalMembers / memberPageSize));
+  const currentMemberPage = Math.min(memberPage, totalMemberPages);
+  const memberRangeStart = totalMembers > 0 ? (currentMemberPage - 1) * memberPageSize + 1 : 0;
+  const memberRangeEnd = Math.min(currentMemberPage * memberPageSize, totalMembers);
+  const paginatedMembers = department.members.slice(
+    (currentMemberPage - 1) * memberPageSize,
+    currentMemberPage * memberPageSize
+  );
+
+  const closeAddDialog = () => {
+    if (isPending) return;
+    setIsAddOpen(false);
+    setUserSearch("");
+    setSelectedMemberIds([]);
+    setErrorMsg("");
+  };
 
   const handleSetAdmin = (userId: string, isDepartmentAdmin: boolean) => {
     setErrorMsg("");
@@ -147,14 +186,9 @@ export default function AdminDepartmentMembersClient({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{department.name}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {department.key} · {t.subtitle}
-          </p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{department.name}</h1>
         <Button
           type="button"
           onClick={() => {
@@ -162,52 +196,42 @@ export default function AdminDepartmentMembersClient({
             setIsAddOpen(true);
           }}
         >
-          <Plus />
           {t.addMembers}
         </Button>
       </div>
 
-      {errorMsg ? (
+      {errorMsg && !isAddOpen ? (
         <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
           {errorMsg}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-        <div className="border-b bg-muted/50 px-5 py-4">
-          <h3 className="text-sm font-bold text-foreground">{t.currentMembers}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {admins.length > 0 ? `${t.head}: ${admins.map(displayMember).join(", ")}` : t.emptyMembers}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="border-b bg-muted/35 text-xs font-semibold uppercase text-muted-foreground">
-              <tr>
-                <th className="px-5 py-4">{locale === "zh" ? "姓名" : "Name"}</th>
-                <th className="px-5 py-4">{locale === "zh" ? "邮箱" : "Email"}</th>
-                <th className="px-5 py-4">{locale === "zh" ? "角色" : "Role"}</th>
-                <th className="w-52 px-5 py-4">{locale === "zh" ? "操作" : "Actions"}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {department.members.map((member) => {
+      <Card className="gap-0 overflow-hidden py-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-muted/50">
+              <TableRow className="hover:bg-muted/50">
+                <TableHead className="pl-6">{locale === "zh" ? "姓名" : "Name"}</TableHead>
+                <TableHead>{locale === "zh" ? "邮箱" : "Email"}</TableHead>
+                <TableHead>{locale === "zh" ? "角色" : "Role"}</TableHead>
+                <TableHead className="w-52">{locale === "zh" ? "操作" : "Actions"}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedMembers.map((member) => {
                 const isAdmin = member.isDepartmentAdmin;
                 return (
-                  <tr
-                    key={member.userId}
-                    className="transition-colors hover:bg-muted/45"
-                  >
-                    <td className="px-5 py-3.5">
-                      <div className="font-semibold text-foreground">{displayMember(member)}</div>
-                    </td>
-                    <td className="px-5 py-3.5 text-muted-foreground">{member.userEmail}</td>
-                    <td className="px-5 py-3.5">
+                  <TableRow key={member.userId}>
+                    <TableCell className="pl-6 font-medium text-foreground">
+                      {displayMember(member)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{member.userEmail}</TableCell>
+                    <TableCell>
                       <Badge variant={isAdmin ? "default" : "secondary"}>
                         {isAdmin ? t.head : t.member}
                       </Badge>
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -231,104 +255,170 @@ export default function AdminDepartmentMembersClient({
                           {t.remove}
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
               {department.members.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-5 py-16 text-center text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4} className="h-40 text-center text-muted-foreground">
                     {t.emptyMembers}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : null}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
-
-      {isAddOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{t.addMembers}</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  {t.selected} {selectedMemberIds.length}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+          <div className="font-medium text-muted-foreground">
+            {t.showing} <span className="font-bold text-foreground">{memberRangeStart}</span> {t.to}{" "}
+            <span className="font-bold text-foreground">{memberRangeEnd}</span> {t.of}{" "}
+            <span className="font-bold text-foreground">{totalMembers}</span> {t.people}
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span>{t.perPage}</span>
+              <Select
+                value={String(memberPageSize)}
+                onValueChange={(value) => {
+                  setMemberPageSize(Number(value));
+                  setMemberPage(1);
+                }}
               >
-                <X size={18} />
-              </button>
+                <SelectTrigger size="sm" className="w-20 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {[10, 20, 50].map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
+                disabled={currentMemberPage === 1}
+              >
+                <ArrowLeft />
+              </Button>
+              <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
+                {locale === "zh"
+                  ? `${t.page} ${currentMemberPage} / ${totalMemberPages}`
+                  : `${t.page} ${currentMemberPage} of ${totalMemberPages}`}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setMemberPage(Math.min(totalMemberPages, currentMemberPage + 1))}
+                disabled={currentMemberPage >= totalMemberPages}
+              >
+                <ArrowRight />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
 
-            <div className="border-b border-slate-100 p-4">
-              <div className="relative">
-                <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-                <input
+      <Dialog open={isAddOpen} onOpenChange={(open) => !open && closeAddDialog()}>
+        <DialogContent
+          showCloseButton={false}
+          className="flex max-h-[88vh] max-w-2xl flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{t.addMembers}</DialogTitle>
+              <DialogDescription className="sr-only">{t.addMembers}</DialogDescription>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={closeAddDialog}
+                disabled={isPending}
+                aria-label={t.cancel}
+              >
+                <X />
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="shrink-0 border-b p-4">
+            <div className="flex items-center gap-3">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Input
                   value={userSearch}
                   onChange={(event) => setUserSearch(event.target.value)}
                   placeholder={t.searchUsers}
-                  className="h-9 w-full rounded-md border border-slate-200 py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="pl-9"
                 />
               </div>
+              <Badge variant="secondary" className="h-7 px-2.5">
+                {t.selected} {selectedMemberIds.length}
+              </Badge>
             </div>
+          </div>
 
-            <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-auto">
-              {filteredUsers.map((user) => {
-                const checked = selectedMemberIds.includes(user.id);
-                return (
-                  <label key={user.id} className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-slate-50">
-                    <input
-                      type="checkbox"
+          <div className="min-h-0 flex-1 divide-y overflow-y-auto">
+            {errorMsg ? (
+              <div className="flex items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-6 py-3 text-sm text-destructive">
+                <AlertTriangle className="size-4 shrink-0" />
+                {errorMsg}
+              </div>
+            ) : null}
+            {filteredUsers.map((user) => {
+              const checked = selectedMemberIds.includes(user.id);
+              return (
+                <label key={user.id} className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-muted/45">
+                    <Checkbox
                       checked={checked}
-                      onChange={(event) =>
+                      onCheckedChange={(nextChecked) =>
                         setSelectedMemberIds((current) =>
-                          event.target.checked
+                          nextChecked === true
                             ? Array.from(new Set([...current, user.id]))
                             : current.filter((selectedId) => selectedId !== user.id)
                         )
                       }
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-800">{displayPerson(user)}</div>
-                      <div className="truncate text-xs text-slate-500">{user.email}</div>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                        {displayPerson(user)}
+                      </span>
+                      {user.name ? (
+                        <span className="min-w-0 truncate text-sm text-muted-foreground">
+                          {user.email}
+                        </span>
+                      ) : null}
                     </div>
-                  </label>
-                );
-              })}
-              {filteredUsers.length === 0 ? (
-                <div className="px-6 py-12 text-center text-sm text-slate-500">{t.noUsers}</div>
-              ) : null}
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setIsAddOpen(false)}
-                disabled={isPending}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
-              >
-                {t.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleAddSelectedMembers}
-                disabled={isPending || selectedMemberIds.length === 0}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-              >
-                {isPending ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-                {t.addSelected}
-              </button>
-            </div>
+                </label>
+              );
+            })}
+            {filteredUsers.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-muted-foreground">{t.noUsers}</div>
+            ) : null}
           </div>
-        </div>
-      ) : null}
+
+          <DialogFooter className="shrink-0 border-t bg-muted/35 px-6 py-4">
+            <Button type="button" variant="outline" onClick={closeAddDialog} disabled={isPending}>
+              {t.cancel}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleAddSelectedMembers}
+              disabled={isPending || selectedMemberIds.length === 0}
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {t.addSelected}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

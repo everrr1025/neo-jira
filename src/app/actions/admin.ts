@@ -148,6 +148,7 @@ export async function deleteUser(userId: string) {
         id: true,
         name: true,
         email: true,
+        role: true,
         departmentMembers: {
           where: { isDepartmentAdmin: true },
           select: { department: { select: { name: true } } },
@@ -156,6 +157,9 @@ export async function deleteUser(userId: string) {
     });
     if (!user) {
       return { success: false, error: "User not found." };
+    }
+    if (user.role === "ADMIN") {
+      return { success: false, error: "System administrator accounts cannot be deleted here." };
     }
 
     const headDepartment = user.departmentMembers[0]?.department;
@@ -249,10 +253,13 @@ export async function resetUserPassword(userId: string) {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true },
+      select: { id: true, role: true },
     });
     if (!user) {
       return { success: false, error: "User not found." };
+    }
+    if (user.role === "ADMIN") {
+      return { success: false, error: "System administrator passwords cannot be reset here." };
     }
 
     const nextPassword = generateSecurePassword();

@@ -2,11 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,7 +27,7 @@ const TEXT = {
     emptyMembers: "No members in this project yet.",
     searchUsers: "Search users",
     selected: "selected",
-    addSelected: "Add selected",
+    addSelected: "Add",
     noUsers: "No available users.",
     cancel: "Cancel",
     assignFailed: "Failed to update project members",
@@ -45,7 +46,7 @@ const TEXT = {
     emptyMembers: "当前项目还没有成员。",
     searchUsers: "搜索用户",
     selected: "已选",
-    addSelected: "确认添加",
+    addSelected: "添加",
     noUsers: "没有可添加的用户。",
     cancel: "取消",
     assignFailed: "更新项目成员失败",
@@ -104,6 +105,14 @@ export default function DepartmentProjectMembersClient({
   );
   const memberRangeStart = projectMembers.length > 0 ? (currentMemberPage - 1) * memberPageSize + 1 : 0;
   const memberRangeEnd = Math.min(currentMemberPage * memberPageSize, projectMembers.length);
+
+  const closeAddDialog = () => {
+    if (isPending) return;
+    setIsAddOpen(false);
+    setUserSearch("");
+    setSelectedMemberIds([]);
+    setErrorMsg("");
+  };
 
   const translateError = (message: string | undefined) => {
     if (!message) return t.assignFailed;
@@ -166,7 +175,7 @@ export default function DepartmentProjectMembersClient({
         ) : null}
       </div>
 
-      {errorMsg ? (
+      {errorMsg && !isAddOpen ? (
         <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600">
           {errorMsg}
         </div>
@@ -322,50 +331,78 @@ export default function DepartmentProjectMembersClient({
         ) : null}
       </div>
 
-      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="flex max-h-[88vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4 pr-12">
-            <DialogTitle>{t.addMembers}</DialogTitle>
-            <DialogDescription>
-              {t.selected} {selectedMemberIds.length}
-            </DialogDescription>
+      <Dialog open={isAddOpen} onOpenChange={(open) => !open && closeAddDialog()}>
+        <DialogContent
+          showCloseButton={false}
+          className="flex max-h-[88vh] max-w-2xl flex-col gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="shrink-0 border-b bg-muted/35 px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>{t.addMembers}</DialogTitle>
+              <DialogDescription className="sr-only">{t.addMembers}</DialogDescription>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={closeAddDialog}
+                disabled={isPending}
+                aria-label={t.cancel}
+              >
+                <X />
+              </Button>
+            </div>
           </DialogHeader>
 
-          <div className="shrink-0 border-b px-6 py-4">
-            <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={userSearch}
-                onChange={(event) => setUserSearch(event.target.value)}
-                placeholder={t.searchUsers}
-                className="pl-9"
-              />
+          <div className="shrink-0 border-b p-4">
+            <div className="flex items-center gap-3">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <Input
+                  value={userSearch}
+                  onChange={(event) => setUserSearch(event.target.value)}
+                  placeholder={t.searchUsers}
+                  className="pl-9"
+                />
+              </div>
+              <Badge variant="secondary" className="h-7 px-2.5">
+                {t.selected} {selectedMemberIds.length}
+              </Badge>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+          <div className="min-h-0 flex-1 divide-y overflow-y-auto">
+            {errorMsg ? (
+              <div className="flex items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-6 py-3 text-sm text-destructive">
+                <AlertTriangle className="size-4 shrink-0" />
+                {errorMsg}
+              </div>
+            ) : null}
             {filteredUsers.map((user) => {
               const checked = selectedMemberIds.includes(user.userId);
               return (
                 <label
                   key={user.userId}
-                  className="flex cursor-pointer items-center gap-3 rounded-md px-4 py-3 transition-colors hover:bg-accent"
+                  className="flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-muted/45"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={checked}
-                    onChange={(event) =>
+                    onCheckedChange={(nextChecked) =>
                       setSelectedMemberIds((current) =>
-                        event.target.checked
+                        nextChecked === true
                           ? Array.from(new Set([...current, user.userId]))
                           : current.filter((selectedId) => selectedId !== user.userId)
                       )
                     }
-                    className="size-4 rounded border border-input accent-primary"
                   />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">{displayMember(user)}</div>
-                    <div className="truncate text-xs text-muted-foreground">{user.userEmail}</div>
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                      {displayMember(user)}
+                    </span>
+                    {user.userName ? (
+                      <span className="min-w-0 truncate text-sm text-muted-foreground">
+                        {user.userEmail}
+                      </span>
+                    ) : null}
                   </div>
                 </label>
               );
@@ -379,7 +416,7 @@ export default function DepartmentProjectMembersClient({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsAddOpen(false)}
+              onClick={closeAddDialog}
               disabled={isPending}
             >
               {t.cancel}
@@ -389,7 +426,7 @@ export default function DepartmentProjectMembersClient({
               onClick={handleAddSelectedMembers}
               disabled={isPending || selectedMemberIds.length === 0}
             >
-              {isPending ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
+              {isPending ? <Loader2 className="animate-spin" /> : null}
               {t.addSelected}
             </Button>
           </DialogFooter>

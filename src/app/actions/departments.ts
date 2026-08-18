@@ -80,6 +80,17 @@ export async function createDepartment(data: {
       });
 
       if (data.headUserId) {
+        const headUser = await tx.user.findUnique({
+          where: { id: data.headUserId },
+          select: { role: true },
+        });
+        if (!headUser) {
+          throw new Error("Selected head user not found");
+        }
+        if (headUser.role === "ADMIN") {
+          throw new Error("Cannot add system admin to department");
+        }
+
         const existingHeadMembership = await tx.departmentMember.findFirst({
           where: { userId: data.headUserId },
           select: { departmentId: true },
@@ -245,10 +256,13 @@ export async function setDepartmentMemberAdmin(
 
     const targetMembership = await prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId } },
-      select: { id: true },
+      select: { id: true, user: { select: { role: true } } },
     });
     if (!targetMembership) {
       return { success: false, error: "Department admin must be selected from current department members." };
+    }
+    if (targetMembership.user.role === "ADMIN") {
+      return { success: false, error: "System admin cannot be a department admin." };
     }
 
     const updated = await prisma.$transaction(async (tx) => {

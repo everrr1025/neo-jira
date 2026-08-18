@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
 
@@ -29,11 +30,25 @@ export default async function AdminUsersPage({
 
   const params = await searchParams;
   const search = (Array.isArray(params.search) ? params.search[0] : params.search)?.trim() || "";
-  const departmentId = (Array.isArray(params.departmentId) ? params.departmentId[0] : params.departmentId) || "";
+  const rawDepartmentIds = params.departmentIds ?? params.departmentId;
+  const departmentIds = Array.from(new Set(
+    (Array.isArray(rawDepartmentIds) ? rawDepartmentIds : [rawDepartmentIds])
+      .flatMap((value) => value?.split(",") || [])
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ));
   const pageSize = Math.min(parsePositiveInt(params.pageSize, 10), 50);
   const requestedPage = parsePositiveInt(params.page, 1);
+  const requestedSortBy = Array.isArray(params.sortBy) ? params.sortBy[0] : params.sortBy;
+  const sortBy = requestedSortBy === "name" || requestedSortBy === "email" || requestedSortBy === "department"
+    ? requestedSortBy
+    : "createdAt";
+  const sortDirection = (Array.isArray(params.sortDirection) ? params.sortDirection[0] : params.sortDirection) === "asc"
+    ? "asc"
+    : "desc";
 
   const where = {
+    role: "USER",
     ...(search
       ? {
           OR: [
@@ -42,10 +57,10 @@ export default async function AdminUsersPage({
           ],
         }
       : {}),
-    ...(departmentId
+    ...(departmentIds.length > 0
       ? {
           departmentMembers: {
-            some: { departmentId },
+            some: { departmentId: { in: departmentIds } },
           },
         }
       : {}),
@@ -62,22 +77,56 @@ export default async function AdminUsersPage({
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
   const page = Math.min(requestedPage, totalPages);
 
-  const users = await prisma.user.findMany({
-    where,
-    include: {
-      departmentMembers: {
-        include: {
-          department: {
-            select: { id: true, name: true },
-          },
+  const userInclude = {
+    departmentMembers: {
+      include: {
+        department: {
+          select: { id: true, name: true },
         },
-        orderBy: { isDepartmentAdmin: "desc" },
       },
+      orderBy: { isDepartmentAdmin: "desc" as const },
     },
-    orderBy: [{ createdAt: "desc" }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
+  };
+
+  const users = sortBy === "department"
+    ? await (async () => {
+        const searchPattern = `%${search}%`;
+        const orderedUsers = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT u."id"
+          FROM "User" AS u
+          LEFT JOIN "DepartmentMember" AS dm ON dm."userId" = u."id"
+          LEFT JOIN "Department" AS d ON d."id" = dm."departmentId"
+          WHERE u."role" = 'USER'
+          ${search ? Prisma.sql`AND (u."name" LIKE ${searchPattern} OR u."email" LIKE ${searchPattern})` : Prisma.empty}
+          ${departmentIds.length > 0
+            ? Prisma.sql`AND dm."departmentId" IN (${Prisma.join(departmentIds)})`
+            : Prisma.empty}
+          GROUP BY u."id"
+          ORDER BY
+            CASE WHEN MIN(d."name") IS NULL THEN 1 ELSE 0 END ASC,
+            MIN(d."name") ${Prisma.raw(sortDirection === "asc" ? "ASC" : "DESC")},
+            u."id" ASC
+          LIMIT ${pageSize}
+          OFFSET ${(page - 1) * pageSize}
+        `);
+        const orderedIds = orderedUsers.map((user) => user.id);
+        const selectedUsers = await prisma.user.findMany({
+          where: { id: { in: orderedIds } },
+          include: userInclude,
+        });
+        const usersById = new Map(selectedUsers.map((user) => [user.id, user]));
+        return orderedIds.flatMap((id) => {
+          const user = usersById.get(id);
+          return user ? [user] : [];
+        });
+      })()
+    : await prisma.user.findMany({
+        where,
+        include: userInclude,
+        orderBy: [{ [sortBy]: sortDirection }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      });
 
   const safeUsers = users.map((user) => ({
     id: user.id,
@@ -101,9 +150,10 @@ export default async function AdminUsersPage({
         page={page}
         pageSize={pageSize}
         search={search}
-        departmentId={departmentId}
+        departmentIds={departmentIds}
+        sortBy={sortBy}
+        sortDirection={sortDirection}
         locale={locale}
-        currentUserId={currentUser?.id || ""}
       />
     </div>
   );
