@@ -1,13 +1,16 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { UserActivityTracker } from "@/components/UserActivityTracker";
 
 export function AppShell({
   hasSession,
+  activityUserId,
   authenticatedContent,
   unauthenticatedContent,
 }: {
   hasSession: boolean;
+  activityUserId?: string;
   authenticatedContent: React.ReactNode;
   unauthenticatedContent: React.ReactNode;
 }) {
@@ -18,5 +21,10 @@ export function AppShell({
     return <>{unauthenticatedContent}</>;
   }
 
-  return <>{authenticatedContent}</>;
+  return (
+    <>
+      {activityUserId ? <UserActivityTracker userId={activityUserId} /> : null}
+      {authenticatedContent}
+    </>
+  );
 }

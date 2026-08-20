@@ -364,7 +364,8 @@ function normalizeProjectMemberIds(memberIds: unknown) {
 
 export async function addMemberToDepartment(departmentId: string, userId: string, role = "MEMBER") {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUser(session).id;
 
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     if (!user) return { success: false, error: "User not found" };
@@ -383,6 +384,7 @@ export async function addMemberToDepartment(departmentId: string, userId: string
       update: { role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
       create: { departmentId, userId, role, isDepartmentAdmin: role === "HEAD" || role === "ASSISTANT" },
     });
+    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "members", metadata: { userId }, actorId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
@@ -398,7 +400,8 @@ export async function addMemberToDepartment(departmentId: string, userId: string
 
 export async function addMembersToDepartment(departmentId: string, userIds: string[], role = "MEMBER") {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUser(session).id;
 
     const uniqueUserIds = Array.from(new Set(userIds.map((userId) => userId.trim()).filter(Boolean)));
     if (uniqueUserIds.length === 0) {
@@ -435,6 +438,7 @@ export async function addMembersToDepartment(departmentId: string, userIds: stri
         })
       )
     );
+    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "members", metadata: { userIds: uniqueUserIds.join(",") }, actorId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
@@ -450,7 +454,8 @@ export async function addMembersToDepartment(departmentId: string, userIds: stri
 
 export async function removeMemberFromDepartment(departmentId: string, userId: string) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUser(session).id;
 
     const membership = await prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId } },
@@ -460,6 +465,7 @@ export async function removeMemberFromDepartment(departmentId: string, userId: s
     await prisma.departmentMember.delete({
       where: { departmentId_userId: { departmentId, userId } },
     });
+    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "members", metadata: { userId }, actorId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
@@ -484,7 +490,7 @@ export async function createDepartmentProject(
   }
 ) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
     const description = typeof data?.description === "string" ? data.description.trim() : "";
@@ -548,6 +554,11 @@ export async function createDepartmentProject(
 
       await createDefaultWorkflowForProject(tx, createdProject.id);
 
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT", entityId: createdProject.id, action: "CREATE",
+        metadata: { name: createdProject.name, key: createdProject.key, departmentName: department.name }, actorId: currentUserId,
+      }]);
+
       return createdProject;
     });
 
@@ -571,7 +582,7 @@ export async function updateDepartmentProjectMembers(
   }
 ) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
     const ownerId = typeof data.ownerId === "string" ? data.ownerId.trim() : "";
     const uniqueMemberIds = Array.from(new Set(data.memberIds.map((id) => id.trim()).filter(Boolean)));
     if (ownerId && !uniqueMemberIds.includes(ownerId)) {
@@ -640,6 +651,10 @@ export async function updateDepartmentProjectMembers(
         where: { id: projectId },
         data: ownerId ? { ownerId } : { ownerId: null },
       });
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT", entityId: projectId, action: "UPDATE", field: "members",
+        metadata: { name: project.name }, actorId: currentUserId,
+      }]);
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -665,7 +680,7 @@ export async function updateDepartmentProject(
   }
 ) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
 
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
@@ -677,7 +692,7 @@ export async function updateDepartmentProject(
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, departmentId: true },
+      select: { id: true, departmentId: true, name: true, key: true },
     });
     if (!project || project.departmentId !== departmentId) {
       return { success: false, error: "Project not found." };
@@ -694,13 +709,16 @@ export async function updateDepartmentProject(
       return { success: false, error: "Project key already exists." };
     }
 
-    const updatedProject = await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        name,
-        key,
-        description: description || null,
-      },
+    const updatedProject = await prisma.$transaction(async (tx) => {
+      const updated = await tx.project.update({
+        where: { id: projectId },
+        data: { name, key, description: description || null },
+      });
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT", entityId: projectId, action: "UPDATE", field: "details",
+        metadata: { name: updated.name, key: updated.key }, actorId: currentUserId,
+      }]);
+      return updated;
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -717,7 +735,7 @@ export async function updateDepartmentProject(
 
 export async function deleteDepartmentProject(departmentId: string, projectId: string, confirmName?: string) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -732,6 +750,10 @@ export async function deleteDepartmentProject(departmentId: string, projectId: s
 
     await prisma.$transaction(async (tx) => {
       await deleteProjectData(tx, [projectId]);
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT", entityId: project.id, action: "DELETE",
+        metadata: { name: project.name }, actorId: currentUserId,
+      }]);
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -748,7 +770,7 @@ export async function deleteDepartmentProject(departmentId: string, projectId: s
 
 export async function createDepartmentPosition(departmentId: string, data: { name?: string }) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
     const name = typeof data.name === "string" ? data.name.trim() : "";
     if (!name) return { success: false, error: "Position name is required." };
 
@@ -756,6 +778,7 @@ export async function createDepartmentPosition(departmentId: string, data: { nam
     const position = await prisma.departmentPosition.create({
       data: { departmentId, name, sortOrder: count },
     });
+    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "positions", metadata: { name }, actorId: currentUserId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
@@ -767,7 +790,7 @@ export async function createDepartmentPosition(departmentId: string, data: { nam
 
 export async function updateDepartmentPosition(departmentId: string, positionId: string, data: { name?: string }) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
     const name = typeof data.name === "string" ? data.name.trim() : "";
     if (!name) return { success: false, error: "Position name is required." };
 
@@ -778,6 +801,7 @@ export async function updateDepartmentPosition(departmentId: string, positionId:
       where: { id: positionId },
       data: { name },
     });
+    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "positions", metadata: { name }, actorId: currentUserId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
@@ -789,8 +813,8 @@ export async function updateDepartmentPosition(departmentId: string, positionId:
 
 export async function deleteDepartmentPosition(departmentId: string, positionId: string) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
-    const position = await prisma.departmentPosition.findUnique({ where: { id: positionId }, select: { departmentId: true } });
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
+    const position = await prisma.departmentPosition.findUnique({ where: { id: positionId }, select: { departmentId: true, name: true } });
     if (!position || position.departmentId !== departmentId) return { success: false, error: "Position not found." };
 
     await prisma.$transaction(async (tx) => {
@@ -799,6 +823,7 @@ export async function deleteDepartmentPosition(departmentId: string, positionId:
         data: { positionId: null },
       });
       await tx.departmentPosition.delete({ where: { id: positionId } });
+      await createAuditLogs(tx, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "positions", metadata: { name: position.name }, actorId: currentUserId }]);
     });
 
     revalidatePath(`/departments/${departmentId}`);
@@ -826,7 +851,7 @@ export async function updateDepartmentMemberSettings(
   }
 ) {
   try {
-    await checkDepartmentAdminOnly(departmentId);
+    const { currentUserId } = await checkDepartmentAdminOnly(departmentId);
 
     const membership = await prisma.departmentMember.findUnique({
       where: { departmentId_userId: { departmentId, userId } },
@@ -963,6 +988,10 @@ export async function updateDepartmentMemberSettings(
           })),
         });
       }
+      await createAuditLogs(tx, [{
+        entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "memberPermissions",
+        metadata: { userId }, actorId: currentUserId,
+      }]);
     });
 
     revalidatePath(`/departments/${departmentId}`);

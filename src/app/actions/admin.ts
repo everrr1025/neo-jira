@@ -245,7 +245,8 @@ export async function deleteUser(userId: string) {
 
 export async function resetUserPassword(userId: string) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
 
     if (!userId) {
       return { success: false, error: "User id is required." };
@@ -253,7 +254,7 @@ export async function resetUserPassword(userId: string) {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true },
+      select: { id: true, role: true, name: true, email: true },
     });
     if (!user) {
       return { success: false, error: "User not found." };
@@ -265,9 +266,16 @@ export async function resetUserPassword(userId: string) {
     const nextPassword = generateSecurePassword();
     const hashedPassword = await bcrypt.hash(nextPassword, 10);
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { password: hashedPassword } });
+      await createAuditLogs(tx, [{
+        entityType: "USER",
+        entityId: userId,
+        action: "UPDATE",
+        field: "password",
+        metadata: { name: user.name || user.email, email: user.email },
+        actorId,
+      }]);
     });
 
     revalidatePath("/admin");
@@ -279,7 +287,8 @@ export async function resetUserPassword(userId: string) {
 
 export async function createProject(data: CreateProjectInput) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
     const name = typeof data?.name === "string" ? data.name.trim() : "";
     const key = typeof data?.key === "string" ? data.key.trim().toUpperCase() : "";
     const description = typeof data?.description === "string" ? data.description.trim() : "";
@@ -335,6 +344,14 @@ export async function createProject(data: CreateProjectInput) {
 
       await createDefaultWorkflowForProject(tx, createdProject.id);
 
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT",
+        entityId: createdProject.id,
+        action: "CREATE",
+        metadata: { name: createdProject.name, key: createdProject.key },
+        actorId,
+      }]);
+
       return createdProject;
     });
 
@@ -348,7 +365,8 @@ export async function createProject(data: CreateProjectInput) {
 
 export async function updateProjectMembers(projectId: string, memberIds: string[]) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
     const uniqueMemberIds = Array.from(new Set(memberIds));
     if (uniqueMemberIds.length < 1) {
       return { success: false, error: "At least one project member is required." };
@@ -433,6 +451,15 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
       data: { role: "MEMBER" },
     });
 
+    await createAuditLogs(prisma, [{
+      entityType: "PROJECT",
+      entityId: projectId,
+      action: "UPDATE",
+      field: "members",
+      metadata: { name: project.name },
+      actorId,
+    }]);
+
     revalidatePath("/admin");
     revalidatePath("/projects");
     revalidatePath("/");
@@ -445,7 +472,8 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
 
 export async function updateProjectOwner(projectId: string, ownerId: string) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
 
     if (!projectId || !ownerId) {
       return { success: false, error: "Project id and owner id are required." };
@@ -502,6 +530,15 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
         where: { userId_projectId: { userId: ownerId, projectId } },
         data: { role: "ADMIN" },
       });
+
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT",
+        entityId: projectId,
+        action: "UPDATE",
+        field: "owner",
+        metadata: { name: project.name },
+        actorId,
+      }]);
     });
 
     revalidatePath("/admin");
@@ -516,7 +553,8 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
 
 export async function updateMemberRole(projectId: string, userId: string, role: string) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
 
     if (role !== "ADMIN" && role !== "MEMBER") {
       return { success: false, error: "Invalid role. Must be ADMIN or MEMBER." };
@@ -608,6 +646,15 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
       }
     }
 
+    await createAuditLogs(prisma, [{
+      entityType: "PROJECT",
+      entityId: projectId,
+      action: "UPDATE",
+      field: "memberRole",
+      metadata: { name: project.name },
+      actorId,
+    }]);
+
     revalidatePath("/admin");
     revalidatePath("/projects");
     revalidatePath("/");
@@ -619,7 +666,8 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
 
 export async function deleteProject(projectId: string, confirmName?: string) {
   try {
-    await checkGlobalAdmin();
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
 
     if (!projectId) {
       return { success: false, error: "Project id is required." };
@@ -638,6 +686,13 @@ export async function deleteProject(projectId: string, confirmName?: string) {
 
     await prisma.$transaction(async (tx) => {
       await deleteProjectData(tx, [projectId]);
+      await createAuditLogs(tx, [{
+        entityType: "PROJECT",
+        entityId: project.id,
+        action: "DELETE",
+        metadata: { name: project.name },
+        actorId,
+      }]);
     });
 
     revalidatePath("/admin");

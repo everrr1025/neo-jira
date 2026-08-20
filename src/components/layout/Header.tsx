@@ -9,7 +9,7 @@ import NotificationBell from "@/components/NotificationBell";
 import { Input } from "@/components/ui/input";
 import { getTranslations, type Locale } from "@/lib/i18n";
 
-export function Header({ initialLocale }: { initialLocale: Locale }) {
+export function Header({ initialLocale, initialIsGlobalAdmin = false }: { initialLocale: Locale; initialIsGlobalAdmin?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,6 +18,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
   const [query, setQuery] = useState(searchParams.get("search") || "");
   const translations = getTranslations(locale);
   const userName = session?.user?.name || translations.sidebar.userFallback;
+  const isGlobalAdmin = initialIsGlobalAdmin || (session?.user as { role?: string } | undefined)?.role === "ADMIN";
 
   useEffect(() => {
     setQuery(searchParams.get("search") || "");
@@ -60,7 +61,7 @@ export function Header({ initialLocale }: { initialLocale: Locale }) {
     return translations.header.appName;
   };
 
-  if (hideHeader) {
+  if (hideHeader || (pathname === "/" && isGlobalAdmin)) {
     return null;
   }
 

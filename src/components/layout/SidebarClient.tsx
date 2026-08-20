@@ -13,6 +13,7 @@ import {
   Home,
   ListTodo,
   RefreshCw,
+  ScrollText,
   Settings,
   StickyNote,
   Users,
@@ -305,6 +306,14 @@ export function SidebarClient({
                 <Building2 className={navIconClass} />
                 <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                   {locale === "zh" ? "部门" : "Departments"}
+                </span>
+              </Link>
+            </CollapsedSidebarTooltip>
+            <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "系统日志" : "System logs"}>
+              <Link href="/admin/logs" className={getNavClass("/admin/logs")} aria-label={collapsed ? (locale === "zh" ? "系统日志" : "System logs") : undefined}>
+                <ScrollText className={navIconClass} />
+                <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
+                  {locale === "zh" ? "系统日志" : "System logs"}
                 </span>
               </Link>
             </CollapsedSidebarTooltip>

@@ -33,11 +33,17 @@ export default async function RootLayout({
           <McpProvider>
             <AppShell
               hasSession={!!session}
+              activityUserId={(session?.user as { id?: string; role?: string } | undefined)?.role === "USER"
+                ? (session?.user as { id?: string } | undefined)?.id
+                : undefined}
               authenticatedContent={
                 <div className="flex min-h-screen bg-background">
                   <Sidebar locale={locale} />
                   <main className="flex min-h-screen flex-1 flex-col overflow-hidden">
-                    <Header initialLocale={locale} />
+                    <Header
+                      initialLocale={locale}
+                      initialIsGlobalAdmin={(session?.user as { role?: string } | undefined)?.role === "ADMIN"}
+                    />
                     <div className="flex-1 overflow-auto bg-muted/35 p-6">{children}</div>
                   </main>
                 </div>

@@ -18,5 +18,5 @@ test("signs in with the development admin account", async ({ page }) => {
   await page.getByRole("button", { name: "登录" }).click();
 
   await expect(page).not.toHaveURL(/\/login/);
-  await expect(page.getByRole("heading", { name: "系统管理概览" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "系统概览", exact: true })).toBeVisible();
 });

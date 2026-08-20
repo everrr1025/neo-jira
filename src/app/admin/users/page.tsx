@@ -6,6 +6,7 @@ import AdminUsersClient from "@/components/AdminUsersClient";
 import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
+import { getInactiveCutoff } from "@/lib/systemUsage";
 
 export const dynamic = "force-dynamic";
 
@@ -41,22 +42,37 @@ export default async function AdminUsersPage({
   const requestedPage = parsePositiveInt(params.page, 1);
   const requestedSortBy = Array.isArray(params.sortBy) ? params.sortBy[0] : params.sortBy;
   const sortBy = requestedSortBy === "name" || requestedSortBy === "email" || requestedSortBy === "department"
+    || requestedSortBy === "lastActiveAt"
     ? requestedSortBy
     : "createdAt";
   const sortDirection = (Array.isArray(params.sortDirection) ? params.sortDirection[0] : params.sortDirection) === "asc"
     ? "asc"
     : "desc";
 
-  const where = {
+  const requestedActivityStatus = Array.isArray(params.activityStatus) ? params.activityStatus[0] : params.activityStatus;
+  const activityStatus = requestedActivityStatus === "inactive30" || requestedActivityStatus === "inactive90" || requestedActivityStatus === "unknown"
+    ? requestedActivityStatus
+    : "all";
+  const inactiveDays = activityStatus === "inactive90" ? 90 : 30;
+  const inactiveCutoff = getInactiveCutoff(inactiveDays);
+
+  const activityWhere: Prisma.UserWhereInput | null = activityStatus === "inactive30" || activityStatus === "inactive90"
+    ? {
+        OR: [
+          { lastActiveAt: { lt: inactiveCutoff } },
+          { lastActiveAt: null, activityTrackingStartedAt: { lt: inactiveCutoff } },
+        ],
+      }
+    : activityStatus === "unknown"
+      ? { lastActiveAt: null, activityTrackingStartedAt: { gte: getInactiveCutoff(30) } }
+      : null;
+
+  const where: Prisma.UserWhereInput = {
     role: "USER",
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search } },
-            { email: { contains: search } },
-          ],
-        }
-      : {}),
+    AND: [
+      ...(search ? [{ OR: [{ name: { contains: search } }, { email: { contains: search } }] }] : []),
+      ...(activityWhere ? [activityWhere] : []),
+    ],
     ...(departmentIds.length > 0
       ? {
           departmentMembers: {
@@ -101,6 +117,11 @@ export default async function AdminUsersPage({
           ${departmentIds.length > 0
             ? Prisma.sql`AND dm."departmentId" IN (${Prisma.join(departmentIds)})`
             : Prisma.empty}
+          ${activityStatus === "inactive30" || activityStatus === "inactive90"
+            ? Prisma.sql`AND ((u."lastActiveAt" IS NOT NULL AND u."lastActiveAt" < ${inactiveCutoff}) OR (u."lastActiveAt" IS NULL AND u."activityTrackingStartedAt" < ${inactiveCutoff}))`
+            : activityStatus === "unknown"
+              ? Prisma.sql`AND u."lastActiveAt" IS NULL AND u."activityTrackingStartedAt" >= ${getInactiveCutoff(30)}`
+              : Prisma.empty}
           GROUP BY u."id"
           ORDER BY
             CASE WHEN MIN(d."name") IS NULL THEN 1 ELSE 0 END ASC,
@@ -134,6 +155,7 @@ export default async function AdminUsersPage({
     email: user.email,
     role: user.role,
     createdAt: user.createdAt.toISOString(),
+    lastActiveAt: user.lastActiveAt?.toISOString() ?? null,
     departments: user.departmentMembers.map((member) => ({
       id: member.department.id,
       name: member.department.name,
@@ -153,6 +175,7 @@ export default async function AdminUsersPage({
         departmentIds={departmentIds}
         sortBy={sortBy}
         sortDirection={sortDirection}
+        activityStatus={activityStatus}
         locale={locale}
       />
     </div>

@@ -58,6 +58,7 @@ type UserRecord = {
   email: string;
   role: string;
   createdAt: string;
+  lastActiveAt: string | null;
   departments: DepartmentOption[];
   headDepartmentsCount: number;
 };
@@ -72,10 +73,11 @@ type Props = {
   departmentIds: string[];
   sortBy: UserSortField;
   sortDirection: SortDirection;
+  activityStatus: "all" | "inactive30" | "inactive90" | "unknown";
   locale: Locale;
 };
 
-type UserSortField = "name" | "email" | "department" | "createdAt";
+type UserSortField = "name" | "email" | "department" | "createdAt" | "lastActiveAt";
 type SortDirection = "asc" | "desc";
 
 const SPECIAL_CHARS = "!@#$%^&*()-_=+[]{};:,.?/|";
@@ -91,6 +93,13 @@ const TEXT = {
     email: "Email",
     departments: "Departments",
     createdAt: "Created",
+    lastActive: "Last active",
+    activity: "Activity",
+    allActivity: "All activity",
+    inactive30: "Inactive 30+ days",
+    inactive90: "Inactive 90+ days",
+    unknownActivity: "No activity record",
+    neverActive: "No record",
     actions: "Actions",
     createTitle: "Create user",
     fullName: "Full name",
@@ -133,6 +142,13 @@ const TEXT = {
     email: "邮箱",
     departments: "部门",
     createdAt: "创建时间",
+    lastActive: "最后活跃",
+    activity: "活跃状态",
+    allActivity: "全部活跃状态",
+    inactive30: "超过 30 天未活跃",
+    inactive90: "超过 90 天未活跃",
+    unknownActivity: "暂无活动记录",
+    neverActive: "暂无记录",
     actions: "操作",
     createTitle: "创建用户",
     fullName: "姓名",
@@ -204,6 +220,7 @@ export default function AdminUsersClient({
   departmentIds,
   sortBy,
   sortDirection,
+  activityStatus,
   locale,
 }: Props) {
   const t = TEXT[locale];
@@ -243,6 +260,7 @@ export default function AdminUsersClient({
       const params = new URLSearchParams();
       if (nextSearch) params.set("search", nextSearch);
       if (departmentIds.length > 0) params.set("departmentIds", departmentIds.join(","));
+      if (activityStatus !== "all") params.set("activityStatus", activityStatus);
       params.set("sortBy", sortBy);
       params.set("sortDirection", sortDirection);
       params.set("page", "1");
@@ -251,12 +269,13 @@ export default function AdminUsersClient({
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [departmentIds, pageSize, query, router, search, sortBy, sortDirection]);
+  }, [activityStatus, departmentIds, pageSize, query, router, search, sortBy, sortDirection]);
 
   const updateParams = (next: Record<string, string | null>) => {
     const params = new URLSearchParams();
     if (query.trim()) params.set("search", query.trim());
     if (departmentIds.length > 0) params.set("departmentIds", departmentIds.join(","));
+    if (activityStatus !== "all") params.set("activityStatus", activityStatus);
     params.set("sortBy", sortBy);
     params.set("sortDirection", sortDirection);
     params.set("page", String(page));
@@ -299,7 +318,7 @@ export default function AdminUsersClient({
     const isSorted = sortBy === field;
     const nextDirection: SortDirection = isSorted
       ? sortDirection === "asc" ? "desc" : "asc"
-      : field === "createdAt" ? "desc" : "asc";
+      : field === "createdAt" || field === "lastActiveAt" ? "desc" : "asc";
 
     return (
       <button
@@ -370,6 +389,20 @@ export default function AdminUsersClient({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <DropdownField
+            id="user-activity-status"
+            label={t.activity}
+            value={activityStatus}
+            onChange={(value) => updateParams({ activityStatus: value === "all" ? null : value, page: "1" })}
+            options={[
+              { value: "all", label: t.allActivity },
+              { value: "inactive30", label: t.inactive30 },
+              { value: "inactive90", label: t.inactive90 },
+              { value: "unknown", label: t.unknownActivity },
+            ]}
+            hideLabel
+            className="w-full sm:w-48"
+          />
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
             <Input
@@ -402,7 +435,7 @@ export default function AdminUsersClient({
 
       <Card className="gap-0 overflow-hidden py-0">
         <div className="overflow-x-auto">
-          <Table className="min-w-[1200px] table-auto">
+          <Table className="min-w-[1320px] table-auto">
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
                 <TableHead className="w-64 pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
@@ -448,6 +481,7 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
+                <TableHead className="w-40">{renderSortableHeader(t.lastActive, "lastActiveAt")}</TableHead>
                 <TableHead className="w-36">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
                 <TableHead className="w-px pl-0 text-left">{t.actions}</TableHead>
               </TableRow>
@@ -504,6 +538,11 @@ export default function AdminUsersClient({
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
+                      {user.lastActiveAt
+                        ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")
+                        : t.neverActive}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                     </TableCell>
                     <TableCell className="pl-0 text-left">
@@ -544,7 +583,7 @@ export default function AdminUsersClient({
               })}
               {users.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="h-40 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">
                     <Users className="mx-auto mb-3 size-8 opacity-35" />
                     {t.noUsers}
                   </TableCell>
