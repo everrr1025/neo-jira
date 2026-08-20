@@ -5,7 +5,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactElement, useState } from "react";
 import {
   Bell,
-  Building2,
   CalendarDays,
   ChevronLeft,
   ClipboardCheck,
@@ -13,13 +12,14 @@ import {
   Home,
   ListTodo,
   RefreshCw,
-  ScrollText,
   Settings,
   StickyNote,
-  Users,
+  UserRound,
 } from "lucide-react";
 
+import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import { getTranslations, type Locale } from "@/lib/i18n";
+import LogNavIcon from "@/components/LogNavIcon";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -169,7 +169,7 @@ export function SidebarClient({
               {
                 id: "department-members",
                 href: `/departments/${departmentContext.id}/members`,
-                icon: <Users className={navIconClass} />,
+                icon: <UserRound className={navIconClass} />,
                 label: membersLabel,
               },
             ]
@@ -295,7 +295,7 @@ export function SidebarClient({
           <>
             <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "用户" : "Users"}>
               <Link href="/admin/users" className={getNavClass("/admin/users")} aria-label={collapsed ? (locale === "zh" ? "用户" : "Users") : undefined}>
-                <Users className={navIconClass} />
+                <UserRound className={navIconClass} />
                 <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                   {locale === "zh" ? "用户" : "Users"}
                 </span>
@@ -303,17 +303,17 @@ export function SidebarClient({
             </CollapsedSidebarTooltip>
             <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "部门" : "Departments"}>
               <Link href="/admin/departments" className={getNavClass("/admin/departments")} aria-label={collapsed ? (locale === "zh" ? "部门" : "Departments") : undefined}>
-                <Building2 className={navIconClass} />
+                <DepartmentNavIcon className={navIconClass} />
                 <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
                   {locale === "zh" ? "部门" : "Departments"}
                 </span>
               </Link>
             </CollapsedSidebarTooltip>
-            <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "系统日志" : "System logs"}>
-              <Link href="/admin/logs" className={getNavClass("/admin/logs")} aria-label={collapsed ? (locale === "zh" ? "系统日志" : "System logs") : undefined}>
-                <ScrollText className={navIconClass} />
+            <CollapsedSidebarTooltip collapsed={collapsed} label={locale === "zh" ? "日志" : "Logs"}>
+              <Link href="/admin/logs" className={getNavClass("/admin/logs")} aria-label={collapsed ? (locale === "zh" ? "日志" : "Logs") : undefined}>
+                <LogNavIcon className={navIconClass} />
                 <span className={`${collapsed ? "hidden w-0 opacity-0" : "opacity-100 transition-opacity duration-200"}`}>
-                  {locale === "zh" ? "系统日志" : "System logs"}
+                  {locale === "zh" ? "日志" : "Logs"}
                 </span>
               </Link>
             </CollapsedSidebarTooltip>

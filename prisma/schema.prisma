@@ -25,6 +25,7 @@ model User {
   notifications       Notification[]     @relation("UserNotifications")
   actionsTriggered    Notification[]     @relation("NotificationActor")
   attachments         Attachment[]
+  uploadedFiles       FileAsset[]        @relation("FileAssetUploader")
   auditLogs           AuditLog[]         @relation("AuditLogActor")
   watchedIssues       Issue[]            @relation("IssueWatchers")
   createdReminders    Reminder[]         @relation("ReminderCreator")
@@ -312,6 +313,20 @@ model Attachment {
   uploaderId String
   uploader   User     @relation(fields: [uploaderId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+model FileAsset {
+  id         String   @id @default(cuid())
+  fileName   String
+  fileUrl    String   @unique
+  fileSize   BigInt
+  mimeType   String?
+  uploaderId String?
+  uploader   User?    @relation("FileAssetUploader", fields: [uploaderId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([uploaderId, createdAt])
 }
 
 model AuditLog {

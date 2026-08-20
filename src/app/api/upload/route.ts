@@ -9,6 +9,7 @@ import { createAuditLogs } from "@/lib/audit";
 import { deleteLocalUpload } from "@/lib/uploadCleanup";
 
 export async function POST(request: Request) {
+  let writtenFileUrl: string | null = null;
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -35,9 +36,19 @@ export async function POST(request: Request) {
     const fileUrl = `/uploads/${uniqueFilename}`;
 
     await fs.writeFile(filePath, buffer);
+    writtenFileUrl = fileUrl;
+
+    const fileAssetData = {
+      fileName: file.name,
+      fileUrl,
+      fileSize: BigInt(file.size),
+      mimeType: file.type || null,
+      uploaderId: userId,
+    };
 
     if (issueId) {
       const attachment = await prisma.$transaction(async (tx) => {
+        await tx.fileAsset.create({ data: fileAssetData });
         const createdAttachment = await tx.attachment.create({
           data: {
             fileName: file.name,
@@ -75,13 +86,17 @@ export async function POST(request: Request) {
           uploaderId: attachment.uploaderId,
           createdAt: attachment.createdAt,
           uploader: attachment.uploader,
+          fileSize: file.size,
+          mimeType: file.type || null,
         },
         { status: 201 },
       );
     } else {
-      return NextResponse.json({ fileName: file.name, fileUrl: fileUrl }, { status: 201 });
+      await prisma.fileAsset.create({ data: fileAssetData });
+      return NextResponse.json({ fileName: file.name, fileUrl, fileSize: file.size, mimeType: file.type || null }, { status: 201 });
     }
   } catch (error) {
+    if (writtenFileUrl) await deleteLocalUpload(writtenFileUrl);
     console.error("Upload error:", error);
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
   }

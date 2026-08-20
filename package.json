@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx src/lib/activeProject.test.ts && tsx src/lib/issueHierarchy.test.ts && tsx src/lib/issueFilterUtils.test.ts && tsx src/lib/issueNavigation.test.ts && tsx src/lib/projectRoutes.test.ts && tsx src/lib/projectDashboard.test.ts && tsx src/lib/planLifecycle.test.ts && tsx src/lib/issueUpdate.test.ts && tsx src/lib/issueListPreferences.test.ts && tsx src/lib/systemUsage.test.ts",
+    "test": "tsx src/lib/activeProject.test.ts && tsx src/lib/issueHierarchy.test.ts && tsx src/lib/issueFilterUtils.test.ts && tsx src/lib/issueNavigation.test.ts && tsx src/lib/projectRoutes.test.ts && tsx src/lib/projectDashboard.test.ts && tsx src/lib/planLifecycle.test.ts && tsx src/lib/issueUpdate.test.ts && tsx src/lib/issueListPreferences.test.ts && tsx src/lib/systemUsage.test.ts && tsx src/lib/fileStorage.test.ts",
     "test:e2e": "playwright test",
     "db:generate": "prisma generate",
     "db:migrate:dev": "prisma migrate dev",
@@ -17,6 +17,7 @@
     "db:migrate:status": "prisma migrate status",
     "db:migrate:verify": "bash scripts/verify-migrations.sh",
     "users:fix-avatars": "tsx scripts/fix-invalid-user-avatars.ts",
+    "files:backfill": "tsx scripts/backfill-file-assets.ts",
     "notifications:cleanup-orphan-due": "tsx scripts/cleanup-orphan-due-notifications.ts",
     "workflow:backfill": "tsx scripts/backfill-workflows.ts",
     "system:reset": "tsx scripts/system-reset.ts"

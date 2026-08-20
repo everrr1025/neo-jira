@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Users,
+  UserRound,
   X,
 } from "lucide-react";
 
@@ -434,13 +434,12 @@ export default function AdminUsersClient({
       ) : null}
 
       <Card className="gap-0 overflow-hidden py-0">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[1320px] table-auto">
+          <Table className="min-w-[900px] table-auto">
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="w-64 pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
-                <TableHead className="w-72">{renderSortableHeader(t.email, "email")}</TableHead>
-                <TableHead className="w-80">
+                <TableHead className="w-[18%] pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
+                <TableHead className="w-[24%]">{renderSortableHeader(t.email, "email")}</TableHead>
+                <TableHead className="w-[21%]">
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
                     <DropdownMenu>
@@ -481,9 +480,9 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-40">{renderSortableHeader(t.lastActive, "lastActiveAt")}</TableHead>
-                <TableHead className="w-36">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
-                <TableHead className="w-px pl-0 text-left">{t.actions}</TableHead>
+                <TableHead className="w-[20%]">{renderSortableHeader(t.lastActive, "lastActiveAt")}</TableHead>
+                <TableHead className="w-[17%]">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
+                <TableHead className="w-px px-4 text-left whitespace-nowrap">{t.actions}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -525,12 +524,16 @@ export default function AdminUsersClient({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <span className="block truncate" title={user.email}>{user.email}</span>
+                    </TableCell>
                     <TableCell>
                       {user.departments.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex min-w-0 gap-1.5 overflow-hidden">
                           {user.departments.map((department) => (
-                            <Badge key={department.id} variant="outline">{department.name}</Badge>
+                            <Badge key={department.id} variant="outline" className="min-w-0 max-w-full">
+                              <span className="truncate">{department.name}</span>
+                            </Badge>
                           ))}
                         </div>
                       ) : (
@@ -538,16 +541,18 @@ export default function AdminUsersClient({
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {user.lastActiveAt
-                        ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")
-                        : t.neverActive}
+                      <span className="block truncate">
+                        {user.lastActiveAt
+                          ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")
+                          : t.neverActive}
+                      </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                     </TableCell>
-                    <TableCell className="pl-0 text-left">
-                      <div className="flex flex-col items-start gap-1">
-                        <div className="flex items-center justify-start gap-2">
+                    <TableCell className="w-px px-4 text-right whitespace-nowrap">
+                      <div className="ml-auto inline-flex w-max max-w-full flex-col items-stretch gap-1 text-left">
+                        <div className="inline-flex items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"
@@ -572,7 +577,7 @@ export default function AdminUsersClient({
                           ) : deleteButton}
                         </div>
                         {revealedPasswords[user.id] ? (
-                          <div className="max-w-64 truncate rounded-md border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground">
+                          <div className="w-full min-w-0 truncate rounded-md border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground">
                             {revealedPasswords[user.id]}
                           </div>
                         ) : null}
@@ -584,14 +589,13 @@ export default function AdminUsersClient({
               {users.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">
-                    <Users className="mx-auto mb-3 size-8 opacity-35" />
+                    <UserRound className="mx-auto mb-3 size-8 opacity-35" />
                     {t.noUsers}
                   </TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
           </Table>
-        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
           <div className="text-muted-foreground">

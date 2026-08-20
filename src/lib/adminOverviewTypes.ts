@@ -4,15 +4,6 @@ export type UsageTrendPoint = {
   activeDepartments: number;
 };
 
-export type InactiveUserSummary = {
-  id: string;
-  name: string;
-  email: string;
-  departmentName: string | null;
-  lastActiveAt: string | null;
-  inactiveDays: number;
-};
-
 export type GovernanceLogSummary = {
   id: string;
   entityType: string;
@@ -24,8 +15,9 @@ export type GovernanceLogSummary = {
 };
 
 export type AdminOverviewData = {
-  totals: { users: number; departments: number; projects: number; unknownActivityUsers: number };
+  totals: { users: number; departments: number; projects: number };
+  storage: { totalFiles: number; totalBytes: number; recentFiles: number; recentBytes: number };
   periods: Record<7 | 30, { activeUsers: number; activeDepartments: number; trend: UsageTrendPoint[] }>;
-  inactive: Record<30 | 90, { count: number; users: InactiveUserSummary[] }>;
+  inactive: Record<30 | 90, { count: number; departmentCount: number }>;
   recentLogs: GovernanceLogSummary[];
 };

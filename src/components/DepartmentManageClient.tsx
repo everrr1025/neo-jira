@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
-  Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { getProjectPath } from "@/lib/projectRoutes";
 
+import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import {
   createDepartmentProject,
   createDepartmentPosition,
@@ -1599,7 +1599,7 @@ export default function DepartmentManageClient({
                   <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{department.description || t.noDescription}</p>
                 </div>
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border bg-muted/45 text-muted-foreground">
-                  <Building2 size={24} />
+                  <DepartmentNavIcon className="size-6" />
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">

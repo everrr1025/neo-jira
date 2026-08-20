@@ -9,7 +9,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Building2,
   Loader2,
   Plus,
   Search,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
+import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -434,7 +434,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
               {filteredDepartments.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
-                    <Building2 className="mx-auto mb-3 size-8 opacity-35" />
+                    <DepartmentNavIcon className="mx-auto mb-3 size-8 opacity-35" />
                     {departments.length === 0 ? t.empty : t.noResults}
                   </TableCell>
                 </TableRow>

@@ -3,8 +3,9 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
-import type { AdminOverviewData, InactiveUserSummary } from "@/lib/adminOverviewTypes";
-import { buildUsagePeriod, daysSince, getDateKeys, getInactiveCutoff } from "@/lib/systemUsage";
+import type { AdminOverviewData } from "@/lib/adminOverviewTypes";
+import { getStoragePeriodStart } from "@/lib/fileStorage";
+import { buildUsagePeriod, getDateKeys, getInactiveCutoff } from "@/lib/systemUsage";
 
 const GOVERNANCE_ENTITY_TYPES = ["USER", "DEPARTMENT", "PROJECT"];
 
@@ -17,9 +18,9 @@ function parseMetadata(value: string | null) {
   }
 }
 
-async function getInactiveUsers(days: 30 | 90, now: Date) {
+async function getInactivityCounts(days: 30 | 90, now: Date) {
   const cutoff = getInactiveCutoff(days, now);
-  const where: Prisma.UserWhereInput = {
+  const inactiveUserWhere: Prisma.UserWhereInput = {
     role: "USER",
     OR: [
       { lastActiveAt: { lt: cutoff } },
@@ -27,56 +28,50 @@ async function getInactiveUsers(days: 30 | 90, now: Date) {
     ],
   };
 
-  const [count, users] = await Promise.all([
-    prisma.user.count({ where }),
-    prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        lastActiveAt: true,
-        activityTrackingStartedAt: true,
-        departmentMembers: {
-          select: { department: { select: { name: true } } },
-          take: 1,
+  const [count, departmentCount] = await Promise.all([
+    prisma.user.count({ where: inactiveUserWhere }),
+    prisma.department.count({
+      where: {
+        members: {
+          some: { user: { role: "USER" } },
+          none: {
+            user: {
+              role: "USER",
+              OR: [
+                { lastActiveAt: { gte: cutoff } },
+                { lastActiveAt: null, activityTrackingStartedAt: { gte: cutoff } },
+              ],
+            },
+          },
         },
       },
     }),
   ]);
 
-  const summaries: InactiveUserSummary[] = users
-    .map((user) => ({
-      id: user.id,
-      name: user.name || user.email,
-      email: user.email,
-      departmentName: user.departmentMembers[0]?.department.name ?? null,
-      lastActiveAt: user.lastActiveAt?.toISOString() ?? null,
-      inactiveDays: daysSince(user.lastActiveAt ?? user.activityTrackingStartedAt, now),
-    }))
-    .sort((a, b) => b.inactiveDays - a.inactiveDays || a.name.localeCompare(b.name))
-    .slice(0, 8);
-
-  return { count, users: summaries };
+  return { count, departmentCount };
 }
 
 export async function getAdminOverviewData(now = new Date()): Promise<AdminOverviewData> {
   const dateKeys30 = getDateKeys(30, now);
   const dateKeys7 = dateKeys30.slice(-7);
+  const storagePeriodStart = getStoragePeriodStart(30, now);
 
-  const [userCount, departmentCount, projectCount, activities, inactive30, inactive90, unknownActivityUsers, logs] = await Promise.all([
+  const [userCount, departmentCount, projectCount, storageTotal, storageRecent, activities, inactive30, inactive90, logs] = await Promise.all([
     prisma.user.count({ where: { role: "USER" } }),
     prisma.department.count(),
     prisma.project.count(),
+    prisma.fileAsset.aggregate({ _count: { _all: true }, _sum: { fileSize: true } }),
+    prisma.fileAsset.aggregate({
+      where: { createdAt: { gte: storagePeriodStart } },
+      _count: { _all: true },
+      _sum: { fileSize: true },
+    }),
     prisma.userDailyActivity.findMany({
       where: { activityDate: { gte: dateKeys30[0] }, user: { role: "USER" } },
       select: { activityDate: true, userId: true, departmentIdSnapshot: true },
     }),
-    getInactiveUsers(30, now),
-    getInactiveUsers(90, now),
-    prisma.user.count({
-      where: { role: "USER", lastActiveAt: null, activityTrackingStartedAt: { gte: getInactiveCutoff(30, now) } },
-    }),
+    getInactivityCounts(30, now),
+    getInactivityCounts(90, now),
     prisma.auditLog.findMany({
       where: { entityType: { in: GOVERNANCE_ENTITY_TYPES } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -95,7 +90,13 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
   ]);
 
   return {
-    totals: { users: userCount, departments: departmentCount, projects: projectCount, unknownActivityUsers },
+    totals: { users: userCount, departments: departmentCount, projects: projectCount },
+    storage: {
+      totalFiles: storageTotal._count._all,
+      totalBytes: Number(storageTotal._sum.fileSize ?? 0),
+      recentFiles: storageRecent._count._all,
+      recentBytes: Number(storageRecent._sum.fileSize ?? 0),
+    },
     periods: {
       7: buildUsagePeriod(dateKeys7, activities),
       30: buildUsagePeriod(dateKeys30, activities),

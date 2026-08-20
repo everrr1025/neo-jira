@@ -93,13 +93,21 @@ export async function deleteLocalUpload(fileUrl?: string | null) {
   if (!fileName) return;
 
   const filePath = path.join(process.cwd(), "public/uploads", fileName);
+  let fileRemoved = false;
   try {
     await fs.unlink(filePath);
+    fileRemoved = true;
   } catch (error) {
     const code = (error as { code?: string }).code;
-    if (code !== "ENOENT") {
+    if (code === "ENOENT") {
+      fileRemoved = true;
+    } else {
       console.error("Failed to delete local upload:", fileUrl, error);
     }
+  }
+
+  if (fileRemoved) {
+    await prisma.fileAsset.deleteMany({ where: { fileUrl } });
   }
 }
 

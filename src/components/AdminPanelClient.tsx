@@ -3,7 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createUser, createProject, updateProjectMembers, updateProjectOwner, resetUserPassword, deleteUser, deleteProject } from "@/app/actions/admin";
-import { Users, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle, Building2 } from "lucide-react";
+import { UserRound, Plus, Shield, Loader2, Crown, Eye, EyeOff, RefreshCw, Trash2, ChevronDown, UserPlus, X, KeyRound, AlertTriangle } from "lucide-react";
+import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import AdminDepartmentsView, { DepartmentRecord } from "./AdminDepartmentsView";
 import { Locale } from "@/lib/i18n";
 
@@ -276,7 +277,7 @@ export default function AdminPanelClient({
             activeTab === "USERS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Users size={16} /> {text.tabs.users}
+          <UserRound size={16} /> {text.tabs.users}
         </button>
         <button
           onClick={() => {
@@ -287,7 +288,7 @@ export default function AdminPanelClient({
             activeTab === "DEPARTMENTS" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Building2 size={16} /> {text.tabs.departments}
+          <DepartmentNavIcon className="size-4" /> {text.tabs.departments}
         </button>
       </div>
 
@@ -960,7 +961,7 @@ function ProjectsView({ projects, users, setErrorMsg, locale }: ProjectsViewProp
               <div className="mt-2 border-t pt-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h5 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-700">
-                    <Users size={14} /> {text.projects.teamAccess}
+                    <UserRound size={14} /> {text.projects.teamAccess}
                   </h5>
                   <details
                     className="relative"
