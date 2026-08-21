@@ -89,6 +89,16 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
     }),
   ]);
 
+  const departments = await prisma.department.findMany({
+    where: {
+      id: {
+        in: logs.filter((log) => log.entityType === "DEPARTMENT").map((log) => log.entityId),
+      },
+    },
+    select: { id: true, name: true, key: true },
+  });
+  const departmentsById = new Map(departments.map((department) => [department.id, department]));
+
   return {
     totals: { users: userCount, departments: departmentCount, projects: projectCount },
     storage: {
@@ -104,13 +114,19 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
     inactive: { 30: inactive30, 90: inactive90 },
     recentLogs: logs.map((log) => {
       const metadata = parseMetadata(log.metadata);
+      const department = log.entityType === "DEPARTMENT" ? departmentsById.get(log.entityId) : undefined;
+      const departmentName = metadata.name || department?.name;
+      const departmentKey = metadata.key || department?.key;
+      const targetName = log.entityType === "DEPARTMENT" && (departmentName || departmentKey)
+        ? [departmentName, departmentKey ? `(${departmentKey})` : null].filter(Boolean).join(" ")
+        : metadata.name || metadata.email || metadata.key || metadata.projectName || metadata.departmentName || metadata.userId || log.entityId;
       return {
         id: log.id,
         entityType: log.entityType,
         action: log.action,
         field: log.field,
         actorName: log.actor?.name || log.actor?.email || metadata.actorName || "System",
-        targetName: metadata.name || metadata.email || metadata.key || metadata.projectName || metadata.departmentName || metadata.userId || log.entityId,
+        targetName,
         createdAt: log.createdAt.toISOString(),
       };
     }),

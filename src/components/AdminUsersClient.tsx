@@ -37,6 +37,8 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -99,7 +101,6 @@ const TEXT = {
     inactive30: "Inactive 30+ days",
     inactive90: "Inactive 90+ days",
     unknownActivity: "No activity record",
-    neverActive: "No record",
     actions: "Actions",
     createTitle: "Create user",
     fullName: "Full name",
@@ -122,7 +123,6 @@ const TEXT = {
     perPage: "Per page",
     page: "Page",
     adminBadge: "Admin",
-    noDepartment: "No department",
     createFailed: "Failed to create user",
     emailPasswordRequired: "Email and password are required.",
     invalidPassword: "Password does not meet the security requirements.",
@@ -148,7 +148,6 @@ const TEXT = {
     inactive30: "超过 30 天未活跃",
     inactive90: "超过 90 天未活跃",
     unknownActivity: "暂无活动记录",
-    neverActive: "暂无记录",
     actions: "操作",
     createTitle: "创建用户",
     fullName: "姓名",
@@ -171,7 +170,6 @@ const TEXT = {
     perPage: "每页",
     page: "第",
     adminBadge: "管理员",
-    noDepartment: "未分配部门",
     createFailed: "创建用户失败",
     emailPasswordRequired: "邮箱和密码不能为空。",
     invalidPassword: "密码不符合安全要求。",
@@ -246,6 +244,18 @@ export default function AdminUsersClient({
   const selectedDepartmentNames = departments
     .filter((department) => departmentIds.includes(department.id))
     .map((department) => department.name);
+  const activityStatusLabel = {
+    all: t.allActivity,
+    inactive30: t.inactive30,
+    inactive90: t.inactive90,
+    unknown: t.unknownActivity,
+  }[activityStatus];
+  const activityStatusBadgeLabel = {
+    all: "",
+    inactive30: locale === "zh" ? "30 天+" : "30d+",
+    inactive90: locale === "zh" ? "90 天+" : "90d+",
+    unknown: locale === "zh" ? "无记录" : "No record",
+  }[activityStatus];
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
 
   useEffect(() => {
@@ -387,22 +397,8 @@ export default function AdminUsersClient({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          <DropdownField
-            id="user-activity-status"
-            label={t.activity}
-            value={activityStatus}
-            onChange={(value) => updateParams({ activityStatus: value === "all" ? null : value, page: "1" })}
-            options={[
-              { value: "all", label: t.allActivity },
-              { value: "inactive30", label: t.inactive30 },
-              { value: "inactive90", label: t.inactive90 },
-              { value: "unknown", label: t.unknownActivity },
-            ]}
-            hideLabel
-            className="w-full sm:w-48"
-          />
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
             <Input
@@ -442,6 +438,25 @@ export default function AdminUsersClient({
                 <TableHead className="w-[21%]">
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
+                    {departmentIds.length > 0 ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="h-5 min-w-5 justify-center bg-background px-1.5 tabular-nums"
+                              tabIndex={0}
+                              aria-label={selectedDepartmentNames.join(", ")}
+                            >
+                              {departmentIds.length}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={6}>
+                            {selectedDepartmentNames.join(locale === "zh" ? "、" : ", ")}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : null}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -480,7 +495,56 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-[20%]">{renderSortableHeader(t.lastActive, "lastActiveAt")}</TableHead>
+                <TableHead className="w-[20%]">
+                  <div className="flex items-center gap-1">
+                    {renderSortableHeader(t.lastActive, "lastActiveAt")}
+                    {activityStatus !== "all" ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="h-5 justify-center bg-background px-1.5 whitespace-nowrap"
+                              tabIndex={0}
+                              aria-label={activityStatusLabel}
+                            >
+                              {activityStatusBadgeLabel}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={6}>{activityStatusLabel}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : null}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className={activityStatus !== "all" ? "bg-accent text-foreground" : "text-muted-foreground"}
+                          aria-label={`${t.activity}: ${activityStatusLabel}`}
+                          title={`${t.activity}: ${activityStatusLabel}`}
+                        >
+                          <ListFilter />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-52">
+                        <DropdownMenuRadioGroup
+                          value={activityStatus}
+                          onValueChange={(value) =>
+                            updateParams({ activityStatus: value === "all" ? null : value, page: "1" })
+                          }
+                        >
+                          <DropdownMenuRadioItem value="all">{t.allActivity}</DropdownMenuRadioItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuRadioItem value="inactive30">{t.inactive30}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="inactive90">{t.inactive90}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="unknown">{t.unknownActivity}</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </TableHead>
                 <TableHead className="w-[17%]">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
                 <TableHead className="w-px px-4 text-left whitespace-nowrap">{t.actions}</TableHead>
               </TableRow>
@@ -536,15 +600,13 @@ export default function AdminUsersClient({
                             </Badge>
                           ))}
                         </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">{t.noDepartment}</span>
-                      )}
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       <span className="block truncate">
                         {user.lastActiveAt
                           ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")
-                          : t.neverActive}
+                          : null}
                       </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">

@@ -78,7 +78,6 @@ const TEXT = {
     projects: "Projects",
     createdAt: "Created",
     actions: "Actions",
-    noHead: "No department admin",
     manage: "Members",
     edit: "Edit",
     delete: "Delete",
@@ -124,7 +123,6 @@ const TEXT = {
     projects: "项目",
     createdAt: "创建时间",
     actions: "操作",
-    noHead: "未设置部门管理员",
     manage: "成员",
     edit: "编辑",
     delete: "删除",
@@ -321,7 +319,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
@@ -375,11 +373,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {head ? (
-                        <span className="font-medium text-foreground">{displayMember(head)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">{t.noHead}</span>
-                      )}
+                      {head ? <span className="font-medium text-foreground">{displayMember(head)}</span> : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">

@@ -38,13 +38,52 @@ test("shows system adoption without issue delivery metrics", async ({ page }) =>
 });
 
 test("opens governance logs and activity-filtered users", async ({ page }) => {
-  await page.getByRole("link", { name: "全部日志" }).click();
-  await expect(page).toHaveURL(/\/admin\/logs/);
+  await expect(async () => {
+    await page.getByRole("link", { name: "全部日志" }).click();
+    await expect(page).toHaveURL(/\/admin\/logs/);
+  }).toPass();
   await expect(page.getByRole("heading", { name: "系统日志" })).toBeVisible();
+  await expect(page.getByText("用户、部门、项目及权限等系统治理操作", { exact: true })).toHaveCount(0);
+  const timeHeader = page.getByRole("columnheader").filter({ hasText: "时间" });
+  const rangeFilter = timeHeader.getByRole("button", { name: "时间范围: 近 30 天" });
+  await expect(timeHeader.getByText("近 30 天", { exact: true })).toBeVisible();
+  await expect(rangeFilter).toBeVisible();
+  const sevenDayRange = page.getByRole("menuitemradio", { name: "近 7 天" });
+  await expect(async () => {
+    await rangeFilter.click();
+    await expect(sevenDayRange).toBeVisible();
+  }).toPass();
+  await sevenDayRange.click();
+  await expect(page).toHaveURL(/range=7/);
+  await expect(timeHeader.getByText("近 7 天", { exact: true })).toBeVisible();
+  const actionHeader = page.getByRole("columnheader").filter({ hasText: "操作类型" });
+  await actionHeader.getByRole("button", { name: "操作类型: 全部" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "创建", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("action")).toBe("CREATE");
+  const updateAction = page.getByRole("menuitemcheckbox", { name: "更新", exact: true });
+  if (!(await updateAction.isVisible())) {
+    await actionHeader.getByRole("button", { name: /操作类型:/ }).click();
+  }
+  await updateAction.click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("action")).toBe("CREATE,UPDATE");
+  await page.keyboard.press("Escape");
+  await expect(actionHeader.getByText("2", { exact: true })).toBeVisible();
+  await expect(page.getByText(/显示 \d+ 到 \d+ 共 \d+ 条记录/)).toBeVisible();
+  await expect(page.locator("span").filter({ hasText: /^每页$/ })).toBeVisible();
+  await page.locator("#log-page-size").click();
+  await page.getByRole("button", { name: "10", exact: true }).click();
+  await expect(page).toHaveURL(/pageSize=10/);
 
   await page.goto("/admin/users?activityStatus=unknown");
   await expect(page.getByText("最后活跃", { exact: true })).toBeVisible();
-  await expect(page.getByText("暂无活动记录", { exact: true })).toBeVisible();
+  const lastActiveHeader = page.getByRole("columnheader").filter({ hasText: "最后活跃" });
+  const activityFilter = lastActiveHeader.getByRole("button", { name: "活跃状态: 暂无活动记录" });
+  await expect(lastActiveHeader.getByText("无记录", { exact: true })).toBeVisible();
+  await expect(activityFilter).toBeVisible();
+  await activityFilter.click();
+  await page.getByRole("menuitemradio", { name: "超过 30 天未活跃" }).click();
+  await expect(page).toHaveURL(/activityStatus=inactive30/);
+  await expect(lastActiveHeader.getByText("30 天+", { exact: true })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "操作", exact: true })).toHaveCSS("text-align", "left");
   const tableContainer = page.locator('[data-slot="table-container"]');
   await expect.poll(() => tableContainer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);

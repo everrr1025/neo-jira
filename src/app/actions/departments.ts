@@ -193,6 +193,7 @@ export async function updateDepartment(
               field: "name",
               oldValue: department.name,
               newValue: name,
+              metadata: { name: updated.name, key: updated.key },
               actorId,
             }
           : null,
@@ -204,6 +205,7 @@ export async function updateDepartment(
               field: "key",
               oldValue: department.key,
               newValue: key,
+              metadata: { name: updated.name, key: updated.key },
               actorId,
             }
           : null,
@@ -213,6 +215,7 @@ export async function updateDepartment(
               entityId: departmentId,
               action: "UPDATE" as const,
               field: "description",
+              metadata: { name: updated.name, key: updated.key },
               actorId,
             }
           : null,

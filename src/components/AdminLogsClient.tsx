@@ -1,13 +1,23 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, History } from "lucide-react";
+import { ArrowLeft, ArrowRight, History, ListFilter } from "lucide-react";
 
 import { DropdownField } from "@/components/DropdownField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Locale } from "@/lib/i18n";
 import { formatFullDateTime } from "@/lib/timeFormat";
 
@@ -18,27 +28,167 @@ function governanceLabel(value: string | null, locale: Locale) {
   const zh: Record<string, string> = {
     USER: "用户", DEPARTMENT: "部门", PROJECT: "项目", CREATE: "创建", UPDATE: "更新", DELETE: "删除",
     password: "密码重置", members: "成员", owner: "负责人", memberRole: "成员角色", departmentAdmin: "部门管理员",
-    positions: "岗位", memberPermissions: "成员权限", details: "基本信息",
+    positions: "岗位", memberPermissions: "成员权限", details: "基本信息", name: "名称", key: "标识", description: "描述",
   };
   const en: Record<string, string> = {
     USER: "User", DEPARTMENT: "Department", PROJECT: "Project", CREATE: "Create", UPDATE: "Update", DELETE: "Delete",
     password: "Password reset", members: "Members", owner: "Owner", memberRole: "Member role", departmentAdmin: "Department admin",
-    positions: "Positions", memberPermissions: "Member permissions", details: "Details",
+    positions: "Positions", memberPermissions: "Member permissions", details: "Details", name: "Name", key: "Key", description: "Description",
   };
   return (locale === "zh" ? zh : en)[value] || value;
 }
 
 const TEXT = {
-  zh: { title: "系统日志", subtitle: "用户、部门、项目及权限等系统治理操作", range: "时间范围", entity: "对象类型", action: "操作类型", actor: "操作者", all: "全部", days7: "近 7 天", days30: "近 30 天", days90: "近 90 天", time: "时间", target: "对象", field: "变更内容", noLogs: "当前筛选条件下没有系统日志", records: "条记录", page: "页" },
-  en: { title: "System Logs", subtitle: "Governance activity for users, departments, projects, and permissions", range: "Date range", entity: "Entity", action: "Action", actor: "Actor", all: "All", days7: "Last 7 days", days30: "Last 30 days", days90: "Last 90 days", time: "Time", target: "Target", field: "Change", noLogs: "No system logs match these filters", records: "records", page: "Page" },
+  zh: { title: "系统日志", range: "时间范围", entity: "对象类型", action: "操作类型", actor: "操作者", all: "全部", days7: "近 7 天", days30: "近 30 天", days90: "近 90 天", time: "时间", target: "对象", field: "变更内容", noLogs: "当前筛选条件下没有系统日志", showing: "显示", to: "到", of: "共", records: "条记录", perPage: "每页", page: "第" },
+  en: { title: "System Logs", range: "Date range", entity: "Entity", action: "Action", actor: "Actor", all: "All", days7: "Last 7 days", days30: "Last 30 days", days90: "Last 90 days", time: "Time", target: "Target", field: "Change", noLogs: "No system logs match these filters", showing: "Showing", to: "to", of: "of", records: "records", perPage: "Per page", page: "Page" },
 } as const;
 
-export default function AdminLogsClient({ locale, logs, actors, filters, page, totalPages, total }: {
+type FilterOption = { value: string; label: string };
+
+function SingleFilterableHeader({
+  label,
+  filterLabel,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  filterLabel: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+}) {
+  const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
+
+  return <div className="flex items-center gap-1">
+    <span>{label}</span>
+    {value !== "all" ? (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="h-5 max-w-24 justify-center bg-background px-1.5"
+              tabIndex={0}
+              aria-label={selectedLabel}
+            >
+              <span className="truncate">{selectedLabel}</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>{selectedLabel}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : null}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={value !== "all" ? "bg-accent text-foreground" : "text-muted-foreground"}
+          aria-label={`${filterLabel}: ${selectedLabel}`}
+          title={`${filterLabel}: ${selectedLabel}`}
+        >
+          <ListFilter />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48">
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options[0] ? <DropdownMenuRadioItem value={options[0].value}>{options[0].label}</DropdownMenuRadioItem> : null}
+          {options.length > 1 ? <DropdownMenuSeparator /> : null}
+          {options.slice(1).map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>;
+}
+
+function MultiFilterableHeader({
+  label,
+  value,
+  options,
+  allLabel,
+  locale,
+  onChange,
+}: {
+  label: string;
+  value: string[];
+  options: FilterOption[];
+  allLabel: string;
+  locale: Locale;
+  onChange: (value: string[]) => void;
+}) {
+  const selectedLabels = options.filter((option) => value.includes(option.value)).map((option) => option.label);
+  const selectionLabel = selectedLabels.join(locale === "zh" ? "、" : ", ") || allLabel;
+  const toggleOption = (optionValue: string, checked: boolean) => {
+    onChange(checked ? [...value, optionValue] : value.filter((item) => item !== optionValue));
+  };
+
+  return <div className="flex items-center gap-1">
+    <span>{label}</span>
+    {value.length > 0 ? (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="h-5 min-w-5 justify-center bg-background px-1.5 tabular-nums"
+              tabIndex={0}
+              aria-label={selectionLabel}
+            >
+              {value.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>{selectionLabel}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : null}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={value.length > 0 ? "bg-accent text-foreground" : "text-muted-foreground"}
+          aria-label={`${label}: ${selectionLabel}`}
+          title={`${label}: ${selectionLabel}`}
+        >
+          <ListFilter />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48">
+        <DropdownMenuCheckboxItem
+          checked={value.length === 0}
+          onCheckedChange={() => onChange([])}
+          onSelect={(event) => event.preventDefault()}
+        >
+          {allLabel}
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        {options.map((option) => (
+          <DropdownMenuCheckboxItem
+            key={option.value}
+            checked={value.includes(option.value)}
+            onCheckedChange={(checked) => toggleOption(option.value, checked === true)}
+            onSelect={(event) => event.preventDefault()}
+          >
+            {option.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>;
+}
+
+export default function AdminLogsClient({ locale, logs, actors, filters, page, pageSize, totalPages, total }: {
   locale: Locale;
   logs: LogRow[];
   actors: Array<{ id: string; name: string }>;
-  filters: { range: string; entityType: string; action: string; actorId: string };
+  filters: { range: string; entityTypes: string[]; actions: string[]; actorIds: string[] };
   page: number;
+  pageSize: number;
   totalPages: number;
   total: number;
 }) {
@@ -47,7 +197,13 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, t
   const searchParams = useSearchParams();
   const update = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (value === "all") params.delete(key); else params.set(key, value);
+    if (value === "all" && key !== "range") params.delete(key); else params.set(key, value);
+    params.set("page", "1");
+    router.push(`/admin/logs?${params.toString()}`);
+  };
+  const updateMulti = (key: string, values: string[]) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (values.length > 0) params.set(key, values.join(",")); else params.delete(key);
     params.set("page", "1");
     router.push(`/admin/logs?${params.toString()}`);
   };
@@ -57,24 +213,73 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, t
     router.push(`/admin/logs?${params.toString()}`);
   };
 
+  const rangeOptions = [
+    { value: "all", label: t.all },
+    { value: "7", label: t.days7 },
+    { value: "30", label: t.days30 },
+    { value: "90", label: t.days90 },
+  ];
+  const actorOptions = actors.map((actor) => ({ value: actor.id, label: actor.name }));
+  const actionOptions = [
+    { value: "CREATE", label: governanceLabel("CREATE", locale) },
+    { value: "UPDATE", label: governanceLabel("UPDATE", locale) },
+    { value: "DELETE", label: governanceLabel("DELETE", locale) },
+  ];
+  const entityOptions = [
+    { value: "USER", label: governanceLabel("USER", locale) },
+    { value: "DEPARTMENT", label: governanceLabel("DEPARTMENT", locale) },
+    { value: "PROJECT", label: governanceLabel("PROJECT", locale) },
+  ];
+  const rangeStart = total > 0 ? (page - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(page * pageSize, total);
+  const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
+
   return <div className="flex flex-col gap-5">
-    <div><h1 className="text-xl font-semibold tracking-tight">{t.title}</h1><p className="mt-1 text-sm text-muted-foreground">{t.subtitle}</p></div>
+    <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
     <Card className="gap-0 overflow-hidden py-0">
-      <div className="grid grid-cols-1 gap-3 border-b bg-muted/35 p-4 sm:grid-cols-2 xl:grid-cols-4">
-        <DropdownField id="log-range" label={t.range} value={filters.range} onChange={(value) => update("range", value)} options={[{ value: "7", label: t.days7 }, { value: "30", label: t.days30 }, { value: "90", label: t.days90 }, { value: "all", label: t.all }]} />
-        <DropdownField id="log-entity" label={t.entity} value={filters.entityType} onChange={(value) => update("entityType", value)} options={[{ value: "all", label: t.all }, { value: "USER", label: locale === "zh" ? "用户" : "User" }, { value: "DEPARTMENT", label: locale === "zh" ? "部门" : "Department" }, { value: "PROJECT", label: locale === "zh" ? "项目" : "Project" }]} />
-        <DropdownField id="log-action" label={t.action} value={filters.action} onChange={(value) => update("action", value)} options={[{ value: "all", label: t.all }, { value: "CREATE", label: locale === "zh" ? "创建" : "Create" }, { value: "UPDATE", label: locale === "zh" ? "更新" : "Update" }, { value: "DELETE", label: locale === "zh" ? "删除" : "Delete" }]} />
-        <DropdownField id="log-actor" label={t.actor} value={filters.actorId} onChange={(value) => update("actorId", value)} options={[{ value: "all", label: t.all }, ...actors.map((actor) => ({ value: actor.id, label: actor.name }))]} />
+      <Table className="min-w-[860px] table-auto">
+        <TableHeader className="sticky top-0 z-10 bg-muted/50">
+          <TableRow className="hover:bg-muted/50">
+            <TableHead className="w-[18%] pl-6"><SingleFilterableHeader label={t.time} filterLabel={t.range} value={filters.range} options={rangeOptions} onChange={(value) => update("range", value)} /></TableHead>
+            <TableHead className="w-[18%]"><MultiFilterableHeader label={t.actor} value={filters.actorIds} options={actorOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("actorId", value)} /></TableHead>
+            <TableHead className="w-[12%]"><MultiFilterableHeader label={t.action} value={filters.actions} options={actionOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("action", value)} /></TableHead>
+            <TableHead className="w-[12%]"><MultiFilterableHeader label={t.entity} value={filters.entityTypes} options={entityOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("entityType", value)} /></TableHead>
+            <TableHead className="w-[24%]">{t.target}</TableHead>
+            <TableHead className="w-[16%]">{t.field}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>{logs.map((log) => <TableRow key={log.id}><TableCell className="pl-6 text-xs whitespace-nowrap text-muted-foreground">{formatFullDateTime(log.createdAt, locale)}</TableCell><TableCell className="font-medium">{log.actorName}</TableCell><TableCell><Badge variant="outline" className={log.action === "DELETE" ? "border-destructive/30 bg-transparent text-destructive/80" : undefined}>{governanceLabel(log.action, locale)}</Badge></TableCell><TableCell>{governanceLabel(log.entityType, locale)}</TableCell><TableCell>{log.targetName}</TableCell><TableCell className="text-muted-foreground">{log.field ? governanceLabel(log.field, locale) : null}</TableCell></TableRow>)}
+          {logs.length === 0 ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="h-40 text-center text-muted-foreground"><History className="mx-auto mb-3 size-8 opacity-35" />{t.noLogs}</TableCell></TableRow> : null}
+        </TableBody>
+      </Table>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
+        <div className="text-muted-foreground">
+          {t.showing} <span className="font-medium text-foreground">{rangeStart}</span> {t.to}{" "}
+          <span className="font-medium text-foreground">{rangeEnd}</span> {t.of}{" "}
+          <span className="font-medium text-foreground">{total}</span> {t.records}
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span>{t.perPage}</span>
+            <DropdownField
+              id="log-page-size"
+              label={t.perPage}
+              value={String(pageSize)}
+              onChange={(value) => update("pageSize", value)}
+              options={pageSizeOptions}
+              hideLabel
+              className="w-20"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ArrowLeft /></Button>
+            <span className="px-1 font-medium leading-none text-foreground">
+              {locale === "zh" ? `${t.page} ${page} / ${totalPages} 页` : `${t.page} ${page} of ${totalPages}`}
+            </span>
+            <Button type="button" variant="outline" size="icon-sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}><ArrowRight /></Button>
+          </div>
+        </div>
       </div>
-      <div className="overflow-x-auto">
-        <Table className="min-w-[860px]">
-          <TableHeader className="bg-muted/50"><TableRow><TableHead className="pl-6">{t.time}</TableHead><TableHead>{t.actor}</TableHead><TableHead>{t.action}</TableHead><TableHead>{t.entity}</TableHead><TableHead>{t.target}</TableHead><TableHead>{t.field}</TableHead></TableRow></TableHeader>
-          <TableBody>{logs.map((log) => <TableRow key={log.id}><TableCell className="pl-6 text-xs text-muted-foreground">{formatFullDateTime(log.createdAt, locale)}</TableCell><TableCell className="font-medium">{log.actorName}</TableCell><TableCell><Badge variant={log.action === "DELETE" ? "destructive" : "outline"}>{governanceLabel(log.action, locale)}</Badge></TableCell><TableCell>{governanceLabel(log.entityType, locale)}</TableCell><TableCell>{log.targetName}</TableCell><TableCell className="text-muted-foreground">{governanceLabel(log.field, locale)}</TableCell></TableRow>)}
-            {logs.length === 0 ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="h-40 text-center text-muted-foreground"><History className="mx-auto mb-3 size-8 opacity-35" />{t.noLogs}</TableCell></TableRow> : null}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm"><span className="text-muted-foreground">{total} {t.records}</span><div className="flex items-center gap-2"><Button variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ArrowLeft /></Button><span className="font-medium">{t.page} {page} / {totalPages}</span><Button variant="outline" size="icon-sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}><ArrowRight /></Button></div></div>
     </Card>
   </div>;
 }
