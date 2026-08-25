@@ -17,7 +17,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  UserRound,
   X,
 } from "lucide-react";
 
@@ -90,7 +89,9 @@ const TEXT = {
     title: "Users",
     addUser: "User",
     search: "Search name or email",
+    searchFilter: "Search",
     allDepartments: "All departments",
+    unknownDepartment: "Unknown department",
     name: "Name",
     email: "Email",
     departments: "Departments",
@@ -132,12 +133,15 @@ const TEXT = {
     resetFailed: "Failed to reset password",
     sortAscending: "Sort ascending",
     sortDescending: "Sort descending",
+    removeFilter: "Remove filter",
   },
   zh: {
     title: "用户",
     addUser: "用户",
     search: "搜索姓名或邮箱",
+    searchFilter: "搜索",
     allDepartments: "全部部门",
+    unknownDepartment: "未知部门",
     name: "姓名",
     email: "邮箱",
     departments: "部门",
@@ -179,6 +183,7 @@ const TEXT = {
     resetFailed: "重置密码失败",
     sortAscending: "升序排列",
     sortDescending: "降序排列",
+    removeFilter: "取消筛选",
   },
 } as const;
 
@@ -241,9 +246,8 @@ export default function AdminUsersClient({
   const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
   const rangeStart = totalUsers > 0 ? (page - 1) * pageSize + 1 : 0;
   const rangeEnd = Math.min(page * pageSize, totalUsers);
-  const selectedDepartmentNames = departments
-    .filter((department) => departmentIds.includes(department.id))
-    .map((department) => department.name);
+  const departmentNamesById = new Map(departments.map((department) => [department.id, department.name]));
+  const selectedDepartmentNames = departmentIds.map((departmentId) => departmentNamesById.get(departmentId) || t.unknownDepartment);
   const activityStatusLabel = {
     all: t.allActivity,
     inactive30: t.inactive30,
@@ -312,6 +316,14 @@ export default function AdminUsersClient({
       page: "1",
     });
   };
+  const filterSummary = [
+    ...(search ? [{ key: "search", label: t.searchFilter, value: search, clear: () => {
+      setQuery("");
+      updateParams({ search: null, page: "1" });
+    } }] : []),
+    ...(departmentIds.length > 0 ? [{ key: "departmentIds", label: t.departments, value: selectedDepartmentNames.join(locale === "zh" ? "、" : ", "), clear: () => updateParams({ departmentIds: null, departmentId: null, page: "1" }) }] : []),
+    ...(activityStatus !== "all" ? [{ key: "activityStatus", label: t.activity, value: activityStatusLabel, clear: () => updateParams({ activityStatus: null, page: "1" }) }] : []),
+  ];
 
   const translateCreateUserError = (message: string | undefined) => {
     if (!message) return t.createFailed;
@@ -428,6 +440,25 @@ export default function AdminUsersClient({
           {errorMsg}
         </div>
       ) : null}
+
+      {filterSummary.length > 0 ? <div className="flex flex-wrap gap-2 text-sm">
+        {filterSummary.map((filter) => (
+          <div key={filter.key} className="inline-flex max-w-full items-start rounded-md border bg-background text-foreground shadow-xs">
+            <span className="min-w-0 break-words px-2.5 py-1">
+              <span className="text-muted-foreground">{filter.label}：</span>{filter.value}
+            </span>
+            <button
+              type="button"
+              className="m-0.5 ml-0 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`${t.removeFilter}：${filter.label}`}
+              title={`${t.removeFilter}：${filter.label}`}
+              onClick={filter.clear}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div> : null}
 
       <Card className="gap-0 overflow-hidden py-0">
           <Table className="min-w-[900px] table-auto">
@@ -650,10 +681,7 @@ export default function AdminUsersClient({
               })}
               {users.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">
-                    <UserRound className="mx-auto mb-3 size-8 opacity-35" />
-                    {t.noUsers}
-                  </TableCell>
+                  <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">{t.noUsers}</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>

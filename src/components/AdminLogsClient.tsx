@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, History, ListFilter } from "lucide-react";
+import { ArrowLeft, ArrowRight, ListFilter, X } from "lucide-react";
 
 import { DropdownField } from "@/components/DropdownField";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +39,8 @@ function governanceLabel(value: string | null, locale: Locale) {
 }
 
 const TEXT = {
-  zh: { title: "系统日志", range: "时间范围", entity: "对象类型", action: "操作类型", actor: "操作者", all: "全部", days7: "近 7 天", days30: "近 30 天", days90: "近 90 天", time: "时间", target: "对象", field: "变更内容", noLogs: "当前筛选条件下没有系统日志", showing: "显示", to: "到", of: "共", records: "条记录", perPage: "每页", page: "第" },
-  en: { title: "System Logs", range: "Date range", entity: "Entity", action: "Action", actor: "Actor", all: "All", days7: "Last 7 days", days30: "Last 30 days", days90: "Last 90 days", time: "Time", target: "Target", field: "Change", noLogs: "No system logs match these filters", showing: "Showing", to: "to", of: "of", records: "records", perPage: "Per page", page: "Page" },
+  zh: { title: "系统日志", range: "时间范围", entity: "对象类型", action: "操作类型", actor: "操作者", unknownActor: "未知操作者", all: "全部", days7: "近 7 天", days30: "近 30 天", days90: "近 90 天", time: "时间", target: "对象", field: "变更内容", removeFilter: "取消筛选", noLogs: "当前筛选条件下没有系统日志", showing: "显示", to: "到", of: "共", records: "条记录", perPage: "每页", page: "第" },
+  en: { title: "System Logs", range: "Date range", entity: "Entity", action: "Action", actor: "Actor", unknownActor: "Unknown actor", all: "All", days7: "Last 7 days", days30: "Last 30 days", days90: "Last 90 days", time: "Time", target: "Target", field: "Change", removeFilter: "Remove filter", noLogs: "No system logs match these filters", showing: "Showing", to: "to", of: "of", records: "records", perPage: "Per page", page: "Page" },
 } as const;
 
 type FilterOption = { value: string; label: string };
@@ -212,7 +212,6 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, p
     params.set("page", String(next));
     router.push(`/admin/logs?${params.toString()}`);
   };
-
   const rangeOptions = [
     { value: "all", label: t.all },
     { value: "7", label: t.days7 },
@@ -220,6 +219,7 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, p
     { value: "90", label: t.days90 },
   ];
   const actorOptions = actors.map((actor) => ({ value: actor.id, label: actor.name }));
+  const actorLabelsById = new Map(actorOptions.map((option) => [option.value, option.label]));
   const actionOptions = [
     { value: "CREATE", label: governanceLabel("CREATE", locale) },
     { value: "UPDATE", label: governanceLabel("UPDATE", locale) },
@@ -233,9 +233,33 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, p
   const rangeStart = total > 0 ? (page - 1) * pageSize + 1 : 0;
   const rangeEnd = Math.min(page * pageSize, total);
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
+  const filterSummary = [
+    ...(filters.range !== "all" ? [{ key: "range", label: t.time, value: rangeOptions.find((option) => option.value === filters.range)?.label || filters.range, clear: () => update("range", "all") }] : []),
+    ...(filters.actorIds.length > 0 ? [{ key: "actorId", label: t.actor, value: filters.actorIds.map((actorId) => actorLabelsById.get(actorId) || t.unknownActor).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("actorId", []) }] : []),
+    ...(filters.actions.length > 0 ? [{ key: "action", label: t.action, value: actionOptions.filter((option) => filters.actions.includes(option.value)).map((option) => option.label).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("action", []) }] : []),
+    ...(filters.entityTypes.length > 0 ? [{ key: "entityType", label: t.entity, value: entityOptions.filter((option) => filters.entityTypes.includes(option.value)).map((option) => option.label).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("entityType", []) }] : []),
+  ];
 
   return <div className="flex flex-col gap-5">
     <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
+    {filterSummary.length > 0 ? <div className="flex flex-wrap gap-2 text-sm">
+      {filterSummary.map((filter) => (
+        <div key={filter.key} className="inline-flex max-w-full items-start rounded-md border bg-background text-foreground shadow-xs">
+          <span className="min-w-0 break-words px-2.5 py-1">
+            <span className="text-muted-foreground">{filter.label}：</span>{filter.value || t.all}
+          </span>
+          <button
+            type="button"
+            className="m-0.5 ml-0 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`${t.removeFilter}：${filter.label}`}
+            title={`${t.removeFilter}：${filter.label}`}
+            onClick={filter.clear}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ))}
+    </div> : null}
     <Card className="gap-0 overflow-hidden py-0">
       <Table className="min-w-[860px] table-auto">
         <TableHeader className="sticky top-0 z-10 bg-muted/50">
@@ -249,7 +273,7 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, p
           </TableRow>
         </TableHeader>
         <TableBody>{logs.map((log) => <TableRow key={log.id}><TableCell className="pl-6 text-xs whitespace-nowrap text-muted-foreground">{formatFullDateTime(log.createdAt, locale)}</TableCell><TableCell className="font-medium">{log.actorName}</TableCell><TableCell><Badge variant="outline" className={log.action === "DELETE" ? "border-destructive/30 bg-transparent text-destructive/80" : undefined}>{governanceLabel(log.action, locale)}</Badge></TableCell><TableCell>{governanceLabel(log.entityType, locale)}</TableCell><TableCell>{log.targetName}</TableCell><TableCell className="text-muted-foreground">{log.field ? governanceLabel(log.field, locale) : null}</TableCell></TableRow>)}
-          {logs.length === 0 ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="h-40 text-center text-muted-foreground"><History className="mx-auto mb-3 size-8 opacity-35" />{t.noLogs}</TableCell></TableRow> : null}
+          {logs.length === 0 ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">{t.noLogs}</TableCell></TableRow> : null}
         </TableBody>
       </Table>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
