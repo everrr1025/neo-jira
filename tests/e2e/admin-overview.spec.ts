@@ -111,3 +111,33 @@ test("opens governance logs and activity-filtered users", async ({ page }) => {
   await page.getByRole("button", { name: "取消筛选：部门" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("departmentIds")).toBeNull();
 });
+
+test("filters governance logs by exact target", async ({ page }) => {
+  await page.goto("/admin/logs?range=all");
+  const targetHeader = page.getByRole("columnheader").filter({ hasText: "对象" });
+  await targetHeader.getByRole("button", { name: "对象: 全部" }).click();
+  await page.getByPlaceholder("搜索用户、部门或项目").fill(adminEmail);
+  const adminTarget = page.getByRole("menuitem").filter({ hasText: adminEmail }).first();
+  await expect(adminTarget).toBeVisible();
+  await adminTarget.click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetType")).toBe("USER");
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetId")).not.toBeNull();
+  await expect(page.getByText(new RegExp(`对象：.+（用户 · ${adminEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}）`))).toBeVisible();
+
+  await page.getByRole("button", { name: "取消筛选：对象" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetId")).toBeNull();
+  const firstLogTarget = page.locator("tbody tr").first().locator("td").nth(4).getByRole("button");
+  await expect(firstLogTarget).toBeVisible();
+  await firstLogTarget.click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetId")).not.toBeNull();
+
+  await page.goto("/admin/users");
+  await page.locator("tbody tr").first().getByRole("link", { name: "日志", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetType")).toBe("USER");
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("all");
+
+  await page.goto("/admin/departments");
+  await page.locator("tbody tr").first().getByRole("link", { name: "日志", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("targetType")).toBe("DEPARTMENT");
+  await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("all");
+});

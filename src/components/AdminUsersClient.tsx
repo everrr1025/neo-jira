@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
@@ -103,6 +104,7 @@ const TEXT = {
     inactive90: "Inactive 90+ days",
     unknownActivity: "No activity record",
     actions: "Actions",
+    viewLogs: "Logs",
     createTitle: "Create user",
     fullName: "Full name",
     password: "Password",
@@ -153,6 +155,7 @@ const TEXT = {
     inactive90: "超过 90 天未活跃",
     unknownActivity: "暂无活动记录",
     actions: "操作",
+    viewLogs: "日志",
     createTitle: "创建用户",
     fullName: "姓名",
     password: "密码",
@@ -464,9 +467,9 @@ export default function AdminUsersClient({
           <Table className="min-w-[900px] table-auto">
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="w-[18%] pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
-                <TableHead className="w-[24%]">{renderSortableHeader(t.email, "email")}</TableHead>
-                <TableHead className="w-[21%]">
+                <TableHead className="w-[24%] pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
+                <TableHead className="w-[22%]">{renderSortableHeader(t.email, "email")}</TableHead>
+                <TableHead className="w-[19%]">
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
                     {departmentIds.length > 0 ? (
@@ -526,7 +529,7 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-[20%]">
+                <TableHead className="w-[17%]">
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.lastActive, "lastActiveAt")}
                     {activityStatus !== "all" ? (
@@ -576,7 +579,7 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-[17%]">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
+                <TableHead className="w-[14%]">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
                 <TableHead className="w-px px-4 text-left whitespace-nowrap">{t.actions}</TableHead>
               </TableRow>
             </TableHeader>
@@ -609,9 +612,9 @@ export default function AdminUsersClient({
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
                           {getDisplayName(user).charAt(0).toUpperCase()}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 font-medium text-foreground">
-                            <span className="truncate">{getDisplayName(user)}</span>
+                        <div className="min-w-0 max-w-[180px]">
+                          <div className="flex min-w-0 items-center gap-2 font-medium text-foreground">
+                            <span className="min-w-0 truncate" title={getDisplayName(user)}>{getDisplayName(user)}</span>
                             {user.role === "ADMIN" ? (
                               <Badge variant="secondary">{t.adminBadge}</Badge>
                             ) : null}
@@ -626,8 +629,8 @@ export default function AdminUsersClient({
                       {user.departments.length > 0 ? (
                         <div className="flex min-w-0 gap-1.5 overflow-hidden">
                           {user.departments.map((department) => (
-                            <Badge key={department.id} variant="outline" className="min-w-0 max-w-full">
-                              <span className="truncate">{department.name}</span>
+                            <Badge key={department.id} variant="outline" className="min-w-0 max-w-[160px]">
+                              <span className="truncate" title={department.name}>{department.name}</span>
                             </Badge>
                           ))}
                         </div>
@@ -636,7 +639,14 @@ export default function AdminUsersClient({
                     <TableCell className="text-xs text-muted-foreground">
                       <span className="block truncate">
                         {user.lastActiveAt
-                          ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US")
+                          ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                            })
                           : null}
                       </span>
                     </TableCell>
@@ -646,6 +656,11 @@ export default function AdminUsersClient({
                     <TableCell className="w-px px-4 text-right whitespace-nowrap">
                       <div className="ml-auto inline-flex w-max max-w-full flex-col items-stretch gap-1 text-left">
                         <div className="inline-flex items-center gap-2">
+                          <Button asChild variant="outline" size="xs">
+                            <Link href={`/admin/logs?range=all&targetType=USER&targetId=${encodeURIComponent(user.id)}`}>
+                              {t.viewLogs}
+                            </Link>
+                          </Button>
                           <Button
                             type="button"
                             variant="outline"

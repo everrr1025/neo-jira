@@ -341,6 +341,10 @@ model AuditLog {
   newValue   String?
   metadata   String?
   actorId    String?
+  actorNameSnapshot   String?
+  actorEmailSnapshot String?
+  targetNameSnapshot String?
+  targetKeySnapshot  String?
   actor      User?    @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
 

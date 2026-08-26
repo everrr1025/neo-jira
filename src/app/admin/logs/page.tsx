@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 const ENTITY_TYPES = ["USER", "DEPARTMENT", "PROJECT"];
 const ACTION_TYPES = ["CREATE", "UPDATE", "DELETE"];
+type TargetType = "USER" | "DEPARTMENT" | "PROJECT";
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -32,6 +33,34 @@ function parseMetadata(value: string | null) {
   try { return JSON.parse(value) as Record<string, string>; } catch { return {} as Record<string, string>; }
 }
 
+async function resolveTarget(type: TargetType, id: string) {
+  if (type === "USER") {
+    const user = await prisma.user.findUnique({ where: { id }, select: { name: true, email: true } });
+    if (user) return { type, id, name: user.name || user.email, key: user.email };
+  }
+  if (type === "DEPARTMENT") {
+    const department = await prisma.department.findUnique({ where: { id }, select: { name: true, key: true } });
+    if (department) return { type, id, name: department.name, key: department.key };
+  }
+  if (type === "PROJECT") {
+    const project = await prisma.project.findUnique({ where: { id }, select: { name: true, key: true } });
+    if (project) return { type, id, name: project.name, key: project.key };
+  }
+
+  const latestLog = await prisma.auditLog.findFirst({
+    where: { entityType: type, entityId: id },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { targetNameSnapshot: true, targetKeySnapshot: true, metadata: true },
+  });
+  const metadata = parseMetadata(latestLog?.metadata || null);
+  return {
+    type,
+    id,
+    name: latestLog?.targetNameSnapshot || metadata.name || metadata.email || metadata.key || id,
+    key: latestLog?.targetKeySnapshot || metadata.key || metadata.email || null,
+  };
+}
+
 export default async function AdminLogsPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
@@ -46,24 +75,31 @@ export default async function AdminLogsPage({ searchParams }: {
   const entityTypes = selectedValues(params.entityType, ENTITY_TYPES);
   const actions = selectedValues(params.action, ACTION_TYPES);
   const actorIds = selectedValues(params.actorId);
+  const requestedTargetType = first(params.targetType);
+  const targetType = ENTITY_TYPES.includes(requestedTargetType || "") ? requestedTargetType as TargetType : null;
+  const targetId = targetType ? (first(params.targetId) || "").trim() : "";
+  const hasTargetFilter = Boolean(targetType && targetId);
   const requestedPage = Math.max(1, Number(first(params.page)) || 1);
   const requestedPageSize = Number(first(params.pageSize));
   const pageSize = [10, 20, 50].includes(requestedPageSize) ? requestedPageSize : 20;
 
   const where: Prisma.AuditLogWhereInput = {
-    entityType: { in: entityTypes.length > 0 ? entityTypes : ENTITY_TYPES },
+    ...(hasTargetFilter
+      ? { entityType: targetType!, entityId: targetId }
+      : { entityType: { in: entityTypes.length > 0 ? entityTypes : ENTITY_TYPES } }),
     ...(actions.length > 0 ? { action: { in: actions } } : {}),
     ...(actorIds.length > 0 ? { actorId: { in: actorIds } } : {}),
     ...(range !== "all" ? { createdAt: { gte: getInactiveCutoff(Number(range)) } } : {}),
   };
 
-  const [total, actors] = await Promise.all([
+  const [total, actors, target] = await Promise.all([
     prisma.auditLog.count({ where }),
     prisma.user.findMany({
       where: { auditLogs: { some: { entityType: { in: ENTITY_TYPES } } } },
       select: { id: true, name: true, email: true },
       orderBy: [{ name: "asc" }, { email: "asc" }],
     }),
+    hasTargetFilter ? resolveTarget(targetType!, targetId) : Promise.resolve(null),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -75,42 +111,30 @@ export default async function AdminLogsPage({ searchParams }: {
     take: pageSize,
     select: {
       id: true, entityId: true, entityType: true, action: true, field: true, metadata: true, createdAt: true,
+      actorNameSnapshot: true, actorEmailSnapshot: true, targetNameSnapshot: true, targetKeySnapshot: true,
       actor: { select: { id: true, name: true, email: true } },
     },
   });
-
-  const departments = await prisma.department.findMany({
-    where: {
-      id: {
-        in: logs.filter((log) => log.entityType === "DEPARTMENT").map((log) => log.entityId),
-      },
-    },
-    select: { id: true, name: true, key: true },
-  });
-  const departmentsById = new Map(departments.map((department) => [department.id, department]));
 
   return <AdminLogsClient
     locale={locale}
     logs={logs.map((log) => {
       const metadata = parseMetadata(log.metadata);
-      const department = log.entityType === "DEPARTMENT" ? departmentsById.get(log.entityId) : undefined;
-      const departmentName = metadata.name || department?.name;
-      const departmentKey = metadata.key || department?.key;
-      const targetName = log.entityType === "DEPARTMENT" && (departmentName || departmentKey)
-        ? [departmentName, departmentKey ? `(${departmentKey})` : null].filter(Boolean).join(" ")
-        : metadata.name || metadata.email || metadata.key || metadata.userId || log.entityId;
+      const targetName = log.targetNameSnapshot || metadata.name || metadata.email || metadata.key || log.entityId;
       return {
         id: log.id,
+        entityId: log.entityId,
         entityType: log.entityType,
         action: log.action,
         field: log.field,
         targetName,
-        actorName: log.actor?.name || log.actor?.email || "System",
+        targetKey: log.targetKeySnapshot || metadata.email || metadata.key || null,
+        actorName: log.actor?.name || log.actor?.email || log.actorNameSnapshot || log.actorEmailSnapshot || "System",
         createdAt: log.createdAt.toISOString(),
       };
     })}
     actors={actors.map((actor) => ({ id: actor.id, name: actor.name || actor.email }))}
-    filters={{ range, entityTypes, actions, actorIds }}
+    filters={{ range, entityTypes, actions, actorIds, target }}
     page={page}
     pageSize={pageSize}
     totalPages={totalPages}

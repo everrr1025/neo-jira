@@ -65,9 +65,43 @@ function normalizeDescriptionValue(value: string | null) {
 }
 
 export async function createAuditLogs(db: AuditDbClient, entries: AuditLogInput[]) {
-  const records = entries
-    .filter((entry) => entry.entityId)
-    .map((entry) => ({
+  const validEntries = entries.filter((entry) => entry.entityId);
+  if (validEntries.length === 0) return;
+
+  const actorIds = Array.from(new Set(validEntries.flatMap((entry) => entry.actorId ? [entry.actorId] : [])));
+  const targetUserIds = Array.from(new Set(validEntries.filter((entry) => entry.entityType === "USER").map((entry) => entry.entityId)));
+  const targetDepartmentIds = Array.from(new Set(validEntries.filter((entry) => entry.entityType === "DEPARTMENT").map((entry) => entry.entityId)));
+  const targetProjectIds = Array.from(new Set(validEntries.filter((entry) => entry.entityType === "PROJECT").map((entry) => entry.entityId)));
+  const [actors, targetUsers, targetDepartments, targetProjects] = await Promise.all([
+    actorIds.length > 0
+      ? db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true, email: true } })
+      : Promise.resolve([]),
+    targetUserIds.length > 0
+      ? db.user.findMany({ where: { id: { in: targetUserIds } }, select: { id: true, name: true, email: true } })
+      : Promise.resolve([]),
+    targetDepartmentIds.length > 0
+      ? db.department.findMany({ where: { id: { in: targetDepartmentIds } }, select: { id: true, name: true, key: true } })
+      : Promise.resolve([]),
+    targetProjectIds.length > 0
+      ? db.project.findMany({ where: { id: { in: targetProjectIds } }, select: { id: true, name: true, key: true } })
+      : Promise.resolve([]),
+  ]);
+  const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+  const targetUsersById = new Map(targetUsers.map((user) => [user.id, user]));
+  const targetDepartmentsById = new Map(targetDepartments.map((department) => [department.id, department]));
+  const targetProjectsById = new Map(targetProjects.map((project) => [project.id, project]));
+
+  const records = validEntries.map((entry) => {
+    const actor = entry.actorId ? actorsById.get(entry.actorId) : undefined;
+    const targetUser = entry.entityType === "USER" ? targetUsersById.get(entry.entityId) : undefined;
+    const targetDepartment = entry.entityType === "DEPARTMENT" ? targetDepartmentsById.get(entry.entityId) : undefined;
+    const targetProject = entry.entityType === "PROJECT" ? targetProjectsById.get(entry.entityId) : undefined;
+    const targetName = targetUser?.name || targetUser?.email || targetDepartment?.name || targetProject?.name
+      || entry.metadata?.name || entry.metadata?.email || null;
+    const targetKey = targetUser?.email || targetDepartment?.key || targetProject?.key
+      || entry.metadata?.key || entry.metadata?.email || null;
+
+    return {
       issueId: entry.issueId ?? null,
       projectId: entry.projectId ?? null,
       entityType: entry.entityType,
@@ -78,9 +112,12 @@ export async function createAuditLogs(db: AuditDbClient, entries: AuditLogInput[
       newValue: entry.newValue ?? null,
       metadata: serializeAuditMetadata(entry.metadata),
       actorId: entry.actorId ?? null,
-    }));
-
-  if (records.length === 0) return;
+      actorNameSnapshot: actor?.name || actor?.email || null,
+      actorEmailSnapshot: actor?.email || null,
+      targetNameSnapshot: targetName,
+      targetKeySnapshot: targetKey,
+    };
+  });
 
   await db.auditLog.createMany({
     data: records,

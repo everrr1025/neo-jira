@@ -73,22 +73,7 @@ export async function deleteProjectData(
       where: { projectId: { in: resolvedProjectIds } },
     })
   ).count;
-  const deletedAuditLogs = (
-    await db.auditLog.deleteMany({
-      where: {
-        OR: [
-          { projectId: { in: resolvedProjectIds } },
-          { entityType: "PROJECT", entityId: { in: resolvedProjectIds } },
-          ...(issueIds.length > 0
-            ? [
-                { issueId: { in: issueIds } },
-                { entityType: "ISSUE", entityId: { in: issueIds } },
-              ]
-            : []),
-        ],
-      },
-    })
-  ).count;
+  const deletedAuditLogs = 0;
   const deletedIssues = (
     await db.issue.deleteMany({
       where: { projectId: { in: resolvedProjectIds } },

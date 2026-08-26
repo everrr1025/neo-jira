@@ -77,6 +77,7 @@ const TEXT = {
     projects: "Projects",
     createdAt: "Created",
     actions: "Actions",
+    viewLogs: "Logs",
     manage: "Members",
     edit: "Edit",
     delete: "Delete",
@@ -122,6 +123,7 @@ const TEXT = {
     projects: "项目",
     createdAt: "创建时间",
     actions: "操作",
+    viewLogs: "日志",
     manage: "成员",
     edit: "编辑",
     delete: "删除",
@@ -366,13 +368,13 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 return (
                   <TableRow key={department.id}>
                     <TableCell className="pl-6">
-                      <div>
-                        <div className="font-medium text-foreground">{department.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{department.key}</div>
+                      <div className="max-w-[220px]">
+                        <div className="truncate font-medium text-foreground" title={department.name}>{department.name}</div>
+                        <div className="truncate font-mono text-xs text-muted-foreground" title={department.key}>{department.key}</div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {head ? <span className="font-medium text-foreground">{displayMember(head)}</span> : null}
+                      {head ? <span className="block max-w-[180px] truncate font-medium text-foreground" title={displayMember(head)}>{displayMember(head)}</span> : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
@@ -389,6 +391,11 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                     </TableCell>
                     <TableCell className="pl-0 text-left">
                       <div className="flex items-center justify-start gap-2">
+                        <Button asChild variant="outline" size="xs">
+                          <Link href={`/admin/logs?range=all&targetType=DEPARTMENT&targetId=${encodeURIComponent(department.id)}`}>
+                            {t.viewLogs}
+                          </Link>
+                        </Button>
                         <Button asChild variant="outline" size="xs">
                           <Link href={`/admin/departments/${department.id}/members`}>
                             {t.manage}
