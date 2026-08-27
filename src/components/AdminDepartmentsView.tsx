@@ -10,13 +10,16 @@ import {
   ArrowRight,
   ArrowUp,
   Loader2,
+  Pencil,
   Plus,
   Search,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 
 import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
+import LogNavIcon from "@/components/LogNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -349,8 +352,15 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
       ) : null}
 
       <Card className="gap-0 overflow-hidden py-0">
-        <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[940px] table-fixed">
+            <colgroup>
+              <col className="w-[27%]" />
+              <col className="w-[21%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
                 <TableHead className="pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
@@ -358,7 +368,9 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 <TableHead>{renderSortableHeader(t.members, "members")}</TableHead>
                 <TableHead>{renderSortableHeader(t.projects, "projects")}</TableHead>
                 <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
-                <TableHead className="w-px pl-0 text-left">{t.actions}</TableHead>
+                <TableHead className="px-4 text-left">
+                  <div className="ml-auto w-[114px] text-left">{t.actions}</div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -368,13 +380,13 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 return (
                   <TableRow key={department.id}>
                     <TableCell className="pl-6">
-                      <div className="max-w-[220px]">
+                      <div className="min-w-0">
                         <div className="truncate font-medium text-foreground" title={department.name}>{department.name}</div>
                         <div className="truncate font-mono text-xs text-muted-foreground" title={department.key}>{department.key}</div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {head ? <span className="block max-w-[180px] truncate font-medium text-foreground" title={displayMember(head)}>{displayMember(head)}</span> : null}
+                      {head ? <span className="block truncate font-medium text-foreground" title={displayMember(head)}>{displayMember(head)}</span> : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
@@ -389,31 +401,41 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(department.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
                     </TableCell>
-                    <TableCell className="pl-0 text-left">
-                      <div className="flex items-center justify-start gap-2">
-                        <Button asChild variant="outline" size="xs">
-                          <Link href={`/admin/logs?range=all&targetType=DEPARTMENT&targetId=${encodeURIComponent(department.id)}`}>
-                            {t.viewLogs}
+                    <TableCell className="px-4 text-left">
+                      <div className="ml-auto flex w-[114px] items-center gap-1.5">
+                        <Button asChild variant="outline" size="icon-xs">
+                          <Link
+                            href={`/admin/logs?range=all&targetType=DEPARTMENT&targetId=${encodeURIComponent(department.id)}`}
+                            aria-label={t.viewLogs}
+                            title={t.viewLogs}
+                          >
+                            <LogNavIcon className="size-3" />
                           </Link>
                         </Button>
-                        <Button asChild variant="outline" size="xs">
-                          <Link href={`/admin/departments/${department.id}/members`}>
-                            {t.manage}
+                        <Button asChild variant="outline" size="icon-xs">
+                          <Link
+                            href={`/admin/departments/${department.id}/members`}
+                            aria-label={t.manage}
+                            title={t.manage}
+                          >
+                            <UserRound />
                           </Link>
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          size="xs"
+                          size="icon-xs"
                           onClick={() => openEditDialog(department)}
                           disabled={isPending}
+                          aria-label={t.edit}
+                          title={t.edit}
                         >
-                          {t.edit}
+                          <Pencil />
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          size="xs"
+                          size="icon-xs"
                           onClick={() => {
                             clearListError();
                             clearDeleteError();
@@ -422,9 +444,10 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                           }}
                           disabled={isPending}
                           className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={t.delete}
+                          title={t.delete}
                         >
                           <Trash2 />
-                          {t.delete}
                         </Button>
                       </div>
                     </TableCell>
@@ -440,7 +463,6 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
               ) : null}
             </TableBody>
           </Table>
-        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
           <div className="text-muted-foreground">

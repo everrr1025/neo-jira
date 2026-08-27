@@ -124,6 +124,16 @@ test("filters governance logs by exact target", async ({ page }) => {
   await expect.poll(() => new URL(page.url()).searchParams.get("targetId")).not.toBeNull();
   await expect(page.getByText(new RegExp(`对象：.+（用户 · ${adminEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}）`))).toBeVisible();
 
+  await page.getByRole("button", { name: "日志管理" }).click();
+  const cleanupDialog = page.getByRole("dialog", { name: "日志清理" });
+  await expect(cleanupDialog).toBeVisible();
+  await expect(cleanupDialog.getByText(/只会删除超过保留期限的用户、部门和项目治理日志/)).toBeVisible();
+  await expect(cleanupDialog.getByText("2 天", { exact: true })).toBeVisible();
+  await cleanupDialog.locator('button[aria-pressed="false"]').click();
+  await expect(cleanupDialog.getByText(/当前对象仍然存在/)).toBeVisible();
+  await expect(cleanupDialog.getByLabel("输入 DELETE 以确认永久删除")).toBeDisabled();
+  await cleanupDialog.getByRole("button", { name: "取消", exact: true }).click();
+
   await page.getByRole("button", { name: "取消筛选：对象" }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("targetId")).toBeNull();
   const firstLogTarget = page.locator("tbody tr").first().locator("td").nth(4).getByRole("button");

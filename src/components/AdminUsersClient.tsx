@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { createUser, deleteUser, resetUserPassword } from "@/app/actions/admin";
+import LogNavIcon from "@/components/LogNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -464,12 +465,20 @@ export default function AdminUsersClient({
       </div> : null}
 
       <Card className="gap-0 overflow-hidden py-0">
-          <Table className="min-w-[900px] table-auto">
+          <Table className="min-w-[960px] table-fixed">
+            <colgroup>
+              <col className="w-[23%]" />
+              <col className="w-[20%]" />
+              <col className="w-[16%]" />
+              <col className="w-[17%]" />
+              <col className="w-[11%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="w-[24%] pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
-                <TableHead className="w-[22%]">{renderSortableHeader(t.email, "email")}</TableHead>
-                <TableHead className="w-[19%]">
+                <TableHead className="pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
+                <TableHead>{renderSortableHeader(t.email, "email")}</TableHead>
+                <TableHead>
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
                     {departmentIds.length > 0 ? (
@@ -529,7 +538,7 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-[17%]">
+                <TableHead>
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.lastActive, "lastActiveAt")}
                     {activityStatus !== "all" ? (
@@ -579,8 +588,10 @@ export default function AdminUsersClient({
                     </DropdownMenu>
                   </div>
                 </TableHead>
-                <TableHead className="w-[14%]">{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
-                <TableHead className="w-px px-4 text-left whitespace-nowrap">{t.actions}</TableHead>
+                <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
+                <TableHead className="px-4 text-left whitespace-nowrap">
+                  <div className="ml-auto w-[88px] text-left">{t.actions}</div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -588,20 +599,31 @@ export default function AdminUsersClient({
                 const isHead = user.headDepartmentsCount > 0;
                 const disableDelete = isHead || isPending;
                 const isResettingThisUser = isResetting && resettingUserId === user.id;
+                const lastActiveText = user.lastActiveAt
+                  ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    })
+                  : "";
                 const deleteButton = (
                   <Button
                     type="button"
                     variant="outline"
-                    size="xs"
+                    size="icon-xs"
                     disabled={disableDelete}
                     onClick={() => {
                       setErrorMsg("");
                       setDeletingUser(user);
                     }}
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={t.delete}
+                    title={isHead ? t.cannotDeleteHead : t.delete}
                   >
                     <Trash2 />
-                    {t.delete}
                   </Button>
                 );
 
@@ -612,7 +634,7 @@ export default function AdminUsersClient({
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
                           {getDisplayName(user).charAt(0).toUpperCase()}
                         </div>
-                        <div className="min-w-0 max-w-[180px]">
+                        <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-2 font-medium text-foreground">
                             <span className="min-w-0 truncate" title={getDisplayName(user)}>{getDisplayName(user)}</span>
                             {user.role === "ADMIN" ? (
@@ -637,39 +659,37 @@ export default function AdminUsersClient({
                       ) : null}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      <span className="block truncate">
-                        {user.lastActiveAt
-                          ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              hour12: false,
-                            })
-                          : null}
+                      <span className="block truncate" title={lastActiveText || undefined}>
+                        {lastActiveText}
                       </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+                      <span className="block truncate" title={new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}>
+                        {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+                      </span>
                     </TableCell>
-                    <TableCell className="w-px px-4 text-right whitespace-nowrap">
-                      <div className="ml-auto inline-flex w-max max-w-full flex-col items-stretch gap-1 text-left">
+                    <TableCell className="px-4 text-right whitespace-nowrap">
+                      <div className="flex min-w-0 flex-col items-end gap-1 text-left">
                         <div className="inline-flex items-center gap-2">
-                          <Button asChild variant="outline" size="xs">
-                            <Link href={`/admin/logs?range=all&targetType=USER&targetId=${encodeURIComponent(user.id)}`}>
-                              {t.viewLogs}
+                          <Button asChild variant="outline" size="icon-xs">
+                            <Link
+                              href={`/admin/logs?range=all&targetType=USER&targetId=${encodeURIComponent(user.id)}`}
+                              aria-label={t.viewLogs}
+                              title={t.viewLogs}
+                            >
+                              <LogNavIcon className="size-3" />
                             </Link>
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
-                            size="xs"
+                            size="icon-xs"
                             disabled={isResettingThisUser}
                             onClick={() => handleResetPassword(user.id)}
+                            aria-label={t.resetPassword}
+                            title={t.resetPassword}
                           >
                             {isResettingThisUser ? <Loader2 className="animate-spin" /> : <KeyRound />}
-                            {t.resetPassword}
                           </Button>
                           {isHead ? (
                             <TooltipProvider delayDuration={200}>

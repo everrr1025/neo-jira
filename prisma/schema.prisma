@@ -353,6 +353,7 @@ model AuditLog {
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
   @@index([entityType, action, createdAt])
+  @@index([entityType, createdAt])
 }
 
 model ProjectWorkflowStatus {
