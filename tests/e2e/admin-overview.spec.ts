@@ -45,8 +45,8 @@ test("opens governance logs and activity-filtered users", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "系统日志" })).toBeVisible();
   await expect(page.getByText("用户、部门、项目及权限等系统治理操作", { exact: true })).toHaveCount(0);
   const timeHeader = page.getByRole("columnheader").filter({ hasText: "时间" });
-  const rangeFilter = timeHeader.getByRole("button", { name: "时间范围: 近 30 天" });
-  await expect(timeHeader.getByText("近 30 天", { exact: true })).toBeVisible();
+  const rangeFilter = timeHeader.getByRole("button", { name: "时间范围: 全部" });
+  await expect(timeHeader.getByText("近 30 天", { exact: true })).toHaveCount(0);
   await expect(rangeFilter).toBeVisible();
   const sevenDayRange = page.getByRole("menuitemradio", { name: "近 7 天" });
   await expect(async () => {
@@ -54,6 +54,9 @@ test("opens governance logs and activity-filtered users", async ({ page }) => {
     await expect(sevenDayRange).toBeVisible();
   }).toPass();
   await sevenDayRange.click();
+  await expect(page).toHaveURL(/range=7/);
+  await expect(timeHeader.getByText("近 7 天", { exact: true })).toBeVisible();
+  await page.goto("/admin/logs");
   await expect(page).toHaveURL(/range=7/);
   await expect(timeHeader.getByText("近 7 天", { exact: true })).toBeVisible();
   await expect(page.getByText("时间：近 7 天", { exact: true })).toBeVisible();

@@ -65,13 +65,13 @@ export default async function AdminLogsPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const session = await getServerSession(authOptions);
-  const currentUser = session?.user as { role?: string } | undefined;
-  if (!session || currentUser?.role !== "ADMIN") redirect("/");
+  const currentUser = session?.user as { id?: string; role?: string } | undefined;
+  if (!session || currentUser?.role !== "ADMIN" || !currentUser.id) redirect("/");
 
   const locale = await getCurrentLocale();
   const params = await searchParams;
   const requestedRange = first(params.range);
-  const range = requestedRange === "7" || requestedRange === "90" || requestedRange === "all" ? requestedRange : "30";
+  const range = requestedRange === "7" || requestedRange === "30" || requestedRange === "90" ? requestedRange : "all";
   const entityTypes = selectedValues(params.entityType, ENTITY_TYPES);
   const actions = selectedValues(params.action, ACTION_TYPES);
   const actorIds = selectedValues(params.actorId);
@@ -117,6 +117,7 @@ export default async function AdminLogsPage({ searchParams }: {
   });
 
   return <AdminLogsClient
+    currentUserId={currentUser.id}
     locale={locale}
     logs={logs.map((log) => {
       const metadata = parseMetadata(log.metadata);

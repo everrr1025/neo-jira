@@ -213,7 +213,7 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
                     <CircleHelp className="size-4" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-80 space-y-1.5 text-xs leading-relaxed">
+                <TooltipContent side="top" className="max-w-64 space-y-1.5 text-xs leading-relaxed">
                   <p>{t.inactiveUserHelp}</p>
                   <p>{t.inactiveDepartmentHelp}</p>
                 </TooltipContent>

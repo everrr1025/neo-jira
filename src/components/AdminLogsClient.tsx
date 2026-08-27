@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, ListFilter, Loader2, Search, Trash2, X } from "lucide-react";
 
 import { cleanupAuditLogs, previewAuditLogCleanup } from "@/app/actions/auditLogs";
@@ -38,6 +38,20 @@ type TargetType = "USER" | "DEPARTMENT" | "PROJECT";
 type AuditTarget = { type: TargetType; id: string; name: string; key: string | null };
 type TargetOption = { type: TargetType; id: string; name: string; detail: string; deleted?: boolean };
 type LogRow = { id: string; entityId: string; entityType: string; action: string; field: string | null; targetName: string; targetKey: string | null; actorName: string; createdAt: string };
+type AdminLogFilters = { range: string; entityTypes: string[]; actions: string[]; actorIds: string[]; target: AuditTarget | null };
+
+function buildStoredAdminLogParams(filters: AdminLogFilters) {
+  const params = new URLSearchParams();
+  if (filters.range !== "all") params.set("range", filters.range);
+  if (filters.entityTypes.length > 0) params.set("entityType", filters.entityTypes.join(","));
+  if (filters.actions.length > 0) params.set("action", filters.actions.join(","));
+  if (filters.actorIds.length > 0) params.set("actorId", filters.actorIds.join(","));
+  if (filters.target) {
+    params.set("targetType", filters.target.type);
+    params.set("targetId", filters.target.id);
+  }
+  return params.toString();
+}
 
 function governanceLabel(value: string | null, locale: Locale) {
   if (!value) return "—";
@@ -339,11 +353,12 @@ function TargetFilterableHeader({
   </div>;
 }
 
-export default function AdminLogsClient({ locale, logs, actors, filters, page, pageSize, totalPages, total }: {
+export default function AdminLogsClient({ currentUserId, locale, logs, actors, filters, page, pageSize, totalPages, total }: {
+  currentUserId: string;
   locale: Locale;
   logs: LogRow[];
   actors: Array<{ id: string; name: string }>;
-  filters: { range: string; entityTypes: string[]; actions: string[]; actorIds: string[]; target: AuditTarget | null };
+  filters: AdminLogFilters;
   page: number;
   pageSize: number;
   totalPages: number;
@@ -352,12 +367,41 @@ export default function AdminLogsClient({ locale, logs, actors, filters, page, p
   const t = TEXT[locale];
   const router = useRouter();
   const searchParams = useSearchParams();
+  const filterStorageKey = `neo-jira:admin-log-filters:${currentUserId}:v1`;
+  const didAttemptFilterRestoreRef = useRef(false);
+  const didRestoreStoredFiltersRef = useRef(false);
   const [isCleanupOpen, setIsCleanupOpen] = useState(false);
   const [cleanupMode, setCleanupMode] = useState<CleanupMode>("global");
   const [cleanupPreview, setCleanupPreview] = useState<CleanupPreview | null>(null);
   const [cleanupConfirmation, setCleanupConfirmation] = useState("");
   const [cleanupError, setCleanupError] = useState("");
   const [isCleanupPending, startCleanupTransition] = useTransition();
+
+  useEffect(() => {
+    if (didAttemptFilterRestoreRef.current || typeof window === "undefined") return;
+    didAttemptFilterRestoreRef.current = true;
+
+    if (window.location.search) return;
+
+    const stored = window.localStorage.getItem(filterStorageKey);
+    if (stored) {
+      didRestoreStoredFiltersRef.current = true;
+      router.replace(`/admin/logs?${stored}`);
+    }
+  }, [filterStorageKey, router]);
+
+  useEffect(() => {
+    if (!didAttemptFilterRestoreRef.current || typeof window === "undefined") return;
+    if (didRestoreStoredFiltersRef.current && !window.location.search) return;
+    didRestoreStoredFiltersRef.current = false;
+
+    const stored = buildStoredAdminLogParams(filters);
+    if (stored) {
+      window.localStorage.setItem(filterStorageKey, stored);
+    } else {
+      window.localStorage.removeItem(filterStorageKey);
+    }
+  }, [filterStorageKey, filters]);
 
   const getCleanupScope = (mode: CleanupMode) => {
     if (mode === "target" && filters.target) {
