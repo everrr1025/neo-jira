@@ -771,6 +771,7 @@ export default function DepartmentNotificationsClient({
 
     const data = new FormData();
     data.append("file", file);
+    data.append("departmentId", departmentId);
 
     try {
       const response = await fetch("/api/upload", { method: "POST", body: data });
@@ -1403,6 +1404,7 @@ export default function DepartmentNotificationsClient({
 
       {isCreateOpen ? (
         <NotificationFormDialog
+          departmentId={departmentId}
           t={t}
           isPending={isPending}
           errorMsg={errorMsg}
@@ -1421,6 +1423,7 @@ export default function DepartmentNotificationsClient({
 
       {selected ? (
         <DepartmentNotificationDetailDialog
+          departmentId={departmentId}
           locale={locale}
           notification={selected}
           isPending={isPending}
@@ -1554,6 +1557,7 @@ function SingleFilter({
 }
 
 function NotificationFormDialog({
+  departmentId,
   t,
   isPending,
   errorMsg,
@@ -1568,6 +1572,7 @@ function NotificationFormDialog({
   onClose,
   onSubmit,
 }: {
+  departmentId: string;
   t: typeof TEXT[Locale];
   isPending: boolean;
   errorMsg: string;
@@ -1670,6 +1675,7 @@ function NotificationFormDialog({
               <div className="h-72 min-h-0 rounded-lg border bg-background">
                 <RichTextEditor
                   ref={editorRef}
+                  departmentId={departmentId}
                   value={form.content}
                   onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
                   height={220}

@@ -52,11 +52,21 @@ async function main() {
 
   const [entries, attachments, existingAssets] = await Promise.all([
     fs.promises.readdir(uploadDir, { withFileTypes: true }),
-    prisma.attachment.findMany({ select: { fileName: true, fileUrl: true, uploaderId: true, createdAt: true } }),
-    prisma.fileAsset.findMany({ select: { fileUrl: true, fileName: true, mimeType: true } }),
+    prisma.attachment.findMany({
+      select: {
+        fileName: true,
+        fileUrl: true,
+        uploaderId: true,
+        createdAt: true,
+        issue: { select: { project: { select: { departmentId: true } } } },
+      },
+    }),
+    prisma.fileAsset.findMany({ select: { fileUrl: true, fileName: true, mimeType: true, departmentId: true } }),
   ]);
+  const memberships = await prisma.departmentMember.findMany({ select: { userId: true, departmentId: true } });
   const attachmentByUrl = new Map(attachments.map((attachment) => [attachment.fileUrl, attachment]));
   const existingByUrl = new Map(existingAssets.map((asset) => [asset.fileUrl, asset]));
+  const departmentIdByUserId = new Map(memberships.map((membership) => [membership.userId, membership.departmentId]));
   let created = 0;
   let updated = 0;
 
@@ -70,11 +80,15 @@ async function main() {
     ]);
     const existing = existingByUrl.get(fileUrl);
     const mimeType = existing?.mimeType ?? getMimeType(entry.name);
+    const departmentId = existing?.departmentId
+      ?? attachment?.issue.project.departmentId
+      ?? (attachment?.uploaderId ? departmentIdByUserId.get(attachment.uploaderId) : null)
+      ?? null;
 
     if (existing) {
       await prisma.fileAsset.update({
         where: { fileUrl },
-        data: { fileSize: BigInt(stats.size), mimeType },
+        data: { fileSize: BigInt(stats.size), mimeType, departmentId },
       });
       updated += 1;
       continue;
@@ -87,6 +101,7 @@ async function main() {
         fileSize: BigInt(stats.size),
         mimeType,
         uploaderId: attachment?.uploaderId ?? null,
+        departmentId,
         createdAt: attachment?.createdAt ?? stats.birthtime,
       },
     });

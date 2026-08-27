@@ -323,10 +323,13 @@ model FileAsset {
   mimeType   String?
   uploaderId String?
   uploader   User?    @relation("FileAssetUploader", fields: [uploaderId], references: [id], onDelete: SetNull)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
   @@index([uploaderId, createdAt])
+  @@index([departmentId, createdAt])
 }
 
 model AuditLog {
@@ -402,6 +405,7 @@ model Department {
   announcements Announcement[]
   reminders     Reminder[]
   notes         Note[]
+  files         FileAsset[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

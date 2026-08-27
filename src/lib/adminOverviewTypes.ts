@@ -4,20 +4,38 @@ export type UsageTrendPoint = {
   activeDepartments: number;
 };
 
-export type GovernanceLogSummary = {
+export type DepartmentResourceUsage = {
+  id: string | null;
+  name: string;
+  key: string | null;
+  users: number;
+  projects: number;
+  files: number;
+  bytes: number;
+};
+
+export type AttentionDepartment = {
   id: string;
-  entityType: string;
-  action: string;
-  field: string | null;
-  actorName: string;
-  targetName: string;
-  createdAt: string;
+  name: string;
+  key: string;
+  activeUsers: number;
+  eligibleUsers: number;
+  activeRate: number;
+};
+
+export type UsageHealthSummary = {
+  activeUsers: number;
+  inactiveUsers: number;
+  eligibleUsers: number;
+  activeRate: number;
+  attentionDepartmentCount: number;
+  attentionDepartments: AttentionDepartment[];
 };
 
 export type AdminOverviewData = {
   totals: { users: number; departments: number; projects: number };
   storage: { totalFiles: number; totalBytes: number; recentFiles: number; recentBytes: number };
   periods: Record<7 | 30, { activeUsers: number; activeDepartments: number; trend: UsageTrendPoint[] }>;
-  inactive: Record<30 | 90, { count: number; departmentCount: number }>;
-  recentLogs: GovernanceLogSummary[];
+  inactive: Record<30 | 90, UsageHealthSummary>;
+  departmentResources: DepartmentResourceUsage[];
 };

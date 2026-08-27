@@ -2370,6 +2370,7 @@ export default function DepartmentItemsClient({
     setIsTaskAttachmentUploading(true);
     const data = new FormData();
     data.append("file", file);
+    data.append("departmentId", departmentId);
 
     try {
       const response = await fetch("/api/upload", {
@@ -2427,6 +2428,7 @@ export default function DepartmentItemsClient({
     setIsEditTaskAttachmentUploading(true);
     const data = new FormData();
     data.append("file", file);
+    data.append("departmentId", departmentId);
 
     try {
       const response = await fetch("/api/upload", {
@@ -4307,6 +4309,7 @@ export default function DepartmentItemsClient({
                 <RichTextEditor
                   key={selectedNote.id}
                   ref={noteEditorRef}
+                  departmentId={departmentId}
                   value={noteForm.content}
                   onChange={handleNoteContentChange}
                   readOnly={selectedIsDeleted}
@@ -5068,6 +5071,7 @@ export default function DepartmentItemsClient({
                 <div className="min-h-0 rounded-lg border bg-background">
                   <RichTextEditor
                     ref={taskContentEditorRef}
+                    departmentId={departmentId}
                     value={form.content}
                     onChange={(value) => setForm((current) => ({ ...current, content: value || "" }))}
                     height={220}
@@ -5232,6 +5236,7 @@ export default function DepartmentItemsClient({
                   <div className="h-64 min-h-0">
                     <RichTextEditor
                       ref={editTaskContentEditorRef}
+                      departmentId={departmentId}
                       value={editForm.content}
                       onChange={(value) => setEditForm((current) => ({ ...current, content: value || "" }))}
                       height={190}

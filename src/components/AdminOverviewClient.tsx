@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
-import { CircleHelp, HardDrive, StickyNote, UserRound } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleHelp, HardDrive, StickyNote, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,36 +11,41 @@ import { Card } from "@/components/ui/card";
 import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import ProjectNavIcon from "@/components/ProjectNavIcon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { AdminOverviewData, GovernanceLogSummary, UsageTrendPoint } from "@/lib/adminOverviewTypes";
+import type { AdminOverviewData, UsageTrendPoint } from "@/lib/adminOverviewTypes";
 import { formatStorageSize } from "@/lib/fileStorage";
 import type { Locale } from "@/lib/i18n";
-import { formatRelativeTime } from "@/lib/timeFormat";
 
 type Period = 7 | 30;
 type InactiveDays = 30 | 90;
+type ResourceSortField = "users" | "projects" | "files" | "bytes";
+type SortDirection = "asc" | "desc";
 
 const TEXT = {
   zh: {
     title: "系统概览", users: "用户", departments: "部门", projects: "项目",
     files: "文件", usedStorage: "空间", recentFiles: "近 30 天新增",
     activeUsers: "活跃用户", activeDepartments: "活跃部门",
-    inactiveUsers: "沉默用户", inactiveDepartments: "沉默部门", days: "天",
-    trend: "使用趋势",
-    noUsage: "当前周期暂无使用记录", inactiveTitle: "沉默情况", recent: "最近操作",
-    inactiveUserHelp: "沉默用户：普通用户超过所选天数未访问系统；观察期不足的新用户不计入。",
-    inactiveDepartmentHelp: "沉默部门：至少有一名普通成员，且所有普通成员均为沉默用户；空部门不计入。",
-    noLogs: "暂无管理操作记录", systemLogs: "全部日志",
+    days: "天", healthTitle: "使用健康度", userActiveRate: "用户活跃率", attentionDepartments: "需关注部门",
+    trend: "使用趋势", departmentResources: "部门资源使用情况", department: "部门",
+    noUsage: "当前周期暂无使用记录", unassigned: "未归属",
+    sortAscending: "升序排列", sortDescending: "降序排列",
+    activeSummary: "人活跃", inactiveSummary: "人未活跃", attentionThreshold: "活跃率低于 20%",
+    expandAttention: "展开需关注部门", collapseAttention: "收起需关注部门",
+    healthHelp: "活跃率按所选周期内访问过系统的普通用户计算；观察期不足且从未活跃的新用户不计入。",
+    attentionHelp: "需关注部门：纳入统计的普通用户中，活跃用户占比低于 20% 的部门。",
   },
   en: {
     title: "System Overview", users: "Users", departments: "Departments", projects: "Projects",
     files: "Files", usedStorage: "Storage used", recentFiles: "Added in 30 days",
     activeUsers: "Active users", activeDepartments: "Active departments",
-    inactiveUsers: "Inactive users", inactiveDepartments: "Inactive departments", days: "days",
-    trend: "Usage trend",
-    noUsage: "No usage recorded in this period", inactiveTitle: "Inactivity", recent: "Recent activity",
-    inactiveUserHelp: "Inactive users: standard users with no system visit beyond the selected period; new users still in the observation period are excluded.",
-    inactiveDepartmentHelp: "Inactive departments: departments with at least one standard member where every standard member is inactive; empty departments are excluded.",
-    noLogs: "No administration activity recorded", systemLogs: "All logs",
+    days: "days", healthTitle: "Usage health", userActiveRate: "User activity rate", attentionDepartments: "Departments to watch",
+    trend: "Usage trend", departmentResources: "Department resource usage", department: "Department",
+    noUsage: "No usage recorded in this period", unassigned: "Unassigned",
+    sortAscending: "Sort ascending", sortDescending: "Sort descending",
+    activeSummary: "active", inactiveSummary: "inactive", attentionThreshold: "Activity below 20%",
+    expandAttention: "Show departments to watch", collapseAttention: "Hide departments to watch",
+    healthHelp: "The activity rate counts standard users who visited during the selected period; new users with insufficient observation time and no activity are excluded.",
+    attentionHelp: "Departments to watch have an activity rate below 20% among eligible standard users.",
   },
 } as const;
 
@@ -146,30 +151,43 @@ function UsageLineChart({ points, locale, emptyText, usersLabel, departmentsLabe
   );
 }
 
-function logActionText(log: GovernanceLogSummary, locale: Locale) {
-  const actions = locale === "zh"
-    ? { CREATE: "创建了", UPDATE: "更新了", DELETE: "删除了" }
-    : { CREATE: "created", UPDATE: "updated", DELETE: "deleted" };
-  const entities = locale === "zh"
-    ? { USER: "用户", DEPARTMENT: "部门", PROJECT: "项目" }
-    : { USER: "user", DEPARTMENT: "department", PROJECT: "project" };
-  return `${actions[log.action as keyof typeof actions] || (locale === "zh" ? "变更了" : "changed")} ${entities[log.entityType as keyof typeof entities] || ""} ${log.targetName}`;
-}
-
-function entityLabel(entityType: string, locale: Locale) {
-  const labels = locale === "zh"
-    ? { USER: "用户", DEPARTMENT: "部门", PROJECT: "项目" }
-    : { USER: "User", DEPARTMENT: "Department", PROJECT: "Project" };
-  return labels[entityType as keyof typeof labels] || entityType;
-}
-
 export default function AdminOverviewClient({ data, locale }: { data: AdminOverviewData; locale: Locale }) {
   const t = TEXT[locale];
   const [period, setPeriod] = useState<Period>(30);
   const [inactiveDays, setInactiveDays] = useState<InactiveDays>(30);
+  const [isAttentionExpanded, setIsAttentionExpanded] = useState(false);
+  const [resourceSort, setResourceSort] = useState<{ field: ResourceSortField; direction: SortDirection } | null>(null);
   const usage = data.periods[period];
   const inactive = data.inactive[inactiveDays];
   const periodOptions = useMemo(() => ([7, 30] as Period[]).map((days) => ({ value: days, label: locale === "zh" ? `近 ${days} 天` : `${days} days` })), [locale]);
+  const departmentResources = useMemo(() => {
+    if (!resourceSort) return data.departmentResources;
+    const direction = resourceSort.direction === "asc" ? 1 : -1;
+    return [...data.departmentResources].sort((left, right) => {
+      const difference = left[resourceSort.field] - right[resourceSort.field];
+      return difference === 0 ? left.name.localeCompare(right.name, locale === "zh" ? "zh-CN" : "en-US") : difference * direction;
+    });
+  }, [data.departmentResources, locale, resourceSort]);
+
+  const renderResourceSortHeader = (label: string, field: ResourceSortField) => {
+    const isActive = resourceSort?.field === field;
+    const direction = isActive ? resourceSort.direction : null;
+    const nextDirection: SortDirection = isActive && direction === "desc" ? "asc" : "desc";
+    return (
+      <th className="px-4 py-3 text-left" aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+          aria-label={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
+          title={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
+          onClick={() => setResourceSort({ field, direction: nextDirection })}
+        >
+          <span>{label}</span>
+          {isActive ? direction === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
+        </button>
+      </th>
+    );
+  };
 
   return <div className="space-y-6 text-foreground">
     <h1 className="text-xl font-semibold tracking-tight text-foreground">{t.title}</h1>
@@ -187,8 +205,8 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
       </div>
     </div>
 
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-      <Card className="gap-0 overflow-hidden py-0 lg:col-span-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <Card className="h-full gap-0 overflow-hidden py-0 lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h2 className="text-sm font-semibold text-foreground">{t.trend}</h2>
@@ -202,43 +220,123 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
         <div className="overflow-x-auto p-2"><UsageLineChart points={usage.trend} locale={locale} emptyText={t.noUsage} usersLabel={t.activeUsers} departmentsLabel={t.activeDepartments} /></div>
       </Card>
 
-      <div className="space-y-3">
-        <div className="flex min-h-8 items-center justify-between gap-3">
+      <Card className="h-full gap-0 overflow-hidden py-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
           <div className="flex items-center gap-1.5">
-            <h2 className="text-sm font-semibold text-foreground">{t.inactiveTitle}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t.healthTitle}</h2>
             <TooltipProvider delayDuration={150}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={locale === "zh" ? "沉默判定说明" : "Inactivity criteria"}>
+                  <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={locale === "zh" ? "使用健康度说明" : "Usage health criteria"}>
                     <CircleHelp className="size-4" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-64 space-y-1.5 text-xs leading-relaxed">
-                  <p>{t.inactiveUserHelp}</p>
-                  <p>{t.inactiveDepartmentHelp}</p>
+                  <p>{t.healthHelp}</p>
+                  <p>{t.attentionHelp}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
-          <Segment value={inactiveDays} options={[{ value: 30, label: `30 ${t.days}` }, { value: 90, label: `90 ${t.days}` }]} onChange={setInactiveDays} />
+          <Segment
+            value={inactiveDays}
+            options={[{ value: 30, label: `30 ${t.days}` }, { value: 90, label: `90 ${t.days}` }]}
+            onChange={(days) => {
+              setInactiveDays(days);
+              setIsAttentionExpanded(false);
+            }}
+          />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          <Link href={`/admin/users?activityStatus=inactive${inactiveDays}`} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Metric icon={UserRound} label={t.inactiveUsers} value={inactive.count} />
-          </Link>
-          <Metric icon={DepartmentNavIcon} label={t.inactiveDepartments} value={inactive.departmentCount} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="grid grid-cols-2 divide-x border-b">
+            <Link href={`/admin/users?activityStatus=inactive${inactiveDays}`} className="px-4 py-3 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              <div className="text-xs font-medium text-muted-foreground">{t.userActiveRate}</div>
+              <div className="mt-1 text-2xl font-semibold tracking-tight">{inactive.activeRate}%</div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">{inactive.activeUsers} {t.activeSummary} · {inactive.inactiveUsers} {t.inactiveSummary}</div>
+            </Link>
+            <div className="px-4 py-3">
+              <div className="text-xs font-medium text-muted-foreground">{t.attentionDepartments}</div>
+              {inactive.attentionDepartmentCount > 0 ? (
+                <button
+                  type="button"
+                  className="mt-1 text-2xl font-semibold tracking-tight hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-expanded={isAttentionExpanded}
+                  aria-label={isAttentionExpanded ? t.collapseAttention : t.expandAttention}
+                  title={isAttentionExpanded ? t.collapseAttention : t.expandAttention}
+                  onClick={() => setIsAttentionExpanded((current) => !current)}
+                >
+                  {inactive.attentionDepartmentCount}
+                </button>
+              ) : (
+                <div className="mt-1 text-2xl font-semibold tracking-tight">0</div>
+              )}
+              <div className="mt-0.5 text-[11px] text-muted-foreground">{t.attentionThreshold}</div>
+            </div>
+          </div>
+          {isAttentionExpanded && inactive.attentionDepartments.length > 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="border-b bg-muted/15 px-4 py-2 text-xs font-medium text-muted-foreground">{t.attentionDepartments}</div>
+              <div className="flex min-h-0 flex-1 flex-col divide-y">
+                {inactive.attentionDepartments.map((department) => (
+                  <Link
+                    key={department.id}
+                    href={`/admin/users?departmentIds=${encodeURIComponent(department.id)}&activityStatus=inactive${inactiveDays}`}
+                    className="flex min-h-10 flex-1 items-center justify-between gap-3 px-4 py-2 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <span className="min-w-0 truncate text-sm font-medium" title={department.name}>{department.name}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-semibold tabular-nums">{department.activeRate}%</span>
+                      <span className="block text-[10px] text-muted-foreground tabular-nums">{department.activeUsers} / {department.eligibleUsers} {t.activeSummary}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
-      </div>
+      </Card>
     </div>
 
     <Card className="gap-0 overflow-hidden py-0">
       <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">{t.recent}</h2>
-        <Link href="/admin/logs" className="text-xs font-semibold text-muted-foreground hover:text-foreground">{t.systemLogs}</Link>
+        <h2 className="text-sm font-semibold text-foreground">{t.departmentResources}</h2>
       </div>
-      {data.recentLogs.length > 0 ? <div className="divide-y">{data.recentLogs.map((log) =>
-        <div key={log.id} className="flex items-center gap-3 px-4 py-3"><Badge variant="outline" className="w-20 shrink-0 justify-center">{entityLabel(log.entityType, locale)}</Badge><p className="min-w-0 flex-1 truncate text-sm text-foreground"><span className="font-medium">{log.actorName}</span> {logActionText(log, locale)}</p><span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(log.createdAt, locale)}</span></div>)}</div>
-        : <div className="m-4 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">{t.noLogs}</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <colgroup>
+            <col className="w-[40%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+          </colgroup>
+          <thead className="border-b bg-muted/15 text-left text-xs font-medium text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3">{t.department}</th>
+              {renderResourceSortHeader(t.users, "users")}
+              {renderResourceSortHeader(t.projects, "projects")}
+              {renderResourceSortHeader(t.files, "files")}
+              {renderResourceSortHeader(t.usedStorage, "bytes")}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {departmentResources.map((department) => (
+              <tr key={department.id ?? "unassigned"} className={department.id ? "" : "bg-muted/20"}>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">{department.id ? department.name : t.unassigned}</span>
+                    {department.key ? <Badge variant="outline">{department.key}</Badge> : null}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-left tabular-nums">{department.users}</td>
+                <td className="px-4 py-3 text-left tabular-nums">{department.projects}</td>
+                <td className="px-4 py-3 text-left tabular-nums">{department.files}</td>
+                <td className="px-4 py-3 text-left tabular-nums">{formatStorageSize(department.bytes)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   </div>;
 }

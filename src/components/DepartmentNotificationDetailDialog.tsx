@@ -36,6 +36,7 @@ type DetailDialogLabels = {
 };
 
 type Props = {
+  departmentId: string;
   locale: Locale;
   notification: DepartmentNotificationListItem;
   isPending: boolean;
@@ -149,6 +150,7 @@ function AttachmentList({
 }
 
 export default function DepartmentNotificationDetailDialog({
+  departmentId,
   locale,
   notification,
   isPending,
@@ -209,6 +211,7 @@ export default function DepartmentNotificationDetailDialog({
                 </span>
                 <RichTextEditor
                   ref={resendEditorRef}
+                  departmentId={departmentId}
                   value={resendForm.content}
                   onChange={(value) => setResendForm((current) => ({ ...current, content: value || "" }))}
                   height={220}

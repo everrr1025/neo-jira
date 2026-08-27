@@ -14,14 +14,41 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id?: string }).id;
+    const sessionUser = session.user as { id?: string; role?: string };
+    const userId = sessionUser.id;
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    const issueId = formData.get("issueId") as string;
+    const issueId = String(formData.get("issueId") || "").trim();
+    const requestedDepartmentId = String(formData.get("departmentId") || "").trim();
 
     if (!file) {
       return NextResponse.json({ error: "File is required" }, { status: 400 });
+    }
+
+    let departmentId: string | null = null;
+    if (issueId) {
+      const issue = await prisma.issue.findUnique({
+        where: { id: issueId },
+        select: { project: { select: { departmentId: true } } },
+      });
+      if (!issue) return NextResponse.json({ error: "Issue not found" }, { status: 404 });
+      departmentId = issue.project.departmentId;
+    } else if (requestedDepartmentId) {
+      const canUseDepartment = sessionUser.role === "ADMIN"
+        ? Boolean(await prisma.department.findUnique({ where: { id: requestedDepartmentId }, select: { id: true } }))
+        : Boolean(await prisma.departmentMember.findUnique({
+            where: { departmentId_userId: { departmentId: requestedDepartmentId, userId } },
+            select: { id: true },
+          }));
+      if (!canUseDepartment) return NextResponse.json({ error: "Invalid department" }, { status: 403 });
+      departmentId = requestedDepartmentId;
+    } else {
+      const membership = await prisma.departmentMember.findUnique({
+        where: { userId },
+        select: { departmentId: true },
+      });
+      departmentId = membership?.departmentId ?? null;
     }
 
     const bytes = await file.arrayBuffer();
@@ -44,6 +71,7 @@ export async function POST(request: Request) {
       fileSize: BigInt(file.size),
       mimeType: file.type || null,
       uploaderId: userId,
+      departmentId,
     };
 
     if (issueId) {

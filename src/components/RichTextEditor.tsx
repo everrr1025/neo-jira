@@ -61,6 +61,7 @@ interface RichTextEditorProps {
   issueMentionLabel?: string;
   onIssueLinkClick?: (issueId: string) => void;
   currentUserId?: string;
+  departmentId?: string;
   borderless?: boolean;
   toolbarRight?: ReactNode;
   isFullscreen?: boolean;
@@ -136,9 +137,10 @@ function serializeContent(editor: Editor) {
   return plainText || hasImages ? editor.getHTML() : "";
 }
 
-async function uploadImage(file: File): Promise<string | null> {
+async function uploadImage(file: File, departmentId?: string): Promise<string | null> {
   const formData = new FormData();
   formData.append("file", file);
+  if (departmentId) formData.append("departmentId", departmentId);
   try {
     const response = await fetch("/api/upload", {
       method: "POST",
@@ -653,6 +655,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     issueMentionLabel = "Mention issue",
     onIssueLinkClick,
     currentUserId,
+    departmentId,
     borderless = false,
     toolbarRight,
     isFullscreen = false,
@@ -736,7 +739,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   }));
 
   const handleImageUpload = async (file: File, view: Editor["view"], pos: number | null = null) => {
-    const url = await uploadImage(file);
+    const url = await uploadImage(file, departmentId);
     if (url) {
       const imageNode = view.state.schema.nodes.imageResize ?? view.state.schema.nodes.image;
 
@@ -1179,7 +1182,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && editor && !editor.isDestroyed) {
-      const url = await uploadImage(file);
+      const url = await uploadImage(file, departmentId);
       if (url) {
         const imageNode = editor.state.schema.nodes.imageResize ?? editor.state.schema.nodes.image;
 

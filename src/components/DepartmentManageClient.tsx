@@ -1053,6 +1053,7 @@ export default function DepartmentManageClient({
     setIsNotificationAttachmentUploading(true);
     const data = new FormData();
     data.append("file", file);
+    data.append("departmentId", department.id);
 
     try {
       const response = await fetch("/api/upload", { method: "POST", body: data });
@@ -2787,6 +2788,7 @@ export default function DepartmentManageClient({
 
       {selectedNotification ? (
         <DepartmentNotificationDetailDialog
+          departmentId={department.id}
           locale={locale}
           notification={selectedNotification}
           isPending={isPending}
