@@ -69,8 +69,8 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
       30: buildUsagePeriod(dateKeys30, activities),
     },
     inactive: {
-      30: buildUsageHealth(usageHealthUsers, 30, now),
-      90: buildUsageHealth(usageHealthUsers, 90, now),
+      30: buildUsageHealth(usageHealthUsers, departments, 30, now),
+      90: buildUsageHealth(usageHealthUsers, departments, 90, now),
     },
     departmentResources: [
       ...departments.map((department) => {

@@ -18,7 +18,9 @@ export type AttentionDepartment = {
   id: string;
   name: string;
   key: string;
+  users: number;
   activeUsers: number;
+  inactiveUsers: number;
   eligibleUsers: number;
   activeRate: number;
 };
@@ -30,6 +32,7 @@ export type UsageHealthSummary = {
   activeRate: number;
   attentionDepartmentCount: number;
   attentionDepartments: AttentionDepartment[];
+  departments: AttentionDepartment[];
 };
 
 export type AdminOverviewData = {

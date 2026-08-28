@@ -25,12 +25,11 @@ const TEXT = {
     title: "系统概览", users: "用户", departments: "部门", projects: "项目",
     files: "文件", usedStorage: "空间", recentFiles: "近 30 天新增",
     activeUsers: "活跃用户", activeDepartments: "活跃部门",
-    days: "天", healthTitle: "使用健康度", userActiveRate: "用户活跃率", attentionDepartments: "需关注部门",
+    days: "天", healthTitle: "健康度", userActiveRate: "用户活跃率", attentionDepartments: "需关注部门",
     trend: "使用趋势", departmentResources: "部门资源使用情况", department: "部门",
+    activeShort: "活跃", inactiveShort: "未活跃",
     noUsage: "当前周期暂无使用记录", unassigned: "未归属",
     sortAscending: "升序排列", sortDescending: "降序排列",
-    activeSummary: "人活跃", inactiveSummary: "人未活跃", attentionThreshold: "活跃率低于 20%",
-    expandAttention: "展开需关注部门", collapseAttention: "收起需关注部门",
     healthHelp: "活跃率按所选周期内访问过系统的普通用户计算；观察期不足且从未活跃的新用户不计入。",
     attentionHelp: "需关注部门：纳入统计的普通用户中，活跃用户占比低于 20% 的部门。",
   },
@@ -38,12 +37,11 @@ const TEXT = {
     title: "System Overview", users: "Users", departments: "Departments", projects: "Projects",
     files: "Files", usedStorage: "Storage used", recentFiles: "Added in 30 days",
     activeUsers: "Active users", activeDepartments: "Active departments",
-    days: "days", healthTitle: "Usage health", userActiveRate: "User activity rate", attentionDepartments: "Departments to watch",
+    days: "days", healthTitle: "Health", userActiveRate: "User activity rate", attentionDepartments: "Departments to watch",
     trend: "Usage trend", departmentResources: "Department resource usage", department: "Department",
+    activeShort: "Active", inactiveShort: "Inactive",
     noUsage: "No usage recorded in this period", unassigned: "Unassigned",
     sortAscending: "Sort ascending", sortDescending: "Sort descending",
-    activeSummary: "active", inactiveSummary: "inactive", attentionThreshold: "Activity below 20%",
-    expandAttention: "Show departments to watch", collapseAttention: "Hide departments to watch",
     healthHelp: "The activity rate counts standard users who visited during the selected period; new users with insufficient observation time and no activity are excluded.",
     attentionHelp: "Departments to watch have an activity rate below 20% among eligible standard users.",
   },
@@ -155,7 +153,6 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
   const t = TEXT[locale];
   const [period, setPeriod] = useState<Period>(30);
   const [inactiveDays, setInactiveDays] = useState<InactiveDays>(30);
-  const [isAttentionExpanded, setIsAttentionExpanded] = useState(false);
   const [resourceSort, setResourceSort] = useState<{ field: ResourceSortField; direction: SortDirection } | null>(null);
   const usage = data.periods[period];
   const inactive = data.inactive[inactiveDays];
@@ -220,14 +217,14 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
         <div className="overflow-x-auto p-2"><UsageLineChart points={usage.trend} locale={locale} emptyText={t.noUsage} usersLabel={t.activeUsers} departmentsLabel={t.activeDepartments} /></div>
       </Card>
 
-      <Card className="h-full gap-0 overflow-hidden py-0">
+      <Card className="min-h-0 h-full gap-0 overflow-hidden py-0 lg:[contain:size]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
           <div className="flex items-center gap-1.5">
             <h2 className="text-sm font-semibold text-foreground">{t.healthTitle}</h2>
             <TooltipProvider delayDuration={150}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={locale === "zh" ? "使用健康度说明" : "Usage health criteria"}>
+                  <button type="button" className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={locale === "zh" ? "健康度说明" : "Health criteria"}>
                     <CircleHelp className="size-4" />
                   </button>
                 </TooltipTrigger>
@@ -241,10 +238,7 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
           <Segment
             value={inactiveDays}
             options={[{ value: 30, label: `30 ${t.days}` }, { value: 90, label: `90 ${t.days}` }]}
-            onChange={(days) => {
-              setInactiveDays(days);
-              setIsAttentionExpanded(false);
-            }}
+            onChange={setInactiveDays}
           />
         </div>
         <div className="flex min-h-0 flex-1 flex-col">
@@ -252,47 +246,34 @@ export default function AdminOverviewClient({ data, locale }: { data: AdminOverv
             <Link href={`/admin/users?activityStatus=inactive${inactiveDays}`} className="px-4 py-3 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
               <div className="text-xs font-medium text-muted-foreground">{t.userActiveRate}</div>
               <div className="mt-1 text-2xl font-semibold tracking-tight">{inactive.activeRate}%</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">{inactive.activeUsers} {t.activeSummary} · {inactive.inactiveUsers} {t.inactiveSummary}</div>
             </Link>
             <div className="px-4 py-3">
               <div className="text-xs font-medium text-muted-foreground">{t.attentionDepartments}</div>
-              {inactive.attentionDepartmentCount > 0 ? (
-                <button
-                  type="button"
-                  className="mt-1 text-2xl font-semibold tracking-tight hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-expanded={isAttentionExpanded}
-                  aria-label={isAttentionExpanded ? t.collapseAttention : t.expandAttention}
-                  title={isAttentionExpanded ? t.collapseAttention : t.expandAttention}
-                  onClick={() => setIsAttentionExpanded((current) => !current)}
-                >
-                  {inactive.attentionDepartmentCount}
-                </button>
-              ) : (
-                <div className="mt-1 text-2xl font-semibold tracking-tight">0</div>
-              )}
-              <div className="mt-0.5 text-[11px] text-muted-foreground">{t.attentionThreshold}</div>
+              <div className="mt-1 text-2xl font-semibold tracking-tight">{inactive.attentionDepartmentCount}</div>
             </div>
           </div>
-          {isAttentionExpanded && inactive.attentionDepartments.length > 0 ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="border-b bg-muted/15 px-4 py-2 text-xs font-medium text-muted-foreground">{t.attentionDepartments}</div>
-              <div className="flex min-h-0 flex-1 flex-col divide-y">
-                {inactive.attentionDepartments.map((department) => (
-                  <Link
-                    key={department.id}
-                    href={`/admin/users?departmentIds=${encodeURIComponent(department.id)}&activityStatus=inactive${inactiveDays}`}
-                    className="flex min-h-10 flex-1 items-center justify-between gap-3 px-4 py-2 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  >
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 divide-y overflow-y-auto">
+              {inactive.departments.map((department) => (
+                <Link
+                  key={department.id}
+                  href={`/admin/users?departmentIds=${encodeURIComponent(department.id)}&activityStatus=inactive${inactiveDays}`}
+                  className="block px-4 py-2 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <span className="flex items-center justify-between gap-3">
                     <span className="min-w-0 truncate text-sm font-medium" title={department.name}>{department.name}</span>
-                    <span className="shrink-0 text-right">
-                      <span className="block text-sm font-semibold tabular-nums">{department.activeRate}%</span>
-                      <span className="block text-[10px] text-muted-foreground tabular-nums">{department.activeUsers} / {department.eligibleUsers} {t.activeSummary}</span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
+                    {department.eligibleUsers > 0 ? <span className="shrink-0 text-sm font-semibold tabular-nums">{department.activeRate}%</span> : null}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground tabular-nums">
+                    {t.users} {department.users} · {t.activeShort} {department.activeUsers} · {t.inactiveShort} {department.inactiveUsers}
+                  </span>
+                </Link>
+              ))}
+              {inactive.departments.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-muted-foreground">{t.noUsage}</div>
+              ) : null}
             </div>
-          ) : null}
+          </div>
         </div>
       </Card>
     </div>
