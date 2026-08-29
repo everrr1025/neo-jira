@@ -44,6 +44,7 @@ type DepartmentMemberRecord = {
   isDepartmentAdmin: boolean;
   userEmail: string;
   userName: string | null;
+  disabledAt: string | null;
 };
 
 export type DepartmentRecord = {
@@ -108,6 +109,7 @@ const TEXT = {
     nameExists: "Department name already exists.",
     notFound: "Department not found.",
     headConflict: "Selected head already belongs to another department.",
+    disabled: "Disabled",
     sortAscending: "Sort ascending",
     sortDescending: "Sort descending",
   },
@@ -154,6 +156,7 @@ const TEXT = {
     nameExists: "部门名称已存在。",
     notFound: "部门不存在。",
     headConflict: "所选负责人已属于其他部门。",
+    disabled: "已停用",
     sortAscending: "升序排列",
     sortDescending: "降序排列",
   },
@@ -386,7 +389,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {head ? <span className="block truncate font-medium text-foreground" title={displayMember(head)}>{displayMember(head)}</span> : null}
+                      {head ? <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><span className="truncate" title={displayMember(head)}>{displayMember(head)}</span>{head.disabledAt ? <Badge variant="outline" className="shrink-0 text-muted-foreground">{t.disabled}</Badge> : null}</span> : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">

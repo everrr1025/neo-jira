@@ -59,7 +59,7 @@ export default async function DepartmentItemsPage({
     })),
   );
   const assigneeOptions = assignableMembers
-    .filter((entry) => entry.canAssign)
+    .filter((entry) => entry.canAssign && !entry.member.disabledAt)
     .map(({ member }) => ({
       id: member.userId,
       name: member.userName || member.userEmail,

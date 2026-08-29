@@ -157,10 +157,12 @@ assert.deepEqual(buildProjectEntityWhere("issue-1", "project-a"), {
 });
 
 assert.deepEqual(buildProjectUsersWhere("project-a"), {
+  disabledAt: null,
   projectMemberships: { some: { projectId: "project-a" } },
 });
 
 assert.deepEqual(buildProjectUsersWhere("project-a", false), {
+  disabledAt: null,
   projectMemberships: { some: { projectId: "project-a" } },
 });
 

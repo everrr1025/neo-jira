@@ -289,10 +289,13 @@ export default function DepartmentMemberSettingsClient({
   );
   const memberOptions = useMemo<MultiSelectOption[]>(
     () =>
-      department.members.map((departmentMember) => ({
+      department.members
+      .filter((departmentMember) => !departmentMember.disabledAt)
+      .map((departmentMember) => ({
         id: departmentMember.userId,
         label: displayMember(departmentMember),
         description: departmentMember.positionName || departmentMember.userEmail,
+        disabled: Boolean(departmentMember.disabledAt),
       })),
     [department.members],
   );

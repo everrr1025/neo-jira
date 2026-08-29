@@ -11,6 +11,8 @@ type SessionCallbackUser = {
   departmentId?: string | null;
   isDepartmentAdmin?: boolean | null;
   departmentPosition?: string | null;
+  sessionVersion?: number;
+  mustChangePassword?: boolean;
 };
 
 async function getAuthUserDepartmentFields(userId: string) {
@@ -39,6 +41,7 @@ export const authOptions: NextAuthOptions = {
         });
         
         if (!user || !user.password) return null;
+        if (user.disabledAt) throw new Error("ACCOUNT_DISABLED");
         
         const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
         if (!isPasswordValid) return null;
@@ -58,6 +61,8 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
+          sessionVersion: user.sessionVersion,
+          mustChangePassword: user.mustChangePassword,
           ...membershipFields,
         };
       }
@@ -68,23 +73,53 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         const authUser = user as SessionCallbackUser;
         token.role = authUser.role;
-        token.id = authUser.id;
+        token.id = authUser.id || token.sub;
         token.departmentRole = authUser.departmentRole;
         token.departmentId = authUser.departmentId;
         token.isDepartmentAdmin = authUser.isDepartmentAdmin;
         token.departmentPosition = authUser.departmentPosition;
+        token.sessionVersion = authUser.sessionVersion ?? 0;
+        token.mustChangePassword = authUser.mustChangePassword ?? false;
+        token.accountInvalid = false;
+      } else {
+        const tokenUserId = typeof token.id === "string" ? token.id : token.sub;
+        if (!tokenUserId) return token;
+        const currentUser = await prisma.user.findUnique({
+          where: { id: tokenUserId },
+          select: { role: true, disabledAt: true, sessionVersion: true, mustChangePassword: true },
+        });
+        const tokenSessionVersion = typeof token.sessionVersion === "number" ? token.sessionVersion : 0;
+        if (!currentUser || currentUser.disabledAt || currentUser.sessionVersion !== tokenSessionVersion) {
+          token.accountInvalid = true;
+          token.id = undefined;
+          token.role = undefined;
+          token.departmentId = undefined;
+        } else {
+          token.accountInvalid = false;
+          token.id = tokenUserId;
+          token.role = currentUser.role;
+          token.sessionVersion = currentUser.sessionVersion;
+          token.mustChangePassword = currentUser.mustChangePassword;
+        }
       }
       return token;
     },
     async session({ session, token }) {
+      const tokenUserId = typeof token.id === "string" ? token.id : token.sub;
+      if (token.accountInvalid || !tokenUserId) {
+        (session as { user?: unknown }).user = undefined;
+        return session;
+      }
       if (token && session.user) {
         const sessionUser = session.user as SessionCallbackUser;
         sessionUser.role = typeof token.role === "string" ? token.role : null;
-        sessionUser.id = typeof token.id === "string" ? token.id : undefined;
+        sessionUser.id = tokenUserId;
         sessionUser.departmentRole = typeof token.departmentRole === "string" ? token.departmentRole : null;
         sessionUser.departmentId = typeof token.departmentId === "string" ? token.departmentId : null;
         sessionUser.isDepartmentAdmin = typeof token.isDepartmentAdmin === "boolean" ? token.isDepartmentAdmin : null;
         sessionUser.departmentPosition = typeof token.departmentPosition === "string" ? token.departmentPosition : null;
+        sessionUser.sessionVersion = typeof token.sessionVersion === "number" ? token.sessionVersion : 0;
+        sessionUser.mustChangePassword = token.mustChangePassword === true;
       }
       return session;
     }

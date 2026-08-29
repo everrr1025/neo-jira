@@ -97,6 +97,7 @@ async function assertAssignableAssignee(
     where: {
       id: assigneeId,
       role: { not: "ADMIN" },
+      disabledAt: null,
       projectMemberships: {
         some: { projectId },
       },

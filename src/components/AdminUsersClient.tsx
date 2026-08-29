@@ -17,11 +17,15 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldUser,
   Trash2,
+  UserCheck,
+  UserRound,
+  UserX,
   X,
 } from "lucide-react";
 
-import { createUser, deleteUser, resetUserPassword } from "@/app/actions/admin";
+import { createAdmin, createUser, deleteUser, resetUserPassword, setUserDisabled } from "@/app/actions/admin";
 import LogNavIcon from "@/components/LogNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,14 +63,16 @@ type UserRecord = {
   id: string;
   name: string | null;
   email: string;
-  role: string;
   createdAt: string;
   lastActiveAt: string | null;
+  lastLoginAt: string | null;
+  disabledAt: string | null;
   departments: DepartmentOption[];
   headDepartmentsCount: number;
 };
 
 type Props = {
+  currentUserId: string;
   users: UserRecord[];
   departments: DepartmentOption[];
   totalUsers: number;
@@ -77,6 +83,8 @@ type Props = {
   sortBy: UserSortField;
   sortDirection: SortDirection;
   activityStatus: "all" | "inactive30" | "inactive90" | "unknown";
+  accountType: "user" | "admin";
+  status: "all" | "active" | "disabled";
   locale: Locale;
 };
 
@@ -99,6 +107,7 @@ const TEXT = {
     departments: "Departments",
     createdAt: "Created",
     lastActive: "Last active",
+    lastLogin: "Last login",
     activity: "Activity",
     allActivity: "All activity",
     inactive30: "Inactive 30+ days",
@@ -126,7 +135,6 @@ const TEXT = {
     users: "users",
     perPage: "Per page",
     page: "Page",
-    adminBadge: "Admin",
     createFailed: "Failed to create user",
     emailPasswordRequired: "Email and password are required.",
     invalidPassword: "Password does not meet the security requirements.",
@@ -137,6 +145,10 @@ const TEXT = {
     sortAscending: "Sort ascending",
     sortDescending: "Sort descending",
     removeFilter: "Remove filter",
+    normalUsers: "Users", systemAdmins: "System administrators", statusLabel: "Status", allStatuses: "All statuses", active: "Active", disabled: "Disabled",
+    createAdminTitle: "Create administrator", createAdmin: "Create administrator", temporaryPassword: "Temporary password", temporaryPasswordHint: "Save this password now. The administrator must change it after signing in.",
+    disable: "Disable", restore: "Restore", disableFailed: "Failed to update account status", mustDisableBeforeDelete: "Disable this account before deleting it.",
+    deleteConfirmation: "Enter the account email to confirm permanent deletion", confirmationMismatch: "The confirmation email does not match.", selfProtected: "You cannot perform this action on your own account.", lastAdminProtected: "At least one active administrator must remain.",
   },
   zh: {
     title: "用户",
@@ -150,6 +162,7 @@ const TEXT = {
     departments: "部门",
     createdAt: "创建时间",
     lastActive: "最后活跃",
+    lastLogin: "最后登录",
     activity: "活跃状态",
     allActivity: "全部活跃状态",
     inactive30: "超过 30 天未活跃",
@@ -177,7 +190,6 @@ const TEXT = {
     users: "个用户",
     perPage: "每页",
     page: "第",
-    adminBadge: "管理员",
     createFailed: "创建用户失败",
     emailPasswordRequired: "邮箱和密码不能为空。",
     invalidPassword: "密码不符合安全要求。",
@@ -188,6 +200,10 @@ const TEXT = {
     sortAscending: "升序排列",
     sortDescending: "降序排列",
     removeFilter: "取消筛选",
+    normalUsers: "普通用户", systemAdmins: "系统管理员", statusLabel: "状态", allStatuses: "全部状态", active: "启用", disabled: "已停用",
+    createAdminTitle: "创建系统管理员", createAdmin: "创建管理员", temporaryPassword: "临时密码", temporaryPasswordHint: "请立即保存该密码。管理员首次登录后必须修改密码。",
+    disable: "停用", restore: "恢复", disableFailed: "更新账号状态失败", mustDisableBeforeDelete: "请先停用该账号，再执行永久删除。",
+    deleteConfirmation: "请输入该账号邮箱以确认永久删除", confirmationMismatch: "确认邮箱不匹配。", selfProtected: "不能对当前登录账号执行此操作。", lastAdminProtected: "系统至少需要保留一个启用状态的管理员。",
   },
 } as const;
 
@@ -218,6 +234,7 @@ function getDisplayName(user: UserRecord) {
 }
 
 export default function AdminUsersClient({
+  currentUserId,
   users,
   departments,
   totalUsers,
@@ -228,6 +245,8 @@ export default function AdminUsersClient({
   sortBy,
   sortDirection,
   activityStatus,
+  accountType,
+  status,
   locale,
 }: Props) {
   const t = TEXT[locale];
@@ -241,6 +260,9 @@ export default function AdminUsersClient({
   const [deletingUser, setDeletingUser] = useState<UserRecord | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [createdAdminPassword, setCreatedAdminPassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [statusChangingUserId, setStatusChangingUserId] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -265,6 +287,11 @@ export default function AdminUsersClient({
     unknown: locale === "zh" ? "无记录" : "No record",
   }[activityStatus];
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
+  const statusOptions = [
+    { value: "all", label: t.allStatuses },
+    { value: "active", label: t.active },
+    { value: "disabled", label: t.disabled },
+  ];
 
   useEffect(() => {
     setQuery(search);
@@ -279,6 +306,8 @@ export default function AdminUsersClient({
       if (nextSearch) params.set("search", nextSearch);
       if (departmentIds.length > 0) params.set("departmentIds", departmentIds.join(","));
       if (activityStatus !== "all") params.set("activityStatus", activityStatus);
+      if (accountType === "admin") params.set("accountType", "admin");
+      if (status !== "all") params.set("status", status);
       params.set("sortBy", sortBy);
       params.set("sortDirection", sortDirection);
       params.set("page", "1");
@@ -287,13 +316,15 @@ export default function AdminUsersClient({
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [activityStatus, departmentIds, pageSize, query, router, search, sortBy, sortDirection]);
+  }, [accountType, activityStatus, departmentIds, pageSize, query, router, search, sortBy, sortDirection, status]);
 
   const updateParams = (next: Record<string, string | null>) => {
     const params = new URLSearchParams();
     if (query.trim()) params.set("search", query.trim());
     if (departmentIds.length > 0) params.set("departmentIds", departmentIds.join(","));
     if (activityStatus !== "all") params.set("activityStatus", activityStatus);
+    if (accountType === "admin") params.set("accountType", "admin");
+    if (status !== "all") params.set("status", status);
     params.set("sortBy", sortBy);
     params.set("sortDirection", sortDirection);
     params.set("page", String(page));
@@ -327,6 +358,7 @@ export default function AdminUsersClient({
     } }] : []),
     ...(departmentIds.length > 0 ? [{ key: "departmentIds", label: t.departments, value: selectedDepartmentNames.join(locale === "zh" ? "、" : ", "), clear: () => updateParams({ departmentIds: null, departmentId: null, page: "1" }) }] : []),
     ...(activityStatus !== "all" ? [{ key: "activityStatus", label: t.activity, value: activityStatusLabel, clear: () => updateParams({ activityStatus: null, page: "1" }) }] : []),
+    ...(status !== "all" ? [{ key: "status", label: t.statusLabel, value: status === "active" ? t.active : t.disabled, clear: () => updateParams({ status: null, page: "1" }) }] : []),
   ];
 
   const translateCreateUserError = (message: string | undefined) => {
@@ -337,6 +369,8 @@ export default function AdminUsersClient({
       return t.emailInUse;
     }
     if (message.includes("Unauthorized")) return t.adminRequired;
+    if (message === "ADMIN_NAME_EMAIL_REQUIRED") return t.emailPasswordRequired;
+    if (message === "EMAIL_IN_USE") return t.emailInUse;
     return locale === "zh" ? t.createFailed : message;
   };
 
@@ -360,8 +394,25 @@ export default function AdminUsersClient({
     );
   };
 
+  const renderFilterTrigger = (active: boolean, label: string, value: string) => (
+    <Button
+      type="button"
+      variant={active ? "outline" : "ghost"}
+      size={active ? "sm" : "icon-xs"}
+      className={active
+        ? "h-5 max-w-24 bg-background px-1.5 text-xs font-normal"
+        : "text-muted-foreground"}
+      aria-label={label}
+      title={label}
+    >
+      {active ? <span className="truncate">{value}</span> : <ListFilter />}
+    </Button>
+  );
+
   const closeCreateDialog = () => {
     setErrorMsg("");
+    setCreatedAdminPassword("");
+    setNewUser({ name: "", email: "", password: "" });
     setIsCreateOpen(false);
   };
 
@@ -369,12 +420,19 @@ export default function AdminUsersClient({
     event.preventDefault();
     setErrorMsg("");
     startTransition(async () => {
-      const res = await createUser(newUser);
+      const res = accountType === "admin"
+        ? await createAdmin({ name: newUser.name, email: newUser.email })
+        : await createUser(newUser);
       if (!res.success) {
         setErrorMsg(translateCreateUserError(res.error));
         return;
       }
 
+      if (accountType === "admin" && "password" in res && res.password) {
+        setCreatedAdminPassword(res.password);
+        router.refresh();
+        return;
+      }
       setNewUser({ name: "", email: "", password: "" });
       setShowPassword(true);
       setIsCreateOpen(false);
@@ -386,12 +444,13 @@ export default function AdminUsersClient({
     if (!deletingUser) return;
     setErrorMsg("");
     startTransition(async () => {
-      const res = await deleteUser(deletingUser.id);
+      const res = await deleteUser(deletingUser.id, deleteConfirmation);
       if (!res.success) {
-        setErrorMsg(res.error || t.deleteFailed);
+        setErrorMsg(translateAccountError(res.error) || t.deleteFailed);
         return;
       }
       setDeletingUser(null);
+      setDeleteConfirmation("");
       router.refresh();
     });
   };
@@ -404,16 +463,57 @@ export default function AdminUsersClient({
       if (res.success && res.password) {
         setRevealedPasswords((current) => ({ ...current, [userId]: res.password }));
       } else {
-        setErrorMsg(res.error || t.resetFailed);
+        setErrorMsg(translateAccountError(res.error) || t.resetFailed);
       }
       setResettingUserId(null);
     });
   };
 
+  const translateAccountError = (error?: string) => {
+    if (error === "ACCOUNT_MUST_BE_DISABLED") return t.mustDisableBeforeDelete;
+    if (error === "DELETE_CONFIRMATION_MISMATCH") return t.confirmationMismatch;
+    if (error === "CANNOT_CHANGE_OWN_STATUS" || error === "CANNOT_RESET_OWN_PASSWORD" || error?.includes("own account")) return t.selfProtected;
+    if (error === "LAST_ACTIVE_ADMIN") return t.lastAdminProtected;
+    if (error?.startsWith("DEPARTMENT_ADMIN:")) return t.cannotDeleteHead;
+    return error || t.disableFailed;
+  };
+
+  const handleAccountStatus = (user: UserRecord) => {
+    setErrorMsg("");
+    setStatusChangingUserId(user.id);
+    startTransition(async () => {
+      const res = await setUserDisabled({ userId: user.id, disabled: !user.disabledAt });
+      if (!res.success) setErrorMsg(translateAccountError(res.error));
+      setStatusChangingUserId(null);
+      router.refresh();
+    });
+  };
+
+  const switchAccountType = (nextType: "user" | "admin") => {
+    const params = new URLSearchParams();
+    if (nextType === "admin") params.set("accountType", "admin");
+    params.set("page", "1");
+    params.set("pageSize", String(pageSize));
+    router.push(`/admin/users?${params.toString()}`);
+  };
+
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight">{t.title}</h1>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant={accountType === "admin" ? "secondary" : "ghost"}
+            aria-label={accountType === "admin" ? t.systemAdmins : t.normalUsers}
+            title={accountType === "admin" ? t.systemAdmins : t.normalUsers}
+            aria-pressed={accountType === "admin"}
+            onClick={() => switchAccountType(accountType === "admin" ? "user" : "admin")}
+          >
+            {accountType === "admin" ? <ShieldUser /> : <UserRound />}
+          </Button>
+        </div>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
@@ -433,7 +533,7 @@ export default function AdminUsersClient({
             }}
           >
             <Plus />
-            {t.addUser}
+            {accountType === "admin" ? t.createAdmin : t.addUser}
           </Button>
         </div>
       </div>
@@ -465,14 +565,24 @@ export default function AdminUsersClient({
       </div> : null}
 
       <Card className="gap-0 overflow-hidden py-0">
-          <Table className="min-w-[960px] table-fixed">
+          <Table className={accountType === "admin" ? "min-w-[880px] table-fixed" : "min-w-[960px] table-fixed"}>
             <colgroup>
-              <col className="w-[23%]" />
-              <col className="w-[20%]" />
-              <col className="w-[16%]" />
-              <col className="w-[17%]" />
-              <col className="w-[11%]" />
-              <col className="w-[13%]" />
+              {accountType === "admin" ? <>
+                <col className="w-[23%]" />
+                <col className="w-[23%]" />
+                <col className="w-[12%]" />
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+              </> : <>
+                <col className="w-[19%]" />
+                <col className="w-[18%]" />
+                <col className="w-[8%]" />
+                <col className="w-[14%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+              </>}
             </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
@@ -480,38 +590,39 @@ export default function AdminUsersClient({
                 <TableHead>{renderSortableHeader(t.email, "email")}</TableHead>
                 <TableHead>
                   <div className="flex items-center gap-1">
-                    {renderSortableHeader(t.departments, "department")}
-                    {departmentIds.length > 0 ? (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge
-                              variant="outline"
-                              className="h-5 min-w-5 justify-center bg-background px-1.5 tabular-nums"
-                              tabIndex={0}
-                              aria-label={selectedDepartmentNames.join(", ")}
-                            >
-                              {departmentIds.length}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={6}>
-                            {selectedDepartmentNames.join(locale === "zh" ? "、" : ", ")}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null}
+                    <span>{t.statusLabel}</span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className={departmentIds.length > 0 ? "bg-accent text-foreground" : "text-muted-foreground"}
-                          aria-label={`${t.departments}: ${selectedDepartmentNames.join(", ") || t.allDepartments}`}
-                          title={`${t.departments}: ${selectedDepartmentNames.join(", ") || t.allDepartments}`}
+                        {renderFilterTrigger(
+                          status !== "all",
+                          `${t.statusLabel}: ${status === "active" ? t.active : status === "disabled" ? t.disabled : t.allStatuses}`,
+                          status === "active" ? t.active : t.disabled,
+                        )}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-40">
+                        <DropdownMenuRadioGroup
+                          value={status}
+                          onValueChange={(value) => updateParams({ status: value === "all" ? null : value, page: "1" })}
                         >
-                          <ListFilter />
-                        </Button>
+                          <DropdownMenuRadioItem value={statusOptions[0].value}>{statusOptions[0].label}</DropdownMenuRadioItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuRadioItem value={statusOptions[1].value}>{statusOptions[1].label}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value={statusOptions[2].value}>{statusOptions[2].label}</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </TableHead>
+                {accountType === "user" ? <TableHead>
+                  <div className="flex items-center gap-1">
+                    {renderSortableHeader(t.departments, "department")}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        {renderFilterTrigger(
+                          departmentIds.length > 0,
+                          `${t.departments}: ${selectedDepartmentNames.join(", ") || t.allDepartments}`,
+                          String(departmentIds.length),
+                        )}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="min-w-52">
                         <DropdownMenuCheckboxItem
@@ -537,39 +648,18 @@ export default function AdminUsersClient({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </TableHead>
+                </TableHead> : null}
                 <TableHead>
+                  {accountType === "admin" ? t.lastLogin : (
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.lastActive, "lastActiveAt")}
-                    {activityStatus !== "all" ? (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge
-                              variant="outline"
-                              className="h-5 justify-center bg-background px-1.5 whitespace-nowrap"
-                              tabIndex={0}
-                              aria-label={activityStatusLabel}
-                            >
-                              {activityStatusBadgeLabel}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={6}>{activityStatusLabel}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-xs"
-                          className={activityStatus !== "all" ? "bg-accent text-foreground" : "text-muted-foreground"}
-                          aria-label={`${t.activity}: ${activityStatusLabel}`}
-                          title={`${t.activity}: ${activityStatusLabel}`}
-                        >
-                          <ListFilter />
-                        </Button>
+                        {renderFilterTrigger(
+                          activityStatus !== "all",
+                          `${t.activity}: ${activityStatusLabel}`,
+                          activityStatusBadgeLabel,
+                        )}
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="min-w-52">
                         <DropdownMenuRadioGroup
@@ -587,6 +677,7 @@ export default function AdminUsersClient({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
+                  )}
                 </TableHead>
                 <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
                 <TableHead className="px-4 text-left whitespace-nowrap">
@@ -597,10 +688,12 @@ export default function AdminUsersClient({
             <TableBody>
               {users.map((user) => {
                 const isHead = user.headDepartmentsCount > 0;
-                const disableDelete = isHead || isPending;
+                const isCurrentUser = user.id === currentUserId;
+                const disableDelete = !user.disabledAt || isHead || isCurrentUser || isPending;
                 const isResettingThisUser = isResetting && resettingUserId === user.id;
-                const lastActiveText = user.lastActiveAt
-                  ? new Date(user.lastActiveAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
+                const activityDate = accountType === "admin" ? user.lastLoginAt : user.lastActiveAt;
+                const lastActiveText = activityDate
+                  ? new Date(activityDate).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
                       year: "numeric",
                       month: "2-digit",
                       day: "2-digit",
@@ -617,11 +710,12 @@ export default function AdminUsersClient({
                     disabled={disableDelete}
                     onClick={() => {
                       setErrorMsg("");
+                      setDeleteConfirmation("");
                       setDeletingUser(user);
                     }}
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     aria-label={t.delete}
-                    title={isHead ? t.cannotDeleteHead : t.delete}
+                    title={!user.disabledAt ? t.mustDisableBeforeDelete : isHead ? t.cannotDeleteHead : t.delete}
                   >
                     <Trash2 />
                   </Button>
@@ -637,9 +731,6 @@ export default function AdminUsersClient({
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-2 font-medium text-foreground">
                             <span className="min-w-0 truncate" title={getDisplayName(user)}>{getDisplayName(user)}</span>
-                            {user.role === "ADMIN" ? (
-                              <Badge variant="secondary">{t.adminBadge}</Badge>
-                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -648,6 +739,9 @@ export default function AdminUsersClient({
                       <span className="block truncate" title={user.email}>{user.email}</span>
                     </TableCell>
                     <TableCell>
+                      <Badge variant={user.disabledAt ? "outline" : "secondary"}>{user.disabledAt ? t.disabled : t.active}</Badge>
+                    </TableCell>
+                    {accountType === "user" ? <TableCell>
                       {user.departments.length > 0 ? (
                         <div className="flex min-w-0 gap-1.5 overflow-hidden">
                           {user.departments.map((department) => (
@@ -657,7 +751,7 @@ export default function AdminUsersClient({
                           ))}
                         </div>
                       ) : null}
-                    </TableCell>
+                    </TableCell> : null}
                     <TableCell className="text-xs text-muted-foreground">
                       <span className="block truncate" title={lastActiveText || undefined}>
                         {lastActiveText}
@@ -684,12 +778,23 @@ export default function AdminUsersClient({
                             type="button"
                             variant="outline"
                             size="icon-xs"
-                            disabled={isResettingThisUser}
+                            disabled={isResettingThisUser || isCurrentUser}
                             onClick={() => handleResetPassword(user.id)}
                             aria-label={t.resetPassword}
                             title={t.resetPassword}
                           >
                             {isResettingThisUser ? <Loader2 className="animate-spin" /> : <KeyRound />}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-xs"
+                            disabled={isPending || isCurrentUser}
+                            onClick={() => handleAccountStatus(user)}
+                            aria-label={user.disabledAt ? t.restore : t.disable}
+                            title={isCurrentUser ? t.selfProtected : user.disabledAt ? t.restore : t.disable}
+                          >
+                            {statusChangingUserId === user.id ? <Loader2 className="animate-spin" /> : user.disabledAt ? <UserCheck /> : <UserX />}
                           </Button>
                           {isHead ? (
                             <TooltipProvider delayDuration={200}>
@@ -782,8 +887,8 @@ export default function AdminUsersClient({
         <DialogContent showCloseButton={false} className="max-w-md gap-0 overflow-hidden p-0">
           <DialogHeader className="border-b bg-muted/35 px-6 py-4">
             <div className="flex items-center justify-between gap-4">
-              <DialogTitle>{t.createTitle}</DialogTitle>
-              <DialogDescription className="sr-only">{t.createTitle}</DialogDescription>
+              <DialogTitle>{accountType === "admin" ? t.createAdminTitle : t.createTitle}</DialogTitle>
+              <DialogDescription className="sr-only">{accountType === "admin" ? t.createAdminTitle : t.createTitle}</DialogDescription>
               <Button
                 type="button"
                 variant="ghost"
@@ -804,65 +909,31 @@ export default function AdminUsersClient({
                   {errorMsg}
                 </div>
               ) : null}
-              <div className="space-y-2">
-                <Label htmlFor="new-user-name">{t.fullName}</Label>
-                <Input
-                  id="new-user-name"
-                  name="new-user-name"
-                  required
-                  autoComplete="off"
-                  value={newUser.name}
-                  onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Jane Doe"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-user-email">{t.email}</Label>
-                <Input
-                  id="new-user-email"
-                  name="new-user-email"
-                  required
-                  type="email"
-                  autoComplete="off"
-                  value={newUser.email}
-                  onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="jane@neo-jira.local"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-user-password">{t.password}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="new-user-password"
-                    name="new-user-password"
-                    required
-                    minLength={8}
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="off"
-                    value={newUser.password}
-                    onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowPassword((value) => !value)}
-                    title={showPassword ? t.hide : t.show}
-                  >
-                    {showPassword ? <EyeOff /> : <Eye />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setNewUser((current) => ({ ...current, password: generateDefaultPassword() }))}
-                    title={t.generate}
-                  >
-                    <RefreshCw />
-                  </Button>
+              {createdAdminPassword ? (
+                <div className="space-y-2 rounded-md border bg-muted/40 p-4">
+                  <Label>{t.temporaryPassword}</Label>
+                  <div className="select-all break-all rounded-md bg-background p-3 font-mono text-sm">{createdAdminPassword}</div>
+                  <p className="text-xs text-muted-foreground">{t.temporaryPasswordHint}</p>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">{t.passwordRule}</p>
-              </div>
+              ) : <>
+                <div className="space-y-2">
+                  <Label htmlFor="new-user-name">{t.fullName}</Label>
+                  <Input id="new-user-name" name="new-user-name" required autoComplete="off" value={newUser.name} onChange={(event) => setNewUser((current) => ({ ...current, name: event.target.value }))} placeholder="Jane Doe" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-user-email">{t.email}</Label>
+                  <Input id="new-user-email" name="new-user-email" required type="email" autoComplete="off" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} placeholder="jane@neo-jira.local" />
+                </div>
+                {accountType === "user" ? <div className="space-y-2">
+                  <Label htmlFor="new-user-password">{t.password}</Label>
+                  <div className="flex gap-2">
+                    <Input id="new-user-password" name="new-user-password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete="off" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
+                    <Button type="button" variant="outline" size="icon" onClick={() => setShowPassword((value) => !value)} title={showPassword ? t.hide : t.show}>{showPassword ? <EyeOff /> : <Eye />}</Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setNewUser((current) => ({ ...current, password: generateDefaultPassword() }))} title={t.generate}><RefreshCw /></Button>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{t.passwordRule}</p>
+                </div> : null}
+              </>}
             </div>
             <DialogFooter className="border-t bg-muted/35 px-6 py-4">
               <Button
@@ -873,10 +944,10 @@ export default function AdminUsersClient({
               >
                 {t.cancel}
               </Button>
-              <Button type="submit" disabled={isPending}>
+              {!createdAdminPassword ? <Button type="submit" disabled={isPending}>
                 {isPending ? <Loader2 className="animate-spin" /> : null}
-                {t.create}
-              </Button>
+                {accountType === "admin" ? t.createAdmin : t.create}
+              </Button> : null}
             </DialogFooter>
           </form>
         </DialogContent>
@@ -887,6 +958,7 @@ export default function AdminUsersClient({
         onOpenChange={(open) => {
           if (!open && !isPending) {
             setErrorMsg("");
+            setDeleteConfirmation("");
             setDeletingUser(null);
           }
         }}
@@ -905,6 +977,7 @@ export default function AdminUsersClient({
                 size="icon-sm"
                 onClick={() => {
                   setErrorMsg("");
+                  setDeleteConfirmation("");
                   setDeletingUser(null);
                 }}
                 disabled={isPending}
@@ -923,9 +996,15 @@ export default function AdminUsersClient({
               </div>
             ) : null}
             {deletingUser ? (
-              <div className="rounded-md border bg-muted/40 p-3 text-sm font-medium">
-                {getDisplayName(deletingUser)} <span className="font-normal text-muted-foreground">({deletingUser.email})</span>
-              </div>
+              <>
+                <div className="rounded-md border bg-muted/40 p-3 text-sm font-medium">
+                  {getDisplayName(deletingUser)} <span className="font-normal text-muted-foreground">({deletingUser.email})</span>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="delete-user-confirmation">{t.deleteConfirmation}</Label>
+                  <Input id="delete-user-confirmation" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} autoComplete="off" placeholder={deletingUser.email} />
+                </div>
+              </>
             ) : null}
           </div>
           <DialogFooter className="border-t bg-muted/35 px-6 py-4">
@@ -934,9 +1013,10 @@ export default function AdminUsersClient({
               variant="outline"
               onClick={() => {
                 setErrorMsg("");
+                setDeleteConfirmation("");
                 setDeletingUser(null);
               }}
-              disabled={isPending}
+              disabled={isPending || deleteConfirmation.trim().toLowerCase() !== deletingUser?.email.toLowerCase()}
             >
               {t.cancel}
             </Button>

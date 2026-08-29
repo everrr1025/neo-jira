@@ -28,7 +28,7 @@ export default async function AdminDepartmentMembersPage({
       where: { id },
       include: {
         members: {
-          include: { user: { select: { id: true, name: true, email: true } } },
+          include: { user: { select: { id: true, name: true, email: true, disabledAt: true } } },
           orderBy: [{ isDepartmentAdmin: "desc" }, { user: { name: "asc" } }],
         },
       },
@@ -36,6 +36,7 @@ export default async function AdminDepartmentMembersPage({
     prisma.user.findMany({
       where: {
         role: { not: "ADMIN" },
+        disabledAt: null,
         departmentMembers: { none: {} },
       },
       select: { id: true, name: true, email: true },
@@ -58,6 +59,7 @@ export default async function AdminDepartmentMembersPage({
       isDepartmentAdmin: member.isDepartmentAdmin,
       userName: member.user.name,
       userEmail: member.user.email,
+      disabledAt: member.user.disabledAt?.toISOString() ?? null,
     })),
   };
 

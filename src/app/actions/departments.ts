@@ -82,7 +82,7 @@ export async function createDepartment(data: {
       if (data.headUserId) {
         const headUser = await tx.user.findUnique({
           where: { id: data.headUserId },
-          select: { role: true },
+          select: { role: true, disabledAt: true },
         });
         if (!headUser) {
           throw new Error("Selected head user not found");
@@ -90,6 +90,7 @@ export async function createDepartment(data: {
         if (headUser.role === "ADMIN") {
           throw new Error("Cannot add system admin to department");
         }
+        if (headUser.disabledAt) throw new Error("Cannot add disabled user to department");
 
         const existingHeadMembership = await tx.departmentMember.findFirst({
           where: { userId: data.headUserId },
@@ -370,9 +371,10 @@ export async function addMemberToDepartment(departmentId: string, userId: string
     const session = await checkGlobalAdmin();
     const actorId = getSessionUser(session).id;
 
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, disabledAt: true } });
     if (!user) return { success: false, error: "User not found" };
     if (user.role === "ADMIN") return { success: false, error: "Cannot add system admin to department" };
+    if (user.disabledAt) return { success: false, error: "Cannot add disabled user to department" };
 
     const existingMembership = await prisma.departmentMember.findFirst({
       where: { userId },
@@ -413,7 +415,7 @@ export async function addMembersToDepartment(departmentId: string, userIds: stri
 
     const users = await prisma.user.findMany({
       where: { id: { in: uniqueUserIds } },
-      select: { id: true, role: true },
+      select: { id: true, role: true, disabledAt: true },
     });
     if (users.length !== uniqueUserIds.length) {
       return { success: false, error: "User not found" };
@@ -422,6 +424,7 @@ export async function addMembersToDepartment(departmentId: string, userIds: stri
     if (users.some((user) => user.role === "ADMIN")) {
       return { success: false, error: "Cannot add system admin to department" };
     }
+    if (users.some((user) => user.disabledAt)) return { success: false, error: "Cannot add disabled user to department" };
 
     const existingMemberships = await prisma.departmentMember.findMany({
       where: { userId: { in: uniqueUserIds } },
@@ -525,7 +528,7 @@ export async function createDepartmentProject(
 
     const finalMemberIds = Array.from(new Set(memberIds));
     const departmentMembers = await prisma.departmentMember.findMany({
-      where: { departmentId, userId: { in: finalMemberIds } },
+      where: { departmentId, userId: { in: finalMemberIds }, user: { disabledAt: null } },
       select: { userId: true },
     });
     if (departmentMembers.length !== finalMemberIds.length) {
@@ -603,6 +606,16 @@ export async function updateDepartmentProjectMembers(
     }
 
     const finalMemberIds = uniqueMemberIds;
+    const currentMemberIds = project.members.map((member) => member.userId);
+    const newlyAddedIds = finalMemberIds.filter((userId) => !currentMemberIds.includes(userId));
+    const unavailableNewMembers = newlyAddedIds.length > 0
+      ? await prisma.user.count({ where: { id: { in: newlyAddedIds }, disabledAt: { not: null } } })
+      : 0;
+    if (unavailableNewMembers > 0) return { success: false, error: "Cannot add disabled user to project" };
+    if (ownerId) {
+      const activeOwner = await prisma.user.findFirst({ where: { id: ownerId, disabledAt: null }, select: { id: true } });
+      if (!activeOwner) return { success: false, error: "Project owner must be active" };
+    }
     const departmentMembers = await prisma.departmentMember.findMany({
       where: { departmentId, userId: { in: finalMemberIds } },
       select: { userId: true },
@@ -612,7 +625,6 @@ export async function updateDepartmentProjectMembers(
     }
 
     await prisma.$transaction(async (tx) => {
-      const currentMemberIds = project.members.map((member) => member.userId);
       const toRemove = currentMemberIds.filter((userId) => !finalMemberIds.includes(userId));
       const toAdd = finalMemberIds.filter((userId) => !currentMemberIds.includes(userId));
 

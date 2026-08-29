@@ -16,7 +16,8 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  const userId = (session.user as { id?: string }).id;
+  const sessionUser = session.user as { id?: string; mustChangePassword?: boolean };
+  const userId = sessionUser.id;
   if (!userId) {
     redirect("/login");
   }
@@ -58,6 +59,7 @@ export default async function SettingsPage() {
           departmentPosition: departmentMembership?.positionName || null,
         }}
         locale={locale}
+        passwordChangeRequired={sessionUser.mustChangePassword === true}
       />
     </div>
   );

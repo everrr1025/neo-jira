@@ -20,7 +20,7 @@ export default async function AdminDepartmentsPage() {
   const departments = await prisma.department.findMany({
     include: {
       members: {
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: { user: { select: { id: true, name: true, email: true, disabledAt: true } } },
         orderBy: [{ isDepartmentAdmin: "desc" }, { user: { name: "asc" } }],
       },
       _count: { select: { projects: true } },
@@ -39,6 +39,7 @@ export default async function AdminDepartmentsPage() {
       isDepartmentAdmin: member.isDepartmentAdmin,
       userEmail: member.user.email,
       userName: member.user.name,
+      disabledAt: member.user.disabledAt?.toISOString() ?? null,
     })),
     projectsCount: department._count.projects,
     createdAt: department.createdAt.toISOString(),

@@ -32,6 +32,7 @@ type MemberRecord = {
   isDepartmentAdmin: boolean;
   userName: string | null;
   userEmail: string;
+  disabledAt: string | null;
 };
 
 type UserOption = {
@@ -70,6 +71,7 @@ const TEXT = {
     people: "members",
     perPage: "Per page",
     page: "Page",
+    disabled: "Disabled",
   },
   zh: {
     title: "部门人员管理",
@@ -92,6 +94,7 @@ const TEXT = {
     people: "名成员",
     perPage: "每页",
     page: "第",
+    disabled: "已停用",
   },
 } as const;
 
@@ -223,7 +226,10 @@ export default function AdminDepartmentMembersClient({
                 return (
                   <TableRow key={member.userId}>
                     <TableCell className="pl-6 font-medium text-foreground">
-                      {displayMember(member)}
+                      <span className="inline-flex items-center gap-2">
+                        {displayMember(member)}
+                        {member.disabledAt ? <Badge variant="outline" className="text-muted-foreground">{t.disabled}</Badge> : null}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{member.userEmail}</TableCell>
                     <TableCell>

@@ -132,7 +132,8 @@ test("filters governance logs by exact target", async ({ page }) => {
   await expect(cleanupDialog).toBeVisible();
   await expect(cleanupDialog.getByText(/只会删除超过保留期限的用户、部门和项目治理日志/)).toBeVisible();
   await expect(cleanupDialog.getByText("2 天", { exact: true })).toBeVisible();
-  await cleanupDialog.locator('button[aria-pressed="false"]').click();
+  await expect(cleanupDialog.locator('button[aria-pressed="true"]')).toHaveCount(1);
+  await expect(cleanupDialog.getByRole("button", { name: "全部过期日志" })).toHaveAttribute("aria-pressed", "false");
   await expect(cleanupDialog.getByText(/当前对象仍然存在/)).toBeVisible();
   await expect(cleanupDialog.getByLabel("输入 DELETE 以确认永久删除")).toBeDisabled();
   await cleanupDialog.getByRole("button", { name: "取消", exact: true }).click();

@@ -51,11 +51,13 @@ export function buildProjectEntityWhere(entityId: string, projectId: string) {
 export function buildProjectUsersWhere(projectId: string, includeGlobalAdmins = true) {
   if (includeGlobalAdmins) {
     return {
+      disabledAt: null,
       projectMemberships: { some: { projectId } },
     };
   }
 
   return {
+    disabledAt: null,
     projectMemberships: { some: { projectId } },
   };
 }

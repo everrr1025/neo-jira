@@ -34,9 +34,9 @@ export async function checkGlobalAdmin() {
 
   const currentUser = await prisma.user.findUnique({
     where: { id: sessionUser.id },
-    select: { role: true },
+    select: { role: true, disabledAt: true },
   });
-  if (currentUser?.role !== "ADMIN") {
+  if (currentUser?.role !== "ADMIN" || currentUser.disabledAt) {
     throw new Error("Unauthorized. Admin access required.");
   }
   return session;

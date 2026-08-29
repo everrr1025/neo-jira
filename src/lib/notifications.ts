@@ -51,6 +51,7 @@ async function resolveMentionedUserIds(content: string, projectId: string, actor
 
   const projectMembers = await prisma.user.findMany({
     where: {
+      disabledAt: null,
       projectMemberships: {
         some: {
           projectId,

@@ -45,7 +45,12 @@ model User {
   updatedAt DateTime @updatedAt
   lastLoginAt DateTime?
   lastActiveAt DateTime?
+  disabledAt DateTime?
+  sessionVersion Int @default(0)
+  mustChangePassword Boolean @default(false)
   activityTrackingStartedAt DateTime @default(now())
+
+  @@index([role, disabledAt])
 }
 
 model UserDailyActivity {

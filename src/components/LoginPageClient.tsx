@@ -21,19 +21,22 @@ const LOGIN_TEXT = {
   passwordLabel: "\u5BC6\u7801",
   invalidCredentials: "\u90AE\u7BB1\u6216\u5BC6\u7801\u9519\u8BEF",
   noDepartment: "\u5F53\u524D\u7528\u6237\u4E0D\u5C5E\u4E8E\u4EFB\u4F55\u90E8\u95E8\uFF0C\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458",
+  accountDisabled: "\u8D26\u53F7\u5DF2\u505C\u7528\uFF0C\u8BF7\u8054\u7CFB\u7CFB\u7EDF\u7BA1\u7406\u5458",
   signIn: "\u767B\u5F55",
   signingIn: "\u767B\u5F55\u4E2D...",
   showPassword: "\u663E\u793A\u5BC6\u7801",
   hidePassword: "\u9690\u85CF\u5BC6\u7801",
 };
 
-type LoginErrorCode = "invalid-credentials" | "no-department" | null;
+type LoginErrorCode = "invalid-credentials" | "no-department" | "account-disabled" | null;
 
 const POST_LOGIN_REDIRECT = "/projects/select?projectId=clear&redirectTo=/";
 
 function getLoginErrorCode(error: string): Exclude<LoginErrorCode, null> {
   const normalizedError = error.trim().toUpperCase().replace(/-/g, "_");
-  return normalizedError === "NO_DEPARTMENT" ? "no-department" : "invalid-credentials";
+  if (normalizedError === "NO_DEPARTMENT") return "no-department";
+  if (normalizedError === "ACCOUNT_DISABLED") return "account-disabled";
+  return "invalid-credentials";
 }
 
 export default function LoginPageClient({
@@ -51,8 +54,9 @@ export default function LoginPageClient({
   const errorMessage = useMemo(() => {
     if (errorCode === "invalid-credentials") return text.invalidCredentials;
     if (errorCode === "no-department") return text.noDepartment;
+    if (errorCode === "account-disabled") return text.accountDisabled;
     return "";
-  }, [errorCode, text.invalidCredentials, text.noDepartment]);
+  }, [errorCode, text.accountDisabled, text.invalidCredentials, text.noDepartment]);
 
   useEffect(() => {
     if (initialErrorCode !== "no-department") return;

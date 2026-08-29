@@ -13,7 +13,7 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
 
   const [usageHealthUsers, departmentCount, projectCount, storageTotal, storageRecent, activities, departments, filesByDepartment, unassignedProjects] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "USER" },
+      where: { role: "USER", disabledAt: null },
       select: {
         lastActiveAt: true,
         activityTrackingStartedAt: true,
@@ -31,7 +31,7 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
       _sum: { fileSize: true },
     }),
     prisma.userDailyActivity.findMany({
-      where: { activityDate: { gte: dateKeys30[0] }, user: { role: "USER" } },
+      where: { activityDate: { gte: dateKeys30[0] }, user: { role: "USER", disabledAt: null } },
       select: { activityDate: true, userId: true, departmentIdSnapshot: true },
     }),
     prisma.department.findMany({
@@ -40,7 +40,7 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
         id: true,
         name: true,
         key: true,
-        members: { where: { user: { role: "USER" } }, select: { id: true } },
+        members: { where: { user: { role: "USER", disabledAt: null } }, select: { id: true } },
         projects: { select: { id: true } },
       },
     }),

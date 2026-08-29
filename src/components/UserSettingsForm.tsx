@@ -1,6 +1,8 @@
 "use client";
 
 import { type FormEvent, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Eye, EyeOff, KeyRound, Settings, Shield, UserRound } from "lucide-react";
 
 import AlertPopup from "@/components/AlertPopup";
@@ -24,6 +26,7 @@ import { isValidPassword } from "@/lib/validation";
 export default function UserSettingsForm({
   user,
   locale,
+  passwordChangeRequired = false,
 }: {
   user: {
     id: string;
@@ -34,6 +37,7 @@ export default function UserSettingsForm({
     departmentPosition?: string | null;
   };
   locale: Locale;
+  passwordChangeRequired?: boolean;
 }) {
   const translations = getTranslations(locale);
   const text = translations.settingsPage;
@@ -48,6 +52,8 @@ export default function UserSettingsForm({
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackType, setFeedbackType] = useState<"error" | "success">("success");
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const { update: updateSession } = useSession();
 
   const mapPasswordError = (error?: string) => {
     switch (error) {
@@ -97,6 +103,11 @@ export default function UserSettingsForm({
         setShowConfirmPassword(false);
         setFeedbackType("success");
         setFeedbackMessage(text.passwordUpdated);
+        if (passwordChangeRequired) {
+          await updateSession();
+          router.push("/");
+          router.refresh();
+        }
         return;
       }
 
@@ -107,6 +118,11 @@ export default function UserSettingsForm({
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      {passwordChangeRequired ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 lg:col-span-2 dark:text-amber-200">
+          {locale === "zh" ? "当前密码为临时密码，请先修改密码后再继续使用系统。" : "Your current password is temporary. Change it before continuing."}
+        </div>
+      ) : null}
       <Card>
         <CardHeader className="border-b pb-6">
           <div className="flex items-start gap-4">

@@ -72,7 +72,7 @@ export async function changeUserPassword(currentPassword: string, newPassword: s
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, mustChangePassword: false },
     });
 
     revalidatePath("/settings");

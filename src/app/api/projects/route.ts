@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     }
 
     const candidateUsers = await prisma.user.findMany({
-      where: { id: { in: [ownerId, ...memberIds] } },
+      where: { id: { in: [ownerId, ...memberIds] }, disabledAt: null },
       select: { id: true, role: true },
     });
     if (candidateUsers.length !== new Set([ownerId, ...memberIds]).size) {

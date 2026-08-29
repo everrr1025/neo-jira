@@ -30,7 +30,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Locale } from "@/lib/i18n";
 import { formatFullDateTime } from "@/lib/timeFormat";
 
@@ -58,12 +57,12 @@ function governanceLabel(value: string | null, locale: Locale) {
   const zh: Record<string, string> = {
     USER: "用户", DEPARTMENT: "部门", PROJECT: "项目", CREATE: "创建", UPDATE: "更新", DELETE: "删除",
     password: "密码重置", members: "成员", owner: "负责人", memberRole: "成员角色", departmentAdmin: "部门管理员",
-    positions: "岗位", memberPermissions: "成员权限", details: "基本信息", name: "名称", key: "标识", description: "描述",
+    positions: "岗位", memberPermissions: "成员权限", details: "基本信息", name: "名称", key: "标识", description: "描述", status: "账号状态", role: "账号角色", ACTIVE: "启用", DISABLED: "已停用", ADMIN: "系统管理员",
   };
   const en: Record<string, string> = {
     USER: "User", DEPARTMENT: "Department", PROJECT: "Project", CREATE: "Create", UPDATE: "Update", DELETE: "Delete",
     password: "Password reset", members: "Members", owner: "Owner", memberRole: "Member role", departmentAdmin: "Department admin",
-    positions: "Positions", memberPermissions: "Member permissions", details: "Details", name: "Name", key: "Key", description: "Description",
+    positions: "Positions", memberPermissions: "Member permissions", details: "Details", name: "Name", key: "Key", description: "Description", status: "Account status", role: "Account role", ACTIVE: "Active", DISABLED: "Disabled", ADMIN: "System administrator",
   };
   return (locale === "zh" ? zh : en)[value] || value;
 }
@@ -92,6 +91,21 @@ type CleanupPreview = {
 
 type FilterOption = { value: string; label: string };
 
+function renderFilterTrigger(active: boolean, label: string, value: string) {
+  return <Button
+    type="button"
+    variant={active ? "outline" : "ghost"}
+    size={active ? "sm" : "icon-xs"}
+    className={active
+      ? "h-5 min-w-0 max-w-32 bg-background px-1.5 text-xs font-normal"
+      : "text-muted-foreground"}
+    aria-label={label}
+    title={label}
+  >
+    {active ? <span className="truncate">{value}</span> : <ListFilter />}
+  </Button>;
+}
+
 function SingleFilterableHeader({
   label,
   filterLabel,
@@ -109,35 +123,9 @@ function SingleFilterableHeader({
 
   return <div className="flex min-w-0 items-center gap-1">
     <span className="shrink-0">{label}</span>
-    {value !== "all" ? (
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              className="h-5 min-w-0 max-w-24 justify-center bg-background px-1.5"
-              tabIndex={0}
-              aria-label={selectedLabel}
-            >
-              <span className="truncate">{selectedLabel}</span>
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6}>{selectedLabel}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    ) : null}
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={value !== "all" ? "bg-accent text-foreground" : "text-muted-foreground"}
-          aria-label={`${filterLabel}: ${selectedLabel}`}
-          title={`${filterLabel}: ${selectedLabel}`}
-        >
-          <ListFilter />
-        </Button>
+        {renderFilterTrigger(value !== "all", `${filterLabel}: ${selectedLabel}`, selectedLabel)}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-48">
         <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
@@ -175,35 +163,9 @@ function MultiFilterableHeader({
 
   return <div className="flex min-w-0 items-center gap-1">
     <span className="shrink-0">{label}</span>
-    {value.length > 0 ? (
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              className="h-5 min-w-5 justify-center bg-background px-1.5 tabular-nums"
-              tabIndex={0}
-              aria-label={selectionLabel}
-            >
-              {value.length}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6} className="max-w-sm break-words">{selectionLabel}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    ) : null}
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={value.length > 0 ? "bg-accent text-foreground" : "text-muted-foreground"}
-          aria-label={`${label}: ${selectionLabel}`}
-          title={`${label}: ${selectionLabel}`}
-        >
-          <ListFilter />
-        </Button>
+        {renderFilterTrigger(value.length > 0, `${label}: ${selectionLabel}`, String(value.length))}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
         <DropdownMenuCheckboxItem
@@ -287,9 +249,6 @@ function TargetFilterableHeader({
 
   return <div className="flex min-w-0 items-center gap-1">
     <span className="shrink-0">{label}</span>
-    {selected ? <Badge variant="outline" className="h-5 min-w-0 max-w-32 justify-center bg-background px-1.5" title={selectedLabel}>
-      <span className="truncate">{selected.name}</span>
-    </Badge> : null}
     <DropdownMenu open={open} onOpenChange={(nextOpen) => {
       setOpen(nextOpen);
       if (!nextOpen) {
@@ -297,18 +256,9 @@ function TargetFilterableHeader({
         setOptions([]);
         setSearching(false);
       }
-    }}>
+      }}>
       <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={selected ? "bg-accent text-foreground" : "text-muted-foreground"}
-          aria-label={`${label}: ${selectedLabel}`}
-          title={`${label}: ${selectedLabel}`}
-        >
-          <ListFilter />
-        </Button>
+        {renderFilterTrigger(Boolean(selected), `${label}: ${selectedLabel}`, selected?.name || allLabel)}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
         <div className="relative p-2">
@@ -439,11 +389,12 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   };
 
   const openCleanupDialog = () => {
-    setCleanupMode("global");
+    const initialMode = filters.target ? "target" : "global";
+    setCleanupMode(initialMode);
     setCleanupConfirmation("");
     setCleanupError("");
     setIsCleanupOpen(true);
-    loadCleanupPreview("global");
+    loadCleanupPreview(initialMode);
   };
 
   const closeCleanupDialog = () => {

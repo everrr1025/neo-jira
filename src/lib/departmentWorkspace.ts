@@ -18,6 +18,7 @@ export type DepartmentWorkspaceMember = {
   announcementProjectIds: string[];
   userName: string | null;
   userEmail: string;
+  disabledAt: string | null;
   projects: Array<{
     id: string;
     name: string;
@@ -58,6 +59,7 @@ export type DepartmentWorkspaceProject = {
     role: string;
     userName: string | null;
     userEmail: string;
+    disabledAt: string | null;
   }>;
 };
 
@@ -123,6 +125,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
               id: true,
               name: true,
               email: true,
+              disabledAt: true,
               projectMemberships: {
                 include: {
                   project: {
@@ -143,7 +146,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
           owner: { select: { id: true, name: true, email: true } },
           members: {
             include: {
-              user: { select: { id: true, name: true, email: true } },
+              user: { select: { id: true, name: true, email: true, disabledAt: true } },
             },
           },
           _count: { select: { issues: true } },
@@ -214,6 +217,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
       announcementProjectIds: member.announcementProjectScopes.map((scope) => scope.projectId),
       userName: member.user.name,
       userEmail: member.user.email,
+      disabledAt: member.user.disabledAt?.toISOString() ?? null,
       projects: member.user.projectMemberships
         .filter((membership) => membership.project.departmentId === department.id)
         .map((membership) => ({
@@ -279,6 +283,7 @@ export async function getDepartmentWorkspaceData(departmentId: string, locale: L
           role: member.role,
           userName: member.user.name,
           userEmail: member.user.email,
+          disabledAt: member.user.disabledAt?.toISOString() ?? null,
         })),
       };
     }),

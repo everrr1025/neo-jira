@@ -17,6 +17,11 @@ type CreateUserInput = {
   password?: string;
 };
 
+type CreateAdminInput = {
+  name?: string;
+  email?: string;
+};
+
 type CreateProjectInput = {
   name?: string;
   key?: string;
@@ -128,7 +133,104 @@ export async function createUser(data: CreateUserInput) {
   }
 }
 
-export async function deleteUser(userId: string) {
+export async function createAdmin(data: CreateAdminInput) {
+  try {
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
+    const name = typeof data?.name === "string" ? data.name.trim() : "";
+    const email = typeof data?.email === "string" ? data.email.trim().toLowerCase() : "";
+    if (!name || !email) return { success: false, error: "ADMIN_NAME_EMAIL_REQUIRED" };
+
+    const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) return { success: false, error: "EMAIL_IN_USE" };
+
+    const password = generateSecurePassword();
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const admin = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: "ADMIN",
+          mustChangePassword: true,
+        },
+      });
+      await createAuditLogs(tx, [{
+        entityType: "USER",
+        entityId: created.id,
+        action: "CREATE",
+        field: "role",
+        newValue: "ADMIN",
+        metadata: { name: created.name || created.email, email: created.email, role: "ADMIN" },
+        actorId,
+      }]);
+      return created;
+    });
+
+    revalidatePath("/admin/users");
+    revalidatePath("/");
+    return { success: true, admin, password };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "CREATE_ADMIN_FAILED") };
+  }
+}
+
+export async function setUserDisabled(input: { userId?: unknown; disabled?: unknown }) {
+  try {
+    const session = await checkGlobalAdmin();
+    const actorId = getSessionUserId(session);
+    const userId = typeof input?.userId === "string" ? input.userId : "";
+    const disabled = input?.disabled === true;
+    if (!actorId) return { success: false, error: "ADMIN_ID_REQUIRED" };
+    if (!userId || typeof input?.disabled !== "boolean") return { success: false, error: "INVALID_ACCOUNT_STATUS_INPUT" };
+    if (userId === actorId) return { success: false, error: "CANNOT_CHANGE_OWN_STATUS" };
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, role: true, disabledAt: true },
+    });
+    if (!user) return { success: false, error: "USER_NOT_FOUND" };
+    if (disabled === Boolean(user.disabledAt)) {
+      return { success: false, error: disabled ? "ACCOUNT_ALREADY_DISABLED" : "ACCOUNT_ALREADY_ACTIVE" };
+    }
+    if (disabled && user.role === "ADMIN") {
+      const otherActiveAdmins = await prisma.user.count({
+        where: { role: "ADMIN", disabledAt: null, id: { not: userId } },
+      });
+      if (otherActiveAdmins === 0) return { success: false, error: "LAST_ACTIVE_ADMIN" };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          disabledAt: disabled ? new Date() : null,
+          sessionVersion: { increment: 1 },
+        },
+      });
+      await createAuditLogs(tx, [{
+        entityType: "USER",
+        entityId: userId,
+        action: "UPDATE",
+        field: "status",
+        oldValue: disabled ? "ACTIVE" : "DISABLED",
+        newValue: disabled ? "DISABLED" : "ACTIVE",
+        metadata: { name: user.name || user.email, email: user.email, role: user.role },
+        actorId,
+      }]);
+    });
+
+    revalidatePath("/admin/users");
+    revalidatePath("/admin/departments");
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: unknown) {
+    return { success: false, error: getErrorMessage(error, "UPDATE_ACCOUNT_STATUS_FAILED") };
+  }
+}
+
+export async function deleteUser(userId: string, confirmation?: string) {
   try {
     const session = await checkGlobalAdmin();
     const currentAdminId = getSessionUserId(session);
@@ -149,6 +251,7 @@ export async function deleteUser(userId: string) {
         name: true,
         email: true,
         role: true,
+        disabledAt: true,
         departmentMembers: {
           where: { isDepartmentAdmin: true },
           select: { department: { select: { name: true } } },
@@ -156,15 +259,16 @@ export async function deleteUser(userId: string) {
       },
     });
     if (!user) {
-      return { success: false, error: "User not found." };
+      return { success: false, error: "USER_NOT_FOUND" };
     }
-    if (user.role === "ADMIN") {
-      return { success: false, error: "System administrator accounts cannot be deleted here." };
+    if (!user.disabledAt) return { success: false, error: "ACCOUNT_MUST_BE_DISABLED" };
+    if (confirmation?.trim().toLowerCase() !== user.email.toLowerCase()) {
+      return { success: false, error: "DELETE_CONFIRMATION_MISMATCH" };
     }
 
     const headDepartment = user.departmentMembers[0]?.department;
     if (headDepartment) {
-      return { success: false, error: `Cannot delete department admin: ${headDepartment.name}.` };
+      return { success: false, error: `DEPARTMENT_ADMIN:${headDepartment.name}` };
     }
 
     await prisma.$transaction(async (tx) => {
@@ -248,9 +352,11 @@ export async function resetUserPassword(userId: string) {
     const session = await checkGlobalAdmin();
     const actorId = getSessionUserId(session);
 
+    if (!actorId) return { success: false, error: "ADMIN_ID_REQUIRED" };
     if (!userId) {
       return { success: false, error: "User id is required." };
     }
+    if (userId === actorId) return { success: false, error: "CANNOT_RESET_OWN_PASSWORD" };
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -259,15 +365,17 @@ export async function resetUserPassword(userId: string) {
     if (!user) {
       return { success: false, error: "User not found." };
     }
-    if (user.role === "ADMIN") {
-      return { success: false, error: "System administrator passwords cannot be reset here." };
-    }
 
     const nextPassword = generateSecurePassword();
     const hashedPassword = await bcrypt.hash(nextPassword, 10);
 
     await prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: userId }, data: { password: hashedPassword } });
+      await tx.user.update({
+        where: { id: userId },
+        data: user.role === "ADMIN"
+          ? { password: hashedPassword, mustChangePassword: true, sessionVersion: { increment: 1 } }
+          : { password: hashedPassword },
+      });
       await createAuditLogs(tx, [{
         entityType: "USER",
         entityId: userId,
@@ -314,7 +422,7 @@ export async function createProject(data: CreateProjectInput) {
     }
 
     const candidateUsers = await prisma.user.findMany({
-      where: { id: { in: [ownerId, ...memberIds] } },
+      where: { id: { in: [ownerId, ...memberIds] }, disabledAt: null },
       select: { id: true, role: true },
     });
     if (candidateUsers.length !== new Set([ownerId, ...memberIds]).size) {
@@ -382,13 +490,17 @@ export async function updateProjectMembers(projectId: string, memberIds: string[
 
     const users = await prisma.user.findMany({
       where: { id: { in: uniqueMemberIds } },
-      select: { id: true, role: true },
+      select: { id: true, role: true, disabledAt: true },
     });
     if (users.length !== uniqueMemberIds.length) {
       return { success: false, error: "Some selected users do not exist." };
     }
     if (users.some((u) => u.role === "ADMIN")) {
       return { success: false, error: "System admin cannot be project member." };
+    }
+    const existingMemberIds = new Set(project.members.map((member) => member.userId));
+    if (users.some((user) => user.disabledAt && !existingMemberIds.has(user.id))) {
+      return { success: false, error: "Disabled users cannot be added to projects." };
     }
 
     const memberScopeError = await validateDepartmentProjectMembers(project.departmentId, uniqueMemberIds);
@@ -492,7 +604,7 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
 
     const targetUser = await prisma.user.findUnique({
       where: { id: ownerId },
-      select: { id: true, role: true },
+      select: { id: true, role: true, disabledAt: true },
     });
     if (!targetUser) {
       return { success: false, error: "Target owner not found." };
@@ -500,6 +612,7 @@ export async function updateProjectOwner(projectId: string, ownerId: string) {
     if (targetUser.role === "ADMIN") {
       return { success: false, error: "System admin cannot be project owner." };
     }
+    if (targetUser.disabledAt) return { success: false, error: "Project owner must be active." };
 
     const ownerScopeError = await validateDepartmentProjectMembers(project.departmentId, [ownerId]);
     if (ownerScopeError) {
@@ -569,7 +682,7 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true },
+      select: { role: true, disabledAt: true },
     });
     if (!user) {
       return { success: false, error: "User not found." };
@@ -577,6 +690,7 @@ export async function updateMemberRole(projectId: string, userId: string, role: 
     if (user.role === "ADMIN") {
       return { success: false, error: "System admin cannot be project member." };
     }
+    if (user.disabledAt) return { success: false, error: "Disabled user roles cannot be changed." };
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },

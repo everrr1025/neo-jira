@@ -30,18 +30,22 @@ export default async function AdminUsersPage({
   }
 
   const params = await searchParams;
+  const accountType = (Array.isArray(params.accountType) ? params.accountType[0] : params.accountType) === "admin" ? "admin" : "user";
+  const accountRole = accountType === "admin" ? "ADMIN" : "USER";
+  const requestedStatus = Array.isArray(params.status) ? params.status[0] : params.status;
+  const status = requestedStatus === "active" || requestedStatus === "disabled" ? requestedStatus : "all";
   const search = (Array.isArray(params.search) ? params.search[0] : params.search)?.trim() || "";
   const rawDepartmentIds = params.departmentIds ?? params.departmentId;
-  const departmentIds = Array.from(new Set(
+  const departmentIds = accountType === "user" ? Array.from(new Set(
     (Array.isArray(rawDepartmentIds) ? rawDepartmentIds : [rawDepartmentIds])
       .flatMap((value) => value?.split(",") || [])
       .map((value) => value.trim())
       .filter(Boolean),
-  ));
+  )) : [];
   const pageSize = Math.min(parsePositiveInt(params.pageSize, 10), 50);
   const requestedPage = parsePositiveInt(params.page, 1);
   const requestedSortBy = Array.isArray(params.sortBy) ? params.sortBy[0] : params.sortBy;
-  const sortBy = requestedSortBy === "name" || requestedSortBy === "email" || requestedSortBy === "department"
+  const sortBy = requestedSortBy === "name" || requestedSortBy === "email" || (accountType === "user" && requestedSortBy === "department")
     || requestedSortBy === "lastActiveAt"
     ? requestedSortBy
     : "createdAt";
@@ -50,7 +54,7 @@ export default async function AdminUsersPage({
     : "desc";
 
   const requestedActivityStatus = Array.isArray(params.activityStatus) ? params.activityStatus[0] : params.activityStatus;
-  const activityStatus = requestedActivityStatus === "inactive30" || requestedActivityStatus === "inactive90" || requestedActivityStatus === "unknown"
+  const activityStatus = accountType === "user" && (requestedActivityStatus === "inactive30" || requestedActivityStatus === "inactive90" || requestedActivityStatus === "unknown")
     ? requestedActivityStatus
     : "all";
   const inactiveDays = activityStatus === "inactive90" ? 90 : 30;
@@ -68,12 +72,13 @@ export default async function AdminUsersPage({
       : null;
 
   const where: Prisma.UserWhereInput = {
-    role: "USER",
+    role: accountRole,
+    ...(status === "active" ? { disabledAt: null } : status === "disabled" ? { disabledAt: { not: null } } : {}),
     AND: [
       ...(search ? [{ OR: [{ name: { contains: search } }, { email: { contains: search } }] }] : []),
       ...(activityWhere ? [activityWhere] : []),
     ],
-    ...(departmentIds.length > 0
+    ...(accountType === "user" && departmentIds.length > 0
       ? {
           departmentMembers: {
             some: { departmentId: { in: departmentIds } },
@@ -113,6 +118,7 @@ export default async function AdminUsersPage({
           LEFT JOIN "DepartmentMember" AS dm ON dm."userId" = u."id"
           LEFT JOIN "Department" AS d ON d."id" = dm."departmentId"
           WHERE u."role" = 'USER'
+          ${status === "active" ? Prisma.sql`AND u."disabledAt" IS NULL` : status === "disabled" ? Prisma.sql`AND u."disabledAt" IS NOT NULL` : Prisma.empty}
           ${search ? Prisma.sql`AND (u."name" LIKE ${searchPattern} OR u."email" LIKE ${searchPattern})` : Prisma.empty}
           ${departmentIds.length > 0
             ? Prisma.sql`AND dm."departmentId" IN (${Prisma.join(departmentIds)})`
@@ -156,6 +162,8 @@ export default async function AdminUsersPage({
     role: user.role,
     createdAt: user.createdAt.toISOString(),
     lastActiveAt: user.lastActiveAt?.toISOString() ?? null,
+    lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+    disabledAt: user.disabledAt?.toISOString() ?? null,
     departments: user.departmentMembers.map((member) => ({
       id: member.department.id,
       name: member.department.name,
@@ -166,6 +174,7 @@ export default async function AdminUsersPage({
   return (
     <div className="flex flex-col">
       <AdminUsersClient
+        currentUserId={currentUser.id || ""}
         users={safeUsers}
         departments={departments}
         totalUsers={totalUsers}
@@ -176,6 +185,8 @@ export default async function AdminUsersPage({
         sortBy={sortBy}
         sortDirection={sortDirection}
         activityStatus={activityStatus}
+        accountType={accountType}
+        status={status}
         locale={locale}
       />
     </div>

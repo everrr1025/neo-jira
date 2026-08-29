@@ -12,6 +12,8 @@ import {
 type TokenWithDepartment = {
   role?: string | null;
   departmentId?: string | null;
+  accountInvalid?: boolean;
+  mustChangePassword?: boolean;
 };
 
 export default withAuth(
@@ -19,6 +21,10 @@ export default withAuth(
     const token = request.nextauth.token as TokenWithDepartment | null;
     const isGlobalAdmin = token?.role === "ADMIN";
     const hasDepartment = typeof token?.departmentId === "string" && token.departmentId.length > 0;
+
+    if (token?.mustChangePassword && request.nextUrl.pathname !== "/settings") {
+      return NextResponse.redirect(new URL("/settings?passwordChangeRequired=1", request.url));
+    }
 
     if (!isGlobalAdmin && !hasDepartment) {
       return NextResponse.redirect(new URL("/login?error=no-department", request.url));
@@ -48,7 +54,7 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => Boolean(token),
+      authorized: ({ token }) => Boolean(token && !(token as TokenWithDepartment).accountInvalid),
     },
   },
 );
@@ -56,4 +62,3 @@ export default withAuth(
 export const config = {
   matcher: ["/((?!api/auth|login|_next/static|_next/image|favicon.ico).*)"],
 };
-

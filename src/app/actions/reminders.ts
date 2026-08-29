@@ -171,6 +171,9 @@ async function assertReminderAssignee({
   currentUserId: string;
   currentUserRole: string;
 }) {
+  const activeAssignee = await prisma.user.findFirst({ where: { id: assigneeId, disabledAt: null }, select: { id: true } });
+  if (!activeAssignee) throw new Error("Assignee account is disabled");
+
   if (scopeType === "PERSONAL" && assigneeId !== currentUserId) {
     throw new Error("Personal items can only be assigned to yourself");
   }
@@ -201,7 +204,7 @@ async function assertReminderAssignee({
 async function assertDepartmentAttendees(attendeeIds: string[], departmentId: string) {
   if (attendeeIds.length === 0) return;
   const members = await prisma.departmentMember.findMany({
-    where: { departmentId, userId: { in: attendeeIds } },
+    where: { departmentId, userId: { in: attendeeIds }, user: { disabledAt: null } },
     select: { userId: true },
   });
   const memberIds = new Set(members.map((member) => member.userId));

@@ -33,6 +33,7 @@ const TEXT = {
     assignFailed: "Failed to update project members",
     ownerRequired: "Project owner must be selected from project members.",
     unassignedOwner: "Unassigned",
+    disabled: "Disabled",
   },
   zh: {
     title: "项目成员",
@@ -52,6 +53,7 @@ const TEXT = {
     assignFailed: "更新项目成员失败",
     ownerRequired: "项目负责人必须从项目成员中选择。",
     unassignedOwner: "未指派",
+    disabled: "已停用",
   },
 } as const;
 
@@ -91,7 +93,7 @@ export default function DepartmentProjectMembersClient({
     if (ownerDiff !== 0) return ownerDiff;
     return displayMember(a).localeCompare(displayMember(b));
   });
-  const availableUsers = departmentMembers.filter((member) => !currentMemberIds.has(member.userId));
+  const availableUsers = departmentMembers.filter((member) => !member.disabledAt && !currentMemberIds.has(member.userId));
   const normalizedSearch = userSearch.trim().toLowerCase();
   const filteredUsers = availableUsers.filter((user) => {
     if (!normalizedSearch) return true;
@@ -214,13 +216,14 @@ export default function DepartmentProjectMembersClient({
                   <tr
                     key={member.userId}
                     onClick={() => {
-                      if (canManage && !isPending && !isOwner) handleSetOwner(member.userId);
+                      if (canManage && !isPending && !isOwner && !member.disabledAt) handleSetOwner(member.userId);
                     }}
                     className={`transition-colors ${canManage && !isOwner && !isPending ? "cursor-pointer hover:bg-muted/45" : ""}`}
                   >
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5 font-semibold text-foreground">
                         <span>{displayMember(member)}</span>
+                        {member.disabledAt ? <Badge variant="outline" className="text-muted-foreground">{t.disabled}</Badge> : null}
                         {isOwner ? <Crown size={14} className="text-amber-500" /> : null}
                       </div>
                     </td>
@@ -233,7 +236,7 @@ export default function DepartmentProjectMembersClient({
                     <td className="px-5 py-3.5">
                       {canManage ? (
                         <div className="flex items-center gap-2">
-                          {!isOwner ? (
+                          {!isOwner && !member.disabledAt ? (
                             <Badge variant="outline" className="text-primary">
                               {t.setOwner}
                             </Badge>
