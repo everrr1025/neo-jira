@@ -33,9 +33,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { DropdownField } from "./DropdownField";
 import type { Locale } from "@/lib/i18n";
 
 type DepartmentMemberRecord = {
@@ -467,27 +467,33 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
             </TableBody>
           </Table>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
-          <div className="text-muted-foreground">
-            {t.showing} <span className="font-medium text-foreground">{departmentRangeStart}</span> {t.to}{" "}
-            <span className="font-medium text-foreground">{departmentRangeEnd}</span> {t.of}{" "}
-            <span className="font-medium text-foreground">{filteredDepartments.length}</span> {t.departmentCount}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+          <div className="font-medium text-muted-foreground">
+            {t.showing} <span className="font-bold text-foreground">{departmentRangeStart}</span> {t.to}{" "}
+            <span className="font-bold text-foreground">{departmentRangeEnd}</span> {t.of}{" "}
+            <span className="font-bold text-foreground">{filteredDepartments.length}</span> {t.departmentCount}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span>{t.perPage}</span>
-              <DropdownField
-                id="department-page-size"
-                label={t.perPage}
+              <Select
                 value={String(departmentPageSize)}
-                onChange={(value) => {
+                onValueChange={(value) => {
                   setDepartmentPageSize(Number(value));
                   setDepartmentPage(1);
                 }}
-                options={departmentPageSizeOptions}
-                hideLabel
-                className="w-20"
-              />
+              >
+                <SelectTrigger size="sm" className="w-20 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {departmentPageSizeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -497,11 +503,11 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 onClick={() => setDepartmentPage(Math.max(1, currentDepartmentPage - 1))}
                 disabled={currentDepartmentPage === 1}
               >
-                <ArrowLeft />
+                <ArrowLeft size={18} />
               </Button>
-              <span className="px-1 font-medium leading-none text-foreground">
+              <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                 {locale === "zh"
-                  ? `${t.page} ${currentDepartmentPage} / ${totalDepartmentPages} 页`
+                  ? `${t.page} ${currentDepartmentPage} / ${totalDepartmentPages}`
                   : `${t.page} ${currentDepartmentPage} of ${totalDepartmentPages}`}
               </span>
               <Button
@@ -511,7 +517,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 onClick={() => setDepartmentPage(Math.min(totalDepartmentPages, currentDepartmentPage + 1))}
                 disabled={currentDepartmentPage >= totalDepartmentPages}
               >
-                <ArrowRight />
+                <ArrowRight size={18} />
               </Button>
             </div>
           </div>

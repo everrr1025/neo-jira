@@ -49,9 +49,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DropdownField } from "./DropdownField";
 import type { Locale } from "@/lib/i18n";
 
 type DepartmentOption = {
@@ -827,24 +827,30 @@ export default function AdminUsersClient({
             </TableBody>
           </Table>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
-          <div className="text-muted-foreground">
-            {t.showing} <span className="font-medium text-foreground">{rangeStart}</span> {t.to}{" "}
-            <span className="font-medium text-foreground">{rangeEnd}</span> {t.of}{" "}
-            <span className="font-medium text-foreground">{totalUsers}</span> {t.users}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+          <div className="font-medium text-muted-foreground">
+            {t.showing} <span className="font-bold text-foreground">{rangeStart}</span> {t.to}{" "}
+            <span className="font-bold text-foreground">{rangeEnd}</span> {t.of}{" "}
+            <span className="font-bold text-foreground">{totalUsers}</span> {t.users}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span>{t.perPage}</span>
-              <DropdownField
-                id="user-page-size"
-                label={t.perPage}
+              <Select
                 value={String(pageSize)}
-                onChange={(value) => updateParams({ pageSize: value, page: "1" })}
-                options={pageSizeOptions}
-                hideLabel
-                className="w-20"
-              />
+                onValueChange={(value) => updateParams({ pageSize: value, page: "1" })}
+              >
+                <SelectTrigger size="sm" className="w-20 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {pageSizeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -854,10 +860,10 @@ export default function AdminUsersClient({
                 onClick={() => updateParams({ page: String(Math.max(1, page - 1)) })}
                 disabled={page === 1}
               >
-                <ArrowLeft />
+                <ArrowLeft size={18} />
               </Button>
-              <span className="px-1 font-medium leading-none text-foreground">
-                {locale === "zh" ? `${t.page} ${page} / ${totalPages} 页` : `${t.page} ${page} of ${totalPages}`}
+              <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
+                {locale === "zh" ? `${t.page} ${page} / ${totalPages}` : `${t.page} ${page} of ${totalPages}`}
               </span>
               <Button
                 type="button"
@@ -866,7 +872,7 @@ export default function AdminUsersClient({
                 onClick={() => updateParams({ page: String(Math.min(totalPages, page + 1)) })}
                 disabled={page >= totalPages}
               >
-                <ArrowRight />
+                <ArrowRight size={18} />
               </Button>
             </div>
           </div>

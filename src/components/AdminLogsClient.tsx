@@ -5,7 +5,6 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, ListFilter, Loader2, Search, Trash2, X } from "lucide-react";
 
 import { cleanupAuditLogs, previewAuditLogCleanup } from "@/app/actions/auditLogs";
-import { DropdownField } from "@/components/DropdownField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -29,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Locale } from "@/lib/i18n";
 import { formatFullDateTime } from "@/lib/timeFormat";
@@ -589,31 +589,37 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
           {logs.length === 0 ? <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="h-40 text-center text-muted-foreground">{t.noLogs}</TableCell></TableRow> : null}
         </TableBody>
       </Table>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
-        <div className="text-muted-foreground">
-          {t.showing} <span className="font-medium text-foreground">{rangeStart}</span> {t.to}{" "}
-          <span className="font-medium text-foreground">{rangeEnd}</span> {t.of}{" "}
-          <span className="font-medium text-foreground">{total}</span> {t.records}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-5 py-3 text-sm">
+        <div className="font-medium text-muted-foreground">
+          {t.showing} <span className="font-bold text-foreground">{rangeStart}</span> {t.to}{" "}
+          <span className="font-bold text-foreground">{rangeEnd}</span> {t.of}{" "}
+          <span className="font-bold text-foreground">{total}</span> {t.records}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 text-muted-foreground">
             <span>{t.perPage}</span>
-            <DropdownField
-              id="log-page-size"
-              label={t.perPage}
+            <Select
               value={String(pageSize)}
-              onChange={(value) => update("pageSize", value)}
-              options={pageSizeOptions}
-              hideLabel
-              className="w-20"
-            />
+              onValueChange={(value) => update("pageSize", value)}
+            >
+              <SelectTrigger size="sm" className="w-20 bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {pageSizeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ArrowLeft /></Button>
-            <span className="px-1 font-medium leading-none text-foreground">
-              {locale === "zh" ? `${t.page} ${page} / ${totalPages} 页` : `${t.page} ${page} of ${totalPages}`}
+            <Button type="button" variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}><ArrowLeft size={18} /></Button>
+            <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
+              {locale === "zh" ? `${t.page} ${page} / ${totalPages}` : `${t.page} ${page} of ${totalPages}`}
             </span>
-            <Button type="button" variant="outline" size="icon-sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}><ArrowRight /></Button>
+            <Button type="button" variant="outline" size="icon-sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}><ArrowRight size={18} /></Button>
           </div>
         </div>
       </div>
