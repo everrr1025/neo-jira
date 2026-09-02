@@ -78,6 +78,7 @@ export default async function DepartmentNotificationsPage({
     projectId: getString(rawParams.projectId) || "",
     read: getString(rawParams.read) || "",
     publishStatus: getString(rawParams.publishStatus) || "",
+    authorId: getString(rawParams.authorId) || "",
     search: getString(rawParams.search) || "",
     sort: getString(rawParams.sort) || "createdAt",
     direction: getString(rawParams.direction) || "desc",
@@ -96,7 +97,7 @@ export default async function DepartmentNotificationsPage({
     filters.to,
   );
 
-  const [result, projectOptions] = await Promise.all([
+  const [result, projectOptions, authorOptions] = await Promise.all([
     getDepartmentNotificationsPage({
       departmentId,
       userId,
@@ -108,6 +109,7 @@ export default async function DepartmentNotificationsPage({
         projectId: filters.projectId || undefined,
         read: filters.read || undefined,
         publishStatus: filters.publishStatus || undefined,
+        authorId: filters.authorId || undefined,
         search: filters.search || undefined,
         sort: filters.sort || undefined,
         direction: filters.direction || undefined,
@@ -125,6 +127,16 @@ export default async function DepartmentNotificationsPage({
       select: { id: true, name: true, key: true },
       orderBy: { name: "asc" },
     }),
+    prisma.user.findMany({
+      where: {
+        OR: [
+          { id: userId },
+          { departmentMembers: { some: { departmentId } } },
+        ],
+      },
+      select: { id: true, name: true, email: true },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+    }),
   ]);
 
   const permission = await getDepartmentNotificationPermission(departmentId, { userId, userRole });
@@ -136,6 +148,7 @@ export default async function DepartmentNotificationsPage({
       notifications={result.notifications}
       permission={permission}
       projectOptions={projectOptions}
+      authorOptions={authorOptions.map((author) => ({ id: author.id, name: author.name || author.email }))}
       filters={filters}
       selectedNotificationId={selectedNotificationId}
       pagination={{

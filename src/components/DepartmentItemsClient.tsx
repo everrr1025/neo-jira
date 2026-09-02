@@ -32,6 +32,7 @@ import {
   FileSpreadsheet,
   FileText,
   Folder,
+  ListFilter,
   Loader2,
   MapPin,
   Paperclip,
@@ -64,6 +65,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -433,8 +436,11 @@ const SCHEDULE_TEXT = {
 } as const;
 
 type StoredTaskListFilters = {
-  taskFilter?: TaskFilter;
   taskQuery?: string;
+  taskDueDateFilter?: TaskDueDateFilter;
+  taskCreatorIds?: string[];
+  taskStatuses?: string[];
+  taskAssigneeIds?: string[];
   taskSortField?: TaskSortField;
   taskSortDirection?: TaskSortDirection;
   taskPageSize?: number;
@@ -568,7 +574,9 @@ function priorityLabel(priority: string, locale: Locale) {
 
 function taskStatusLabel(status: string, locale: Locale) {
   const t = TEXT[locale];
-  return status === "DONE" ? t.completed : t.incomplete;
+  if (status === "DONE") return t.completed;
+  if (status === "NOT_STARTED") return t.notStarted;
+  return t.ongoing;
 }
 
 function formatDisplayDate(value: string | null, locale: Locale) {
@@ -951,7 +959,7 @@ function LocalizedTimeInput({
   );
 }
 
-type TaskFilter = "all" | "created" | "assigned" | "incomplete" | "dueSoon";
+type TaskDueDateFilter = "all" | "overdue" | "today" | "days3" | "days7" | "none";
 type TaskSortField = "title" | "dueDate" | "createdAt" | "creator" | "status" | "assignee";
 type TaskSortDirection = "asc" | "desc";
 type TaskColumnId = "title" | "content" | "dueDate" | "createdAt" | "creator" | "status" | "assignee" | "actions";
@@ -959,6 +967,7 @@ type TaskColumnConfig = {
   id: TaskColumnId;
   label: string;
   width: number;
+  minWidth: number;
 };
 type ItemTab = "tasks" | "schedule" | "notes";
 type ScheduleView = "week" | "month";
@@ -982,9 +991,10 @@ const TASK_STATUS_SORT_ORDER: Record<string, number> = {
 const TASK_DEFAULT_COLUMN_IDS: TaskColumnId[] = [
   "title",
   "content",
+  "dueDate",
+  "creator",
   "status",
   "assignee",
-  "dueDate",
 ];
 const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
   title: 220,
@@ -997,20 +1007,135 @@ const TASK_DEFAULT_COLUMN_WIDTHS: Record<TaskColumnId, number> = {
   actions: 150,
 };
 const TASK_ACTION_COLUMN_MIN_WIDTH = 56;
+const TASK_UNASSIGNED_FILTER_VALUE = "__unassigned";
+const TASK_UNKNOWN_CREATOR_FILTER_VALUE = "__unknown_creator";
 
-function estimateTaskActionButtonWidth(label: string, hasIcon = false) {
-  const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12 : 6), 0);
-  return Math.max(32, textWidth + (hasIcon ? 16 : 0) + 16);
+type TaskFilterOption = { value: string; label: string };
+
+function estimateTaskHeaderTextWidth(label: string) {
+  return Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12.25 : 7), 0);
 }
 
-function estimateTaskActionColumnWidth(
-  buttons: Array<{ label: string; hasIcon?: boolean }>,
-  headerLabel: string
-) {
-  const buttonGap = buttons.length > 1 ? (buttons.length - 1) * 8 : 0;
-  const buttonsWidth = buttons.reduce((total, button) => total + estimateTaskActionButtonWidth(button.label, button.hasIcon), 0);
-  const headerWidth = estimateTaskActionButtonWidth(headerLabel) + 16;
-  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, buttonsWidth + buttonGap + 16));
+function estimateTaskHeaderMinWidth(columnId: TaskColumnId, label: string, activeDueDateFilterLabel?: string) {
+  if (columnId === "actions") return TASK_ACTION_COLUMN_MIN_WIDTH;
+
+  const horizontalPadding = 40;
+  const sortWidth = TASK_COLUMN_SORT_FIELD_MAP[columnId] ? 16 : 0;
+  const isFilterable = columnId === "dueDate" || columnId === "creator" || columnId === "status" || columnId === "assignee";
+  const filterWidth = !isFilterable
+    ? 0
+    : columnId === "dueDate" && activeDueDateFilterLabel
+      ? Math.min(128, estimateTaskHeaderTextWidth(activeDueDateFilterLabel) + 14) + 4
+      : 28;
+
+  return Math.max(80, horizontalPadding + estimateTaskHeaderTextWidth(label) + sortWidth + filterWidth);
+}
+
+function taskFilterTrigger(active: boolean, label: string, value: string) {
+  return (
+    <Button
+      type="button"
+      variant={active ? "outline" : "ghost"}
+      size={active ? "sm" : "icon-xs"}
+      className={active
+        ? "h-5 min-w-0 max-w-32 shrink-0 bg-background px-1.5 text-xs font-normal normal-case"
+        : "shrink-0 text-muted-foreground"}
+      aria-label={label}
+      title={label}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {active ? <span className="truncate">{value}</span> : <ListFilter />}
+    </Button>
+  );
+}
+
+function TaskSingleFilter({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: TaskFilterOption[];
+  onChange: (value: string) => void;
+}) {
+  const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {taskFilterTrigger(value !== "all", `${label}: ${selectedLabel}`, selectedLabel)}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48 normal-case">
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options[0] ? <DropdownMenuRadioItem value={options[0].value}>{options[0].label}</DropdownMenuRadioItem> : null}
+          {options.length > 1 ? <DropdownMenuSeparator /> : null}
+          {options.slice(1).map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function TaskMultiFilter({
+  label,
+  values,
+  options,
+  allLabel,
+  locale,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  options: TaskFilterOption[];
+  allLabel: string;
+  locale: Locale;
+  onChange: (values: string[]) => void;
+}) {
+  const selectedLabels = options.filter((option) => values.includes(option.value)).map((option) => option.label);
+  const selectionLabel = selectedLabels.join(locale === "zh" ? "、" : ", ") || allLabel;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {taskFilterTrigger(values.length > 0, `${label}: ${selectionLabel}`, String(values.length))}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 normal-case">
+        <DropdownMenuCheckboxItem
+          checked={values.length === 0}
+          onCheckedChange={() => onChange([])}
+          onSelect={(event) => event.preventDefault()}
+        >
+          {allLabel}
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        {options.map((option) => (
+          <DropdownMenuCheckboxItem
+            key={option.value}
+            checked={values.includes(option.value)}
+            onCheckedChange={(checked) => onChange(
+              checked === true
+                ? [...values, option.value]
+                : values.filter((value) => value !== option.value)
+            )}
+            onSelect={(event) => event.preventDefault()}
+          >
+            <span className="truncate" title={option.label}>{option.label}</span>
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function estimateTaskActionColumnWidth(headerLabel: string) {
+  const headerWidth = estimateTaskHeaderTextWidth(headerLabel) + 24 + 8 + 16;
+  const iconButtonsWidth = 24 * 2 + 8 + 16;
+  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, iconButtonsWidth));
 }
 
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
@@ -1177,6 +1302,14 @@ export default function DepartmentItemsClient({
         perPage: "\u6bcf\u9875",
         columns: "\u663e\u793a\u5217",
         resetColumns: "\u91cd\u7f6e\u5217",
+        all: "\u5168\u90e8",
+        overdue: "\u5df2\u903e\u671f",
+        today: "\u4eca\u5929",
+        days3: "3 \u5929\u5185",
+        days7: "7 \u5929\u5185",
+        noDueDate: "\u65e0\u5230\u671f\u65f6\u95f4",
+        unknownCreator: "\u672a\u77e5\u53d1\u8d77\u4eba",
+        removeFilter: "\u53d6\u6d88\u7b5b\u9009",
       }
     : {
         createdAt: "Created at",
@@ -1188,6 +1321,14 @@ export default function DepartmentItemsClient({
         perPage: "Per page",
         columns: "Columns",
         resetColumns: "Reset columns",
+        all: "All",
+        overdue: "Overdue",
+        today: "Today",
+        days3: "Within 3 days",
+        days7: "Within 7 days",
+        noDueDate: "No due date",
+        unknownCreator: "Unknown creator",
+        removeFilter: "Remove filter",
       };
   const router = useRouter();
   const taskFilterStorageKey = `neo-jira:task-list-filters:${departmentId}:v1`;
@@ -1207,24 +1348,35 @@ export default function DepartmentItemsClient({
   const [selectedScheduleItemId, setSelectedScheduleItemId] = useState<string | null>(initialSelectedScheduleItemId);
   const [scheduleOverflowDate, setScheduleOverflowDate] = useState<string | null>(null);
   const activeTab = initialTab;
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [taskQuery, setTaskQuery] = useState("");
+  const [taskDueDateFilter, setTaskDueDateFilter] = useState<TaskDueDateFilter>("all");
+  const [taskCreatorIds, setTaskCreatorIds] = useState<string[]>([]);
+  const [taskStatuses, setTaskStatuses] = useState<string[]>([]);
+  const [taskAssigneeIds, setTaskAssigneeIds] = useState<string[]>([]);
   const [taskSortField, setTaskSortField] = useState<TaskSortField>("createdAt");
   const [taskSortDirection, setTaskSortDirection] = useState<TaskSortDirection>("desc");
   const [taskPage, setTaskPage] = useState(1);
   const [taskPageSize, setTaskPageSize] = useState<number>(TASK_PAGE_SIZE_OPTIONS[0]);
   const [hasLoadedTaskPreferences, setHasLoadedTaskPreferences] = useState(false);
   const taskColumnDefinitions = useMemo<TaskColumnConfig[]>(
-    () => [
-      { id: "title", label: t.titleField, width: TASK_DEFAULT_COLUMN_WIDTHS.title },
-      { id: "content", label: t.notes, width: TASK_DEFAULT_COLUMN_WIDTHS.content },
-      { id: "dueDate", label: t.dueDate, width: TASK_DEFAULT_COLUMN_WIDTHS.dueDate },
-      { id: "createdAt", label: taskTableText.createdAt, width: TASK_DEFAULT_COLUMN_WIDTHS.createdAt },
-      { id: "creator", label: t.openedBy, width: TASK_DEFAULT_COLUMN_WIDTHS.creator },
-      { id: "status", label: t.status, width: TASK_DEFAULT_COLUMN_WIDTHS.status },
-      { id: "assignee", label: t.assignee, width: TASK_DEFAULT_COLUMN_WIDTHS.assignee },
-      { id: "actions", label: t.actions, width: TASK_DEFAULT_COLUMN_WIDTHS.actions },
-    ],
+    () => {
+      const column = (id: TaskColumnId, label: string): TaskColumnConfig => ({
+        id,
+        label,
+        width: TASK_DEFAULT_COLUMN_WIDTHS[id],
+        minWidth: estimateTaskHeaderMinWidth(id, label),
+      });
+      return [
+        column("title", t.titleField),
+        column("content", t.notes),
+        column("dueDate", t.dueDate),
+        column("createdAt", taskTableText.createdAt),
+        column("creator", t.openedBy),
+        column("status", t.status),
+        column("assignee", t.assignee),
+        column("actions", t.actions),
+      ];
+    },
     [t.actions, t.assignee, t.dueDate, t.notes, t.openedBy, t.status, t.titleField, taskTableText.createdAt]
   );
   const taskColumnsById = useMemo(
@@ -1237,30 +1389,46 @@ export default function DepartmentItemsClient({
     () => taskColumnDefinitions.filter((column) => column.id !== "actions"),
     [taskColumnDefinitions]
   );
+  const activeDueDateFilterLabel = taskDueDateFilter === "all"
+    ? undefined
+    : {
+        overdue: taskTableText.overdue,
+        today: taskTableText.today,
+        days3: taskTableText.days3,
+        days7: taskTableText.days7,
+        none: taskTableText.noDueDate,
+      }[taskDueDateFilter];
   const taskColumns = useMemo(
     () => {
       const visibleColumns = taskVisibleColumnIds
         .map((columnId) => {
           const column = taskColumnsById.get(columnId);
           if (!column) return null;
+          const minWidth = column.id === "dueDate"
+            ? estimateTaskHeaderMinWidth(column.id, column.label, activeDueDateFilterLabel)
+            : column.minWidth;
           return {
             ...column,
-            width: taskColumnWidths[columnId] ?? column.width,
+            minWidth,
+            width: Math.max(taskColumnWidths[columnId] ?? column.width, minWidth),
           };
         })
         .filter((column): column is TaskColumnConfig => Boolean(column));
       const actionsColumn = taskColumnsById.get("actions");
       return actionsColumn
-        ? [...visibleColumns, { ...actionsColumn, width: taskColumnWidths.actions ?? actionsColumn.width }]
+        ? [...visibleColumns, { ...actionsColumn, width: Math.max(taskColumnWidths.actions ?? actionsColumn.width, actionsColumn.minWidth) }]
         : visibleColumns;
     },
-    [taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
+    [activeDueDateFilterLabel, taskColumnWidths, taskColumnsById, taskVisibleColumnIds]
   );
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storedTaskFilters = readStoredTaskListFilters(taskFilterStorageKey);
-    if (storedTaskFilters.taskFilter) setTaskFilter(storedTaskFilters.taskFilter);
     if (typeof storedTaskFilters.taskQuery === "string") setTaskQuery(storedTaskFilters.taskQuery);
+    if (storedTaskFilters.taskDueDateFilter) setTaskDueDateFilter(storedTaskFilters.taskDueDateFilter);
+    if (Array.isArray(storedTaskFilters.taskCreatorIds)) setTaskCreatorIds(storedTaskFilters.taskCreatorIds);
+    if (Array.isArray(storedTaskFilters.taskStatuses)) setTaskStatuses(storedTaskFilters.taskStatuses);
+    if (Array.isArray(storedTaskFilters.taskAssigneeIds)) setTaskAssigneeIds(storedTaskFilters.taskAssigneeIds);
     if (storedTaskFilters.taskSortField) setTaskSortField(storedTaskFilters.taskSortField);
     if (storedTaskFilters.taskSortDirection) setTaskSortDirection(storedTaskFilters.taskSortDirection);
     if (TASK_PAGE_SIZE_OPTIONS.some((option) => option === storedTaskFilters.taskPageSize)) {
@@ -1290,8 +1458,11 @@ export default function DepartmentItemsClient({
     window.localStorage.setItem(
       taskFilterStorageKey,
       JSON.stringify({
-        taskFilter,
         taskQuery,
+        taskDueDateFilter,
+        taskCreatorIds,
+        taskStatuses,
+        taskAssigneeIds,
         taskSortField,
         taskSortDirection,
         taskPageSize,
@@ -1299,7 +1470,7 @@ export default function DepartmentItemsClient({
         taskColumnWidths,
       } satisfies StoredTaskListFilters)
     );
-  }, [hasLoadedTaskPreferences, taskColumnWidths, taskFilter, taskFilterStorageKey, taskPageSize, taskQuery, taskSortDirection, taskSortField, taskVisibleColumnIds]);
+  }, [hasLoadedTaskPreferences, taskAssigneeIds, taskColumnWidths, taskCreatorIds, taskDueDateFilter, taskFilterStorageKey, taskPageSize, taskQuery, taskSortDirection, taskSortField, taskStatuses, taskVisibleColumnIds]);
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [collapsedNoteFolderIds, setCollapsedNoteFolderIds] = useState<Record<string, boolean>>({});
   const [noteQuery, setNoteQuery] = useState("");
@@ -1430,19 +1601,101 @@ export default function DepartmentItemsClient({
     return choices;
   }, [assigneeOptions, canCreateDepartmentItem, currentUserId, locale, projectOptions]);
   const taskItems = items.filter((item) => item.itemType === "TODO");
+  const taskCreatorOptions = useMemo<TaskFilterOption[]>(() => {
+    const creators = new Map<string, string>();
+    for (const item of taskItems) {
+      const value = item.creatorId || TASK_UNKNOWN_CREATOR_FILTER_VALUE;
+      const label = item.creatorName || item.creatorEmail || taskTableText.unknownCreator;
+      if (!creators.has(value)) creators.set(value, label);
+    }
+    return Array.from(creators, ([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label, locale === "zh" ? "zh-CN" : "en-US"));
+  }, [locale, taskItems, taskTableText.unknownCreator]);
+  const taskAssigneeOptions = useMemo<TaskFilterOption[]>(() => {
+    const assignees = new Map<string, string>();
+    for (const item of taskItems) {
+      const value = item.assigneeId || TASK_UNASSIGNED_FILTER_VALUE;
+      const label = item.assigneeName || item.assigneeEmail || t.unassigned;
+      if (!assignees.has(value)) assignees.set(value, label);
+    }
+    return Array.from(assignees, ([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label, locale === "zh" ? "zh-CN" : "en-US"));
+  }, [locale, t.unassigned, taskItems]);
+  const taskStatusOptions = useMemo<TaskFilterOption[]>(() => {
+    const statusOrder = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
+    const statuses = new Set(taskItems.map((item) => item.completedAt ? "DONE" : item.taskStatus));
+    return statusOrder
+      .filter((status) => statuses.has(status))
+      .map((status) => ({ value: status, label: taskStatusLabel(status, locale) }));
+  }, [locale, taskItems]);
+  const taskDueDateOptions: TaskFilterOption[] = [
+    { value: "all", label: taskTableText.all },
+    { value: "overdue", label: taskTableText.overdue },
+    { value: "today", label: taskTableText.today },
+    { value: "days3", label: taskTableText.days3 },
+    { value: "days7", label: taskTableText.days7 },
+    { value: "none", label: taskTableText.noDueDate },
+  ];
+  const taskFilterSummary = [
+    ...(taskDueDateFilter !== "all" ? [{
+      key: "dueDate",
+      label: t.dueDate,
+      value: taskDueDateOptions.find((option) => option.value === taskDueDateFilter)?.label || taskDueDateFilter,
+      clear: () => {
+        setTaskDueDateFilter("all");
+        setTaskPage(1);
+      },
+    }] : []),
+    ...(taskCreatorIds.length > 0 ? [{
+      key: "creator",
+      label: t.openedBy,
+      value: taskCreatorIds.map((id) => taskCreatorOptions.find((option) => option.value === id)?.label || taskTableText.unknownCreator).join(locale === "zh" ? "、" : ", "),
+      clear: () => {
+        setTaskCreatorIds([]);
+        setTaskPage(1);
+      },
+    }] : []),
+    ...(taskStatuses.length > 0 ? [{
+      key: "status",
+      label: t.status,
+      value: taskStatuses.map((status) => taskStatusOptions.find((option) => option.value === status)?.label || status).join(locale === "zh" ? "、" : ", "),
+      clear: () => {
+        setTaskStatuses([]);
+        setTaskPage(1);
+      },
+    }] : []),
+    ...(taskAssigneeIds.length > 0 ? [{
+      key: "assignee",
+      label: t.assignee,
+      value: taskAssigneeIds.map((id) => taskAssigneeOptions.find((option) => option.value === id)?.label || t.unassigned).join(locale === "zh" ? "、" : ", "),
+      clear: () => {
+        setTaskAssigneeIds([]);
+        setTaskPage(1);
+      },
+    }] : []),
+  ];
   const filteredTaskItems = taskItems.filter((item) => {
-    if (taskFilter === "created") return item.creatorId === currentUserId;
-    if (taskFilter === "assigned") return item.assigneeId === currentUserId;
-    if (taskFilter === "incomplete") return !item.completedAt;
-    if (taskFilter === "dueSoon") {
-      if (item.completedAt || !item.dueDate) return false;
+    const creatorValue = item.creatorId || TASK_UNKNOWN_CREATOR_FILTER_VALUE;
+    if (taskCreatorIds.length > 0 && !taskCreatorIds.includes(creatorValue)) return false;
+
+    const statusValue = item.completedAt ? "DONE" : item.taskStatus;
+    if (taskStatuses.length > 0 && !taskStatuses.includes(statusValue)) return false;
+
+    const assigneeValue = item.assigneeId || TASK_UNASSIGNED_FILTER_VALUE;
+    if (taskAssigneeIds.length > 0 && !taskAssigneeIds.includes(assigneeValue)) return false;
+
+    if (taskDueDateFilter === "none") return !item.dueDate;
+    if (taskDueDateFilter !== "all") {
+      if (!item.dueDate) return false;
+      if (taskDueDateFilter === "overdue") return item.isOverdue;
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const soon = new Date(today);
-      soon.setDate(soon.getDate() + 7);
       const dueDate = new Date(item.dueDate);
       dueDate.setHours(0, 0, 0, 0);
-      return dueDate >= today && dueDate <= soon;
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + (taskDueDateFilter === "today" ? 0 : taskDueDateFilter === "days3" ? 2 : 6));
+      return dueDate >= today && dueDate <= endDate;
     }
     return true;
   }).filter((item) => {
@@ -1506,18 +1759,14 @@ export default function DepartmentItemsClient({
     const start = (currentTaskPage - 1) * taskPageSize;
     return sortedTaskItems.slice(start, start + taskPageSize);
   }, [currentTaskPage, sortedTaskItems, taskPageSize]);
-  const taskActionColumnWidth = useMemo(
-    () =>
-      estimateTaskActionColumnWidth(
-        paginatedTaskItems.some((item) => item.canEdit)
-          ? [
-              { label: t.edit },
-              { label: t.deleteTask, hasIcon: true },
-            ]
-          : [],
-        t.actions
-      ),
-    [paginatedTaskItems, t.actions, t.deleteTask, t.edit]
+  const displayedTaskColumns = taskColumns;
+  const taskActionColumnWidth = useMemo(() => estimateTaskActionColumnWidth(t.actions), [t.actions]);
+  const taskTableMinWidth = useMemo(
+    () => displayedTaskColumns.reduce(
+      (total, column) => total + (column.id === "actions" ? taskActionColumnWidth : column.width),
+      0
+    ),
+    [displayedTaskColumns, taskActionColumnWidth]
   );
   const taskRangeStart = sortedTaskItems.length === 0 ? 0 : (currentTaskPage - 1) * taskPageSize + 1;
   const taskRangeEnd = Math.min(currentTaskPage * taskPageSize, sortedTaskItems.length);
@@ -1526,14 +1775,14 @@ export default function DepartmentItemsClient({
   const [taskDragOverSide, setTaskDragOverSide] = useState<"left" | "right" | null>(null);
   const taskResizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number;
+    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number;
+    nextStartWidth: number | null;
   } | null>(null);
 
   const handleTaskColumnDragStart = (event: React.DragEvent, index: number) => {
-    if (taskColumns[index]?.id === "actions") {
+    if (displayedTaskColumns[index]?.id === "actions") {
       event.preventDefault();
       return;
     }
@@ -1544,11 +1793,11 @@ export default function DepartmentItemsClient({
 
   const handleTaskColumnDrop = (event: React.DragEvent, targetIndex: number) => {
     event.preventDefault();
-    if (taskColumns[targetIndex]?.id === "actions") return;
+    if (displayedTaskColumns[targetIndex]?.id === "actions") return;
     const sourceIndexStr = event.dataTransfer.getData("taskColIndex");
     if (sourceIndexStr) {
       const sourceIndex = parseInt(sourceIndexStr, 10);
-      if (taskColumns[sourceIndex]?.id === "actions") return;
+      if (displayedTaskColumns[sourceIndex]?.id === "actions") return;
       if (sourceIndex !== targetIndex) {
         const nextVisibleColumnIds = [...taskVisibleColumnIds];
         const [removed] = nextVisibleColumnIds.splice(sourceIndex, 1);
@@ -1570,7 +1819,7 @@ export default function DepartmentItemsClient({
   };
 
   const handleTaskColumnDragOver = (event: React.DragEvent, index: number) => {
-    if (taskColumns[index]?.id === "actions" || taskColumns[taskDragSourceIndex ?? -1]?.id === "actions") return;
+    if (displayedTaskColumns[index]?.id === "actions" || displayedTaskColumns[taskDragSourceIndex ?? -1]?.id === "actions") return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1589,26 +1838,44 @@ export default function DepartmentItemsClient({
   const handleTaskColumnResizeStart = (event: React.MouseEvent, colIndex: number) => {
     event.preventDefault();
     event.stopPropagation();
-    const column = taskColumns[colIndex];
-    const nextColumn = taskColumns[colIndex + 1];
-    if (!column || !nextColumn || column.id === "actions" || nextColumn.id === "actions") return;
+    const column = displayedTaskColumns[colIndex];
+    const nextColumn = displayedTaskColumns[colIndex + 1];
+    if (!column || column.id === "actions") return;
     const startWidth = column.width || 150;
-    const nextStartWidth = nextColumn.width || 150;
-    const minWidth = 80;
-    taskResizingRef.current = { colIndex, nextColIndex: colIndex + 1, startX: event.clientX, startWidth, nextStartWidth };
+    const resizeNextColumn = nextColumn && nextColumn.id !== "actions" ? nextColumn : null;
+    const nextStartWidth = resizeNextColumn?.width || null;
+    taskResizingRef.current = {
+      colIndex,
+      nextColIndex: resizeNextColumn ? colIndex + 1 : null,
+      startX: event.clientX,
+      startWidth,
+      nextStartWidth,
+    };
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const resizeState = taskResizingRef.current;
       if (!resizeState) return;
 
       const delta = moveEvent.clientX - resizeState.startX;
-      const resizeColumnId = taskColumns[resizeState.colIndex]?.id;
-      const nextResizeColumnId = taskColumns[resizeState.nextColIndex]?.id;
-      if (!resizeColumnId || !nextResizeColumnId) return;
+      const resizeColumnId = displayedTaskColumns[resizeState.colIndex]?.id;
+      if (!resizeColumnId) return;
+      const resizeMinWidth = displayedTaskColumns[resizeState.colIndex]?.minWidth || 80;
+
+      if (resizeState.nextColIndex === null || resizeState.nextStartWidth === null) {
+        setTaskColumnWidths((current) => ({
+          ...current,
+          [resizeColumnId]: Math.max(resizeMinWidth, resizeState.startWidth + delta),
+        }));
+        return;
+      }
+
+      const nextResizeColumnId = displayedTaskColumns[resizeState.nextColIndex]?.id;
+      if (!nextResizeColumnId) return;
+      const nextResizeMinWidth = displayedTaskColumns[resizeState.nextColIndex]?.minWidth || 80;
 
       const boundedDelta = Math.min(
-        resizeState.nextStartWidth - minWidth,
-        Math.max(minWidth - resizeState.startWidth, delta)
+        resizeState.nextStartWidth - nextResizeMinWidth,
+        Math.max(resizeMinWidth - resizeState.startWidth, delta)
       );
       const newWidth = resizeState.startWidth + boundedDelta;
       const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
@@ -2792,14 +3059,6 @@ export default function DepartmentItemsClient({
     };
   }, [noteSaveStatus, noteForm.content, selectedNote, pinnedNoteOverrides]);
 
-  const taskFilters: Array<{ id: TaskFilter; label: string }> = [
-    { id: "all", label: t.allTasks },
-    { id: "created", label: t.createdByMe },
-    { id: "assigned", label: t.assignedToMe },
-    { id: "incomplete", label: t.incompleteTasks },
-    { id: "dueSoon", label: t.dueSoonTasks },
-  ];
-
   const handleTaskSort = (field: TaskSortField) => {
     if (taskSortField === field) {
       setTaskSortDirection((current) => current === "asc" ? "desc" : "asc");
@@ -2815,32 +3074,91 @@ export default function DepartmentItemsClient({
   const renderTaskHeaderLabel = (column: TaskColumnConfig) => {
     const sortField = TASK_COLUMN_SORT_FIELD_MAP[column.id];
     const isSorted = Boolean(sortField) && taskSortField === sortField;
+    const updateMultiFilter = (setter: (value: string[]) => void, value: string[]) => {
+      setter(value);
+      setTaskPage(1);
+    };
+    let filterControl = null;
+
+    if (column.id === "dueDate") {
+      filterControl = (
+        <TaskSingleFilter
+          label={t.dueDate}
+          value={taskDueDateFilter}
+          options={taskDueDateOptions}
+          onChange={(value) => {
+            setTaskDueDateFilter(value as TaskDueDateFilter);
+            setTaskPage(1);
+          }}
+        />
+      );
+    } else if (column.id === "creator") {
+      filterControl = (
+        <TaskMultiFilter
+          label={t.openedBy}
+          values={taskCreatorIds}
+          options={taskCreatorOptions}
+          allLabel={taskTableText.all}
+          locale={locale}
+          onChange={(value) => updateMultiFilter(setTaskCreatorIds, value)}
+        />
+      );
+    } else if (column.id === "status") {
+      filterControl = (
+        <TaskMultiFilter
+          label={t.status}
+          values={taskStatuses}
+          options={taskStatusOptions}
+          allLabel={taskTableText.all}
+          locale={locale}
+          onChange={(value) => updateMultiFilter(setTaskStatuses, value)}
+        />
+      );
+    } else if (column.id === "assignee") {
+      filterControl = (
+        <TaskMultiFilter
+          label={t.assignee}
+          values={taskAssigneeIds}
+          options={taskAssigneeOptions}
+          allLabel={taskTableText.all}
+          locale={locale}
+          onChange={(value) => updateMultiFilter(setTaskAssigneeIds, value)}
+        />
+      );
+    }
 
     return (
-      <button
-        type="button"
-        onClick={() => {
-          if (sortField) handleTaskSort(sortField);
-        }}
-        disabled={!sortField}
-        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
-          sortField
-            ? "cursor-pointer text-muted-foreground hover:text-foreground"
-            : column.id === "actions"
-              ? "cursor-default text-muted-foreground"
-              : "cursor-move text-muted-foreground"
-        }`}
-        draggable={false}
+      <div
+        className={`flex max-w-full min-w-0 items-center gap-1 ${column.id === "actions" ? "ml-auto justify-between" : ""}`}
+        style={column.id === "actions" ? { width: `${taskActionColumnWidth - 16}px` } : undefined}
       >
-        <span className="truncate">{column.label}</span>
-        {sortField && isSorted ? (
-          taskSortDirection === "asc" ? (
-            <ArrowUp size={12} />
-          ) : (
-            <ArrowDown size={12} />
-          )
-        ) : null}
-      </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (sortField) handleTaskSort(sortField);
+          }}
+          disabled={!sortField}
+          className={`inline-flex shrink-0 items-center gap-1 font-semibold ${
+            sortField
+              ? "cursor-pointer text-muted-foreground hover:text-foreground"
+              : column.id === "actions"
+                ? "cursor-default text-muted-foreground"
+                : "cursor-move text-muted-foreground"
+          }`}
+          draggable={false}
+        >
+          <span className="whitespace-nowrap">{column.label}</span>
+          {sortField && isSorted ? (
+            taskSortDirection === "asc" ? (
+              <ArrowUp size={12} />
+            ) : (
+              <ArrowDown size={12} />
+            )
+          ) : null}
+        </button>
+        {filterControl}
+        {column.id === "actions" ? renderTaskColumnMenu() : null}
+      </div>
     );
   };
 
@@ -2852,8 +3170,9 @@ export default function DepartmentItemsClient({
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
-            variant="outline"
-            size="icon-sm"
+            variant="ghost"
+            size="icon-xs"
+            className="ml-auto shrink-0"
             aria-label={taskTableText.columns}
             title={taskTableText.columns}
           >
@@ -2901,7 +3220,7 @@ export default function DepartmentItemsClient({
 
   const renderTaskRow = (item: DepartmentItemCenterItem) => (
     <tr key={item.id} className="group transition-colors hover:bg-muted/40">
-      {taskColumns.map((column) => {
+      {displayedTaskColumns.map((column) => {
         if (column.id === "title") {
           return (
             <td key={column.id} className="overflow-hidden px-5 py-4 font-semibold text-foreground">
@@ -2917,7 +3236,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "content") {
           return (
-            <td key={column.id} className="whitespace-normal px-5 py-4 align-top text-muted-foreground">
+            <td key={column.id} className="overflow-hidden whitespace-normal px-5 py-4 align-top text-muted-foreground">
               <button type="button" onClick={() => openTaskDetail(item)} className="block w-full text-left">
                 {item.content ? (
                   <span className="block overflow-hidden text-xs leading-5 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
@@ -2931,23 +3250,23 @@ export default function DepartmentItemsClient({
 
         if (column.id === "dueDate") {
           return (
-            <td key={column.id} className={`px-5 py-4 text-sm font-medium ${item.isOverdue ? "text-destructive" : "text-foreground"}`}>
-              {item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}
+            <td key={column.id} className={`overflow-hidden px-5 py-4 text-sm font-medium ${item.isOverdue ? "text-destructive" : "text-foreground"}`}>
+              <span className="block truncate">{item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}</span>
             </td>
           );
         }
 
         if (column.id === "createdAt") {
           return (
-            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
-              {formatDisplayDateTime(item.createdAt, locale)}
+            <td key={column.id} className="overflow-hidden px-5 py-4 text-sm font-medium text-foreground">
+              <span className="block truncate">{formatDisplayDateTime(item.createdAt, locale)}</span>
             </td>
           );
         }
 
         if (column.id === "creator") {
           return (
-            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
+            <td key={column.id} className="overflow-hidden px-5 py-4 text-sm font-medium text-foreground">
               <span className="block w-full truncate">{item.creatorName || item.creatorEmail || "-"}</span>
             </td>
           );
@@ -2955,7 +3274,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "status") {
           return (
-            <td key={column.id} className="px-5 py-4">
+            <td key={column.id} className="overflow-hidden px-5 py-4">
               <Badge variant={item.completedAt ? "secondary" : "outline"} className={item.completedAt ? "bg-emerald-50 text-emerald-700" : ""}>
                 {taskStatusLabel(item.taskStatus, locale)}
               </Badge>
@@ -2965,7 +3284,7 @@ export default function DepartmentItemsClient({
 
         if (column.id === "assignee") {
           return (
-            <td key={column.id} className="px-5 py-4 text-sm font-medium text-foreground">
+            <td key={column.id} className="overflow-hidden px-5 py-4 text-sm font-medium text-foreground">
               <span className="block w-full truncate">{item.assigneeName || item.assigneeEmail || t.unassigned}</span>
             </td>
           );
@@ -2974,30 +3293,36 @@ export default function DepartmentItemsClient({
         return (
           <td
             key={column.id}
-            className="sticky right-0 z-10 bg-card px-2 py-4 group-hover:bg-muted"
+            className="sticky right-0 z-10 bg-card px-2 py-4 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
             style={{ width: `${taskActionColumnWidth}px` }}
           >
-            <div className="flex items-center justify-start gap-2">
+            <div
+              className="ml-auto flex items-center justify-between gap-2"
+              style={{ width: `${taskActionColumnWidth - 16}px` }}
+            >
               {item.canEdit ? (
                 <>
                   <Button
                     type="button"
-                    size="xs"
+                    size="icon-xs"
                     variant="outline"
                     onClick={() => openTaskEditor(item)}
+                    aria-label={t.edit}
+                    title={t.edit}
                   >
-                    {t.edit}
+                    <Pencil />
                   </Button>
                   <Button
                     type="button"
-                    size="xs"
+                    size="icon-xs"
                     variant="outline"
                     disabled={isPending}
                     onClick={() => requestDeleteTask(item)}
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={t.deleteTask}
+                    title={t.deleteTask}
                   >
-                    <Trash2 size={12} />
-                    {t.deleteTask}
+                    <Trash2 />
                   </Button>
                 </>
               ) : null}
@@ -4668,23 +4993,25 @@ export default function DepartmentItemsClient({
 
       {error ? <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-600">{error}</div> : null}
 
-      {activeTab === "tasks" ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {taskFilters.map((filter) => (
-            <Button
-              key={filter.id}
-              type="button"
-              size="sm"
-              variant={taskFilter === filter.id ? "default" : "outline"}
-              onClick={() => {
-                setTaskFilter(filter.id);
-                setTaskPage(1);
-              }}
-            >
-              {filter.label}
-            </Button>
+      {activeTab === "tasks" && taskFilterSummary.length > 0 ? (
+        <div className="flex flex-wrap gap-2 text-sm">
+          {taskFilterSummary.map((filter) => (
+            <div key={filter.key} className="inline-flex max-w-[360px] items-start rounded-md border bg-background text-foreground shadow-xs">
+              <span className="flex min-w-0 items-center px-2.5 py-1">
+                <span className="shrink-0 text-muted-foreground">{filter.label}：</span>
+                <span className="min-w-0 truncate" title={filter.value || taskTableText.all}>{filter.value || taskTableText.all}</span>
+              </span>
+              <button
+                type="button"
+                className="m-0.5 ml-0 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`${taskTableText.removeFilter}：${filter.label}`}
+                title={`${taskTableText.removeFilter}：${filter.label}`}
+                onClick={filter.clear}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
           ))}
-          {renderTaskColumnMenu()}
         </div>
       ) : null}
 
@@ -4696,10 +5023,13 @@ export default function DepartmentItemsClient({
         activeTab === "tasks" ? (
           <div className="flex flex-col overflow-hidden rounded-xl border bg-card">
             <div className="relative overflow-x-auto flex-1">
-              <table className="w-full text-left text-sm whitespace-nowrap" style={{ tableLayout: "fixed" }}>
+              <table
+                className="w-full text-left text-sm whitespace-nowrap"
+                style={{ tableLayout: "fixed", minWidth: `${taskTableMinWidth}px` }}
+              >
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    {taskColumns.map((column, index) => {
+                    {displayedTaskColumns.map((column, index) => {
                       const showLeftLine =
                         taskDragOverIndex === index && taskDragOverSide === "left" && taskDragSourceIndex !== index;
                       const showRightLine =
@@ -4710,11 +5040,14 @@ export default function DepartmentItemsClient({
                         <th
                           key={column.id}
                           className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
-                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2" : "cursor-move px-5 hover:bg-muted active:cursor-move"
+                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted" : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${
                             isDragging ? "opacity-40" : ""
                           }`}
-                          style={{ width: `${column.id === "actions" ? taskActionColumnWidth : column.width}px` }}
+                          style={{
+                            width: `${column.id === "actions" ? taskActionColumnWidth : column.width}px`,
+                            minWidth: `${column.id === "actions" ? taskActionColumnWidth : column.minWidth}px`,
+                          }}
                           draggable={column.id !== "actions"}
                           onDragStart={(event) => handleTaskColumnDragStart(event, index)}
                           onDragOver={(event) => handleTaskColumnDragOver(event, index)}
@@ -4731,9 +5064,18 @@ export default function DepartmentItemsClient({
 
                           {renderTaskHeaderLabel(column)}
 
+                          {column.id === "actions" && index > 0 ? (
+                            <div
+                              className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
+                              onMouseDown={(event) => handleTaskColumnResizeStart(event, index - 1)}
+                              draggable={false}
+                              title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
+                            />
+                          ) : null}
+
                           {showRightLine ? <div className="absolute right-0 top-0 bottom-0 z-10 w-0.5 bg-blue-500" /> : null}
 
-                          {column.id !== "actions" && taskColumns[index + 1]?.id !== "actions" ? (
+                          {column.id !== "actions" ? (
                             <div
                               className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                               onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}

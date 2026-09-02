@@ -423,6 +423,7 @@ export async function getDepartmentNotificationsPage({
     projectId?: string;
     read?: string;
     publishStatus?: string;
+    authorId?: string;
     view?: string;
     search?: string;
     sort?: string;
@@ -453,6 +454,18 @@ export async function getDepartmentNotificationsPage({
   const categoryValues = filters.category ? filters.category.split(",") : [];
   const projectIds = filters.projectId ? filters.projectId.split(",") : [];
   const publishStatusValues = filters.publishStatus ? filters.publishStatus.split(",") : [];
+  const authorValues = filters.authorId ? filters.authorId.split(",") : [];
+  const includeSystemAuthor = authorValues.includes("__system");
+  const authorIds = authorValues.filter((value) => value !== "__system");
+  const hasAuthorFilter = authorValues.length > 0;
+  const announcementAuthorWhere: Prisma.AnnouncementWhereInput = hasAuthorFilter
+    ? {
+        OR: [
+          ...(authorIds.length > 0 ? [{ authorId: { in: authorIds } }] : []),
+          ...(includeSystemAuthor ? [{ authorId: null }] : []),
+        ],
+      }
+    : {};
 
   const baseWhere = {
     departmentId,
@@ -497,6 +510,7 @@ export async function getDepartmentNotificationsPage({
       ...sentCategoryWhere,
       level: { not: "SYSTEM" },
       authorId: userId,
+      ...(hasAuthorFilter ? { AND: [announcementAuthorWhere] } : {}),
       ...(publishStatusValues.length === 1 ? { status: publishStatusValues[0] } : {}),
     };
     const announcements = await prisma.announcement.findMany({
@@ -540,7 +554,7 @@ export async function getDepartmentNotificationsPage({
   const visibleWhere = {
     ...baseWhere,
     status: "SENT",
-    AND: [announcementCategoryWhere],
+    AND: [announcementCategoryWhere, ...(hasAuthorFilter ? [announcementAuthorWhere] : [])],
     receipts: {
       some: {
         userId,
@@ -559,6 +573,16 @@ export async function getDepartmentNotificationsPage({
     ...(readFilter === undefined ? {} : { read: readFilter }),
     ...(hasDateFilter ? { createdAt } : {}),
     ...(search ? { message: { contains: search } } : {}),
+    ...(hasAuthorFilter
+      ? {
+          AND: [{
+            OR: [
+              ...(authorIds.length > 0 ? [{ actorId: { in: authorIds } }] : []),
+              ...(includeSystemAuthor ? [{ actorId: null }] : []),
+            ],
+          }],
+        }
+      : {}),
     OR: [
       ...(includeUpdates && notificationLinks.length > 0
         ? [{ link: { in: notificationLinks }, type: { notIn: ["MEETING", "MEETING_CANCELLED", "ISSUE_DUE"] } }]

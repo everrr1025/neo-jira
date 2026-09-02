@@ -7,13 +7,13 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  ChevronDown,
   Eye,
   FileArchive,
   FileImage,
   FileSpreadsheet,
   FileText,
   Loader2,
+  ListFilter,
   Paperclip,
   Plus,
   Search,
@@ -52,7 +52,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DepartmentNotificationDetailDialog from "@/components/DepartmentNotificationDetailDialog";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
-import ShadcnDatePicker from "@/components/ShadcnDatePicker";
 import type {
   DepartmentNotificationListItem,
   DepartmentNotificationPermission,
@@ -84,6 +83,7 @@ const NOTIFICATION_FILTER_KEYS = [
   "projectId",
   "read",
   "publishStatus",
+  "authorId",
   "search",
   "sort",
   "direction",
@@ -247,15 +247,33 @@ type ProjectOption = {
   key: string;
 };
 
+type AuthorOption = {
+  id: string;
+  name: string;
+};
+
 type ColumnId = "level" | "title" | "project" | "createdAt" | "author" | "read";
 type ColumnConfig = {
   id: ColumnId;
   label: string;
   width: number;
+  minWidth: number;
   sortable?: boolean;
 };
 
 const ACTION_COLUMN_MIN_WIDTH = 56;
+const SYSTEM_AUTHOR_FILTER_VALUE = "__system";
+
+function estimateNotificationHeaderTextWidth(label: string) {
+  return Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12.25 : 7), 0);
+}
+
+function estimateNotificationHeaderMinWidth(columnId: ColumnId, label: string) {
+  const horizontalPadding = 40;
+  const sortWidth = columnId === "read" ? 0 : 16;
+  const filterWidth = columnId === "title" ? 0 : 28;
+  return Math.max(60, horizontalPadding + estimateNotificationHeaderTextWidth(label) + sortWidth + filterWidth);
+}
 
 function estimateNotificationActionButtonWidth(label: string, hasIcon = false) {
   const textWidth = Array.from(label).reduce((total, char) => total + (char.charCodeAt(0) > 255 ? 12 : 6), 0);
@@ -386,6 +404,7 @@ export default function DepartmentNotificationsClient({
   notifications,
   permission,
   projectOptions,
+  authorOptions,
   filters,
   selectedNotificationId = "",
   pagination,
@@ -395,6 +414,7 @@ export default function DepartmentNotificationsClient({
   notifications: DepartmentNotificationListItem[];
   permission: DepartmentNotificationPermission;
   projectOptions: ProjectOption[];
+  authorOptions: AuthorOption[];
   filters: Record<string, string>;
   selectedNotificationId?: string;
   pagination: {
@@ -425,7 +445,6 @@ export default function DepartmentNotificationsClient({
       : null,
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [form, setForm] = useState({
     level: permission.canCreateDepartment ? "DEPARTMENT" : "PROJECT",
@@ -457,29 +476,37 @@ export default function DepartmentNotificationsClient({
   const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const resizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number;
+    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number;
+    nextStartWidth: number | null;
   } | null>(null);
 
   const columnsById = useMemo(
-    () =>
-      new Map<ColumnId, ColumnConfig>([
-        ["level", { id: "level", label: t.level, width: DEFAULT_WIDTHS.level, sortable: true }],
-        ["title", { id: "title", label: t.titleField, width: DEFAULT_WIDTHS.title, sortable: true }],
-        ["project", { id: "project", label: t.project, width: DEFAULT_WIDTHS.project, sortable: true }],
-        ["createdAt", { id: "createdAt", label: t.createdAt, width: DEFAULT_WIDTHS.createdAt, sortable: true }],
-        ["author", { id: "author", label: t.createdBy, width: DEFAULT_WIDTHS.author, sortable: true }],
-        ["read", { id: "read", label: t.status, width: DEFAULT_WIDTHS.read }],
-      ]),
+    () => {
+      const column = (id: ColumnId, label: string, sortable = false): ColumnConfig => ({
+        id,
+        label,
+        width: DEFAULT_WIDTHS[id],
+        minWidth: estimateNotificationHeaderMinWidth(id, label),
+        sortable,
+      });
+      return new Map<ColumnId, ColumnConfig>([
+        ["level", column("level", t.level, true)],
+        ["title", column("title", t.titleField, true)],
+        ["project", column("project", t.project, true)],
+        ["createdAt", column("createdAt", t.createdAt, true)],
+        ["author", column("author", t.createdBy, true)],
+        ["read", column("read", t.status)],
+      ]);
+    },
     [t.createdAt, t.createdBy, t.level, t.project, t.status, t.titleField],
   );
   const columns = columnOrder
     .filter((columnId) => visibleColumns.includes(columnId))
     .map((columnId) => columnsById.get(columnId))
     .filter((column): column is ColumnConfig => Boolean(column))
-    .map((column) => ({ ...column, width: columnWidths[column.id] || column.width }));
+    .map((column) => ({ ...column, width: Math.max(columnWidths[column.id] || column.width, column.minWidth) }));
   const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.pageSize));
   const rangeStart = pagination.total > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
@@ -516,7 +543,6 @@ export default function DepartmentNotificationsClient({
   }, [currentParams, filterStorageKey]);
   const createdFilter = filters.createdFilter || "ALL";
   const createdDate = filters.createdDate || "";
-  const currentCategory = filters.category || "";
   const showActionColumn = currentView === "sent";
   const actionColumnWidth = useMemo(() => {
     let maxWidth = estimateNotificationActionColumnWidth([], t.actions);
@@ -531,11 +557,8 @@ export default function DepartmentNotificationsClient({
 
     return maxWidth;
   }, [notifications, t.actions, t.delete, t.revoke]);
-  const hasActiveCreatedFilter = createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
-  const activeAdvancedFilterCount =
-    (filters.projectId ? 1 : 0) +
-    (filters.read || filters.publishStatus ? 1 : 0) +
-    (hasActiveCreatedFilter ? 1 : 0);
+  const notificationTableMinWidth = columns.reduce((total, column) => total + column.width, 0) +
+    (showActionColumn ? actionColumnWidth : 0);
   const createdFilterOptions = useMemo<FilterOption[]>(
     () => [
       { value: "ALL", label: t.allCreated },
@@ -858,13 +881,12 @@ export default function DepartmentNotificationsClient({
     event.stopPropagation();
     const col = columns[colIndex];
     const nextCol = columns[colIndex + 1];
-    if (!col || !nextCol) return;
+    if (!col) return;
     const startWidth = col.width || 150;
-    const nextStartWidth = nextCol.width || 150;
-    const minWidth = 60;
+    const nextStartWidth = nextCol?.width || null;
     resizingRef.current = {
       colIndex,
-      nextColIndex: colIndex + 1,
+      nextColIndex: nextCol ? colIndex + 1 : null,
       startX: event.clientX,
       startWidth,
       nextStartWidth,
@@ -873,19 +895,32 @@ export default function DepartmentNotificationsClient({
       const current = resizingRef.current;
       if (!current) return;
       const resizeColumnId = columns[current.colIndex]?.id;
-      const nextResizeColumnId = columns[current.nextColIndex]?.id;
-      if (!resizeColumnId || !nextResizeColumnId) return;
+      if (!resizeColumnId) return;
+      const resizeMinWidth = columns[current.colIndex]?.minWidth || 60;
 
       const delta = moveEvent.clientX - current.startX;
+
+      if (current.nextColIndex === null || current.nextStartWidth === null) {
+        setColumnWidths((widths) => ({
+          ...widths,
+          [resizeColumnId]: Math.max(resizeMinWidth, current.startWidth + delta),
+        }));
+        return;
+      }
+
+      const nextResizeColumnId = columns[current.nextColIndex]?.id;
+      if (!nextResizeColumnId) return;
+      const nextStartWidth = current.nextStartWidth;
+      const nextResizeMinWidth = columns[current.nextColIndex]?.minWidth || 60;
       const boundedDelta = Math.min(
-        current.nextStartWidth - minWidth,
-        Math.max(minWidth - current.startWidth, delta),
+        nextStartWidth - nextResizeMinWidth,
+        Math.max(resizeMinWidth - current.startWidth, delta),
       );
 
       setColumnWidths((widths) => ({
         ...widths,
         [resizeColumnId]: current.startWidth + boundedDelta,
-        [nextResizeColumnId]: current.nextStartWidth - boundedDelta,
+        [nextResizeColumnId]: nextStartWidth - boundedDelta,
       }));
     };
     const handleUp = () => {
@@ -915,6 +950,161 @@ export default function DepartmentNotificationsClient({
       ? currentValues.filter((v) => v !== value)
       : [...currentValues, value];
     updateQueryParams({ [filterKey]: newValues.length > 0 ? newValues.join(",") : null, page: 1 });
+  };
+
+  const isColumnFilterActive = (columnId: ColumnId) => {
+    if (columnId === "level") return Boolean(filters.category);
+    if (columnId === "project") return Boolean(filters.projectId);
+    if (columnId === "read") return Boolean(currentView === "sent" ? filters.publishStatus : filters.read);
+    if (columnId === "author") return Boolean(filters.authorId);
+    if (columnId === "createdAt") return createdFilter !== "ALL" || Boolean(createdDate || filters.from || filters.to);
+    return false;
+  };
+
+  const renderColumnMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="icon-xs" aria-label={t.columns} title={t.columns}>
+          <Eye className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-64">
+        <DropdownMenuLabel className="flex items-center justify-between gap-3">
+          <span>{t.columns}</span>
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+            {visibleColumns.length}/{DEFAULT_COLUMN_ORDER.length}
+          </span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {DEFAULT_COLUMN_ORDER.map((columnId) => {
+          const column = columnsById.get(columnId);
+          if (!column) return null;
+          const isChecked = visibleColumns.includes(column.id);
+          const isDisabled = isChecked && (visibleColumns.length === 1 || isColumnFilterActive(column.id));
+
+          return (
+            <DropdownMenuCheckboxItem
+              key={column.id}
+              checked={isChecked}
+              disabled={isDisabled}
+              onCheckedChange={() => handleToggleColumnVisibility(column.id)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              {column.label}
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+        <DropdownMenuSeparator />
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={handleResetColumns}
+          className="w-full justify-start text-primary hover:text-primary"
+        >
+          {t.resetColumns}
+        </Button>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderHeaderFilter = (columnId: ColumnId) => {
+    if (columnId === "level") {
+      const options = [
+        { value: "ANNOUNCEMENT", label: t.announcementsTab },
+        { value: "REMINDER", label: t.remindersTab },
+        { value: "UPDATE", label: t.updatesTab },
+      ];
+      const selectedValues = filters.category ? filters.category.split(",") : [];
+      return (
+        <HeaderMultiFilter
+          label={t.level}
+          options={options}
+          selectedValues={selectedValues}
+          onToggle={(value) => toggleFilterValue(value, "category", selectedValues)}
+          onClear={() => updateQueryParams({ category: null, page: 1 })}
+          clearText={t.reset}
+        />
+      );
+    }
+
+    if (columnId === "project") {
+      const options = projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` }));
+      const selectedValues = filters.projectId ? filters.projectId.split(",") : [];
+      return (
+        <HeaderMultiFilter
+          label={t.project}
+          options={options}
+          selectedValues={selectedValues}
+          onToggle={(value) => toggleFilterValue(value, "projectId", selectedValues)}
+          onClear={() => updateQueryParams({ projectId: null, page: 1 })}
+          clearText={t.reset}
+        />
+      );
+    }
+
+    if (columnId === "read") {
+      const filterKey = currentView === "sent" ? "publishStatus" : "read";
+      const options = currentView === "sent"
+        ? [
+            { value: "SENT", label: t.sent },
+            { value: "REVOKED", label: t.revoked },
+          ]
+        : [
+            { value: "unread", label: t.unread },
+            { value: "read", label: t.read },
+          ];
+      const selectedValues = filters[filterKey] ? filters[filterKey].split(",") : [];
+      return (
+        <HeaderMultiFilter
+          label={t.status}
+          options={options}
+          selectedValues={selectedValues}
+          onToggle={(value) => toggleFilterValue(value, filterKey, selectedValues)}
+          onClear={() => updateQueryParams({ [filterKey]: null, page: 1 })}
+          clearText={t.reset}
+        />
+      );
+    }
+
+    if (columnId === "author") {
+      const options = [
+        ...authorOptions.map((author) => ({ value: author.id, label: author.name })),
+        ...(currentView === "received" ? [{ value: SYSTEM_AUTHOR_FILTER_VALUE, label: t.system }] : []),
+      ];
+      const selectedValues = filters.authorId ? filters.authorId.split(",") : [];
+      return (
+        <HeaderMultiFilter
+          label={t.createdBy}
+          options={options}
+          selectedValues={selectedValues}
+          onToggle={(value) => toggleFilterValue(value, "authorId", selectedValues)}
+          onClear={() => updateQueryParams({ authorId: null, page: 1 })}
+          clearText={t.reset}
+        />
+      );
+    }
+
+    if (columnId === "createdAt") {
+      return (
+        <HeaderCreatedFilter
+          label={t.createdAt}
+          value={createdFilter}
+          date={createdDate}
+          options={createdFilterOptions}
+          onChange={(value) => updateQueryParams({
+            createdFilter: value,
+            createdDate: value === "ALL" ? null : createdDate,
+            from: null,
+            to: null,
+            page: 1,
+          })}
+          onDateChange={(value) => updateQueryParams({ createdDate: value, from: null, to: null, page: 1 })}
+        />
+      );
+    }
+
+    return null;
   };
 
   const renderCell = (notification: DepartmentNotificationListItem, columnId: ColumnId) => {
@@ -982,6 +1172,7 @@ export default function DepartmentNotificationsClient({
                         category: null,
                         read: null,
                         publishStatus: null,
+                        authorId: null,
                         page: 1,
                       })
                     }
@@ -1035,175 +1226,15 @@ export default function DepartmentNotificationsClient({
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card p-3 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1">
-            {currentView === "received"
-              ? [
-                  { value: "", label: t.all },
-                  { value: "ANNOUNCEMENT", label: t.announcementsTab },
-                  { value: "REMINDER", label: t.remindersTab },
-                  { value: "UPDATE", label: t.updatesTab },
-                ].map((option) => (
-                  <Button
-                    key={option.value || "ALL"}
-                    type="button"
-                    size="sm"
-                    variant={currentCategory === option.value ? "default" : "ghost"}
-                    onClick={() => updateQueryParams({ category: option.value || null, page: 1 })}
-                  >
-                    {option.label}
-                  </Button>
-                ))
-              : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="link"
-              className="gap-1 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setIsAdvancedFilterOpen((current) => !current)}
-              aria-expanded={isAdvancedFilterOpen}
-            >
-              <span>{t.advanced}</span>
-              {activeAdvancedFilterCount > 0 ? (
-                <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">
-                  {activeAdvancedFilterCount}
-                </span>
-              ) : null}
-              <ChevronDown className={`size-4 transition-transform ${isAdvancedFilterOpen ? "rotate-180" : ""}`} />
-            </Button>
-          </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="icon" aria-label={t.columns} title={t.columns}>
-                <Eye className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={8} className="w-64">
-              <DropdownMenuLabel className="flex items-center justify-between gap-3">
-                <span>{t.columns}</span>
-                <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-                  {visibleColumns.length}/{DEFAULT_COLUMN_ORDER.length}
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {DEFAULT_COLUMN_ORDER.map((columnId) => {
-                const column = columnsById.get(columnId);
-                if (!column) return null;
-                const isChecked = visibleColumns.includes(column.id);
-                const isDisabled = isChecked && visibleColumns.length === 1;
-
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    checked={isChecked}
-                    disabled={isDisabled}
-                    onCheckedChange={() => handleToggleColumnVisibility(column.id)}
-                    onSelect={(event) => event.preventDefault()}
-                  >
-                    {column.label}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-              <DropdownMenuSeparator />
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                onClick={handleResetColumns}
-                className="w-full justify-start text-primary hover:text-primary"
-              >
-                {t.resetColumns}
-              </Button>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="absolute right-2 top-3 z-30 rounded-md bg-muted/95 shadow-sm">
+          {renderColumnMenu()}
         </div>
-
-        {isAdvancedFilterOpen ? (
-          <div className="mt-3 flex w-full flex-wrap items-center gap-2">
-          <MultiFilter
-            label={t.project}
-            options={projectOptions.map((project) => ({ value: project.id, label: `${project.name} (${project.key})` }))}
-            selectedValues={filters.projectId ? filters.projectId.split(",") : []}
-            onToggle={(value) => toggleFilterValue(value, "projectId", filters.projectId ? filters.projectId.split(",") : [])}
-            onClear={() => updateQueryParams({ projectId: null, page: 1 })}
-            clearText={t.reset}
-          />
-
-          {currentView === "sent" ? (
-            <MultiFilter
-              label={t.publishState}
-              options={[
-                { value: "SENT", label: t.sent },
-                { value: "REVOKED", label: t.revoked },
-              ]}
-              selectedValues={filters.publishStatus ? filters.publishStatus.split(",") : []}
-              onToggle={(value) =>
-                toggleFilterValue(value, "publishStatus", filters.publishStatus ? filters.publishStatus.split(",") : [])
-              }
-              onClear={() => updateQueryParams({ publishStatus: null, page: 1 })}
-              clearText={t.reset}
-            />
-          ) : (
-            <MultiFilter
-              label={t.readState}
-              options={[
-                { value: "unread", label: t.unread },
-                { value: "read", label: t.read },
-              ]}
-              selectedValues={filters.read ? filters.read.split(",") : []}
-              onToggle={(value) => toggleFilterValue(value, "read", filters.read ? filters.read.split(",") : [])}
-              onClear={() => updateQueryParams({ read: null, page: 1 })}
-              clearText={t.reset}
-            />
-          )}
-
-          <SingleFilter
-            label={t.createdAt}
-            value={createdFilter}
-            options={createdFilterOptions}
-            onChange={(value) => {
-              updateQueryParams({
-                createdFilter: value,
-                createdDate: value === "ALL" ? null : createdDate,
-                from: null,
-                to: null,
-                page: 1,
-              });
-            }}
-          />
-
-          {createdFilter !== "ALL" ? (
-            <div className="w-[180px] [&_label]:sr-only">
-              <ShadcnDatePicker
-                id="notificationCreatedDate"
-                label={t.createdAt}
-                locale={locale}
-                value={createdDate}
-                onChange={(createdDate) => updateQueryParams({ createdDate, from: null, to: null, page: 1 })}
-              />
-            </div>
-          ) : null}
-
-          {activeAdvancedFilterCount > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => updateQueryParams({ projectId: null, read: null, publishStatus: null, createdFilter: null, createdDate: null, from: null, to: null, page: 1 })}
-            >
-              {t.reset}
-            </Button>
-          ) : null}
-
-          </div>
-        ) : null}
-      </div>
-
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="relative overflow-hidden">
-          <table className="w-full text-left text-sm" style={{ tableLayout: "fixed" }}>
+        <div className="relative overflow-x-auto">
+          <table
+            className="text-left text-sm"
+            style={{ tableLayout: "fixed", width: `max(100%, ${notificationTableMinWidth}px)` }}
+          >
             <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 {columns.map((column, index) => {
@@ -1234,30 +1265,33 @@ export default function DepartmentNotificationsClient({
                       }}
                     >
                       {showLeftLine ? <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
-                      {column.sortable ? (
-                        <button
-                          type="button"
-                          onClick={() => updateQueryParams({ sort: column.id, direction: nextDirection, page: 1 })}
-                          className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground hover:text-foreground"
-                          draggable={false}
-                        >
-                          <span className="truncate">{column.label}</span>
-                          {isSorted ? (
-                            filters.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                          ) : null}
-                        </button>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 font-semibold text-muted-foreground">{column.label}</span>
-                      )}
+                      <div className="flex max-w-full min-w-0 items-center gap-1">
+                        {column.sortable ? (
+                          <button
+                            type="button"
+                            onClick={() => updateQueryParams({ sort: column.id, direction: nextDirection, page: 1 })}
+                            className="inline-flex min-w-0 items-center gap-1 font-semibold text-muted-foreground hover:text-foreground"
+                            draggable={false}
+                          >
+                            <span className="truncate">{column.label}</span>
+                            {isSorted ? (
+                              filters.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                            ) : null}
+                          </button>
+                        ) : (
+                          <span className="inline-flex min-w-0 items-center gap-1 font-semibold text-muted-foreground">
+                            <span className="truncate">{column.label}</span>
+                          </span>
+                        )}
+                        {renderHeaderFilter(column.id)}
+                      </div>
                       {showRightLine ? <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
-                      {columns[index + 1] ? (
-                        <div
-                          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                          onMouseDown={(event) => handleResizeStart(event, index)}
-                          draggable={false}
-                          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                        />
-                      ) : null}
+                      <div
+                        className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                        onMouseDown={(event) => handleResizeStart(event, index)}
+                        draggable={false}
+                        title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                      />
                     </th>
                   );
                 })}
@@ -1445,7 +1479,35 @@ export default function DepartmentNotificationsClient({
   );
 }
 
-function MultiFilter({
+function headerFilterButton({
+  label,
+  active,
+  summary,
+}: {
+  label: string;
+  active: boolean;
+  summary: string;
+}) {
+  const accessibleLabel = active ? `${label}: ${summary}` : label;
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className="shrink-0 text-muted-foreground"
+      aria-label={accessibleLabel}
+      title={accessibleLabel}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      draggable={false}
+    >
+      <ListFilter />
+    </Button>
+  );
+}
+
+function HeaderMultiFilter({
   label,
   options,
   selectedValues,
@@ -1460,23 +1522,12 @@ function MultiFilter({
   onClear: () => void;
   clearText: string;
 }) {
-  const selectedLabels = options
-    .filter((option) => selectedValues.includes(option.value))
-    .map((option) => option.label);
-  const buttonText =
-    selectedLabels.length === 0
-      ? label
-      : selectedLabels.length === 1
-        ? selectedLabels[0]
-        : `${label} (${selectedLabels.length})`;
+  const selectedLabels = options.filter((option) => selectedValues.includes(option.value)).map((option) => option.label);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="max-w-56 justify-between">
-          <span className="truncate">{buttonText}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </Button>
+        {headerFilterButton({ label, active: selectedValues.length > 0, summary: selectedLabels.join(", ") })}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={8} className="w-64">
         <DropdownMenuLabel className="flex items-center justify-between gap-3">
@@ -1517,29 +1568,34 @@ function MultiFilter({
   );
 }
 
-function SingleFilter({
+function HeaderCreatedFilter({
   label,
   value,
+  date,
   options,
   onChange,
+  onDateChange,
 }: {
   label: string;
   value: string;
+  date: string;
   options: FilterOption[];
   onChange: (value: string) => void;
+  onDateChange: (value: string) => void;
 }) {
   const selectedOption = options.find((option) => option.value === value) || options[0];
+  const isActive = value !== "ALL" || Boolean(date);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="max-w-64 justify-between">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="truncate font-medium text-foreground">{selectedOption?.label || ""}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </Button>
+        {headerFilterButton({
+          label,
+          active: isActive,
+          summary: [selectedOption?.label, date].filter(Boolean).join(" "),
+        })}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={8} className="w-56">
+      <DropdownMenuContent align="start" sideOffset={8} className="w-64">
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map((option) => (
@@ -1551,6 +1607,21 @@ function SingleFilter({
             {option.label}
           </DropdownMenuItem>
         ))}
+        {value !== "ALL" ? (
+          <>
+            <DropdownMenuSeparator />
+            <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => onDateChange(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                aria-label={label}
+              />
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

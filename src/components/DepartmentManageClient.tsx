@@ -13,11 +13,14 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  Eye,
   Loader2,
   Paperclip,
+  Pencil,
   Plus,
   Star,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import { getProjectPath } from "@/lib/projectRoutes";
@@ -422,7 +425,7 @@ const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   owner: 140,
   members: 120,
   createdAt: 150,
-  actions: 260,
+  actions: 136,
 };
 const MEMBER_DEFAULT_COLUMN_WIDTHS: Record<MemberColumnId, number> = {
   name: 180,
@@ -711,10 +714,10 @@ export default function DepartmentManageClient({
   const [selectedMyProjectId, setSelectedMyProjectId] = useState("");
   const projectResizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number;
+    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number;
+    nextStartWidth: number | null;
   } | null>(null);
   const memberResizingRef = useRef<{
     colIndex: number;
@@ -1246,32 +1249,44 @@ export default function DepartmentManageClient({
       event.stopPropagation();
       const column = projectColumns[colIndex];
       const nextColumn = projectColumns[colIndex + 1];
-      if (!column || !nextColumn || column.id === "actions" || nextColumn.id === "actions") return;
+      if (!column || column.id === "actions") return;
+      const resizeNextColumn = nextColumn && nextColumn.id !== "actions" ? nextColumn : null;
       projectResizingRef.current = {
         colIndex,
-        nextColIndex: colIndex + 1,
+        nextColIndex: resizeNextColumn ? colIndex + 1 : null,
         startX: event.clientX,
         startWidth: column.width,
-        nextStartWidth: nextColumn.width,
+        nextStartWidth: resizeNextColumn?.width || null,
       };
 
       const onMouseMove = (moveEvent: MouseEvent) => {
         const resizeState = projectResizingRef.current;
         if (!resizeState) return;
         const resizeColumnId = projectColumns[resizeState.colIndex]?.id;
-        const nextResizeColumnId = projectColumns[resizeState.nextColIndex]?.id;
-        if (!resizeColumnId || !nextResizeColumnId) return;
+        if (!resizeColumnId) return;
 
         const minWidth = 80;
         const delta = moveEvent.clientX - resizeState.startX;
+
+        if (resizeState.nextColIndex === null || resizeState.nextStartWidth === null) {
+          setProjectColumnWidths((current) => ({
+            ...current,
+            [resizeColumnId]: Math.max(minWidth, resizeState.startWidth + delta),
+          }));
+          return;
+        }
+
+        const nextResizeColumnId = projectColumns[resizeState.nextColIndex]?.id;
+        if (!nextResizeColumnId) return;
+        const nextStartWidth = resizeState.nextStartWidth;
         const boundedDelta = Math.min(
-          resizeState.nextStartWidth - minWidth,
+          nextStartWidth - minWidth,
           Math.max(minWidth - resizeState.startWidth, delta)
         );
         setProjectColumnWidths((current) => ({
           ...current,
           [resizeColumnId]: resizeState.startWidth + boundedDelta,
-          [nextResizeColumnId]: resizeState.nextStartWidth - boundedDelta,
+          [nextResizeColumnId]: nextStartWidth - boundedDelta,
         }));
       };
 
@@ -1437,19 +1452,30 @@ export default function DepartmentManageClient({
     }
 
     return (
-      <td key={column.id} className="overflow-hidden px-5 py-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Button asChild size="xs" variant="outline">
-            <Link href={getProjectPath(department.id, project.id)}>{t.viewProject}</Link>
+      <td
+        key={column.id}
+        className="sticky right-0 z-10 overflow-hidden bg-card px-2 py-4 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/project-row:bg-muted/40"
+      >
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <Button asChild size="icon-xs" variant="outline">
+            <Link href={getProjectPath(department.id, project.id)} aria-label={t.viewProject} title={t.viewProject}>
+              <Eye />
+            </Link>
           </Button>
-          <Button asChild size="xs" variant="outline">
-            <Link href={`/departments/${department.id}/projects/${project.id}/members`}>{t.memberButton}</Link>
+          <Button asChild size="icon-xs" variant="outline">
+            <Link
+              href={`/departments/${department.id}/projects/${project.id}/members`}
+              aria-label={t.memberButton}
+              title={t.memberButton}
+            >
+              <UserRound />
+            </Link>
           </Button>
           {canManageProjects ? (
             <>
               <Button
                 type="button"
-                size="xs"
+                size="icon-xs"
                 variant="outline"
                 onClick={() => {
                   setEditingProject(project);
@@ -1462,12 +1488,14 @@ export default function DepartmentManageClient({
                   setIsEditProjectOpen(true);
                 }}
                 disabled={isPending}
+                aria-label={locale === "zh" ? "编辑" : "Edit"}
+                title={locale === "zh" ? "编辑" : "Edit"}
               >
-                {locale === "zh" ? "编辑" : "Edit"}
+                <Pencil />
               </Button>
               <Button
                 type="button"
-                size="xs"
+                size="icon-xs"
                 variant="outline"
                 onClick={() => {
                   setDeleteErrorMsg("");
@@ -1476,9 +1504,10 @@ export default function DepartmentManageClient({
                 }}
                 disabled={isPending}
                 className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                aria-label={t.deleteProject}
+                title={t.deleteProject}
               >
-                <Trash2 size={12} />
-                {t.deleteProject}
+                <Trash2 />
               </Button>
             </>
           ) : null}
@@ -2312,14 +2341,17 @@ export default function DepartmentManageClient({
                 }}
               >
                 <Plus size={16} />
-                {t.createProject}
+                {locale === "zh" ? "项目" : t.createProject}
               </Button>
             ) : null}
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-              <table className="w-full table-fixed text-left text-sm">
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table
+                className="text-left text-sm"
+                style={{ tableLayout: "fixed", width: `max(100%, ${projectColumnsTotalWidth}px)` }}
+              >
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     {projectColumns.map((column, index) => {
@@ -2333,9 +2365,11 @@ export default function DepartmentManageClient({
                         <th
                           key={column.id}
                           className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
-                            column.id === "actions" ? "px-5" : "cursor-move px-5 hover:bg-muted active:cursor-move"
+                            column.id === "actions"
+                              ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                              : "cursor-move px-5 hover:bg-muted active:cursor-move"
                           } ${isDragging ? "opacity-40" : ""}`}
-                          style={{ width: `${(column.width / projectColumnsTotalWidth) * 100}%` }}
+                          style={{ width: `${column.width}px` }}
                           draggable={column.id !== "actions"}
                           onDragStart={(event) => handleProjectColumnDragStart(event, index)}
                           onDragOver={(event) => handleProjectColumnDragOver(event, index)}
@@ -2350,6 +2384,14 @@ export default function DepartmentManageClient({
                         >
                           {showLeftLine ? <div className="absolute bottom-0 left-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
                           {renderProjectHeaderLabel(column)}
+                          {column.id === "actions" && index > 0 ? (
+                            <div
+                              className="absolute bottom-0 left-0 top-0 z-20 w-4 cursor-ew-resize"
+                              onMouseDown={(event) => handleProjectColumnResizeStart(event, index - 1)}
+                              draggable={false}
+                              title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
+                            />
+                          ) : null}
                           {showRightLine ? <div className="absolute bottom-0 right-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
                           {column.id !== "actions" && projectColumns[index + 1]?.id !== "actions" ? (
                             <div
@@ -2366,7 +2408,7 @@ export default function DepartmentManageClient({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {paginatedProjects.map((project) => (
-                    <tr key={project.id} className="transition-colors hover:bg-muted/40">
+                    <tr key={project.id} className="group/project-row transition-colors hover:bg-muted/40">
                       {projectColumns.map((column) => renderProjectCell(project, column))}
                     </tr>
                   ))}
