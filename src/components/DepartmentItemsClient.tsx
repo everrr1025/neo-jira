@@ -88,7 +88,7 @@ import { getTranslations, getIssueTypeLabel } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import type { NoteFolderListItem, NoteListItem, NoteTaskOption } from "@/lib/notes";
 import { getWorkflowStatusName } from "@/lib/workflows";
-import { formatFullDateTime, formatRelativeTime } from "@/lib/timeFormat";
+import { formatFullDateTime, formatListDate, formatListDateTime, formatRelativeTime } from "@/lib/timeFormat";
 import { getProjectPath } from "@/lib/projectRoutes";
 
 const TEXT = {
@@ -438,6 +438,7 @@ const SCHEDULE_TEXT = {
 type StoredTaskListFilters = {
   taskQuery?: string;
   taskDueDateFilter?: TaskDueDateFilter;
+  taskDueDateValue?: string;
   taskCreatorIds?: string[];
   taskStatuses?: string[];
   taskAssigneeIds?: string[];
@@ -579,14 +580,9 @@ function taskStatusLabel(status: string, locale: Locale) {
   return t.ongoing;
 }
 
-function formatDisplayDate(value: string | null, locale: Locale) {
+function formatDisplayDate(value: string | null) {
   if (!value) return "";
-  return new Date(value).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US");
-}
-
-function formatDisplayDateTime(value: string | null, locale: Locale) {
-  if (!value) return "";
-  return new Date(value).toLocaleString(locale === "zh" ? "zh-CN" : "en-US");
+  return formatListDate(value);
 }
 
 function dayKey(date: string) {
@@ -959,7 +955,7 @@ function LocalizedTimeInput({
   );
 }
 
-type TaskDueDateFilter = "all" | "overdue" | "today" | "days3" | "days7" | "none";
+type TaskDueDateFilter = "ALL" | "EQ" | "GTE" | "LTE";
 type TaskSortField = "title" | "dueDate" | "createdAt" | "creator" | "status" | "assignee";
 type TaskSortDirection = "asc" | "desc";
 type TaskColumnId = "title" | "content" | "dueDate" | "createdAt" | "creator" | "status" | "assignee" | "actions";
@@ -1028,7 +1024,8 @@ function estimateTaskHeaderMinWidth(columnId: TaskColumnId, label: string, activ
       ? Math.min(128, estimateTaskHeaderTextWidth(activeDueDateFilterLabel) + 14) + 4
       : 28;
 
-  return Math.max(80, horizontalPadding + estimateTaskHeaderTextWidth(label) + sortWidth + filterWidth);
+  const contentMinWidth = columnId === "createdAt" ? 160 : columnId === "dueDate" ? 112 : 80;
+  return Math.max(contentMinWidth, horizontalPadding + estimateTaskHeaderTextWidth(label) + sortWidth + filterWidth);
 }
 
 function taskFilterTrigger(active: boolean, label: string, value: string) {
@@ -1050,25 +1047,30 @@ function taskFilterTrigger(active: boolean, label: string, value: string) {
   );
 }
 
-function TaskSingleFilter({
+function TaskDateFilter({
   label,
   value,
+  date,
   options,
   onChange,
+  onDateChange,
 }: {
   label: string;
   value: string;
+  date: string;
   options: TaskFilterOption[];
   onChange: (value: string) => void;
+  onDateChange: (value: string) => void;
 }) {
   const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
+  const isActive = value !== "ALL";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {taskFilterTrigger(value !== "all", `${label}: ${selectedLabel}`, selectedLabel)}
+        {taskFilterTrigger(isActive, `${label}: ${[selectedLabel, date].filter(Boolean).join(" ")}`, [selectedLabel, date].filter(Boolean).join(" "))}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-48 normal-case">
+      <DropdownMenuContent align="start" className="w-64 normal-case">
         <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
           {options[0] ? <DropdownMenuRadioItem value={options[0].value}>{options[0].label}</DropdownMenuRadioItem> : null}
           {options.length > 1 ? <DropdownMenuSeparator /> : null}
@@ -1076,6 +1078,21 @@ function TaskSingleFilter({
             <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {isActive ? (
+          <>
+            <DropdownMenuSeparator />
+            <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => onDateChange(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                aria-label={label}
+              />
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1303,11 +1320,11 @@ export default function DepartmentItemsClient({
         columns: "\u663e\u793a\u5217",
         resetColumns: "\u91cd\u7f6e\u5217",
         all: "\u5168\u90e8",
-        overdue: "\u5df2\u903e\u671f",
-        today: "\u4eca\u5929",
-        days3: "3 \u5929\u5185",
-        days7: "7 \u5929\u5185",
-        noDueDate: "\u65e0\u5230\u671f\u65f6\u95f4",
+        dueDate: "\u5230\u671f\u65e5\u671f",
+        allDueDates: "\u5168\u90e8\u5230\u671f\u65e5\u671f",
+        dateEquals: "\u7b49\u4e8e",
+        dateOnOrAfter: "\u665a\u4e8e\u6216\u7b49\u4e8e",
+        dateOnOrBefore: "\u65e9\u4e8e\u6216\u7b49\u4e8e",
         unknownCreator: "\u672a\u77e5\u53d1\u8d77\u4eba",
         removeFilter: "\u53d6\u6d88\u7b5b\u9009",
       }
@@ -1322,11 +1339,11 @@ export default function DepartmentItemsClient({
         columns: "Columns",
         resetColumns: "Reset columns",
         all: "All",
-        overdue: "Overdue",
-        today: "Today",
-        days3: "Within 3 days",
-        days7: "Within 7 days",
-        noDueDate: "No due date",
+        dueDate: "Due date",
+        allDueDates: "All due dates",
+        dateEquals: "Equals",
+        dateOnOrAfter: "On or after",
+        dateOnOrBefore: "On or before",
         unknownCreator: "Unknown creator",
         removeFilter: "Remove filter",
       };
@@ -1349,7 +1366,8 @@ export default function DepartmentItemsClient({
   const [scheduleOverflowDate, setScheduleOverflowDate] = useState<string | null>(null);
   const activeTab = initialTab;
   const [taskQuery, setTaskQuery] = useState("");
-  const [taskDueDateFilter, setTaskDueDateFilter] = useState<TaskDueDateFilter>("all");
+  const [taskDueDateFilter, setTaskDueDateFilter] = useState<TaskDueDateFilter>("ALL");
+  const [taskDueDateValue, setTaskDueDateValue] = useState("");
   const [taskCreatorIds, setTaskCreatorIds] = useState<string[]>([]);
   const [taskStatuses, setTaskStatuses] = useState<string[]>([]);
   const [taskAssigneeIds, setTaskAssigneeIds] = useState<string[]>([]);
@@ -1369,7 +1387,7 @@ export default function DepartmentItemsClient({
       return [
         column("title", t.titleField),
         column("content", t.notes),
-        column("dueDate", t.dueDate),
+        column("dueDate", taskTableText.dueDate),
         column("createdAt", taskTableText.createdAt),
         column("creator", t.openedBy),
         column("status", t.status),
@@ -1377,7 +1395,7 @@ export default function DepartmentItemsClient({
         column("actions", t.actions),
       ];
     },
-    [t.actions, t.assignee, t.dueDate, t.notes, t.openedBy, t.status, t.titleField, taskTableText.createdAt]
+    [t.actions, t.assignee, t.notes, t.openedBy, t.status, t.titleField, taskTableText.createdAt, taskTableText.dueDate]
   );
   const taskColumnsById = useMemo(
     () => new Map(taskColumnDefinitions.map((column) => [column.id, column] as const)),
@@ -1389,15 +1407,16 @@ export default function DepartmentItemsClient({
     () => taskColumnDefinitions.filter((column) => column.id !== "actions"),
     [taskColumnDefinitions]
   );
-  const activeDueDateFilterLabel = taskDueDateFilter === "all"
+  const activeDueDateFilterLabel = taskDueDateFilter === "ALL"
     ? undefined
-    : {
-        overdue: taskTableText.overdue,
-        today: taskTableText.today,
-        days3: taskTableText.days3,
-        days7: taskTableText.days7,
-        none: taskTableText.noDueDate,
-      }[taskDueDateFilter];
+    : [
+        {
+          EQ: taskTableText.dateEquals,
+          GTE: taskTableText.dateOnOrAfter,
+          LTE: taskTableText.dateOnOrBefore,
+        }[taskDueDateFilter],
+        taskDueDateValue,
+      ].filter(Boolean).join(locale === "zh" ? "：" : ": ");
   const taskColumns = useMemo(
     () => {
       const visibleColumns = taskVisibleColumnIds
@@ -1425,7 +1444,10 @@ export default function DepartmentItemsClient({
     if (typeof window === "undefined") return;
     const storedTaskFilters = readStoredTaskListFilters(taskFilterStorageKey);
     if (typeof storedTaskFilters.taskQuery === "string") setTaskQuery(storedTaskFilters.taskQuery);
-    if (storedTaskFilters.taskDueDateFilter) setTaskDueDateFilter(storedTaskFilters.taskDueDateFilter);
+    if (["ALL", "EQ", "GTE", "LTE"].includes(storedTaskFilters.taskDueDateFilter || "")) {
+      setTaskDueDateFilter(storedTaskFilters.taskDueDateFilter!);
+    }
+    if (typeof storedTaskFilters.taskDueDateValue === "string") setTaskDueDateValue(storedTaskFilters.taskDueDateValue);
     if (Array.isArray(storedTaskFilters.taskCreatorIds)) setTaskCreatorIds(storedTaskFilters.taskCreatorIds);
     if (Array.isArray(storedTaskFilters.taskStatuses)) setTaskStatuses(storedTaskFilters.taskStatuses);
     if (Array.isArray(storedTaskFilters.taskAssigneeIds)) setTaskAssigneeIds(storedTaskFilters.taskAssigneeIds);
@@ -1460,6 +1482,7 @@ export default function DepartmentItemsClient({
       JSON.stringify({
         taskQuery,
         taskDueDateFilter,
+        taskDueDateValue,
         taskCreatorIds,
         taskStatuses,
         taskAssigneeIds,
@@ -1470,7 +1493,7 @@ export default function DepartmentItemsClient({
         taskColumnWidths,
       } satisfies StoredTaskListFilters)
     );
-  }, [hasLoadedTaskPreferences, taskAssigneeIds, taskColumnWidths, taskCreatorIds, taskDueDateFilter, taskFilterStorageKey, taskPageSize, taskQuery, taskSortDirection, taskSortField, taskStatuses, taskVisibleColumnIds]);
+  }, [hasLoadedTaskPreferences, taskAssigneeIds, taskColumnWidths, taskCreatorIds, taskDueDateFilter, taskDueDateValue, taskFilterStorageKey, taskPageSize, taskQuery, taskSortDirection, taskSortField, taskStatuses, taskVisibleColumnIds]);
   const [noteFolderFilter, setNoteFolderFilter] = useState<NoteFolderFilter>("all");
   const [collapsedNoteFolderIds, setCollapsedNoteFolderIds] = useState<Record<string, boolean>>({});
   const [noteQuery, setNoteQuery] = useState("");
@@ -1629,20 +1652,21 @@ export default function DepartmentItemsClient({
       .map((status) => ({ value: status, label: taskStatusLabel(status, locale) }));
   }, [locale, taskItems]);
   const taskDueDateOptions: TaskFilterOption[] = [
-    { value: "all", label: taskTableText.all },
-    { value: "overdue", label: taskTableText.overdue },
-    { value: "today", label: taskTableText.today },
-    { value: "days3", label: taskTableText.days3 },
-    { value: "days7", label: taskTableText.days7 },
-    { value: "none", label: taskTableText.noDueDate },
+    { value: "ALL", label: taskTableText.allDueDates },
+    { value: "EQ", label: taskTableText.dateEquals },
+    { value: "GTE", label: taskTableText.dateOnOrAfter },
+    { value: "LTE", label: taskTableText.dateOnOrBefore },
   ];
   const taskFilterSummary = [
-    ...(taskDueDateFilter !== "all" ? [{
+    ...(taskDueDateFilter !== "ALL" ? [{
       key: "dueDate",
-      label: t.dueDate,
-      value: taskDueDateOptions.find((option) => option.value === taskDueDateFilter)?.label || taskDueDateFilter,
+      label: taskTableText.dueDate,
+      value: [taskDueDateOptions.find((option) => option.value === taskDueDateFilter)?.label || taskDueDateFilter, taskDueDateValue]
+        .filter(Boolean)
+        .join(locale === "zh" ? "：" : ": "),
       clear: () => {
-        setTaskDueDateFilter("all");
+        setTaskDueDateFilter("ALL");
+        setTaskDueDateValue("");
         setTaskPage(1);
       },
     }] : []),
@@ -1684,18 +1708,12 @@ export default function DepartmentItemsClient({
     const assigneeValue = item.assigneeId || TASK_UNASSIGNED_FILTER_VALUE;
     if (taskAssigneeIds.length > 0 && !taskAssigneeIds.includes(assigneeValue)) return false;
 
-    if (taskDueDateFilter === "none") return !item.dueDate;
-    if (taskDueDateFilter !== "all") {
+    if (taskDueDateFilter !== "ALL" && taskDueDateValue) {
       if (!item.dueDate) return false;
-      if (taskDueDateFilter === "overdue") return item.isOverdue;
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dueDate = new Date(item.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + (taskDueDateFilter === "today" ? 0 : taskDueDateFilter === "days3" ? 2 : 6));
-      return dueDate >= today && dueDate <= endDate;
+      const dueDate = formatListDate(item.dueDate);
+      if (taskDueDateFilter === "EQ") return dueDate === taskDueDateValue;
+      if (taskDueDateFilter === "GTE") return dueDate >= taskDueDateValue;
+      return dueDate <= taskDueDateValue;
     }
     return true;
   }).filter((item) => {
@@ -3082,12 +3100,18 @@ export default function DepartmentItemsClient({
 
     if (column.id === "dueDate") {
       filterControl = (
-        <TaskSingleFilter
-          label={t.dueDate}
+        <TaskDateFilter
+          label={taskTableText.dueDate}
           value={taskDueDateFilter}
+          date={taskDueDateValue}
           options={taskDueDateOptions}
           onChange={(value) => {
             setTaskDueDateFilter(value as TaskDueDateFilter);
+            if (value === "ALL") setTaskDueDateValue("");
+            setTaskPage(1);
+          }}
+          onDateChange={(value) => {
+            setTaskDueDateValue(value);
             setTaskPage(1);
           }}
         />
@@ -3250,16 +3274,18 @@ export default function DepartmentItemsClient({
 
         if (column.id === "dueDate") {
           return (
-            <td key={column.id} className={`overflow-hidden px-5 py-4 text-sm font-medium ${item.isOverdue ? "text-destructive" : "text-foreground"}`}>
-              <span className="block truncate">{item.dueDate ? formatDisplayDate(item.dueDate, locale) : ""}</span>
+            <td key={column.id} className={`overflow-hidden px-5 py-4 text-xs font-medium ${item.isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+              <span className="block truncate">{item.dueDate ? formatDisplayDate(item.dueDate) : ""}</span>
             </td>
           );
         }
 
         if (column.id === "createdAt") {
           return (
-            <td key={column.id} className="overflow-hidden px-5 py-4 text-sm font-medium text-foreground">
-              <span className="block truncate">{formatDisplayDateTime(item.createdAt, locale)}</span>
+            <td key={column.id} className="overflow-hidden px-5 py-4 text-xs font-medium text-muted-foreground">
+              <span className="block truncate" title={formatFullDateTime(item.createdAt, locale)}>
+                {formatListDateTime(item.createdAt)}
+              </span>
             </td>
           );
         }
@@ -4194,7 +4220,7 @@ export default function DepartmentItemsClient({
                 <div className="min-w-0">
                   <p className="truncate text-foreground">{scheduleDateLabel(selectedScheduleItem, locale)}</p>
                   <p className="mt-0.5">{scheduleTimeLabel(selectedScheduleItem, locale, true) || st.noTime}</p>
-                  {selectedScheduleItem.dueDate ? <p className="text-xs text-muted-foreground">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate, locale)}</p> : null}
+                  {selectedScheduleItem.dueDate ? <p className="text-xs text-muted-foreground">{t.dueDate}: {formatDisplayDate(selectedScheduleItem.dueDate)}</p> : null}
                 </div>
               </div>
               {!selectedScheduleIsMemo && selectedScheduleDetails?.location ? (
@@ -4723,7 +4749,7 @@ export default function DepartmentItemsClient({
                       [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
                       [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
                       [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
-                      [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                      [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate) : t.noDueDate],
                     ].map(([label, value]) => (
                       <div key={label} className="min-w-0">
                         <p className="text-xs font-semibold text-slate-500">{label}</p>
@@ -5213,7 +5239,7 @@ export default function DepartmentItemsClient({
                     [issueText.status, getWorkflowStatusName(selectedNoteIssue.status, selectedNoteIssue.workflowStatuses, locale)],
                     [issueText.priority, priorityLabel(selectedNoteIssue.priority, locale)],
                     [issueText.assignee, selectedNoteIssue.assigneeName || selectedNoteIssue.assigneeEmail || t.unassigned],
-                    [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate, locale) : t.noDueDate],
+                    [issueText.dueDate, selectedNoteIssue.dueDate ? formatDisplayDate(selectedNoteIssue.dueDate) : t.noDueDate],
                   ].map(([label, value]) => (
                     <div key={label} className="min-w-0">
                       <p className="text-xs font-semibold text-slate-500">{label}</p>
@@ -5524,7 +5550,7 @@ export default function DepartmentItemsClient({
                 <h3 className="truncate text-lg font-semibold text-foreground">{selectedTask.title}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {t.openedBy}: {selectedTask.creatorName || selectedTask.creatorEmail || "-"} · {t.assignee}: {selectedTask.assigneeName || selectedTask.assigneeEmail || t.unassigned}
-                  {selectedTask.dueDate ? ` · ${t.dueDate}: ${formatDisplayDate(selectedTask.dueDate, locale)}` : ""}
+                  {selectedTask.dueDate ? ` · ${t.dueDate}: ${formatDisplayDate(selectedTask.dueDate)}` : ""}
                 </p>
               </div>
               <div className="flex items-center gap-2">

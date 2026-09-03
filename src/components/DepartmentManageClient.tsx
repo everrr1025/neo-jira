@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { getProjectPath } from "@/lib/projectRoutes";
+import { formatFullDateTime, formatListDate } from "@/lib/timeFormat";
 
 import DepartmentNavIcon from "@/components/DepartmentNavIcon";
 import {
@@ -158,6 +159,7 @@ const TEXT = {
     currentUser: "Current user",
     pinned: "Pinned",
     createdAt: "Created",
+    projectCreatedDate: "Created date",
     key: "Key",
     description: "Description",
     viewProject: "View",
@@ -280,6 +282,7 @@ const TEXT = {
     currentUser: "当前用户",
     pinned: "置顶",
     createdAt: "创建时间",
+    projectCreatedDate: "创建日期",
     key: "标识",
     description: "描述",
     viewProject: "查看",
@@ -805,10 +808,10 @@ export default function DepartmentManageClient({
         ["description", { id: "description", label: t.description, width: PROJECT_DEFAULT_COLUMN_WIDTHS.description }],
         ["owner", { id: "owner", label: t.ownerLabel, width: PROJECT_DEFAULT_COLUMN_WIDTHS.owner }],
         ["members", { id: "members", label: t.members, width: PROJECT_DEFAULT_COLUMN_WIDTHS.members }],
-        ["createdAt", { id: "createdAt", label: t.createdAt, width: PROJECT_DEFAULT_COLUMN_WIDTHS.createdAt }],
+        ["createdAt", { id: "createdAt", label: t.projectCreatedDate, width: PROJECT_DEFAULT_COLUMN_WIDTHS.createdAt }],
         ["actions", { id: "actions", label: t.actions, width: PROJECT_DEFAULT_COLUMN_WIDTHS.actions }],
       ]),
-    [t.actions, t.createdAt, t.description, t.key, t.members, t.ownerLabel, t.projectName]
+    [t.actions, t.description, t.key, t.members, t.ownerLabel, t.projectCreatedDate, t.projectName]
   );
   const projectColumns = useMemo(
     () =>
@@ -816,7 +819,8 @@ export default function DepartmentManageClient({
         .map((columnId) => {
           const column = projectColumnsById.get(columnId);
           if (!column) return null;
-          return { ...column, width: projectColumnWidths[columnId] ?? column.width };
+          const minWidth = column.id === "createdAt" ? 112 : 80;
+          return { ...column, width: Math.max(projectColumnWidths[columnId] ?? column.width, minWidth) };
         })
         .filter((column): column is ProjectColumnConfig => Boolean(column)),
     [projectColumnOrder, projectColumnWidths, projectColumnsById]
@@ -1265,7 +1269,7 @@ export default function DepartmentManageClient({
         const resizeColumnId = projectColumns[resizeState.colIndex]?.id;
         if (!resizeColumnId) return;
 
-        const minWidth = 80;
+        const minWidth = resizeColumnId === "createdAt" ? 112 : 80;
         const delta = moveEvent.clientX - resizeState.startX;
 
         if (resizeState.nextColIndex === null || resizeState.nextStartWidth === null) {
@@ -1279,8 +1283,9 @@ export default function DepartmentManageClient({
         const nextResizeColumnId = projectColumns[resizeState.nextColIndex]?.id;
         if (!nextResizeColumnId) return;
         const nextStartWidth = resizeState.nextStartWidth;
+        const nextMinWidth = nextResizeColumnId === "createdAt" ? 112 : 80;
         const boundedDelta = Math.min(
-          nextStartWidth - minWidth,
+          nextStartWidth - nextMinWidth,
           Math.max(minWidth - resizeState.startWidth, delta)
         );
         setProjectColumnWidths((current) => ({
@@ -1446,7 +1451,9 @@ export default function DepartmentManageClient({
     if (column.id === "createdAt") {
       return (
         <td key={column.id} className="overflow-hidden px-5 py-4 text-xs font-medium text-muted-foreground">
-          <span className="block truncate">{new Date(project.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}</span>
+          <span className="block truncate" title={formatFullDateTime(project.createdAt, locale)}>
+            {formatListDate(project.createdAt)}
+          </span>
         </td>
       );
     }

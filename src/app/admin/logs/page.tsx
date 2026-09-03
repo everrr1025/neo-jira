@@ -4,9 +4,11 @@ import { redirect } from "next/navigation";
 
 import AdminLogsClient from "@/components/AdminLogsClient";
 import { authOptions } from "@/lib/authOptions";
+import { normalizeListDateFilterWithBetween, resolveListDateFilterRangeWithBetween } from "@/lib/listDateFilter";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getInactiveCutoff } from "@/lib/systemUsage";
+import { formatListDate } from "@/lib/timeFormat";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +73,14 @@ export default async function AdminLogsPage({ searchParams }: {
   const locale = await getCurrentLocale();
   const params = await searchParams;
   const requestedRange = first(params.range);
-  const range = requestedRange === "7" || requestedRange === "30" || requestedRange === "90" ? requestedRange : "all";
+  const legacyRange = requestedRange === "7" || requestedRange === "30" || requestedRange === "90" ? requestedRange : null;
+  const requestedDateFilter = first(params.dateFilter);
+  const dateFilter = requestedDateFilter
+    ? normalizeListDateFilterWithBetween(requestedDateFilter)
+    : legacyRange ? "GTE" : "ALL";
+  const date = (first(params.date) || (legacyRange ? formatListDate(getInactiveCutoff(Number(legacyRange))) : "")).trim();
+  const endDate = (first(params.endDate) || "").trim();
+  const dateRange = resolveListDateFilterRangeWithBetween(dateFilter, date, endDate);
   const entityTypes = selectedValues(params.entityType, ENTITY_TYPES);
   const actions = selectedValues(params.action, ACTION_TYPES);
   const actorIds = selectedValues(params.actorId);
@@ -89,7 +98,7 @@ export default async function AdminLogsPage({ searchParams }: {
       : { entityType: { in: entityTypes.length > 0 ? entityTypes : ENTITY_TYPES } }),
     ...(actions.length > 0 ? { action: { in: actions } } : {}),
     ...(actorIds.length > 0 ? { actorId: { in: actorIds } } : {}),
-    ...(range !== "all" ? { createdAt: { gte: getInactiveCutoff(Number(range)) } } : {}),
+    ...(dateRange ? { createdAt: dateRange } : {}),
   };
 
   const [total, actors, target] = await Promise.all([
@@ -135,7 +144,7 @@ export default async function AdminLogsPage({ searchParams }: {
       };
     })}
     actors={actors.map((actor) => ({ id: actor.id, name: actor.name || actor.email }))}
-    filters={{ range, entityTypes, actions, actorIds, target }}
+    filters={{ dateFilter, date, endDate, entityTypes, actions, actorIds, target }}
     page={page}
     pageSize={pageSize}
     totalPages={totalPages}

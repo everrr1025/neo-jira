@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { createAdmin, createUser, deleteUser, resetUserPassword, setUserDisabled } from "@/app/actions/admin";
+import ListDateFilterMenu from "@/components/ListDateFilterMenu";
 import LogNavIcon from "@/components/LogNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Locale } from "@/lib/i18n";
+import type { ListDateFilter } from "@/lib/listDateFilter";
+import { formatFullDateTime, formatListDateTime } from "@/lib/timeFormat";
 
 type DepartmentOption = {
   id: string;
@@ -85,11 +88,34 @@ type Props = {
   activityStatus: "all" | "inactive30" | "inactive90" | "unknown";
   accountType: "user" | "admin";
   status: "all" | "active" | "disabled";
+  activityDateFilter: ListDateFilter;
+  activityDate: string;
+  createdDateFilter: ListDateFilter;
+  createdDate: string;
   locale: Locale;
 };
 
 type UserSortField = "name" | "email" | "department" | "createdAt" | "lastActiveAt";
 type SortDirection = "asc" | "desc";
+type UserColumnId = "name" | "email" | "status" | "department" | "activity" | "createdAt";
+
+const USER_ACTION_COLUMN_WIDTH = 152;
+const USER_COLUMN_WIDTHS: Record<UserColumnId, number> = {
+  name: 200,
+  email: 220,
+  status: 120,
+  department: 180,
+  activity: 220,
+  createdAt: 220,
+};
+const USER_COLUMN_MIN_WIDTHS: Record<UserColumnId, number> = {
+  name: 150,
+  email: 180,
+  status: 105,
+  department: 145,
+  activity: 220,
+  createdAt: 220,
+};
 
 const SPECIAL_CHARS = "!@#$%^&*()-_=+[]{};:,.?/|";
 const PASSWORD_POOLS = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789", SPECIAL_CHARS];
@@ -145,6 +171,7 @@ const TEXT = {
     sortAscending: "Sort ascending",
     sortDescending: "Sort descending",
     removeFilter: "Remove filter",
+    all: "All", dateEquals: "Equals", dateOnOrAfter: "On or after", dateOnOrBefore: "On or before",
     normalUsers: "Users", systemAdmins: "System administrators", statusLabel: "Status", allStatuses: "All statuses", active: "Active", disabled: "Disabled",
     createAdminTitle: "Create administrator", createAdmin: "Create administrator", temporaryPassword: "Temporary password", temporaryPasswordHint: "Save this password now. The administrator must change it after signing in.",
     disable: "Disable", restore: "Restore", disableFailed: "Failed to update account status", mustDisableBeforeDelete: "Disable this account before deleting it.",
@@ -200,6 +227,7 @@ const TEXT = {
     sortAscending: "升序排列",
     sortDescending: "降序排列",
     removeFilter: "取消筛选",
+    all: "全部", dateEquals: "等于", dateOnOrAfter: "晚于或等于", dateOnOrBefore: "早于或等于",
     normalUsers: "普通用户", systemAdmins: "系统管理员", statusLabel: "状态", allStatuses: "全部状态", active: "启用", disabled: "已停用",
     createAdminTitle: "创建系统管理员", createAdmin: "创建管理员", temporaryPassword: "临时密码", temporaryPasswordHint: "请立即保存该密码。管理员首次登录后必须修改密码。",
     disable: "停用", restore: "恢复", disableFailed: "更新账号状态失败", mustDisableBeforeDelete: "请先停用该账号，再执行永久删除。",
@@ -247,6 +275,10 @@ export default function AdminUsersClient({
   activityStatus,
   accountType,
   status,
+  activityDateFilter,
+  activityDate,
+  createdDateFilter,
+  createdDate,
   locale,
 }: Props) {
   const t = TEXT[locale];
@@ -263,6 +295,8 @@ export default function AdminUsersClient({
   const [createdAdminPassword, setCreatedAdminPassword] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [statusChangingUserId, setStatusChangingUserId] = useState<string | null>(null);
+  const [columnWidths, setColumnWidths] = useState(USER_COLUMN_WIDTHS);
+  const resizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -280,18 +314,17 @@ export default function AdminUsersClient({
     inactive90: t.inactive90,
     unknown: t.unknownActivity,
   }[activityStatus];
-  const activityStatusBadgeLabel = {
-    all: "",
-    inactive30: locale === "zh" ? "30 天+" : "30d+",
-    inactive90: locale === "zh" ? "90 天+" : "90d+",
-    unknown: locale === "zh" ? "无记录" : "No record",
-  }[activityStatus];
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
   const statusOptions = [
     { value: "all", label: t.allStatuses },
     { value: "active", label: t.active },
     { value: "disabled", label: t.disabled },
   ];
+  const userColumnIds: UserColumnId[] = accountType === "admin"
+    ? ["name", "email", "status", "activity", "createdAt"]
+    : ["name", "email", "status", "department", "activity", "createdAt"];
+  const displayedColumnWidths = userColumnIds.map((id) => Math.max(columnWidths[id], USER_COLUMN_MIN_WIDTHS[id]));
+  const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, USER_ACTION_COLUMN_WIDTH);
 
   useEffect(() => {
     setQuery(search);
@@ -308,6 +341,10 @@ export default function AdminUsersClient({
       if (activityStatus !== "all") params.set("activityStatus", activityStatus);
       if (accountType === "admin") params.set("accountType", "admin");
       if (status !== "all") params.set("status", status);
+      if (activityDateFilter !== "ALL") params.set("activityDateFilter", activityDateFilter);
+      if (activityDate) params.set("activityDate", activityDate);
+      if (createdDateFilter !== "ALL") params.set("createdDateFilter", createdDateFilter);
+      if (createdDate) params.set("createdDate", createdDate);
       params.set("sortBy", sortBy);
       params.set("sortDirection", sortDirection);
       params.set("page", "1");
@@ -316,7 +353,7 @@ export default function AdminUsersClient({
     }, 400);
 
     return () => window.clearTimeout(timer);
-  }, [accountType, activityStatus, departmentIds, pageSize, query, router, search, sortBy, sortDirection, status]);
+  }, [accountType, activityDate, activityDateFilter, activityStatus, createdDate, createdDateFilter, departmentIds, pageSize, query, router, search, sortBy, sortDirection, status]);
 
   const updateParams = (next: Record<string, string | null>) => {
     const params = new URLSearchParams();
@@ -325,6 +362,10 @@ export default function AdminUsersClient({
     if (activityStatus !== "all") params.set("activityStatus", activityStatus);
     if (accountType === "admin") params.set("accountType", "admin");
     if (status !== "all") params.set("status", status);
+    if (activityDateFilter !== "ALL") params.set("activityDateFilter", activityDateFilter);
+    if (activityDate) params.set("activityDate", activityDate);
+    if (createdDateFilter !== "ALL") params.set("createdDateFilter", createdDateFilter);
+    if (createdDate) params.set("createdDate", createdDate);
     params.set("sortBy", sortBy);
     params.set("sortDirection", sortDirection);
     params.set("page", String(page));
@@ -359,6 +400,18 @@ export default function AdminUsersClient({
     ...(departmentIds.length > 0 ? [{ key: "departmentIds", label: t.departments, value: selectedDepartmentNames.join(locale === "zh" ? "、" : ", "), clear: () => updateParams({ departmentIds: null, departmentId: null, page: "1" }) }] : []),
     ...(activityStatus !== "all" ? [{ key: "activityStatus", label: t.activity, value: activityStatusLabel, clear: () => updateParams({ activityStatus: null, page: "1" }) }] : []),
     ...(status !== "all" ? [{ key: "status", label: t.statusLabel, value: status === "active" ? t.active : t.disabled, clear: () => updateParams({ status: null, page: "1" }) }] : []),
+    ...(activityDateFilter !== "ALL" && activityDate ? [{
+      key: "activityDate",
+      label: accountType === "admin" ? t.lastLogin : t.lastActive,
+      value: [{ EQ: t.dateEquals, GTE: t.dateOnOrAfter, LTE: t.dateOnOrBefore }[activityDateFilter], activityDate].filter(Boolean).join(locale === "zh" ? "：" : ": "),
+      clear: () => updateParams({ activityDateFilter: null, activityDate: null, page: "1" }),
+    }] : []),
+    ...(createdDateFilter !== "ALL" && createdDate ? [{
+      key: "createdDate",
+      label: t.createdAt,
+      value: [{ EQ: t.dateEquals, GTE: t.dateOnOrAfter, LTE: t.dateOnOrBefore }[createdDateFilter], createdDate].filter(Boolean).join(locale === "zh" ? "：" : ": "),
+      clear: () => updateParams({ createdDateFilter: null, createdDate: null, page: "1" }),
+    }] : []),
   ];
 
   const translateCreateUserError = (message: string | undefined) => {
@@ -408,6 +461,69 @@ export default function AdminUsersClient({
       {active ? <span className="truncate">{value}</span> : <ListFilter />}
     </Button>
   );
+
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const columnId = userColumnIds[index];
+    const nextColumnId = independently ? undefined : userColumnIds[index + 1];
+    if (!columnId) return;
+    resizingRef.current = {
+      index,
+      nextIndex: nextColumnId ? index + 1 : null,
+      startX: event.clientX,
+      startWidth: displayedColumnWidths[index],
+      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
+    };
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const current = resizingRef.current;
+      if (!current) return;
+      const currentId = userColumnIds[current.index];
+      if (!currentId) return;
+      const delta = moveEvent.clientX - current.startX;
+      if (current.nextIndex === null || current.nextWidth === null) {
+        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(USER_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
+        return;
+      }
+      const nextId = userColumnIds[current.nextIndex];
+      if (!nextId) return;
+      const boundedDelta = Math.min(
+        current.nextWidth - USER_COLUMN_MIN_WIDTHS[nextId],
+        Math.max(USER_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
+      );
+      setColumnWidths((widths) => ({
+        ...widths,
+        [currentId]: current.startWidth + boundedDelta,
+        [nextId]: current.nextWidth! - boundedDelta,
+      }));
+    };
+    const handleUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  const resizeHandle = (index: number, side: "left" | "right" = "right", independently = false) => (
+    <div
+      className={`absolute bottom-0 top-0 z-30 w-4 cursor-ew-resize ${side === "left" ? "left-0" : "right-0"}`}
+      onMouseDown={(event) => handleColumnResizeStart(event, index, independently)}
+      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+    />
+  );
+
+  const renderResizableHeader = (columnId: UserColumnId, content: React.ReactNode, className = "") => {
+    const index = userColumnIds.indexOf(columnId);
+    return (
+      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+        {content}
+        {resizeHandle(index)}
+      </TableHead>
+    );
+  };
 
   const closeCreateDialog = () => {
     setErrorMsg("");
@@ -565,30 +681,16 @@ export default function AdminUsersClient({
       </div> : null}
 
       <Card className="gap-0 overflow-hidden py-0">
-          <Table className={accountType === "admin" ? "min-w-[880px] table-fixed" : "min-w-[960px] table-fixed"}>
+          <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
             <colgroup>
-              {accountType === "admin" ? <>
-                <col className="w-[23%]" />
-                <col className="w-[23%]" />
-                <col className="w-[12%]" />
-                <col className="w-[18%]" />
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
-              </> : <>
-                <col className="w-[19%]" />
-                <col className="w-[18%]" />
-                <col className="w-[8%]" />
-                <col className="w-[14%]" />
-                <col className="w-[16%]" />
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
-              </>}
+              {userColumnIds.map((columnId, index) => <col key={columnId} style={{ width: displayedColumnWidths[index] }} />)}
+              <col style={{ width: USER_ACTION_COLUMN_WIDTH }} />
             </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
-                <TableHead>{renderSortableHeader(t.email, "email")}</TableHead>
-                <TableHead>
+                {renderResizableHeader("name", renderSortableHeader(t.name, "name"), "pl-6")}
+                {renderResizableHeader("email", renderSortableHeader(t.email, "email"))}
+                {renderResizableHeader("status", (
                   <div className="flex items-center gap-1">
                     <span>{t.statusLabel}</span>
                     <DropdownMenu>
@@ -604,7 +706,7 @@ export default function AdminUsersClient({
                           value={status}
                           onValueChange={(value) => updateParams({ status: value === "all" ? null : value, page: "1" })}
                         >
-                          <DropdownMenuRadioItem value={statusOptions[0].value}>{statusOptions[0].label}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value={statusOptions[0].value}>{t.all}</DropdownMenuRadioItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuRadioItem value={statusOptions[1].value}>{statusOptions[1].label}</DropdownMenuRadioItem>
                           <DropdownMenuRadioItem value={statusOptions[2].value}>{statusOptions[2].label}</DropdownMenuRadioItem>
@@ -612,8 +714,8 @@ export default function AdminUsersClient({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </TableHead>
-                {accountType === "user" ? <TableHead>
+                ))}
+                {accountType === "user" ? renderResizableHeader("department", (
                   <div className="flex items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
                     <DropdownMenu>
@@ -632,7 +734,7 @@ export default function AdminUsersClient({
                           }
                           onSelect={(event) => event.preventDefault()}
                         >
-                          {t.allDepartments}
+                          {t.all}
                         </DropdownMenuCheckboxItem>
                         <DropdownMenuSeparator />
                         {departments.map((department) => (
@@ -648,40 +750,47 @@ export default function AdminUsersClient({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </TableHead> : null}
-                <TableHead>
-                  {accountType === "admin" ? t.lastLogin : (
+                )) : null}
+                {renderResizableHeader("activity", (
                   <div className="flex items-center gap-1">
-                    {renderSortableHeader(t.lastActive, "lastActiveAt")}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        {renderFilterTrigger(
-                          activityStatus !== "all",
-                          `${t.activity}: ${activityStatusLabel}`,
-                          activityStatusBadgeLabel,
-                        )}
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="min-w-52">
-                        <DropdownMenuRadioGroup
-                          value={activityStatus}
-                          onValueChange={(value) =>
-                            updateParams({ activityStatus: value === "all" ? null : value, page: "1" })
-                          }
-                        >
-                          <DropdownMenuRadioItem value="all">{t.allActivity}</DropdownMenuRadioItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuRadioItem value="inactive30">{t.inactive30}</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="inactive90">{t.inactive90}</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="unknown">{t.unknownActivity}</DropdownMenuRadioItem>
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {accountType === "admin" ? <span>{t.lastLogin}</span> : renderSortableHeader(t.lastActive, "lastActiveAt")}
+                    <ListDateFilterMenu
+                      label={accountType === "admin" ? t.lastLogin : t.lastActive}
+                      value={activityDateFilter}
+                      date={activityDate}
+                      locale={locale}
+                      labels={{ all: t.all, equals: t.dateEquals, onOrAfter: t.dateOnOrAfter, onOrBefore: t.dateOnOrBefore }}
+                      onChange={(value, date) => updateParams({
+                        activityDateFilter: value === "ALL" ? null : value,
+                        activityDate: date || null,
+                        page: "1",
+                      })}
+                    />
                   </div>
-                  )}
-                </TableHead>
-                <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
-                <TableHead className="px-4 text-left whitespace-nowrap">
-                  <div className="ml-auto w-[88px] text-left">{t.actions}</div>
+                ))}
+                {renderResizableHeader("createdAt", (
+                  <div className="flex items-center gap-1">
+                    {renderSortableHeader(t.createdAt, "createdAt")}
+                    <ListDateFilterMenu
+                      label={t.createdAt}
+                      value={createdDateFilter}
+                      date={createdDate}
+                      locale={locale}
+                      labels={{ all: t.all, equals: t.dateEquals, onOrAfter: t.dateOnOrAfter, onOrBefore: t.dateOnOrBefore }}
+                      onChange={(value, date) => updateParams({
+                        createdDateFilter: value === "ALL" ? null : value,
+                        createdDate: date || null,
+                        page: "1",
+                      })}
+                    />
+                  </div>
+                ))}
+                <TableHead
+                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 px-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                  style={{ width: USER_ACTION_COLUMN_WIDTH, minWidth: USER_ACTION_COLUMN_WIDTH }}
+                >
+                  {resizeHandle(userColumnIds.length - 1, "left", true)}
+                  <div className="ml-auto text-left" style={{ width: USER_ACTION_COLUMN_WIDTH - 32 }}>{t.actions}</div>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -692,16 +801,7 @@ export default function AdminUsersClient({
                 const disableDelete = !user.disabledAt || isHead || isCurrentUser || isPending;
                 const isResettingThisUser = isResetting && resettingUserId === user.id;
                 const activityDate = accountType === "admin" ? user.lastLoginAt : user.lastActiveAt;
-                const lastActiveText = activityDate
-                  ? new Date(activityDate).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    })
-                  : "";
+                const lastActiveText = activityDate ? formatListDateTime(activityDate) : "";
                 const deleteButton = (
                   <Button
                     type="button"
@@ -722,8 +822,8 @@ export default function AdminUsersClient({
                 );
 
                 return (
-                  <TableRow key={user.id}>
-                    <TableCell className="pl-6">
+                  <TableRow key={user.id} className="group hover:bg-muted/40">
+                    <TableCell className="overflow-hidden pl-6">
                       <div className="flex items-center gap-3">
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
                           {getDisplayName(user).charAt(0).toUpperCase()}
@@ -735,13 +835,13 @@ export default function AdminUsersClient({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="overflow-hidden text-muted-foreground">
                       <span className="block truncate" title={user.email}>{user.email}</span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="overflow-hidden">
                       <Badge variant={user.disabledAt ? "outline" : "secondary"}>{user.disabledAt ? t.disabled : t.active}</Badge>
                     </TableCell>
-                    {accountType === "user" ? <TableCell>
+                    {accountType === "user" ? <TableCell className="overflow-hidden">
                       {user.departments.length > 0 ? (
                         <div className="flex min-w-0 gap-1.5 overflow-hidden">
                           {user.departments.map((department) => (
@@ -752,17 +852,20 @@ export default function AdminUsersClient({
                         </div>
                       ) : null}
                     </TableCell> : null}
-                    <TableCell className="text-xs text-muted-foreground">
-                      <span className="block truncate" title={lastActiveText || undefined}>
+                    <TableCell className="overflow-hidden text-xs font-medium text-muted-foreground">
+                      <span className="block truncate" title={activityDate ? formatFullDateTime(activityDate, locale) : undefined}>
                         {lastActiveText}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      <span className="block truncate" title={new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}>
-                        {new Date(user.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+                    <TableCell className="overflow-hidden text-xs font-medium text-muted-foreground">
+                      <span className="block truncate" title={formatFullDateTime(user.createdAt, locale)}>
+                        {formatListDateTime(user.createdAt)}
                       </span>
                     </TableCell>
-                    <TableCell className="px-4 text-right whitespace-nowrap">
+                    <TableCell
+                      className="sticky right-0 z-10 overflow-hidden bg-card px-4 text-right whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
+                      style={{ width: USER_ACTION_COLUMN_WIDTH, minWidth: USER_ACTION_COLUMN_WIDTH }}
+                    >
                       <div className="flex min-w-0 flex-col items-end gap-1 text-left">
                         <div className="inline-flex items-center gap-2">
                           <Button asChild variant="outline" size="icon-xs">
@@ -821,7 +924,7 @@ export default function AdminUsersClient({
               })}
               {users.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-40 text-center text-muted-foreground">{t.noUsers}</TableCell>
+                  <TableCell colSpan={userColumnIds.length + 1} className="h-40 text-center text-muted-foreground">{t.noUsers}</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>

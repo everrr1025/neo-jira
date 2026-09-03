@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/authOptions";
 import prisma from "@/lib/prisma";
 import { getCurrentLocale } from "@/lib/serverLocale";
 import { getInactiveCutoff } from "@/lib/systemUsage";
+import { normalizeListDateFilter, resolveListDateFilterRange } from "@/lib/listDateFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,13 @@ export default async function AdminUsersPage({
     : "all";
   const inactiveDays = activityStatus === "inactive90" ? 90 : 30;
   const inactiveCutoff = getInactiveCutoff(inactiveDays);
+  const activityDateFilter = normalizeListDateFilter(Array.isArray(params.activityDateFilter) ? params.activityDateFilter[0] : params.activityDateFilter);
+  const activityDate = (Array.isArray(params.activityDate) ? params.activityDate[0] : params.activityDate) || "";
+  const createdDateFilter = normalizeListDateFilter(Array.isArray(params.createdDateFilter) ? params.createdDateFilter[0] : params.createdDateFilter);
+  const createdDate = (Array.isArray(params.createdDate) ? params.createdDate[0] : params.createdDate) || "";
+  const activityDateRange = resolveListDateFilterRange(activityDateFilter, activityDate);
+  const createdDateRange = resolveListDateFilterRange(createdDateFilter, createdDate);
+  const activityDateField = accountType === "admin" ? "lastLoginAt" : "lastActiveAt";
 
   const activityWhere: Prisma.UserWhereInput | null = activityStatus === "inactive30" || activityStatus === "inactive90"
     ? {
@@ -77,6 +85,8 @@ export default async function AdminUsersPage({
     AND: [
       ...(search ? [{ OR: [{ name: { contains: search } }, { email: { contains: search } }] }] : []),
       ...(activityWhere ? [activityWhere] : []),
+      ...(activityDateRange ? [{ [activityDateField]: activityDateRange }] : []),
+      ...(createdDateRange ? [{ createdAt: createdDateRange }] : []),
     ],
     ...(accountType === "user" && departmentIds.length > 0
       ? {
@@ -128,6 +138,10 @@ export default async function AdminUsersPage({
             : activityStatus === "unknown"
               ? Prisma.sql`AND u."lastActiveAt" IS NULL AND u."activityTrackingStartedAt" >= ${getInactiveCutoff(30)}`
               : Prisma.empty}
+          ${activityDateRange?.gte ? Prisma.sql`AND ${Prisma.raw(`u."${activityDateField}"`)} >= ${activityDateRange.gte}` : Prisma.empty}
+          ${activityDateRange?.lt ? Prisma.sql`AND ${Prisma.raw(`u."${activityDateField}"`)} < ${activityDateRange.lt}` : Prisma.empty}
+          ${createdDateRange?.gte ? Prisma.sql`AND u."createdAt" >= ${createdDateRange.gte}` : Prisma.empty}
+          ${createdDateRange?.lt ? Prisma.sql`AND u."createdAt" < ${createdDateRange.lt}` : Prisma.empty}
           GROUP BY u."id"
           ORDER BY
             CASE WHEN MIN(d."name") IS NULL THEN 1 ELSE 0 END ASC,
@@ -187,6 +201,10 @@ export default async function AdminUsersPage({
         activityStatus={activityStatus}
         accountType={accountType}
         status={status}
+        activityDateFilter={activityDateFilter}
+        activityDate={activityDate}
+        createdDateFilter={createdDateFilter}
+        createdDate={createdDate}
         locale={locale}
       />
     </div>

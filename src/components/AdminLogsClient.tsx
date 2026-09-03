@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, ListFilter, Loader2, Search, Trash2, X } from "lucide-react";
 
 import { cleanupAuditLogs, previewAuditLogCleanup } from "@/app/actions/auditLogs";
+import ListDateFilterMenu from "@/components/ListDateFilterMenu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,8 +22,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -31,17 +30,39 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Locale } from "@/lib/i18n";
-import { formatFullDateTime } from "@/lib/timeFormat";
+import type { ListDateFilterWithBetween } from "@/lib/listDateFilter";
+import { formatFullDateTime, formatListDateTimeSeconds } from "@/lib/timeFormat";
 
 type TargetType = "USER" | "DEPARTMENT" | "PROJECT";
 type AuditTarget = { type: TargetType; id: string; name: string; key: string | null };
 type TargetOption = { type: TargetType; id: string; name: string; detail: string; deleted?: boolean };
 type LogRow = { id: string; entityId: string; entityType: string; action: string; field: string | null; targetName: string; targetKey: string | null; actorName: string; createdAt: string };
-type AdminLogFilters = { range: string; entityTypes: string[]; actions: string[]; actorIds: string[]; target: AuditTarget | null };
+type AdminLogFilters = { dateFilter: ListDateFilterWithBetween; date: string; endDate: string; entityTypes: string[]; actions: string[]; actorIds: string[]; target: AuditTarget | null };
+type LogColumnId = "time" | "actor" | "action" | "entity" | "target" | "field";
+
+const LOG_COLUMN_IDS: LogColumnId[] = ["time", "actor", "action", "entity", "target", "field"];
+const LOG_COLUMN_WIDTHS: Record<LogColumnId, number> = {
+  time: 230,
+  actor: 180,
+  action: 150,
+  entity: 150,
+  target: 260,
+  field: 150,
+};
+const LOG_COLUMN_MIN_WIDTHS: Record<LogColumnId, number> = {
+  time: 205,
+  actor: 140,
+  action: 125,
+  entity: 125,
+  target: 180,
+  field: 110,
+};
 
 function buildStoredAdminLogParams(filters: AdminLogFilters) {
   const params = new URLSearchParams();
-  if (filters.range !== "all") params.set("range", filters.range);
+  if (filters.dateFilter !== "ALL") params.set("dateFilter", filters.dateFilter);
+  if (filters.date) params.set("date", filters.date);
+  if (filters.endDate) params.set("endDate", filters.endDate);
   if (filters.entityTypes.length > 0) params.set("entityType", filters.entityTypes.join(","));
   if (filters.actions.length > 0) params.set("action", filters.actions.join(","));
   if (filters.actorIds.length > 0) params.set("actorId", filters.actorIds.join(","));
@@ -69,11 +90,11 @@ function governanceLabel(value: string | null, locale: Locale) {
 
 const TEXT = {
   zh: {
-    title: "系统日志", range: "时间范围", entity: "对象类型", action: "操作类型", actor: "操作者", unknownActor: "未知操作者", all: "全部", days7: "近 7 天", days30: "近 30 天", days90: "近 90 天", time: "时间", target: "对象", searchTarget: "搜索用户、部门或项目", searching: "搜索中…", noTargets: "没有匹配的对象", field: "变更内容", removeFilter: "取消筛选", noLogs: "当前筛选条件下没有系统日志", showing: "显示", to: "到", of: "共", records: "条记录", perPage: "每页", page: "第",
+    title: "系统日志", entity: "对象类型", action: "操作类型", actor: "操作者", unknownActor: "未知操作者", all: "全部", dateEquals: "等于", dateOnOrAfter: "晚于或等于", dateOnOrBefore: "早于或等于", dateBetween: "介于", startDate: "开始日期", endDate: "结束日期", time: "时间", target: "对象", searchTarget: "搜索用户、部门或项目", searching: "搜索中…", noTargets: "没有匹配的对象", field: "变更内容", removeFilter: "取消筛选", noLogs: "当前筛选条件下没有系统日志", showing: "显示", to: "到", of: "共", records: "条记录", perPage: "每页", page: "第",
     cleanup: "日志管理", cleanupTitle: "日志清理", cleanupDescription: "只会删除超过保留期限的用户、部门和项目治理日志。问题活动、评论和附件日志不会被删除。", cleanupPreview: "清理预览", globalScope: "全部过期日志", selectTargetFirst: "请从日志列表选择用户或部门", retention: "保留期限", days: "天", cutoff: "清理截止时间", expiredCount: "可删除日志", dateRange: "日志时间范围", targetStillExists: "当前对象仍然存在。按对象清理只支持已经删除的用户、部门或项目。", noExpiredLogs: "没有符合条件的过期日志。", confirmationLabel: "输入 DELETE 以确认永久删除", cancel: "取消", close: "关闭", deleteExpired: "删除过期日志", previewFailed: "无法读取日志清理预览。", cleanupFailed: "日志清理失败。", loading: "正在计算…",
   },
   en: {
-    title: "System Logs", range: "Date range", entity: "Entity", action: "Action", actor: "Actor", unknownActor: "Unknown actor", all: "All", days7: "Last 7 days", days30: "Last 30 days", days90: "Last 90 days", time: "Time", target: "Target", searchTarget: "Search users, departments, or projects", searching: "Searching…", noTargets: "No matching targets", field: "Change", removeFilter: "Remove filter", noLogs: "No system logs match these filters", showing: "Showing", to: "to", of: "of", records: "records", perPage: "Per page", page: "Page",
+    title: "System Logs", entity: "Entity", action: "Action", actor: "Actor", unknownActor: "Unknown actor", all: "All", dateEquals: "Equals", dateOnOrAfter: "On or after", dateOnOrBefore: "On or before", dateBetween: "Between", startDate: "Start date", endDate: "End date", time: "Time", target: "Target", searchTarget: "Search users, departments, or projects", searching: "Searching…", noTargets: "No matching targets", field: "Change", removeFilter: "Remove filter", noLogs: "No system logs match these filters", showing: "Showing", to: "to", of: "of", records: "records", perPage: "Per page", page: "Page",
     cleanup: "Log management", cleanupTitle: "Log cleanup", cleanupDescription: "Only expired user, department, and project governance logs are deleted. Issue activity, comment, and attachment logs are preserved.", cleanupPreview: "Cleanup preview", globalScope: "All expired logs", selectTargetFirst: "Select a user or department from the log list", retention: "Retention", days: "days", cutoff: "Cleanup cutoff", expiredCount: "Deletable logs", dateRange: "Log date range", targetStillExists: "The current target still exists. Target cleanup is limited to deleted users, departments, or projects.", noExpiredLogs: "No expired logs match this scope.", confirmationLabel: "Type DELETE to confirm permanent deletion", cancel: "Cancel", close: "Close", deleteExpired: "Delete expired logs", previewFailed: "Unable to load the cleanup preview.", cleanupFailed: "Log cleanup failed.", loading: "Calculating…",
   },
 } as const;
@@ -104,40 +125,6 @@ function renderFilterTrigger(active: boolean, label: string, value: string) {
   >
     {active ? <span className="truncate">{value}</span> : <ListFilter />}
   </Button>;
-}
-
-function SingleFilterableHeader({
-  label,
-  filterLabel,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  filterLabel: string;
-  value: string;
-  options: FilterOption[];
-  onChange: (value: string) => void;
-}) {
-  const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
-
-  return <div className="flex min-w-0 items-center gap-1">
-    <span className="shrink-0">{label}</span>
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {renderFilterTrigger(value !== "all", `${filterLabel}: ${selectedLabel}`, selectedLabel)}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-48">
-        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
-          {options[0] ? <DropdownMenuRadioItem value={options[0].value}>{options[0].label}</DropdownMenuRadioItem> : null}
-          {options.length > 1 ? <DropdownMenuSeparator /> : null}
-          {options.slice(1).map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  </div>;
 }
 
 function MultiFilterableHeader({
@@ -326,6 +313,10 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   const [cleanupConfirmation, setCleanupConfirmation] = useState("");
   const [cleanupError, setCleanupError] = useState("");
   const [isCleanupPending, startCleanupTransition] = useTransition();
+  const [columnWidths, setColumnWidths] = useState(LOG_COLUMN_WIDTHS);
+  const columnResizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
+  const displayedColumnWidths = LOG_COLUMN_IDS.map((id) => Math.max(columnWidths[id], LOG_COLUMN_MIN_WIDTHS[id]));
+  const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, 0);
 
   useEffect(() => {
     if (didAttemptFilterRestoreRef.current || typeof window === "undefined") return;
@@ -436,9 +427,89 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
     });
   };
 
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const columnId = LOG_COLUMN_IDS[index];
+    const nextColumnId = independently ? undefined : LOG_COLUMN_IDS[index + 1];
+    if (!columnId) return;
+    columnResizingRef.current = {
+      index,
+      nextIndex: nextColumnId ? index + 1 : null,
+      startX: event.clientX,
+      startWidth: displayedColumnWidths[index],
+      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
+    };
+    const handleMove = (moveEvent: MouseEvent) => {
+      const current = columnResizingRef.current;
+      if (!current) return;
+      const currentId = LOG_COLUMN_IDS[current.index];
+      if (!currentId) return;
+      const delta = moveEvent.clientX - current.startX;
+      if (current.nextIndex === null || current.nextWidth === null) {
+        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(LOG_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
+        return;
+      }
+      const nextId = LOG_COLUMN_IDS[current.nextIndex];
+      if (!nextId) return;
+      const boundedDelta = Math.min(
+        current.nextWidth - LOG_COLUMN_MIN_WIDTHS[nextId],
+        Math.max(LOG_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
+      );
+      setColumnWidths((widths) => ({
+        ...widths,
+        [currentId]: current.startWidth + boundedDelta,
+        [nextId]: current.nextWidth! - boundedDelta,
+      }));
+    };
+    const handleUp = () => {
+      columnResizingRef.current = null;
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  const renderResizableHeader = (columnId: LogColumnId, content: React.ReactNode, className = "") => {
+    const index = LOG_COLUMN_IDS.indexOf(columnId);
+    return (
+      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+        {index === LOG_COLUMN_IDS.length - 1 ? (
+          <div
+            className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
+            onMouseDown={(event) => handleColumnResizeStart(event, index - 1, true)}
+            title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
+          />
+        ) : null}
+        {content}
+        <div
+          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+          onMouseDown={(event) => handleColumnResizeStart(event, index)}
+          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+        />
+      </TableHead>
+    );
+  };
+
   const update = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (value === "all" && key !== "range") params.delete(key); else params.set(key, value);
+    if (value === "all") params.delete(key); else params.set(key, value);
+    params.set("page", "1");
+    router.push(`/admin/logs?${params.toString()}`);
+  };
+  const updateDateFilter = (value: ListDateFilterWithBetween, date: string, endDate: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("range");
+    if (value === "ALL") {
+      params.delete("dateFilter");
+      params.delete("date");
+      params.delete("endDate");
+    } else {
+      params.set("dateFilter", value);
+      if (date) params.set("date", date); else params.delete("date");
+      if (value === "BETWEEN" && endDate) params.set("endDate", endDate); else params.delete("endDate");
+    }
     params.set("page", "1");
     router.push(`/admin/logs?${params.toString()}`);
   };
@@ -472,12 +543,6 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
     params.set("page", String(next));
     router.push(`/admin/logs?${params.toString()}`);
   };
-  const rangeOptions = [
-    { value: "all", label: t.all },
-    { value: "7", label: t.days7 },
-    { value: "30", label: t.days30 },
-    { value: "90", label: t.days90 },
-  ];
   const actorOptions = actors.map((actor) => ({ value: actor.id, label: actor.name }));
   const actorLabelsById = new Map(actorOptions.map((option) => [option.value, option.label]));
   const actionOptions = [
@@ -494,7 +559,14 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   const rangeEnd = Math.min(page * pageSize, total);
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
   const filterSummary = [
-    ...(filters.range !== "all" ? [{ key: "range", label: t.time, value: rangeOptions.find((option) => option.value === filters.range)?.label || filters.range, clear: () => update("range", "all") }] : []),
+    ...(filters.dateFilter !== "ALL" && filters.date && (filters.dateFilter !== "BETWEEN" || filters.endDate) ? [{
+      key: "date",
+      label: t.time,
+      value: filters.dateFilter === "BETWEEN"
+        ? `${t.dateBetween}${locale === "zh" ? "：" : ": "}${filters.date} – ${filters.endDate}`
+        : [{ EQ: t.dateEquals, GTE: t.dateOnOrAfter, LTE: t.dateOnOrBefore }[filters.dateFilter], filters.date].filter(Boolean).join(locale === "zh" ? "：" : ": "),
+      clear: () => updateDateFilter("ALL", "", ""),
+    }] : []),
     ...(filters.actorIds.length > 0 ? [{ key: "actorId", label: t.actor, value: filters.actorIds.map((actorId) => actorLabelsById.get(actorId) || t.unknownActor).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("actorId", []) }] : []),
     ...(filters.actions.length > 0 ? [{ key: "action", label: t.action, value: actionOptions.filter((option) => filters.actions.includes(option.value)).map((option) => option.label).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("action", []) }] : []),
     ...(filters.entityTypes.length > 0 ? [{ key: "entityType", label: t.entity, value: entityOptions.filter((option) => filters.entityTypes.includes(option.value)).map((option) => option.label).join(locale === "zh" ? "、" : ", "), clear: () => updateMulti("entityType", []) }] : []),
@@ -533,45 +605,53 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
       ))}
     </div> : null}
     <Card className="gap-0 overflow-hidden py-0">
-      <Table className="min-w-[960px] table-fixed">
+      <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
         <colgroup>
-          <col className="w-[18%]" />
-          <col className="w-[17%]" />
-          <col className="w-[15%]" />
-          <col className="w-[15%]" />
-          <col className="w-[22%]" />
-          <col className="w-[13%]" />
+          {LOG_COLUMN_IDS.map((columnId, index) => <col key={columnId} style={{ width: displayedColumnWidths[index] }} />)}
         </colgroup>
         <TableHeader className="sticky top-0 z-10 bg-muted/50">
           <TableRow className="hover:bg-muted/50">
-            <TableHead className="pl-6"><SingleFilterableHeader label={t.time} filterLabel={t.range} value={filters.range} options={rangeOptions} onChange={(value) => update("range", value)} /></TableHead>
-            <TableHead><MultiFilterableHeader label={t.actor} value={filters.actorIds} options={actorOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("actorId", value)} /></TableHead>
-            <TableHead><MultiFilterableHeader label={t.action} value={filters.actions} options={actionOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("action", value)} /></TableHead>
-            <TableHead><MultiFilterableHeader label={t.entity} value={filters.entityTypes} options={entityOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("entityType", value)} /></TableHead>
-            <TableHead><TargetFilterableHeader label={t.target} selected={filters.target} locale={locale} allLabel={t.all} searchPlaceholder={t.searchTarget} searchingLabel={t.searching} noResultsLabel={t.noTargets} onSelect={selectTarget} /></TableHead>
-            <TableHead>{t.field}</TableHead>
+            {renderResizableHeader("time", (
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="shrink-0">{t.time}</span>
+                <ListDateFilterMenu
+                  label={t.time}
+                  value={filters.dateFilter}
+                  date={filters.date}
+                  endDate={filters.endDate}
+                  locale={locale}
+                  labels={{ all: t.all, equals: t.dateEquals, onOrAfter: t.dateOnOrAfter, onOrBefore: t.dateOnOrBefore, between: t.dateBetween, startDate: t.startDate, endDate: t.endDate }}
+                  onChange={updateDateFilter}
+                />
+              </div>
+            ), "pl-6")}
+            {renderResizableHeader("actor", <MultiFilterableHeader label={t.actor} value={filters.actorIds} options={actorOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("actorId", value)} />)}
+            {renderResizableHeader("action", <MultiFilterableHeader label={t.action} value={filters.actions} options={actionOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("action", value)} />)}
+            {renderResizableHeader("entity", <MultiFilterableHeader label={t.entity} value={filters.entityTypes} options={entityOptions} allLabel={t.all} locale={locale} onChange={(value) => updateMulti("entityType", value)} />)}
+            {renderResizableHeader("target", <TargetFilterableHeader label={t.target} selected={filters.target} locale={locale} allLabel={t.all} searchPlaceholder={t.searchTarget} searchingLabel={t.searching} noResultsLabel={t.noTargets} onSelect={selectTarget} />)}
+            {renderResizableHeader("field", t.field)}
           </TableRow>
         </TableHeader>
         <TableBody>{logs.map((log) => {
-          const createdAtText = formatFullDateTime(log.createdAt, locale);
+          const createdAtText = formatListDateTimeSeconds(log.createdAt);
           const fieldText = log.field ? governanceLabel(log.field, locale) : "";
 
           return <TableRow key={log.id}>
-            <TableCell className="pl-6 text-xs text-muted-foreground">
-              <span className="block truncate" title={createdAtText}>{createdAtText}</span>
+            <TableCell className="overflow-hidden pl-6 text-xs font-medium text-muted-foreground">
+              <span className="block truncate" title={formatFullDateTime(log.createdAt, locale)}>{createdAtText}</span>
             </TableCell>
-            <TableCell className="font-medium">
+            <TableCell className="overflow-hidden font-medium">
               <span className="block truncate" title={log.actorName}>{log.actorName}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className="overflow-hidden">
               <Badge variant="outline" className={log.action === "DELETE" ? "border-destructive/30 bg-transparent text-destructive/80" : undefined}>
                 {governanceLabel(log.action, locale)}
               </Badge>
             </TableCell>
-            <TableCell>
+            <TableCell className="overflow-hidden">
               <span className="block truncate" title={governanceLabel(log.entityType, locale)}>{governanceLabel(log.entityType, locale)}</span>
             </TableCell>
-            <TableCell>
+            <TableCell className="overflow-hidden">
               <button
                 type="button"
                 className="flex w-full min-w-0 items-baseline gap-2 text-left hover:underline"
@@ -581,7 +661,7 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
                 {log.targetKey ? <span className="min-w-0 flex-[2] truncate text-xs text-muted-foreground" title={log.targetKey}>{log.targetKey}</span> : null}
               </button>
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="overflow-hidden text-muted-foreground">
               <span className="block truncate" title={fieldText || undefined}>{fieldText}</span>
             </TableCell>
           </TableRow>;

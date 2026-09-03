@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { createDepartment, deleteDepartment, updateDepartment } from "@/app/actions/departments";
+import ListDateFilterMenu from "@/components/ListDateFilterMenu";
 import LogNavIcon from "@/components/LogNavIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { Locale } from "@/lib/i18n";
+import type { ListDateFilter } from "@/lib/listDateFilter";
+import { formatFullDateTime, formatListDate, formatListDateTime } from "@/lib/timeFormat";
 
 type DepartmentMemberRecord = {
   userId: string;
@@ -64,6 +67,24 @@ type Props = {
 
 type DepartmentSortField = "name" | "head" | "members" | "projects" | "createdAt";
 type SortDirection = "asc" | "desc";
+type DepartmentColumnId = DepartmentSortField;
+
+const DEPARTMENT_ACTION_COLUMN_WIDTH = 146;
+const DEPARTMENT_COLUMN_IDS: DepartmentColumnId[] = ["name", "head", "members", "projects", "createdAt"];
+const DEPARTMENT_COLUMN_WIDTHS: Record<DepartmentColumnId, number> = {
+  name: 240,
+  head: 190,
+  members: 130,
+  projects: 130,
+  createdAt: 220,
+};
+const DEPARTMENT_COLUMN_MIN_WIDTHS: Record<DepartmentColumnId, number> = {
+  name: 170,
+  head: 150,
+  members: 105,
+  projects: 105,
+  createdAt: 220,
+};
 
 const TEXT = {
   en: {
@@ -112,6 +133,7 @@ const TEXT = {
     disabled: "Disabled",
     sortAscending: "Sort ascending",
     sortDescending: "Sort descending",
+    removeFilter: "Remove filter", all: "All", dateEquals: "Equals", dateOnOrAfter: "On or after", dateOnOrBefore: "On or before",
   },
   zh: {
     title: "部门",
@@ -159,6 +181,7 @@ const TEXT = {
     disabled: "已停用",
     sortAscending: "升序排列",
     sortDescending: "降序排列",
+    removeFilter: "取消筛选", all: "全部", dateEquals: "等于", dateOnOrAfter: "晚于或等于", dateOnOrBefore: "早于或等于",
   },
 } as const;
 
@@ -178,17 +201,24 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const [deletingDepartment, setDeletingDepartment] = useState<DepartmentRecord | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [search, setSearch] = useState("");
+  const [createdDateFilter, setCreatedDateFilter] = useState<ListDateFilter>("ALL");
+  const [createdDate, setCreatedDate] = useState("");
+  const [columnWidths, setColumnWidths] = useState(DEPARTMENT_COLUMN_WIDTHS);
+  const resizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
   const [sortBy, setSortBy] = useState<DepartmentSortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [departmentPage, setDepartmentPage] = useState(1);
   const [departmentPageSize, setDepartmentPageSize] = useState(10);
   const [departmentForm, setDepartmentForm] = useState({ name: "", key: "", description: "" });
   const normalizedSearch = search.trim().toLowerCase();
-  const filteredDepartments = normalizedSearch
-    ? departments.filter((department) =>
-        `${department.name} ${department.key}`.toLowerCase().includes(normalizedSearch)
-      )
-    : departments;
+  const filteredDepartments = departments.filter((department) => {
+    if (normalizedSearch && !`${department.name} ${department.key}`.toLowerCase().includes(normalizedSearch)) return false;
+    if (createdDateFilter === "ALL" || !createdDate) return true;
+    const value = formatListDate(department.createdAt);
+    if (createdDateFilter === "EQ") return value === createdDate;
+    if (createdDateFilter === "GTE") return value >= createdDate;
+    return value <= createdDate;
+  });
   const sortedDepartments = [...filteredDepartments].sort((left, right) => {
     const leftHead = left.members.find((member) => member.isDepartmentAdmin);
     const rightHead = right.members.find((member) => member.isDepartmentAdmin);
@@ -216,6 +246,8 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
     ? (currentDepartmentPage - 1) * departmentPageSize + 1
     : 0;
   const departmentRangeEnd = Math.min(currentDepartmentPage * departmentPageSize, filteredDepartments.length);
+  const displayedColumnWidths = DEPARTMENT_COLUMN_IDS.map((id) => Math.max(columnWidths[id], DEPARTMENT_COLUMN_MIN_WIDTHS[id]));
+  const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, DEPARTMENT_ACTION_COLUMN_WIDTH);
   const departmentPageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
 
   const translateDepartmentError = (message: string | undefined, fallback: string) => {
@@ -254,6 +286,68 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
         <span>{label}</span>
         {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
       </button>
+    );
+  };
+
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const columnId = DEPARTMENT_COLUMN_IDS[index];
+    const nextColumnId = independently ? undefined : DEPARTMENT_COLUMN_IDS[index + 1];
+    if (!columnId) return;
+    resizingRef.current = {
+      index,
+      nextIndex: nextColumnId ? index + 1 : null,
+      startX: event.clientX,
+      startWidth: displayedColumnWidths[index],
+      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
+    };
+    const handleMove = (moveEvent: MouseEvent) => {
+      const current = resizingRef.current;
+      if (!current) return;
+      const currentId = DEPARTMENT_COLUMN_IDS[current.index];
+      if (!currentId) return;
+      const delta = moveEvent.clientX - current.startX;
+      if (current.nextIndex === null || current.nextWidth === null) {
+        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(DEPARTMENT_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
+        return;
+      }
+      const nextId = DEPARTMENT_COLUMN_IDS[current.nextIndex];
+      if (!nextId) return;
+      const boundedDelta = Math.min(
+        current.nextWidth - DEPARTMENT_COLUMN_MIN_WIDTHS[nextId],
+        Math.max(DEPARTMENT_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
+      );
+      setColumnWidths((widths) => ({
+        ...widths,
+        [currentId]: current.startWidth + boundedDelta,
+        [nextId]: current.nextWidth! - boundedDelta,
+      }));
+    };
+    const handleUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  const resizeHandle = (index: number, side: "left" | "right" = "right", independently = false) => (
+    <div
+      className={`absolute bottom-0 top-0 z-30 w-4 cursor-ew-resize ${side === "left" ? "left-0" : "right-0"}`}
+      onMouseDown={(event) => handleColumnResizeStart(event, index, independently)}
+      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+    />
+  );
+
+  const renderResizableHeader = (columnId: DepartmentColumnId, content: React.ReactNode, className = "") => {
+    const index = DEPARTMENT_COLUMN_IDS.indexOf(columnId);
+    return (
+      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+        {content}
+        {resizeHandle(index)}
+      </TableHead>
     );
   };
 
@@ -354,25 +448,69 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
         </div>
       ) : null}
 
+      {createdDateFilter !== "ALL" && createdDate ? (
+        <div className="flex flex-wrap gap-2 text-sm">
+          <div className="inline-flex max-w-[360px] items-start rounded-md border bg-background text-foreground shadow-xs">
+            <span className="flex min-w-0 items-center px-2.5 py-1">
+              <span className="shrink-0 text-muted-foreground">{t.createdAt}：</span>
+              <span className="min-w-0 truncate">
+                {{ EQ: t.dateEquals, GTE: t.dateOnOrAfter, LTE: t.dateOnOrBefore }[createdDateFilter]}
+                {createdDate ? `：${createdDate}` : ""}
+              </span>
+            </span>
+            <button
+              type="button"
+              className="m-0.5 ml-0 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`${t.removeFilter}：${t.createdAt}`}
+              title={`${t.removeFilter}：${t.createdAt}`}
+              onClick={() => {
+                setCreatedDateFilter("ALL");
+                setCreatedDate("");
+                setDepartmentPage(1);
+              }}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <Card className="gap-0 overflow-hidden py-0">
-          <Table className="min-w-[940px] table-fixed">
+          <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
             <colgroup>
-              <col className="w-[27%]" />
-              <col className="w-[21%]" />
-              <col className="w-[12%]" />
-              <col className="w-[12%]" />
-              <col className="w-[12%]" />
-              <col className="w-[16%]" />
+              {DEPARTMENT_COLUMN_IDS.map((columnId, index) => <col key={columnId} style={{ width: displayedColumnWidths[index] }} />)}
+              <col style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH }} />
             </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
               <TableRow className="hover:bg-muted/50">
-                <TableHead className="pl-6">{renderSortableHeader(t.name, "name")}</TableHead>
-                <TableHead>{renderSortableHeader(t.head, "head")}</TableHead>
-                <TableHead>{renderSortableHeader(t.members, "members")}</TableHead>
-                <TableHead>{renderSortableHeader(t.projects, "projects")}</TableHead>
-                <TableHead>{renderSortableHeader(t.createdAt, "createdAt")}</TableHead>
-                <TableHead className="px-4 text-left">
-                  <div className="ml-auto w-[114px] text-left">{t.actions}</div>
+                {renderResizableHeader("name", renderSortableHeader(t.name, "name"), "pl-6")}
+                {renderResizableHeader("head", renderSortableHeader(t.head, "head"))}
+                {renderResizableHeader("members", renderSortableHeader(t.members, "members"))}
+                {renderResizableHeader("projects", renderSortableHeader(t.projects, "projects"))}
+                {renderResizableHeader("createdAt", (
+                  <div className="flex items-center gap-1">
+                    {renderSortableHeader(t.createdAt, "createdAt")}
+                    <ListDateFilterMenu
+                      label={t.createdAt}
+                      value={createdDateFilter}
+                      date={createdDate}
+                      locale={locale}
+                      labels={{ all: t.all, equals: t.dateEquals, onOrAfter: t.dateOnOrAfter, onOrBefore: t.dateOnOrBefore }}
+                      onChange={(value, date) => {
+                        if (value === "BETWEEN") return;
+                        setCreatedDateFilter(value);
+                        setCreatedDate(date);
+                        setDepartmentPage(1);
+                      }}
+                    />
+                  </div>
+                ))}
+                <TableHead
+                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 px-4 text-left shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                  style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH, minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH }}
+                >
+                  {resizeHandle(DEPARTMENT_COLUMN_IDS.length - 1, "left", true)}
+                  <div className="ml-auto text-left" style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH - 32 }}>{t.actions}</div>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -381,30 +519,35 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 const head = department.members.find((member) => member.isDepartmentAdmin);
 
                 return (
-                  <TableRow key={department.id}>
-                    <TableCell className="pl-6">
+                  <TableRow key={department.id} className="group hover:bg-muted/40">
+                    <TableCell className="overflow-hidden pl-6">
                       <div className="min-w-0">
                         <div className="truncate font-medium text-foreground" title={department.name}>{department.name}</div>
                         <div className="truncate font-mono text-xs text-muted-foreground" title={department.key}>{department.key}</div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="overflow-hidden">
                       {head ? <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><span className="truncate" title={displayMember(head)}>{displayMember(head)}</span>{head.disabledAt ? <Badge variant="outline" className="shrink-0 text-muted-foreground">{t.disabled}</Badge> : null}</span> : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="overflow-hidden">
                       <Badge variant="secondary">
                         {department.members.length} {t.memberCount}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="overflow-hidden">
                       <Badge variant="outline">
                         {department.projectsCount} {t.projectCount}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(department.createdAt).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US")}
+                    <TableCell className="overflow-hidden text-xs font-medium text-muted-foreground">
+                      <span className="block truncate" title={formatFullDateTime(department.createdAt, locale)}>
+                        {formatListDateTime(department.createdAt)}
+                      </span>
                     </TableCell>
-                    <TableCell className="px-4 text-left">
+                    <TableCell
+                      className="sticky right-0 z-10 overflow-hidden bg-card px-4 text-left shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
+                      style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH, minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH }}
+                    >
                       <div className="ml-auto flex w-[114px] items-center gap-1.5">
                         <Button asChild variant="outline" size="icon-xs">
                           <Link

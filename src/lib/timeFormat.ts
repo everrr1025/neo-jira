@@ -34,3 +34,25 @@ export function formatFullDateTime(value: string | Date, locale: Locale) {
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString(localeDateMap[locale]);
 }
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+export function formatListDate(value: string | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+}
+
+export function formatListDateTime(value: string | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${formatListDate(date)} ${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`;
+}
+
+export function formatListDateTimeSeconds(value: string | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${formatListDateTime(date)}:${padDatePart(date.getSeconds())}`;
+}
