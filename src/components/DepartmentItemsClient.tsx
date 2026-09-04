@@ -86,6 +86,7 @@ import type {
 } from "@/lib/departmentReminders";
 import { getTranslations, getIssueTypeLabel } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
+import { getListActionColumnWidth, LIST_ACTION_BUTTON_GAP, LIST_ACTION_COLUMN_PADDING_X } from "@/lib/listColumnSizing";
 import type { NoteFolderListItem, NoteListItem, NoteTaskOption } from "@/lib/notes";
 import { getWorkflowStatusName } from "@/lib/workflows";
 import { formatFullDateTime, formatListDate, formatListDateTime, formatRelativeTime } from "@/lib/timeFormat";
@@ -1150,9 +1151,8 @@ function TaskMultiFilter({
 }
 
 function estimateTaskActionColumnWidth(headerLabel: string) {
-  const headerWidth = estimateTaskHeaderTextWidth(headerLabel) + 24 + 8 + 16;
-  const iconButtonsWidth = 24 * 2 + 8 + 16;
-  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, iconButtonsWidth));
+  const headerWidth = estimateTaskHeaderTextWidth(headerLabel) + 24 + LIST_ACTION_BUTTON_GAP + LIST_ACTION_COLUMN_PADDING_X * 2;
+  return Math.ceil(Math.max(TASK_ACTION_COLUMN_MIN_WIDTH, headerWidth, getListActionColumnWidth(2)));
 }
 
 const TASK_COLUMN_SORT_FIELD_MAP: Partial<Record<TaskColumnId, TaskSortField>> = {
@@ -1778,6 +1778,8 @@ export default function DepartmentItemsClient({
     return sortedTaskItems.slice(start, start + taskPageSize);
   }, [currentTaskPage, sortedTaskItems, taskPageSize]);
   const displayedTaskColumns = taskColumns;
+  const displayedTaskDataColumns = displayedTaskColumns.filter((column) => column.id !== "actions");
+  const displayedTaskActionColumn = displayedTaskColumns.find((column) => column.id === "actions");
   const taskActionColumnWidth = useMemo(() => estimateTaskActionColumnWidth(t.actions), [t.actions]);
   const taskTableMinWidth = useMemo(
     () => displayedTaskColumns.reduce(
@@ -1793,10 +1795,10 @@ export default function DepartmentItemsClient({
   const [taskDragOverSide, setTaskDragOverSide] = useState<"left" | "right" | null>(null);
   const taskResizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number | null;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
   } | null>(null);
 
   const handleTaskColumnDragStart = (event: React.DragEvent, index: number) => {
@@ -1857,17 +1859,15 @@ export default function DepartmentItemsClient({
     event.preventDefault();
     event.stopPropagation();
     const column = displayedTaskColumns[colIndex];
-    const nextColumn = displayedTaskColumns[colIndex + 1];
     if (!column || column.id === "actions") return;
     const startWidth = column.width || 150;
-    const resizeNextColumn = nextColumn && nextColumn.id !== "actions" ? nextColumn : null;
-    const nextStartWidth = resizeNextColumn?.width || null;
+    const scrollContainer = event.currentTarget.closest<HTMLElement>(".overflow-x-auto");
     taskResizingRef.current = {
       colIndex,
-      nextColIndex: resizeNextColumn ? colIndex + 1 : null,
       startX: event.clientX,
       startWidth,
-      nextStartWidth,
+      scrollContainer,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
     };
 
     const onMouseMove = (moveEvent: MouseEvent) => {
@@ -1879,30 +1879,16 @@ export default function DepartmentItemsClient({
       if (!resizeColumnId) return;
       const resizeMinWidth = displayedTaskColumns[resizeState.colIndex]?.minWidth || 80;
 
-      if (resizeState.nextColIndex === null || resizeState.nextStartWidth === null) {
-        setTaskColumnWidths((current) => ({
-          ...current,
-          [resizeColumnId]: Math.max(resizeMinWidth, resizeState.startWidth + delta),
-        }));
-        return;
-      }
-
-      const nextResizeColumnId = displayedTaskColumns[resizeState.nextColIndex]?.id;
-      if (!nextResizeColumnId) return;
-      const nextResizeMinWidth = displayedTaskColumns[resizeState.nextColIndex]?.minWidth || 80;
-
-      const boundedDelta = Math.min(
-        resizeState.nextStartWidth - nextResizeMinWidth,
-        Math.max(resizeMinWidth - resizeState.startWidth, delta)
-      );
-      const newWidth = resizeState.startWidth + boundedDelta;
-      const nextNewWidth = resizeState.nextStartWidth - boundedDelta;
+      const newWidth = Math.max(resizeMinWidth, resizeState.startWidth + delta);
 
       setTaskColumnWidths((current) => ({
         ...current,
         [resizeColumnId]: newWidth,
-        [nextResizeColumnId]: nextNewWidth,
       }));
+      if (resizeState.colIndex === displayedTaskColumns.length - 2 && resizeState.scrollContainer) {
+        const nextScrollLeft = Math.max(0, resizeState.startScrollLeft + newWidth - resizeState.startWidth);
+        window.requestAnimationFrame(() => resizeState.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+      }
     };
 
     const onMouseUp = () => {
@@ -3154,7 +3140,7 @@ export default function DepartmentItemsClient({
     return (
       <div
         className={`flex max-w-full min-w-0 items-center gap-1 ${column.id === "actions" ? "ml-auto justify-between" : ""}`}
-        style={column.id === "actions" ? { width: `${taskActionColumnWidth - 16}px` } : undefined}
+        style={column.id === "actions" ? { width: `${taskActionColumnWidth - LIST_ACTION_COLUMN_PADDING_X * 2}px` } : undefined}
       >
         <button
           type="button"
@@ -3196,7 +3182,7 @@ export default function DepartmentItemsClient({
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="ml-auto shrink-0"
+            className="ml-auto shrink-0 border-0 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] shadow-none hover:bg-muted group-hover/column:bg-muted"
             aria-label={taskTableText.columns}
             title={taskTableText.columns}
           >
@@ -3244,7 +3230,7 @@ export default function DepartmentItemsClient({
 
   const renderTaskRow = (item: DepartmentItemCenterItem) => (
     <tr key={item.id} className="group transition-colors hover:bg-muted/40">
-      {displayedTaskColumns.map((column) => {
+      {displayedTaskDataColumns.map((column) => {
         if (column.id === "title") {
           return (
             <td key={column.id} className="overflow-hidden px-5 py-4 font-semibold text-foreground">
@@ -3316,46 +3302,37 @@ export default function DepartmentItemsClient({
           );
         }
 
-        return (
-          <td
-            key={column.id}
-            className="sticky right-0 z-10 bg-card px-2 py-4 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
-            style={{ width: `${taskActionColumnWidth}px` }}
-          >
-            <div
-              className="ml-auto flex items-center justify-between gap-2"
-              style={{ width: `${taskActionColumnWidth - 16}px` }}
-            >
-              {item.canEdit ? (
-                <>
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="outline"
-                    onClick={() => openTaskEditor(item)}
-                    aria-label={t.edit}
-                    title={t.edit}
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="outline"
-                    disabled={isPending}
-                    onClick={() => requestDeleteTask(item)}
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={t.deleteTask}
-                    title={t.deleteTask}
-                  >
-                    <Trash2 />
-                  </Button>
-                </>
-              ) : null}
-            </div>
-          </td>
-        );
+        return null;
       })}
+      <td aria-hidden className="p-0" />
+      {displayedTaskActionColumn ? (
+        <td
+          className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted"
+          style={{ width: taskActionColumnWidth, minWidth: taskActionColumnWidth, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+        >
+          <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
+            {item.canEdit ? (
+              <>
+                <Button type="button" size="icon-xs" variant="outline" onClick={() => openTaskEditor(item)} aria-label={t.edit} title={t.edit}>
+                  <Pencil />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => requestDeleteTask(item)}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={t.deleteTask}
+                  title={t.deleteTask}
+                >
+                  <Trash2 />
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </td>
+      ) : null}
     </tr>
   );
 
@@ -5053,9 +5030,14 @@ export default function DepartmentItemsClient({
                 className="w-full text-left text-sm whitespace-nowrap"
                 style={{ tableLayout: "fixed", minWidth: `${taskTableMinWidth}px` }}
               >
+                <colgroup>
+                  {displayedTaskDataColumns.map((column) => <col key={column.id} style={{ width: `${column.width}px` }} />)}
+                  <col />
+                  {displayedTaskActionColumn ? <col style={{ width: `${taskActionColumnWidth}px` }} /> : null}
+                </colgroup>
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    {displayedTaskColumns.map((column, index) => {
+                    {displayedTaskDataColumns.map((column, index) => {
                       const showLeftLine =
                         taskDragOverIndex === index && taskDragOverSide === "left" && taskDragSourceIndex !== index;
                       const showRightLine =
@@ -5065,16 +5047,9 @@ export default function DepartmentItemsClient({
                       return (
                         <th
                           key={column.id}
-                          className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
-                            column.id === "actions" ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted" : "cursor-move px-5 hover:bg-muted active:cursor-move"
-                          } ${
-                            isDragging ? "opacity-40" : ""
-                          }`}
-                          style={{
-                            width: `${column.id === "actions" ? taskActionColumnWidth : column.width}px`,
-                            minWidth: `${column.id === "actions" ? taskActionColumnWidth : column.minWidth}px`,
-                          }}
-                          draggable={column.id !== "actions"}
+                          className={`group/column relative h-12 cursor-move select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${isDragging ? "opacity-40" : ""}`}
+                          style={{ width: `${column.width}px`, minWidth: `${column.minWidth}px` }}
+                          draggable
                           onDragStart={(event) => handleTaskColumnDragStart(event, index)}
                           onDragOver={(event) => handleTaskColumnDragOver(event, index)}
                           onDrop={(event) => handleTaskColumnDrop(event, index)}
@@ -5090,28 +5065,28 @@ export default function DepartmentItemsClient({
 
                           {renderTaskHeaderLabel(column)}
 
-                          {column.id === "actions" && index > 0 ? (
-                            <div
-                              className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
-                              onMouseDown={(event) => handleTaskColumnResizeStart(event, index - 1)}
-                              draggable={false}
-                              title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
-                            />
-                          ) : null}
-
                           {showRightLine ? <div className="absolute right-0 top-0 bottom-0 z-10 w-0.5 bg-blue-500" /> : null}
 
-                          {column.id !== "actions" ? (
-                            <div
-                              className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                              onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
-                              draggable={false}
-                              title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                            />
-                          ) : null}
+                          <div
+                            className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                            onMouseDown={(event) => handleTaskColumnResizeStart(event, index)}
+                            draggable={false}
+                            title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                          >
+                            <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                          </div>
                         </th>
                       );
                     })}
+                    <th aria-hidden className="h-12 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
+                    {displayedTaskActionColumn ? (
+                      <th
+                        className="group/column sticky right-0 z-20 h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] py-0 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                        style={{ width: taskActionColumnWidth, minWidth: taskActionColumnWidth, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+                      >
+                        {renderTaskHeaderLabel(displayedTaskActionColumn)}
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">

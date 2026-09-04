@@ -345,7 +345,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const renderResizableHeader = (columnId: DepartmentColumnId, content: React.ReactNode, className = "") => {
     const index = DEPARTMENT_COLUMN_IDS.indexOf(columnId);
     return (
-      <TableHead className={`group/column relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+      <TableHead className={`group/column relative overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] hover:bg-muted ${className}`} style={{ width: displayedColumnWidths[index] }}>
         {content}
         {resizeHandle(index)}
       </TableHead>
@@ -507,9 +507,9 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                     />
                   </div>
                 ))}
-                <TableHead aria-hidden className="p-0" />
+                <TableHead aria-hidden className="bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
                 <TableHead
-                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                  className="sticky right-0 z-20 overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
                   style={{
                     width: DEPARTMENT_ACTION_COLUMN_WIDTH,
                     minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH,

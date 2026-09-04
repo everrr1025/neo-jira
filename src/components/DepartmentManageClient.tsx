@@ -24,6 +24,12 @@ import {
   X,
 } from "lucide-react";
 import { getProjectPath } from "@/lib/projectRoutes";
+import {
+  DISPLAY_LIST_COLUMN_MIN_WIDTH,
+  getListActionColumnWidth,
+  LIST_ACTION_BUTTON_GAP,
+  LIST_ACTION_COLUMN_PADDING_X,
+} from "@/lib/listColumnSizing";
 import { formatFullDateTime, formatListDate } from "@/lib/timeFormat";
 
 import DepartmentNavIcon from "@/components/DepartmentNavIcon";
@@ -428,7 +434,7 @@ const PROJECT_DEFAULT_COLUMN_WIDTHS: Record<ProjectColumnId, number> = {
   owner: 140,
   members: 120,
   createdAt: 150,
-  actions: 136,
+  actions: getListActionColumnWidth(4),
 };
 const MEMBER_DEFAULT_COLUMN_WIDTHS: Record<MemberColumnId, number> = {
   name: 180,
@@ -717,10 +723,10 @@ export default function DepartmentManageClient({
   const [selectedMyProjectId, setSelectedMyProjectId] = useState("");
   const projectResizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number | null;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
   } | null>(null);
   const memberResizingRef = useRef<{
     colIndex: number;
@@ -819,16 +825,21 @@ export default function DepartmentManageClient({
         .map((columnId) => {
           const column = projectColumnsById.get(columnId);
           if (!column) return null;
-          const minWidth = column.id === "createdAt" ? 112 : 80;
+          if (column.id === "actions") {
+            return { ...column, width: getListActionColumnWidth(canManageProjects ? 4 : 2) };
+          }
+          const minWidth = column.id === "createdAt" ? 112 : DISPLAY_LIST_COLUMN_MIN_WIDTH;
           return { ...column, width: Math.max(projectColumnWidths[columnId] ?? column.width, minWidth) };
         })
         .filter((column): column is ProjectColumnConfig => Boolean(column)),
-    [projectColumnOrder, projectColumnWidths, projectColumnsById]
+    [canManageProjects, projectColumnOrder, projectColumnWidths, projectColumnsById]
   );
   const projectColumnsTotalWidth = useMemo(
     () => projectColumns.reduce((total, column) => total + column.width, 0),
     [projectColumns]
   );
+  const projectDataColumns = projectColumns.filter((column) => column.id !== "actions");
+  const projectActionColumn = projectColumns.find((column) => column.id === "actions");
   const sortedProjects = useMemo(() => {
     const getValue = (project: DepartmentWorkspaceProject, field: ProjectSortField) => {
       if (field === "name") return project.name;
@@ -1252,15 +1263,14 @@ export default function DepartmentManageClient({
       event.preventDefault();
       event.stopPropagation();
       const column = projectColumns[colIndex];
-      const nextColumn = projectColumns[colIndex + 1];
       if (!column || column.id === "actions") return;
-      const resizeNextColumn = nextColumn && nextColumn.id !== "actions" ? nextColumn : null;
+      const scrollContainer = event.currentTarget.closest<HTMLElement>(".overflow-auto");
       projectResizingRef.current = {
         colIndex,
-        nextColIndex: resizeNextColumn ? colIndex + 1 : null,
         startX: event.clientX,
         startWidth: column.width,
-        nextStartWidth: resizeNextColumn?.width || null,
+        scrollContainer,
+        startScrollLeft: scrollContainer?.scrollLeft ?? 0,
       };
 
       const onMouseMove = (moveEvent: MouseEvent) => {
@@ -1269,30 +1279,17 @@ export default function DepartmentManageClient({
         const resizeColumnId = projectColumns[resizeState.colIndex]?.id;
         if (!resizeColumnId) return;
 
-        const minWidth = resizeColumnId === "createdAt" ? 112 : 80;
+        const minWidth = resizeColumnId === "createdAt" ? 112 : DISPLAY_LIST_COLUMN_MIN_WIDTH;
         const delta = moveEvent.clientX - resizeState.startX;
-
-        if (resizeState.nextColIndex === null || resizeState.nextStartWidth === null) {
-          setProjectColumnWidths((current) => ({
-            ...current,
-            [resizeColumnId]: Math.max(minWidth, resizeState.startWidth + delta),
-          }));
-          return;
-        }
-
-        const nextResizeColumnId = projectColumns[resizeState.nextColIndex]?.id;
-        if (!nextResizeColumnId) return;
-        const nextStartWidth = resizeState.nextStartWidth;
-        const nextMinWidth = nextResizeColumnId === "createdAt" ? 112 : 80;
-        const boundedDelta = Math.min(
-          nextStartWidth - nextMinWidth,
-          Math.max(minWidth - resizeState.startWidth, delta)
-        );
+        const newWidth = Math.max(minWidth, resizeState.startWidth + delta);
         setProjectColumnWidths((current) => ({
           ...current,
-          [resizeColumnId]: resizeState.startWidth + boundedDelta,
-          [nextResizeColumnId]: nextStartWidth - boundedDelta,
+          [resizeColumnId]: newWidth,
         }));
+        if (resizeState.colIndex === projectColumns.length - 2 && resizeState.scrollContainer) {
+          const nextScrollLeft = Math.max(0, resizeState.startScrollLeft + newWidth - resizeState.startWidth);
+          window.requestAnimationFrame(() => resizeState.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+        }
       };
 
       const onMouseUp = () => {
@@ -1461,9 +1458,10 @@ export default function DepartmentManageClient({
     return (
       <td
         key={column.id}
-        className="sticky right-0 z-10 overflow-hidden bg-card px-2 py-4 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/project-row:bg-muted/40"
+        className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/project-row:bg-muted"
+        style={{ width: column.width, minWidth: column.width, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
       >
-        <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
           <Button asChild size="icon-xs" variant="outline">
             <Link href={getProjectPath(department.id, project.id)} aria-label={t.viewProject} title={t.viewProject}>
               <Eye />
@@ -2175,8 +2173,8 @@ export default function DepartmentManageClient({
                     {memberColumns.map((column, index) => (
                       <th
                         key={column.id}
-                        className={`group/column relative h-12 select-none overflow-hidden px-5 py-0 align-middle transition-colors ${
-                          column.id === "actions" ? "sticky right-0 z-20 bg-muted/50" : "hover:bg-muted"
+                        className={`group/column relative h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted ${
+                          column.id === "actions" ? "sticky right-0 z-20" : ""
                         }`}
                         style={{ width: `${column.width}px` }}
                       >
@@ -2359,9 +2357,14 @@ export default function DepartmentManageClient({
                 className="text-left text-sm"
                 style={{ tableLayout: "fixed", width: `max(100%, ${projectColumnsTotalWidth}px)` }}
               >
+                <colgroup>
+                  {projectDataColumns.map((column) => <col key={column.id} style={{ width: `${column.width}px` }} />)}
+                  <col />
+                  {projectActionColumn ? <col style={{ width: `${projectActionColumn.width}px` }} /> : null}
+                </colgroup>
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    {projectColumns.map((column, index) => {
+                    {projectDataColumns.map((column, index) => {
                       const showLeftLine =
                         projectDragOverIndex === index && projectDragOverSide === "left" && projectDragSourceIndex !== index;
                       const showRightLine =
@@ -2371,13 +2374,9 @@ export default function DepartmentManageClient({
                       return (
                         <th
                           key={column.id}
-                          className={`group/column relative h-12 select-none overflow-hidden py-0 align-middle transition-colors ${
-                            column.id === "actions"
-                              ? "sticky right-0 z-20 bg-muted/50 px-2 shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
-                              : "cursor-move px-5 hover:bg-muted active:cursor-move"
-                          } ${isDragging ? "opacity-40" : ""}`}
+                          className={`group/column relative h-12 cursor-move select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${isDragging ? "opacity-40" : ""}`}
                           style={{ width: `${column.width}px` }}
-                          draggable={column.id !== "actions"}
+                          draggable
                           onDragStart={(event) => handleProjectColumnDragStart(event, index)}
                           onDragOver={(event) => handleProjectColumnDragOver(event, index)}
                           onDrop={(event) => handleProjectColumnDrop(event, index)}
@@ -2391,37 +2390,40 @@ export default function DepartmentManageClient({
                         >
                           {showLeftLine ? <div className="absolute bottom-0 left-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
                           {renderProjectHeaderLabel(column)}
-                          {column.id === "actions" && index > 0 ? (
-                            <div
-                              className="absolute bottom-0 left-0 top-0 z-20 w-4 cursor-ew-resize"
-                              onMouseDown={(event) => handleProjectColumnResizeStart(event, index - 1)}
-                              draggable={false}
-                              title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
-                            />
-                          ) : null}
                           {showRightLine ? <div className="absolute bottom-0 right-0 top-0 z-10 w-0.5 bg-blue-500" /> : null}
-                          {column.id !== "actions" && projectColumns[index + 1]?.id !== "actions" ? (
-                            <div
-                              className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                              onMouseDown={(event) => handleProjectColumnResizeStart(event, index)}
-                              draggable={false}
-                              title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                            />
-                          ) : null}
+                          <div
+                            className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                            onMouseDown={(event) => handleProjectColumnResizeStart(event, index)}
+                            draggable={false}
+                            title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                          >
+                            <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                          </div>
                         </th>
                       );
                     })}
+                    <th aria-hidden className="h-12 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
+                    {projectActionColumn ? (
+                      <th
+                        className="sticky right-0 z-20 h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] py-0 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                        style={{ width: projectActionColumn.width, minWidth: projectActionColumn.width, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+                      >
+                        {renderProjectHeaderLabel(projectActionColumn)}
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {paginatedProjects.map((project) => (
                     <tr key={project.id} className="group/project-row transition-colors hover:bg-muted/40">
-                      {projectColumns.map((column) => renderProjectCell(project, column))}
+                      {projectDataColumns.map((column) => renderProjectCell(project, column))}
+                      <td aria-hidden className="p-0" />
+                      {projectActionColumn ? renderProjectCell(project, projectActionColumn) : null}
                     </tr>
                   ))}
                   {department.projects.length === 0 ? (
                     <tr>
-                      <td colSpan={projectColumns.length} className="px-5 py-16 text-center text-muted-foreground">
+                      <td colSpan={projectColumns.length + 1} className="px-5 py-16 text-center text-muted-foreground">
                         {t.noProjects}
                       </td>
                     </tr>

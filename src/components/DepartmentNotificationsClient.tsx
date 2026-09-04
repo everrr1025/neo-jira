@@ -62,6 +62,11 @@ import type {
 } from "@/lib/departmentNotifications";
 import type { Locale } from "@/lib/i18n";
 import {
+  getListActionColumnWidth,
+  LIST_ACTION_BUTTON_GAP,
+  LIST_ACTION_COLUMN_PADDING_X,
+} from "@/lib/listColumnSizing";
+import {
   appendNotificationAttachmentsToContent,
   formatNotificationAttachmentSize,
   parseNotificationAttachmentsFromContent,
@@ -271,7 +276,6 @@ type ColumnConfig = {
   sortable?: boolean;
 };
 
-const ACTION_COLUMN_MIN_WIDTH = 56;
 const SYSTEM_AUTHOR_FILTER_VALUE = "__system";
 
 function estimateNotificationHeaderTextWidth(label: string) {
@@ -287,12 +291,6 @@ function estimateNotificationHeaderMinWidth(columnId: ColumnId, label: string, a
       ? Math.min(128, estimateNotificationHeaderTextWidth(activeSingleFilterLabel) + 14) + 4
       : 28;
   return Math.max(columnId === "createdAt" ? 160 : 60, horizontalPadding + estimateNotificationHeaderTextWidth(label) + sortWidth + filterWidth);
-}
-
-function estimateNotificationActionColumnWidth(headerLabel: string) {
-  const headerWidth = estimateNotificationHeaderTextWidth(headerLabel) + 24 + 8 + 16;
-  const iconButtonsWidth = 24 * 2 + 8 + 16;
-  return Math.ceil(Math.max(ACTION_COLUMN_MIN_WIDTH, headerWidth, iconButtonsWidth));
 }
 
 const DEFAULT_WIDTHS: Record<ColumnId, number> = {
@@ -483,10 +481,10 @@ export default function DepartmentNotificationsClient({
   const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const resizingRef = useRef<{
     colIndex: number;
-    nextColIndex: number | null;
     startX: number;
     startWidth: number;
-    nextStartWidth: number | null;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
   } | null>(null);
 
   const columnsById = useMemo(
@@ -563,7 +561,7 @@ export default function DepartmentNotificationsClient({
     }
   }, [currentParams, filterStorageKey]);
   const showActionColumn = currentView === "sent";
-  const actionColumnWidth = useMemo(() => estimateNotificationActionColumnWidth(t.actions), [t.actions]);
+  const actionColumnWidth = getListActionColumnWidth(2);
   const notificationTableMinWidth = columns.reduce((total, column) => total + column.width, 0) +
     (showActionColumn ? actionColumnWidth : 0);
   const createdFilterOptions = useMemo<FilterOption[]>(
@@ -883,20 +881,19 @@ export default function DepartmentNotificationsClient({
     });
   };
 
-  const handleResizeStart = useCallback((event: React.MouseEvent, colIndex: number, resizeIndependently = false) => {
+  const handleResizeStart = useCallback((event: React.MouseEvent, colIndex: number) => {
     event.preventDefault();
     event.stopPropagation();
     const col = columns[colIndex];
-    const nextCol = resizeIndependently ? undefined : columns[colIndex + 1];
     if (!col) return;
     const startWidth = col.width || 150;
-    const nextStartWidth = nextCol?.width || null;
+    const scrollContainer = event.currentTarget.closest<HTMLElement>(".overflow-x-auto");
     resizingRef.current = {
       colIndex,
-      nextColIndex: nextCol ? colIndex + 1 : null,
       startX: event.clientX,
       startWidth,
-      nextStartWidth,
+      scrollContainer,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
     };
     const handleMove = (moveEvent: MouseEvent) => {
       const current = resizingRef.current;
@@ -907,28 +904,15 @@ export default function DepartmentNotificationsClient({
 
       const delta = moveEvent.clientX - current.startX;
 
-      if (current.nextColIndex === null || current.nextStartWidth === null) {
-        setColumnWidths((widths) => ({
-          ...widths,
-          [resizeColumnId]: Math.max(resizeMinWidth, current.startWidth + delta),
-        }));
-        return;
-      }
-
-      const nextResizeColumnId = columns[current.nextColIndex]?.id;
-      if (!nextResizeColumnId) return;
-      const nextStartWidth = current.nextStartWidth;
-      const nextResizeMinWidth = columns[current.nextColIndex]?.minWidth || 60;
-      const boundedDelta = Math.min(
-        nextStartWidth - nextResizeMinWidth,
-        Math.max(resizeMinWidth - current.startWidth, delta),
-      );
-
+      const newWidth = Math.max(resizeMinWidth, current.startWidth + delta);
       setColumnWidths((widths) => ({
         ...widths,
-        [resizeColumnId]: current.startWidth + boundedDelta,
-        [nextResizeColumnId]: nextStartWidth - boundedDelta,
+        [resizeColumnId]: newWidth,
       }));
+      if (current.colIndex === columns.length - 1 && current.scrollContainer) {
+        const nextScrollLeft = Math.max(0, current.startScrollLeft + newWidth - current.startWidth);
+        window.requestAnimationFrame(() => current.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+      }
     };
     const handleUp = () => {
       resizingRef.current = null;
@@ -1050,7 +1034,7 @@ export default function DepartmentNotificationsClient({
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="pointer-events-auto text-muted-foreground hover:bg-background hover:text-foreground"
+          className="pointer-events-auto border-0 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] text-muted-foreground shadow-none hover:bg-muted hover:text-foreground group-hover/column:bg-muted"
           aria-label={t.columns}
           title={t.columns}
         >
@@ -1327,14 +1311,16 @@ export default function DepartmentNotificationsClient({
       ) : null}
 
       <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="pointer-events-none absolute right-2 top-3 z-30">
-          {renderColumnMenu()}
-        </div>
         <div className="relative overflow-x-auto">
           <table
             className="text-left text-sm"
             style={{ tableLayout: "fixed", width: `max(100%, ${notificationTableMinWidth}px)` }}
           >
+            <colgroup>
+              {columns.map((column) => <col key={column.id} style={{ width: `${column.width}px` }} />)}
+              {showActionColumn ? <col /> : null}
+              {showActionColumn ? <col style={{ width: `${actionColumnWidth}px` }} /> : null}
+            </colgroup>
             <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
                 {columns.map((column, index) => {
@@ -1348,7 +1334,7 @@ export default function DepartmentNotificationsClient({
                   return (
                     <th
                       key={column.id}
-                      className={`group/column relative h-12 cursor-move select-none overflow-hidden px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
+                      className={`group/column relative h-12 cursor-move select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted active:cursor-move ${
                         isDragging ? "opacity-40" : ""
                       }`}
                       style={{ width: `${column.width}px` }}
@@ -1365,14 +1351,6 @@ export default function DepartmentNotificationsClient({
                       }}
                     >
                       {showLeftLine ? <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
-                      {!showActionColumn && index === columns.length - 1 && index > 0 ? (
-                        <div
-                          className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
-                          onMouseDown={(event) => handleResizeStart(event, index - 1, true)}
-                          draggable={false}
-                          title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
-                        />
-                      ) : null}
                       <div className="flex max-w-full min-w-0 items-center gap-1">
                         {column.sortable ? (
                           <button
@@ -1395,34 +1373,34 @@ export default function DepartmentNotificationsClient({
                       </div>
                       {showRightLine ? <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" /> : null}
                       <div
-                        className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                        className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                         onMouseDown={(event) => handleResizeStart(event, index)}
                         draggable={false}
                         title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                      />
+                      >
+                        <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                      </div>
+                      {!showActionColumn && index === columns.length - 1 ? (
+                        <div className="pointer-events-none absolute right-2 top-3 z-30">
+                          {renderColumnMenu()}
+                        </div>
+                      ) : null}
                     </th>
                   );
                 })}
                 {showActionColumn ? (
-                  <th
-                    className="sticky right-0 z-20 h-12 select-none bg-muted/50 px-2 py-0 text-left align-middle shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
-                    style={{ width: `${actionColumnWidth}px`, minWidth: `${actionColumnWidth}px` }}
-                  >
-                    <div
-                      className="ml-auto flex items-center justify-between gap-2"
-                      style={{ width: `${actionColumnWidth - 16}px` }}
+                  <>
+                    <th aria-hidden className="h-12 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
+                    <th
+                      className="group/column sticky right-0 z-20 h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] py-0 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                      style={{ width: actionColumnWidth, minWidth: actionColumnWidth, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
                     >
                       <span className="font-semibold text-muted-foreground">{t.actions}</span>
-                    </div>
-                    {columns.length > 0 ? (
-                      <div
-                        className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
-                        onMouseDown={(event) => handleResizeStart(event, columns.length - 1)}
-                        draggable={false}
-                        title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
-                      />
-                    ) : null}
-                  </th>
+                      <div className="pointer-events-none absolute right-2 top-3 z-30">
+                        {renderColumnMenu()}
+                      </div>
+                    </th>
+                  </>
                 ) : null}
               </tr>
             </thead>
@@ -1430,7 +1408,7 @@ export default function DepartmentNotificationsClient({
               {notifications.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={(columns.length || 1) + (showActionColumn ? 1 : 0)}
+                    colSpan={(columns.length || 1) + (showActionColumn ? 2 : 0)}
                     className="px-5 py-16 text-center text-sm text-muted-foreground"
                   >
                     {t.noNotifications}
@@ -1448,14 +1426,13 @@ export default function DepartmentNotificationsClient({
                       </td>
                     ))}
                     {showActionColumn ? (
-                      <td
-                        className="sticky right-0 z-10 bg-card px-2 py-3.5 text-left align-middle shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
-                        style={{ width: `${actionColumnWidth}px`, minWidth: `${actionColumnWidth}px` }}
-                      >
-                        <div
-                          className="ml-auto flex items-center justify-between gap-2"
-                          style={{ width: `${actionColumnWidth - 16}px` }}
+                      <>
+                        <td aria-hidden className="p-0" />
+                        <td
+                          className="sticky right-0 z-10 overflow-hidden bg-card py-3.5 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted"
+                          style={{ width: actionColumnWidth, minWidth: actionColumnWidth, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
                         >
+                          <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
                           {notification.canManage && notification.status === "SENT" ? (
                             <Button
                               type="button"
@@ -1484,8 +1461,9 @@ export default function DepartmentNotificationsClient({
                               <Trash2 />
                             </Button>
                           ) : null}
-                        </div>
-                      </td>
+                          </div>
+                        </td>
+                      </>
                     ) : null}
                   </tr>
                 ))

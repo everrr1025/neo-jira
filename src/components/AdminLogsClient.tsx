@@ -452,7 +452,7 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   const renderResizableHeader = (columnId: LogColumnId, content: React.ReactNode, className = "") => {
     const index = LOG_COLUMN_IDS.indexOf(columnId);
     return (
-      <TableHead className={`group/column relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+      <TableHead className={`group/column relative overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] hover:bg-muted ${className}`} style={{ width: displayedColumnWidths[index] }}>
         {content}
         <div
           className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
