@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Crown, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Crown, Loader2, Search, UserMinus, X } from "lucide-react";
 
 import { updateDepartmentProjectMembers } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
@@ -13,13 +13,17 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DepartmentWorkspaceMember, DepartmentWorkspaceProject } from "@/lib/departmentWorkspace";
 import type { Locale } from "@/lib/i18n";
+import {
+  DISPLAY_LIST_COLUMN_MIN_WIDTH,
+  getListActionColumnWidth,
+  LIST_ACTION_BUTTON_GAP,
+  LIST_ACTION_COLUMN_PADDING_X,
+} from "@/lib/listColumnSizing";
 
 const TEXT = {
   en: {
     title: "Project members",
-    subtitle: "Manage project members and owner assignments.",
     addMembers: "Add members",
-    currentMembers: "Current members",
     owner: "Owner",
     member: "Member",
     setOwner: "Set as owner",
@@ -32,18 +36,15 @@ const TEXT = {
     cancel: "Cancel",
     assignFailed: "Failed to update project members",
     ownerRequired: "Project owner must be selected from project members.",
-    unassignedOwner: "Unassigned",
     disabled: "Disabled",
   },
   zh: {
     title: "项目成员",
-    subtitle: "管理项目成员和项目负责人。",
     addMembers: "添加成员",
-    currentMembers: "当前成员",
     owner: "负责人",
     member: "成员",
     setOwner: "设为负责人",
-    remove: "移出项目",
+    remove: "移出",
     emptyMembers: "当前项目还没有成员。",
     searchUsers: "搜索用户",
     selected: "已选",
@@ -52,13 +53,28 @@ const TEXT = {
     cancel: "取消",
     assignFailed: "更新项目成员失败",
     ownerRequired: "项目负责人必须从项目成员中选择。",
-    unassignedOwner: "未指派",
     disabled: "已停用",
   },
 } as const;
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const ACTION_COLUMN_WIDTH = getListActionColumnWidth(2);
+
+type MemberColumnId = "name" | "email" | "role";
+type MemberSortField = Extract<MemberColumnId, "name" | "email">;
+type SortDirection = "asc" | "desc";
+type MemberColumnConfig = {
+  id: MemberColumnId;
+  label: string;
+  width: number;
+};
+
+const DEFAULT_COLUMN_WIDTHS: Record<MemberColumnId, number> = {
+  name: 220,
+  email: 280,
+  role: 140,
+};
 
 function displayMember(member: Pick<DepartmentWorkspaceMember, "userName" | "userEmail">) {
   return member.userName || member.userEmail;
@@ -86,13 +102,44 @@ export default function DepartmentProjectMembersClient({
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberPage, setMemberPage] = useState(1);
   const [memberPageSize, setMemberPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [memberColumnWidths, setMemberColumnWidths] = useState(DEFAULT_COLUMN_WIDTHS);
+  const [memberSortField, setMemberSortField] = useState<MemberSortField | null>(null);
+  const [memberSortDirection, setMemberSortDirection] = useState<SortDirection>("asc");
+  const memberResizingRef = useRef<{
+    colIndex: number;
+    startX: number;
+    startWidth: number;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
+  } | null>(null);
+
+  const memberColumns = useMemo<MemberColumnConfig[]>(
+    () => [
+      { id: "name", label: locale === "zh" ? "姓名" : "Name", width: memberColumnWidths.name },
+      { id: "email", label: locale === "zh" ? "邮箱" : "Email", width: memberColumnWidths.email },
+      { id: "role", label: locale === "zh" ? "角色" : "Role", width: memberColumnWidths.role },
+    ],
+    [locale, memberColumnWidths]
+  );
+  const memberColumnsTotalWidth = useMemo(
+    () => memberColumns.reduce((total, column) => total + column.width, canManage ? ACTION_COLUMN_WIDTH : 0),
+    [canManage, memberColumns]
+  );
 
   const currentMemberIds = new Set(project.members.map((member) => member.userId));
-  const projectMembers = [...project.members].sort((a, b) => {
-    const ownerDiff = Number(b.userId === project.ownerId) - Number(a.userId === project.ownerId);
-    if (ownerDiff !== 0) return ownerDiff;
-    return displayMember(a).localeCompare(displayMember(b));
-  });
+  const projectMembers = useMemo(() => {
+    return [...project.members].sort((a, b) => {
+      if (memberSortField) {
+        const left = memberSortField === "name" ? displayMember(a) : a.userEmail;
+        const right = memberSortField === "name" ? displayMember(b) : b.userEmail;
+        const result = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+        return memberSortDirection === "asc" ? result : -result;
+      }
+      const ownerDiff = Number(b.userId === project.ownerId) - Number(a.userId === project.ownerId);
+      if (ownerDiff !== 0) return ownerDiff;
+      return displayMember(a).localeCompare(displayMember(b));
+    });
+  }, [memberSortDirection, memberSortField, project.members, project.ownerId]);
   const availableUsers = departmentMembers.filter((member) => !member.disabledAt && !currentMemberIds.has(member.userId));
   const normalizedSearch = userSearch.trim().toLowerCase();
   const filteredUsers = availableUsers.filter((user) => {
@@ -154,14 +201,71 @@ export default function DepartmentProjectMembersClient({
     syncProjectMembers(project.ownerId || "", mergedMemberIds);
   };
 
+  const handleMemberSort = (field: MemberColumnId) => {
+    if (field === "role") return;
+    if (memberSortField === field) {
+      setMemberSortDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setMemberSortField(field);
+      setMemberSortDirection("asc");
+    }
+    setMemberPage(1);
+  };
+
+  const handleMemberColumnResizeStart = useCallback(
+    (event: React.MouseEvent, colIndex: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const column = memberColumns[colIndex];
+      if (!column) return;
+      const scrollContainer = event.currentTarget.closest<HTMLElement>(".overflow-auto");
+      memberResizingRef.current = {
+        colIndex,
+        startX: event.clientX,
+        startWidth: column.width,
+        scrollContainer,
+        startScrollLeft: scrollContainer?.scrollLeft ?? 0,
+      };
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const resizeState = memberResizingRef.current;
+        if (!resizeState) return;
+        const columnId = memberColumns[resizeState.colIndex]?.id;
+        if (!columnId) return;
+
+        const newWidth = Math.max(
+          DISPLAY_LIST_COLUMN_MIN_WIDTH,
+          resizeState.startWidth + moveEvent.clientX - resizeState.startX
+        );
+        setMemberColumnWidths((current) => ({ ...current, [columnId]: newWidth }));
+        if (resizeState.colIndex === memberColumns.length - 1 && resizeState.scrollContainer) {
+          const nextScrollLeft = Math.max(0, resizeState.startScrollLeft + newWidth - resizeState.startWidth);
+          window.requestAnimationFrame(() => resizeState.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+        }
+      };
+
+      const onMouseUp = () => {
+        memberResizingRef.current = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+    },
+    [memberColumns]
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{project.name}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {project.key} · {t.subtitle}
-          </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">{project.name}</h2>
+          <Badge variant="secondary" className="shrink-0 font-mono">{project.key}</Badge>
         </div>
         {canManage ? (
           <Button
@@ -171,7 +275,6 @@ export default function DepartmentProjectMembersClient({
               setIsAddOpen(true);
             }}
           >
-            <Plus />
             {t.addMembers}
           </Button>
         ) : null}
@@ -183,87 +286,120 @@ export default function DepartmentProjectMembersClient({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-        <div className="border-b bg-muted/50 px-5 py-4">
-          <h3 className="text-sm font-bold text-foreground">{t.currentMembers}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {project.ownerId
-              ? `${t.owner}: ${
-                  displayMember(
-                    departmentMembers.find((member) => member.userId === project.ownerId) || {
-                      userName: null,
-                      userEmail: t.unassignedOwner,
-                    }
-                  )
-                }`
-              : t.unassignedOwner}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full whitespace-nowrap text-left text-sm">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="overflow-auto">
+          <table
+            className="text-left text-sm"
+            style={{ tableLayout: "fixed", width: `max(100%, ${memberColumnsTotalWidth}px)` }}
+          >
+            <colgroup>
+              {memberColumns.map((column) => <col key={column.id} style={{ width: `${column.width}px` }} />)}
+              <col />
+              {canManage ? <col style={{ width: `${ACTION_COLUMN_WIDTH}px` }} /> : null}
+            </colgroup>
             <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
-                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "姓名" : "Name"}</th>
-                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "邮箱" : "Email"}</th>
-                <th className="h-12 px-5 py-0 align-middle">{locale === "zh" ? "角色" : "Role"}</th>
-                <th className="h-12 w-56 px-5 py-0 align-middle">{locale === "zh" ? "操作" : "Actions"}</th>
+                {memberColumns.map((column, index) => (
+                  <th
+                    key={column.id}
+                    className="group/column relative h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted"
+                    style={{ width: `${column.width}px` }}
+                  >
+                    {column.id === "name" || column.id === "email" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleMemberSort(column.id)}
+                        className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 font-semibold text-muted-foreground hover:text-foreground"
+                      >
+                        <span className="truncate">{column.label}</span>
+                        {memberSortField === column.id
+                          ? memberSortDirection === "asc"
+                            ? <ArrowUp size={12} />
+                            : <ArrowDown size={12} />
+                          : null}
+                      </button>
+                    ) : (
+                      <span className="block truncate font-semibold">{column.label}</span>
+                    )}
+                    <div
+                      className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                      onMouseDown={(event) => handleMemberColumnResizeStart(event, index)}
+                      title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                    >
+                      <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                    </div>
+                  </th>
+                ))}
+                <th aria-hidden className="h-12 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
+                {canManage ? (
+                  <th
+                    className="sticky right-0 z-20 h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] py-0 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                    style={{ width: ACTION_COLUMN_WIDTH, minWidth: ACTION_COLUMN_WIDTH, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+                  >
+                    {locale === "zh" ? "操作" : "Actions"}
+                  </th>
+                ) : null}
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border">
               {paginatedProjectMembers.map((member) => {
                 const isOwner = member.userId === project.ownerId;
                 return (
-                  <tr
-                    key={member.userId}
-                    onClick={() => {
-                      if (canManage && !isPending && !isOwner && !member.disabledAt) handleSetOwner(member.userId);
-                    }}
-                    className={`transition-colors ${canManage && !isOwner && !isPending ? "cursor-pointer hover:bg-muted/45" : ""}`}
-                  >
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                        <span>{displayMember(member)}</span>
+                  <tr key={member.userId} className="group/member-row transition-colors hover:bg-muted/40">
+                    <td className="overflow-hidden px-5 py-4 font-medium text-foreground">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{displayMember(member)}</span>
                         {member.disabledAt ? <Badge variant="outline" className="text-muted-foreground">{t.disabled}</Badge> : null}
-                        {isOwner ? <Crown size={14} className="text-amber-500" /> : null}
-                      </div>
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 text-muted-foreground">{member.userEmail}</td>
-                    <td className="px-5 py-3.5">
+                    <td className="overflow-hidden px-5 py-4 text-muted-foreground">
+                      <span className="block truncate">{member.userEmail}</span>
+                    </td>
+                    <td className="overflow-hidden px-5 py-4">
                       <Badge variant={isOwner ? "default" : "secondary"}>
                         {isOwner ? t.owner : t.member}
                       </Badge>
                     </td>
-                    <td className="px-5 py-3.5">
-                      {canManage ? (
-                        <div className="flex items-center gap-2">
-                          {!isOwner && !member.disabledAt ? (
-                            <Badge variant="outline" className="text-primary">
-                              {t.setOwner}
-                            </Badge>
-                          ) : null}
+                    <td aria-hidden className="p-0" />
+                    {canManage ? (
+                      <td
+                        className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/member-row:bg-muted/40"
+                        style={{ width: ACTION_COLUMN_WIDTH, minWidth: ACTION_COLUMN_WIDTH, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+                      >
+                        <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
                           <Button
                             type="button"
                             variant="outline"
-                            size="xs"
-                            disabled={isPending}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRemoveMember(member.userId);
-                            }}
-                            className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            size="icon-xs"
+                            disabled={isPending || isOwner || Boolean(member.disabledAt)}
+                            onClick={() => handleSetOwner(member.userId)}
+                            className="text-primary"
+                            aria-label={t.setOwner}
+                            title={t.setOwner}
                           >
-                            <Trash2 />
-                            {t.remove}
+                            <Crown />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-xs"
+                            disabled={isPending}
+                            onClick={() => handleRemoveMember(member.userId)}
+                            className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={t.remove}
+                            title={t.remove}
+                          >
+                            <UserMinus />
                           </Button>
                         </div>
-                      ) : null}
-                    </td>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
               {projectMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-16 text-center text-muted-foreground">
+                  <td colSpan={memberColumns.length + 2} className="px-5 py-16 text-center text-muted-foreground">
                     {t.emptyMembers}
                   </td>
                 </tr>
@@ -312,21 +448,21 @@ export default function DepartmentProjectMembersClient({
                   onClick={() => setMemberPage(Math.max(1, currentMemberPage - 1))}
                   disabled={currentMemberPage === 1}
                 >
-                  <ChevronLeft size={18} />
+                  <ArrowLeft />
                 </Button>
                 <span className="min-w-24 px-2 text-center font-medium leading-none text-foreground">
                   {locale === "zh"
-                    ? `第 ${currentMemberPage} / ${totalMemberPages || 1} 页`
-                    : `Page ${currentMemberPage} of ${totalMemberPages || 1}`}
+                    ? `第 ${currentMemberPage} / ${totalMemberPages} 页`
+                    : `Page ${currentMemberPage} of ${totalMemberPages}`}
                 </span>
                 <Button
                   type="button"
                   variant="outline"
                   size="icon-sm"
-                  onClick={() => setMemberPage(Math.min(totalMemberPages || 1, currentMemberPage + 1))}
-                  disabled={currentMemberPage === totalMemberPages || totalMemberPages === 0}
+                  onClick={() => setMemberPage(Math.min(totalMemberPages, currentMemberPage + 1))}
+                  disabled={currentMemberPage >= totalMemberPages}
                 >
-                  <ChevronRight size={18} />
+                  <ArrowRight />
                 </Button>
               </div>
             </div>

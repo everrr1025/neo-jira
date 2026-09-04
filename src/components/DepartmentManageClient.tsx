@@ -18,6 +18,7 @@ import {
   Paperclip,
   Pencil,
   Plus,
+  Settings,
   Star,
   Trash2,
   UserRound,
@@ -342,10 +343,12 @@ const TEXT = {
 
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const MEMBER_ACTION_COLUMN_WIDTH = { en: 80, zh: 64 } as const;
 
 type ProjectColumnId = "name" | "key" | "description" | "owner" | "members" | "createdAt" | "actions";
 type MemberColumnId = "name" | "email" | "access" | "position" | "projects" | "actions";
 type ProjectSortField = Exclude<ProjectColumnId, "actions">;
+type MemberSortField = Extract<MemberColumnId, "name" | "email" | "position">;
 type SortDirection = "asc" | "desc";
 type TaskAttachment = {
   id: string;
@@ -442,7 +445,7 @@ const MEMBER_DEFAULT_COLUMN_WIDTHS: Record<MemberColumnId, number> = {
   access: 160,
   position: 160,
   projects: 280,
-  actions: 120,
+  actions: MEMBER_ACTION_COLUMN_WIDTH.en,
 };
 
 function displayMember(member: { userName: string | null; userEmail: string }) {
@@ -699,6 +702,8 @@ export default function DepartmentManageClient({
   const [memberPage, setMemberPage] = useState(1);
   const [memberPageSize, setMemberPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [memberColumnWidths, setMemberColumnWidths] = useState(MEMBER_DEFAULT_COLUMN_WIDTHS);
+  const [memberSortField, setMemberSortField] = useState<MemberSortField | null>(null);
+  const [memberSortDirection, setMemberSortDirection] = useState<SortDirection>("asc");
   const [projectPage, setProjectPage] = useState(1);
   const [projectPageSize, setProjectPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [projectSortField, setProjectSortField] = useState<ProjectSortField>("createdAt");
@@ -732,6 +737,8 @@ export default function DepartmentManageClient({
     colIndex: number;
     startX: number;
     startWidth: number;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
   } | null>(null);
   const resendContentEditorRef = useRef<RichTextEditorHandle>(null);
   const [newProject, setNewProject] = useState({
@@ -761,6 +768,11 @@ export default function DepartmentManageClient({
   const [editingPositionName, setEditingPositionName] = useState("");
   const [isPositionManagerOpen, setIsPositionManagerOpen] = useState(false);
   const [positionErrorMsg, setPositionErrorMsg] = useState("");
+  const [deletingPosition, setDeletingPosition] = useState<{
+    id: string;
+    name: string;
+    memberCount: number;
+  } | null>(null);
   const [selectedPositionFilter, setSelectedPositionFilter] = useState("all");
 
   const memberPositionCounts = useMemo(() => {
@@ -780,13 +792,29 @@ export default function DepartmentManageClient({
     if (selectedPositionFilter === "none") return department.members.filter((member) => !member.positionId);
     return department.members.filter((member) => member.positionId === selectedPositionFilter);
   }, [department.members, selectedPositionFilter]);
-  const sortedMembers = [...filteredMembers].sort((a, b) => {
-    return (
-      Number(b.isDepartmentAdmin) - Number(a.isDepartmentAdmin) ||
-      (a.positionName || "").localeCompare(b.positionName || "") ||
-      displayMember(a).localeCompare(displayMember(b))
-    );
-  });
+  const sortedMembers = useMemo(() => {
+    return [...filteredMembers].sort((left, right) => {
+      if (memberSortField) {
+        const leftValue = memberSortField === "name"
+          ? displayMember(left)
+          : memberSortField === "email"
+            ? left.userEmail
+            : left.positionName || "";
+        const rightValue = memberSortField === "name"
+          ? displayMember(right)
+          : memberSortField === "email"
+            ? right.userEmail
+            : right.positionName || "";
+        const result = compareText(leftValue, rightValue);
+        return memberSortDirection === "asc" ? result : -result;
+      }
+      return (
+        Number(right.isDepartmentAdmin) - Number(left.isDepartmentAdmin) ||
+        compareText(left.positionName, right.positionName) ||
+        compareText(displayMember(left), displayMember(right))
+      );
+    });
+  }, [filteredMembers, memberSortDirection, memberSortField]);
   const memberColumns = useMemo<MemberColumnConfig[]>(
     () => {
       const columns: MemberColumnConfig[] = [
@@ -797,7 +825,7 @@ export default function DepartmentManageClient({
         { id: "projects", label: t.memberProjects, width: memberColumnWidths.projects },
       ];
       return isHead
-        ? [...columns, { id: "actions", label: t.actions, width: memberColumnWidths.actions }]
+        ? [...columns, { id: "actions", label: t.actions, width: MEMBER_ACTION_COLUMN_WIDTH[locale] }]
         : columns;
     },
     [isHead, locale, memberColumnWidths, t.actions, t.email, t.memberProjects, t.name]
@@ -806,6 +834,8 @@ export default function DepartmentManageClient({
     () => memberColumns.reduce((total, column) => total + column.width, 0),
     [memberColumns]
   );
+  const memberDataColumns = memberColumns.filter((column) => column.id !== "actions");
+  const memberActionColumn = memberColumns.find((column) => column.id === "actions");
   const projectColumnsById = useMemo(
     () =>
       new Map<ProjectColumnId, ProjectColumnConfig>([
@@ -1170,6 +1200,17 @@ export default function DepartmentManageClient({
     setProjectPage(1);
   };
 
+  const handleMemberSort = (field: MemberColumnId) => {
+    if (field !== "name" && field !== "email" && field !== "position") return;
+    if (memberSortField === field) {
+      setMemberSortDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setMemberSortField(field);
+      setMemberSortDirection("asc");
+    }
+    setMemberPage(1);
+  };
+
   const handleProjectColumnDragStart = (event: React.DragEvent, index: number) => {
     if (projectColumns[index]?.id === "actions") return;
     event.dataTransfer.setData("colIndex", String(index));
@@ -1219,27 +1260,33 @@ export default function DepartmentManageClient({
     (event: React.MouseEvent, colIndex: number) => {
       event.preventDefault();
       event.stopPropagation();
-      const column = memberColumns[colIndex];
-      if (!column || column.id === "actions") return;
-      const minWidth = 80;
+      const column = memberDataColumns[colIndex];
+      if (!column) return;
+      const scrollContainer = event.currentTarget.closest<HTMLElement>(".overflow-auto");
       memberResizingRef.current = {
         colIndex,
         startX: event.clientX,
         startWidth: column.width,
+        scrollContainer,
+        startScrollLeft: scrollContainer?.scrollLeft ?? 0,
       };
 
       const onMouseMove = (moveEvent: MouseEvent) => {
         const resizeState = memberResizingRef.current;
         if (!resizeState) return;
-        const resizeColumnId = memberColumns[resizeState.colIndex]?.id;
-        if (!resizeColumnId || resizeColumnId === "actions") return;
+        const resizeColumnId = memberDataColumns[resizeState.colIndex]?.id;
+        if (!resizeColumnId) return;
 
         const delta = moveEvent.clientX - resizeState.startX;
-        const newWidth = Math.max(minWidth, resizeState.startWidth + delta);
+        const newWidth = Math.max(DISPLAY_LIST_COLUMN_MIN_WIDTH, resizeState.startWidth + delta);
         setMemberColumnWidths((current) => ({
           ...current,
           [resizeColumnId]: newWidth,
         }));
+        if (resizeState.colIndex === memberDataColumns.length - 1 && resizeState.scrollContainer) {
+          const nextScrollLeft = Math.max(0, resizeState.startScrollLeft + newWidth - resizeState.startWidth);
+          window.requestAnimationFrame(() => resizeState.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+        }
       };
 
       const onMouseUp = () => {
@@ -1255,7 +1302,7 @@ export default function DepartmentManageClient({
       document.body.style.cursor = "ew-resize";
       document.body.style.userSelect = "none";
     },
-    [memberColumns]
+    [memberDataColumns]
   );
 
   const handleProjectColumnResizeStart = useCallback(
@@ -1335,7 +1382,7 @@ export default function DepartmentManageClient({
     if (column.id === "position") {
       return (
         <td key={column.id} className="overflow-hidden px-5 py-4 text-muted-foreground">
-          <span className="block truncate">{member.positionName || "-"}</span>
+          {member.positionName ? <span className="block truncate">{member.positionName}</span> : null}
         </td>
       );
     }
@@ -1355,15 +1402,48 @@ export default function DepartmentManageClient({
       );
     }
     return (
-      <td key={column.id} className="sticky right-0 z-10 bg-card px-5 py-4 group-hover/member-row:bg-muted">
+      <td
+        key={column.id}
+        className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-center whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/member-row:bg-muted/40"
+        style={{ width: column.width, minWidth: column.width, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+      >
         {isHead ? (
-          <Button asChild type="button" variant="outline" size="xs">
-            <Link href={`/departments/${department.id}/members/${member.userId}/settings`}>
-              {locale === "zh" ? "设置" : "Configure"}
-            </Link>
-          </Button>
+          <div className="flex w-full items-center justify-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
+            <Button asChild type="button" variant="outline" size="icon-xs">
+              <Link
+                href={`/departments/${department.id}/members/${member.userId}/settings`}
+                aria-label={locale === "zh" ? "设置" : "Configure"}
+                title={locale === "zh" ? "设置" : "Configure"}
+              >
+                <Settings />
+              </Link>
+            </Button>
+          </div>
         ) : null}
       </td>
+    );
+  };
+
+  const renderMemberHeaderLabel = (column: MemberColumnConfig) => {
+    const sortField = column.id === "name" || column.id === "email" || column.id === "position"
+      ? column.id
+      : null;
+    const isSorted = sortField === memberSortField;
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (sortField) handleMemberSort(sortField);
+        }}
+        disabled={!sortField}
+        className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
+          sortField ? "cursor-pointer text-muted-foreground hover:text-foreground" : "cursor-default text-muted-foreground"
+        }`}
+      >
+        <span className="truncate">{column.label}</span>
+        {sortField && isSorted ? memberSortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}
+      </button>
     );
   };
 
@@ -1458,7 +1538,7 @@ export default function DepartmentManageClient({
     return (
       <td
         key={column.id}
-        className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/project-row:bg-muted"
+        className="sticky right-0 z-10 overflow-hidden bg-card py-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover/project-row:bg-muted/40"
         style={{ width: column.width, minWidth: column.width, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
       >
         <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
@@ -1567,8 +1647,18 @@ export default function DepartmentManageClient({
         setPositionErrorMsg(translatePositionError(res.error, locale === "zh" ? "删除岗位失败" : "Failed to delete position"));
         return;
       }
+      setDeletingPosition(null);
       router.refresh();
     });
+  };
+
+  const requestDeletePosition = (position: DepartmentWorkspaceData["positions"][number]) => {
+    const memberCount = memberPositionCounts.counts.get(position.id) || 0;
+    if (memberCount === 0) {
+      handleDeletePosition(position.id);
+      return;
+    }
+    setDeletingPosition({ id: position.id, name: position.name, memberCount });
   };
 
   const handleCreateProject = (event: React.FormEvent) => {
@@ -2163,46 +2253,58 @@ export default function DepartmentManageClient({
             </Button>
           </div>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto">
               <table
                 className="text-left text-sm"
                 style={{ tableLayout: "fixed", width: `max(100%, ${memberColumnsTotalWidth}px)` }}
               >
+                <colgroup>
+                  {memberDataColumns.map((column) => <col key={column.id} style={{ width: `${column.width}px` }} />)}
+                  <col />
+                  {memberActionColumn ? <col style={{ width: `${memberActionColumn.width}px` }} /> : null}
+                </colgroup>
                 <thead className="border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
-                    {memberColumns.map((column, index) => (
+                    {memberDataColumns.map((column, index) => (
                       <th
                         key={column.id}
-                        className={`group/column relative h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted ${
-                          column.id === "actions" ? "sticky right-0 z-20" : ""
-                        }`}
+                        className="group/column relative h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-5 py-0 align-middle transition-colors hover:bg-muted"
                         style={{ width: `${column.width}px` }}
                       >
-                        <span className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground">
-                          <span className="truncate">{column.label}</span>
-                        </span>
-                        {column.id !== "actions" ? (
-                          <div
-                            className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
-                            onMouseDown={(event) => handleMemberColumnResizeStart(event, index)}
-                            title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                          />
-                        ) : null}
+                        {renderMemberHeaderLabel(column)}
+                        <div
+                          className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                          onMouseDown={(event) => handleMemberColumnResizeStart(event, index)}
+                          title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
+                        >
+                          <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                        </div>
                       </th>
                     ))}
+                    <th aria-hidden className="h-12 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 hover:bg-muted" />
+                    {memberActionColumn ? (
+                      <th
+                        className="sticky right-0 z-20 h-12 select-none overflow-hidden bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] py-0 text-center align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                        style={{ width: memberActionColumn.width, minWidth: memberActionColumn.width, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
+                      >
+                        {renderMemberHeaderLabel(memberActionColumn)}
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {sortedMembers.length === 0 ? (
                     <tr>
-                      <td colSpan={memberColumns.length} className="px-5 py-8 text-center text-muted-foreground">
+                      <td colSpan={memberColumns.length + 1} className="px-5 py-8 text-center text-muted-foreground">
                         {t.noMembers}
                       </td>
                     </tr>
                   ) : (
                     paginatedMembers.map((member) => (
-                      <tr key={member.userId} className="group/member-row align-top transition-colors hover:bg-muted/40">
-                        {memberColumns.map((column) => renderMemberCell(member, column))}
+                      <tr key={member.userId} className="group/member-row transition-colors hover:bg-muted/40">
+                        {memberDataColumns.map((column) => renderMemberCell(member, column))}
+                        <td aria-hidden className="p-0" />
+                        {memberActionColumn ? renderMemberCell(member, memberActionColumn) : null}
                       </tr>
                     ))
                   )}
@@ -2237,13 +2339,17 @@ export default function DepartmentManageClient({
             setEditingPositionName("");
             setPositionName("");
             setPositionErrorMsg("");
+            setDeletingPosition(null);
           }
         }}
       >
         <DialogContent className="flex max-h-[88vh] max-w-2xl flex-col overflow-hidden p-0">
           <div className="shrink-0 space-y-4 p-6 pb-4">
             <DialogHeader>
-              <DialogTitle>{locale === "zh" ? "管理岗位" : "Manage positions"}</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <span>{locale === "zh" ? "管理岗位" : "Manage positions"}</span>
+                <Badge variant="secondary" className="tabular-nums">{department.positions.length}</Badge>
+              </DialogTitle>
             </DialogHeader>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
@@ -2297,22 +2403,26 @@ export default function DepartmentManageClient({
                       <Button
                         type="button"
                         variant="outline"
-                        size="xs"
+                        size="icon-xs"
                         onClick={() => {
                           setEditingPositionId(position.id);
                           setEditingPositionName(position.name);
                         }}
+                        aria-label={locale === "zh" ? "编辑" : "Edit"}
+                        title={locale === "zh" ? "编辑" : "Edit"}
                       >
-                        {locale === "zh" ? "编辑" : "Edit"}
+                        <Pencil />
                       </Button>
                     )}
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="icon-xs"
-                      onClick={() => handleDeletePosition(position.id)}
+                      onClick={() => requestDeletePosition(position)}
                       disabled={isPending}
                       className="text-destructive hover:text-destructive"
+                      aria-label={locale === "zh" ? "删除" : "Delete"}
+                      title={locale === "zh" ? "删除" : "Delete"}
                     >
                       <Trash2 size={13} />
                     </Button>
@@ -2326,6 +2436,35 @@ export default function DepartmentManageClient({
             </div>
           </div>
           <div className="h-6 shrink-0" />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingPosition)} onOpenChange={(open) => !open && !isPending && setDeletingPosition(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{locale === "zh" ? "确认删除岗位" : "Delete position?"}</DialogTitle>
+            <DialogDescription>
+              {deletingPosition
+                ? locale === "zh"
+                  ? `岗位“${deletingPosition.name}”当前有 ${deletingPosition.memberCount} 名成员。删除后，这些成员的岗位将被清空，成员不会被移除。`
+                  : `The position “${deletingPosition.name}” currently has ${deletingPosition.memberCount} members. Their positions will be cleared, but the members will not be removed.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeletingPosition(null)} disabled={isPending}>
+              {locale === "zh" ? "取消" : "Cancel"}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => deletingPosition && handleDeletePosition(deletingPosition.id)}
+              disabled={isPending || !deletingPosition}
+            >
+              {isPending ? <Loader2 className="animate-spin" /> : null}
+              {locale === "zh" ? "确认删除" : "Delete"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

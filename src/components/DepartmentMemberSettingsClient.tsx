@@ -8,6 +8,7 @@ import { ArrowLeft, Check, ChevronDown, ChevronsUpDown, Loader2, Search, X } fro
 import { updateDepartmentMemberSettings } from "@/app/actions/departments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -43,7 +44,7 @@ const TEXT = {
     noPosition: "No position",
     projectAccess: "Project access",
     accessScope: "Access scope",
-    noProjects: "No projects",
+    noExtraProjects: "No additional projects",
     allProjects: "All projects",
     selectedProjects: "Selected projects",
     accessibleProjects: "Accessible projects",
@@ -93,7 +94,7 @@ const TEXT = {
     noPosition: "未设置岗位",
     projectAccess: "项目访问",
     accessScope: "访问权限",
-    noProjects: "无项目",
+    noExtraProjects: "无额外项目",
     allProjects: "全部项目",
     selectedProjects: "指定项目",
     accessibleProjects: "可访问项目",
@@ -510,7 +511,7 @@ export default function DepartmentMemberSettingsClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="NONE" disabled={ownerProjectIds.length > 0}>{t.noProjects}</SelectItem>
+                  <SelectItem value="NONE" disabled={ownerProjectIds.length > 0}>{t.noExtraProjects}</SelectItem>
                   <SelectItem value="ALL_PROJECTS">{t.allProjects}</SelectItem>
                   <SelectItem value="SELECTED_PROJECTS">{t.selectedProjects}</SelectItem>
                 </SelectContent>
@@ -639,14 +640,18 @@ export default function DepartmentMemberSettingsClient({
         </div>
         {!collapsedSections.announcements ? (
           <>
-            <label className="flex items-center gap-3 rounded-md border p-3 text-sm">
-              <input
-                type="checkbox"
+            <div className="flex items-center gap-3 rounded-md border p-3 text-sm">
+              <Checkbox
+                id="can-create-department-announcements"
                 checked={form.canCreateDepartmentAnnouncements}
-                onChange={(event) => setForm((current) => ({ ...current, canCreateDepartmentAnnouncements: event.target.checked }))}
+                onCheckedChange={(checked) =>
+                  setForm((current) => ({ ...current, canCreateDepartmentAnnouncements: checked === true }))
+                }
               />
-              <span className="font-medium">{t.canPublishDepartment}</span>
-            </label>
+              <Label htmlFor="can-create-department-announcements" className="font-medium">
+                {t.canPublishDepartment}
+              </Label>
+            </div>
             <div className="grid gap-2">
               <Label>{t.announcementScope}</Label>
               <Select

@@ -1429,7 +1429,7 @@ export default function DepartmentNotificationsClient({
                       <>
                         <td aria-hidden className="p-0" />
                         <td
-                          className="sticky right-0 z-10 overflow-hidden bg-card py-3.5 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted"
+                          className="sticky right-0 z-10 overflow-hidden bg-card py-3.5 text-left align-middle whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
                           style={{ width: actionColumnWidth, minWidth: actionColumnWidth, paddingInline: LIST_ACTION_COLUMN_PADDING_X }}
                         >
                           <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>

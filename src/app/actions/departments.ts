@@ -463,18 +463,53 @@ export async function removeMemberFromDepartment(departmentId: string, userId: s
     const session = await checkGlobalAdmin();
     const actorId = getSessionUser(session).id;
 
-    const membership = await prisma.departmentMember.findUnique({
-      where: { departmentId_userId: { departmentId, userId } },
-    });
+    const [membership, affectedProjects] = await Promise.all([
+      prisma.departmentMember.findUnique({
+        where: { departmentId_userId: { departmentId, userId } },
+      }),
+      prisma.project.findMany({
+        where: {
+          departmentId,
+          OR: [
+            { ownerId: userId },
+            { members: { some: { userId } } },
+          ],
+        },
+        select: { id: true },
+      }),
+    ]);
     if (!membership) return { success: false, error: "User is not in this department" };
 
-    await prisma.departmentMember.delete({
-      where: { departmentId_userId: { departmentId, userId } },
+    const affectedProjectIds = affectedProjects.map((project) => project.id);
+    await prisma.$transaction(async (tx) => {
+      await tx.project.updateMany({
+        where: { departmentId, ownerId: userId },
+        data: { ownerId: null },
+      });
+      if (affectedProjectIds.length > 0) {
+        await tx.projectMember.deleteMany({
+          where: { userId, projectId: { in: affectedProjectIds } },
+        });
+      }
+      await tx.departmentMember.delete({
+        where: { departmentId_userId: { departmentId, userId } },
+      });
+      await createAuditLogs(tx, [{
+        entityType: "DEPARTMENT",
+        entityId: departmentId,
+        action: "UPDATE",
+        field: "members",
+        metadata: { userId, removedFromProjectIds: affectedProjectIds.join(",") },
+        actorId,
+      }]);
     });
-    await createAuditLogs(prisma, [{ entityType: "DEPARTMENT", entityId: departmentId, action: "UPDATE", field: "members", metadata: { userId }, actorId }]);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);
+    revalidatePath(`/departments/${departmentId}/projects`);
+    affectedProjectIds.forEach((projectId) => {
+      revalidatePath(`/departments/${departmentId}/projects/${projectId}/members`);
+    });
     revalidatePath(`/admin/departments/${departmentId}/members`);
     revalidatePath("/admin/departments");
     revalidatePath("/admin/users");
