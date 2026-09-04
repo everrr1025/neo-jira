@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Locale } from "@/lib/i18n";
 import type { ListDateFilterWithBetween } from "@/lib/listDateFilter";
+import { DISPLAY_LIST_COLUMN_MIN_WIDTH } from "@/lib/listColumnSizing";
 import { formatFullDateTime, formatListDateTimeSeconds } from "@/lib/timeFormat";
 
 type TargetType = "USER" | "DEPARTMENT" | "PROJECT";
@@ -49,15 +50,6 @@ const LOG_COLUMN_WIDTHS: Record<LogColumnId, number> = {
   target: 260,
   field: 150,
 };
-const LOG_COLUMN_MIN_WIDTHS: Record<LogColumnId, number> = {
-  time: 205,
-  actor: 140,
-  action: 125,
-  entity: 125,
-  target: 180,
-  field: 110,
-};
-
 function buildStoredAdminLogParams(filters: AdminLogFilters) {
   const params = new URLSearchParams();
   if (filters.dateFilter !== "ALL") params.set("dateFilter", filters.dateFilter);
@@ -118,8 +110,8 @@ function renderFilterTrigger(active: boolean, label: string, value: string) {
     variant={active ? "outline" : "ghost"}
     size={active ? "sm" : "icon-xs"}
     className={active
-      ? "h-5 min-w-0 max-w-32 bg-background px-1.5 text-xs font-normal"
-      : "text-muted-foreground"}
+      ? "h-5 min-w-0 max-w-32 shrink-0 bg-background px-1.5 text-xs font-normal"
+      : "shrink-0 text-muted-foreground"}
     aria-label={label}
     title={label}
   >
@@ -149,7 +141,7 @@ function MultiFilterableHeader({
   };
 
   return <div className="flex min-w-0 items-center gap-1">
-    <span className="shrink-0">{label}</span>
+    <span className="min-w-0 truncate">{label}</span>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {renderFilterTrigger(value.length > 0, `${label}: ${selectionLabel}`, String(value.length))}
@@ -235,7 +227,7 @@ function TargetFilterableHeader({
     : allLabel;
 
   return <div className="flex min-w-0 items-center gap-1">
-    <span className="shrink-0">{label}</span>
+    <span className="min-w-0 truncate">{label}</span>
     <DropdownMenu open={open} onOpenChange={(nextOpen) => {
       setOpen(nextOpen);
       if (!nextOpen) {
@@ -314,8 +306,8 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   const [cleanupError, setCleanupError] = useState("");
   const [isCleanupPending, startCleanupTransition] = useTransition();
   const [columnWidths, setColumnWidths] = useState(LOG_COLUMN_WIDTHS);
-  const columnResizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
-  const displayedColumnWidths = LOG_COLUMN_IDS.map((id) => Math.max(columnWidths[id], LOG_COLUMN_MIN_WIDTHS[id]));
+  const columnResizingRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
+  const displayedColumnWidths = LOG_COLUMN_IDS.map((id) => Math.max(columnWidths[id], DISPLAY_LIST_COLUMN_MIN_WIDTH));
   const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, 0);
 
   useEffect(() => {
@@ -427,18 +419,15 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
     });
   };
 
-  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number) => {
     event.preventDefault();
     event.stopPropagation();
     const columnId = LOG_COLUMN_IDS[index];
-    const nextColumnId = independently ? undefined : LOG_COLUMN_IDS[index + 1];
     if (!columnId) return;
     columnResizingRef.current = {
       index,
-      nextIndex: nextColumnId ? index + 1 : null,
       startX: event.clientX,
       startWidth: displayedColumnWidths[index],
-      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
     };
     const handleMove = (moveEvent: MouseEvent) => {
       const current = columnResizingRef.current;
@@ -446,20 +435,9 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
       const currentId = LOG_COLUMN_IDS[current.index];
       if (!currentId) return;
       const delta = moveEvent.clientX - current.startX;
-      if (current.nextIndex === null || current.nextWidth === null) {
-        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(LOG_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
-        return;
-      }
-      const nextId = LOG_COLUMN_IDS[current.nextIndex];
-      if (!nextId) return;
-      const boundedDelta = Math.min(
-        current.nextWidth - LOG_COLUMN_MIN_WIDTHS[nextId],
-        Math.max(LOG_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
-      );
       setColumnWidths((widths) => ({
         ...widths,
-        [currentId]: current.startWidth + boundedDelta,
-        [nextId]: current.nextWidth! - boundedDelta,
+        [currentId]: Math.max(DISPLAY_LIST_COLUMN_MIN_WIDTH, current.startWidth + delta),
       }));
     };
     const handleUp = () => {
@@ -474,20 +452,15 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
   const renderResizableHeader = (columnId: LogColumnId, content: React.ReactNode, className = "") => {
     const index = LOG_COLUMN_IDS.indexOf(columnId);
     return (
-      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
-        {index === LOG_COLUMN_IDS.length - 1 ? (
-          <div
-            className="absolute bottom-0 left-0 top-0 z-30 w-4 cursor-ew-resize"
-            onMouseDown={(event) => handleColumnResizeStart(event, index - 1, true)}
-            title={locale === "zh" ? "拖拽调整左侧列宽" : "Drag to resize the column on the left"}
-          />
-        ) : null}
+      <TableHead className={`group/column relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
         {content}
         <div
-          className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+          className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
           onMouseDown={(event) => handleColumnResizeStart(event, index)}
           title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-        />
+        >
+          <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+        </div>
       </TableHead>
     );
   };
@@ -613,7 +586,7 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
           <TableRow className="hover:bg-muted/50">
             {renderResizableHeader("time", (
               <div className="flex min-w-0 items-center gap-1">
-                <span className="shrink-0">{t.time}</span>
+                <span className="min-w-0 truncate">{t.time}</span>
                 <ListDateFilterMenu
                   label={t.time}
                   value={filters.dateFilter}
@@ -657,8 +630,8 @@ export default function AdminLogsClient({ currentUserId, locale, logs, actors, f
                 className="flex w-full min-w-0 items-baseline gap-2 text-left hover:underline"
                 onClick={() => selectTarget({ type: log.entityType as TargetType, id: log.entityId })}
               >
-                <span className="min-w-0 flex-[3] truncate font-medium text-foreground" title={log.targetName}>{log.targetName}</span>
-                {log.targetKey ? <span className="min-w-0 flex-[2] truncate text-xs text-muted-foreground" title={log.targetKey}>{log.targetKey}</span> : null}
+                <span className="min-w-0 truncate font-medium text-foreground" title={log.targetName}>{log.targetName}</span>
+                {log.targetKey ? <span className="min-w-0 truncate text-xs text-muted-foreground" title={log.targetKey}>{log.targetKey}</span> : null}
               </button>
             </TableCell>
             <TableCell className="overflow-hidden text-muted-foreground">

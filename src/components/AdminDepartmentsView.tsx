@@ -39,6 +39,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { Locale } from "@/lib/i18n";
 import type { ListDateFilter } from "@/lib/listDateFilter";
+import {
+  DISPLAY_LIST_COLUMN_MIN_WIDTH,
+  getListActionColumnWidth,
+  LIST_ACTION_BUTTON_GAP,
+  LIST_ACTION_COLUMN_PADDING_X,
+} from "@/lib/listColumnSizing";
 import { formatFullDateTime, formatListDate, formatListDateTime } from "@/lib/timeFormat";
 
 type DepartmentMemberRecord = {
@@ -69,7 +75,8 @@ type DepartmentSortField = "name" | "head" | "members" | "projects" | "createdAt
 type SortDirection = "asc" | "desc";
 type DepartmentColumnId = DepartmentSortField;
 
-const DEPARTMENT_ACTION_COLUMN_WIDTH = 146;
+const DEPARTMENT_ACTION_BUTTON_COUNT = 4;
+const DEPARTMENT_ACTION_COLUMN_WIDTH = getListActionColumnWidth(DEPARTMENT_ACTION_BUTTON_COUNT);
 const DEPARTMENT_COLUMN_IDS: DepartmentColumnId[] = ["name", "head", "members", "projects", "createdAt"];
 const DEPARTMENT_COLUMN_WIDTHS: Record<DepartmentColumnId, number> = {
   name: 240,
@@ -78,14 +85,6 @@ const DEPARTMENT_COLUMN_WIDTHS: Record<DepartmentColumnId, number> = {
   projects: 130,
   createdAt: 220,
 };
-const DEPARTMENT_COLUMN_MIN_WIDTHS: Record<DepartmentColumnId, number> = {
-  name: 170,
-  head: 150,
-  members: 105,
-  projects: 105,
-  createdAt: 220,
-};
-
 const TEXT = {
   en: {
     title: "Departments",
@@ -204,7 +203,13 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
   const [createdDateFilter, setCreatedDateFilter] = useState<ListDateFilter>("ALL");
   const [createdDate, setCreatedDate] = useState("");
   const [columnWidths, setColumnWidths] = useState(DEPARTMENT_COLUMN_WIDTHS);
-  const resizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
+  const resizingRef = useRef<{
+    index: number;
+    startX: number;
+    startWidth: number;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
+  } | null>(null);
   const [sortBy, setSortBy] = useState<DepartmentSortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [departmentPage, setDepartmentPage] = useState(1);
@@ -246,7 +251,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
     ? (currentDepartmentPage - 1) * departmentPageSize + 1
     : 0;
   const departmentRangeEnd = Math.min(currentDepartmentPage * departmentPageSize, filteredDepartments.length);
-  const displayedColumnWidths = DEPARTMENT_COLUMN_IDS.map((id) => Math.max(columnWidths[id], DEPARTMENT_COLUMN_MIN_WIDTHS[id]));
+  const displayedColumnWidths = DEPARTMENT_COLUMN_IDS.map((id) => Math.max(columnWidths[id], DISPLAY_LIST_COLUMN_MIN_WIDTH));
   const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, DEPARTMENT_ACTION_COLUMN_WIDTH);
   const departmentPageSizeOptions = [10, 20, 50].map((size) => ({ value: String(size), label: String(size) }));
 
@@ -279,28 +284,28 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
           setSortDirection(nextDirection);
           setDepartmentPage(1);
         }}
-        className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
         aria-label={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
         title={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
       >
-        <span>{label}</span>
-        {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
+        <span className="truncate">{label}</span>
+        {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3 shrink-0" /> : <ArrowDown className="size-3 shrink-0" /> : null}
       </button>
     );
   };
 
-  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number) => {
     event.preventDefault();
     event.stopPropagation();
     const columnId = DEPARTMENT_COLUMN_IDS[index];
-    const nextColumnId = independently ? undefined : DEPARTMENT_COLUMN_IDS[index + 1];
     if (!columnId) return;
+    const scrollContainer = event.currentTarget.closest<HTMLElement>("[data-slot=table-container]");
     resizingRef.current = {
       index,
-      nextIndex: nextColumnId ? index + 1 : null,
       startX: event.clientX,
       startWidth: displayedColumnWidths[index],
-      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
+      scrollContainer,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
     };
     const handleMove = (moveEvent: MouseEvent) => {
       const current = resizingRef.current;
@@ -308,21 +313,15 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
       const currentId = DEPARTMENT_COLUMN_IDS[current.index];
       if (!currentId) return;
       const delta = moveEvent.clientX - current.startX;
-      if (current.nextIndex === null || current.nextWidth === null) {
-        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(DEPARTMENT_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
-        return;
-      }
-      const nextId = DEPARTMENT_COLUMN_IDS[current.nextIndex];
-      if (!nextId) return;
-      const boundedDelta = Math.min(
-        current.nextWidth - DEPARTMENT_COLUMN_MIN_WIDTHS[nextId],
-        Math.max(DEPARTMENT_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
-      );
+      const newWidth = Math.max(DISPLAY_LIST_COLUMN_MIN_WIDTH, current.startWidth + delta);
       setColumnWidths((widths) => ({
         ...widths,
-        [currentId]: current.startWidth + boundedDelta,
-        [nextId]: current.nextWidth! - boundedDelta,
+        [currentId]: newWidth,
       }));
+      if (current.index === DEPARTMENT_COLUMN_IDS.length - 1 && current.scrollContainer) {
+        const nextScrollLeft = Math.max(0, current.startScrollLeft + newWidth - current.startWidth);
+        window.requestAnimationFrame(() => current.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+      }
     };
     const handleUp = () => {
       resizingRef.current = null;
@@ -333,18 +332,20 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
     document.addEventListener("mouseup", handleUp);
   };
 
-  const resizeHandle = (index: number, side: "left" | "right" = "right", independently = false) => (
+  const resizeHandle = (index: number) => (
     <div
-      className={`absolute bottom-0 top-0 z-30 w-4 cursor-ew-resize ${side === "left" ? "left-0" : "right-0"}`}
-      onMouseDown={(event) => handleColumnResizeStart(event, index, independently)}
+      className="group/resize absolute bottom-0 right-0 top-0 z-30 w-4 cursor-ew-resize"
+      onMouseDown={(event) => handleColumnResizeStart(event, index)}
       title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-    />
+    >
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+    </div>
   );
 
   const renderResizableHeader = (columnId: DepartmentColumnId, content: React.ReactNode, className = "") => {
     const index = DEPARTMENT_COLUMN_IDS.indexOf(columnId);
     return (
-      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+      <TableHead className={`group/column relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
         {content}
         {resizeHandle(index)}
       </TableHead>
@@ -479,6 +480,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
           <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
             <colgroup>
               {DEPARTMENT_COLUMN_IDS.map((columnId, index) => <col key={columnId} style={{ width: displayedColumnWidths[index] }} />)}
+              <col />
               <col style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH }} />
             </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
@@ -488,7 +490,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                 {renderResizableHeader("members", renderSortableHeader(t.members, "members"))}
                 {renderResizableHeader("projects", renderSortableHeader(t.projects, "projects"))}
                 {renderResizableHeader("createdAt", (
-                  <div className="flex items-center gap-1">
+                  <div className="flex min-w-0 items-center gap-1">
                     {renderSortableHeader(t.createdAt, "createdAt")}
                     <ListDateFilterMenu
                       label={t.createdAt}
@@ -505,12 +507,21 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                     />
                   </div>
                 ))}
+                <TableHead aria-hidden className="p-0" />
                 <TableHead
-                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 px-4 text-left shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
-                  style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH, minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH }}
+                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                  style={{
+                    width: DEPARTMENT_ACTION_COLUMN_WIDTH,
+                    minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH,
+                    paddingInline: LIST_ACTION_COLUMN_PADDING_X,
+                  }}
                 >
-                  {resizeHandle(DEPARTMENT_COLUMN_IDS.length - 1, "left", true)}
-                  <div className="ml-auto text-left" style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH - 32 }}>{t.actions}</div>
+                  <div
+                    className="text-left"
+                    style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH - LIST_ACTION_COLUMN_PADDING_X * 2 }}
+                  >
+                    {t.actions}
+                  </div>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -544,57 +555,64 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
                         {formatListDateTime(department.createdAt)}
                       </span>
                     </TableCell>
+                    <TableCell aria-hidden className="p-0" />
                     <TableCell
-                      className="sticky right-0 z-10 overflow-hidden bg-card px-4 text-left shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
-                      style={{ width: DEPARTMENT_ACTION_COLUMN_WIDTH, minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH }}
+                      className="sticky right-0 z-10 overflow-hidden bg-card text-right whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
+                      style={{
+                        width: DEPARTMENT_ACTION_COLUMN_WIDTH,
+                        minWidth: DEPARTMENT_ACTION_COLUMN_WIDTH,
+                        paddingInline: LIST_ACTION_COLUMN_PADDING_X,
+                      }}
                     >
-                      <div className="ml-auto flex w-[114px] items-center gap-1.5">
-                        <Button asChild variant="outline" size="icon-xs">
-                          <Link
-                            href={`/admin/logs?range=all&targetType=DEPARTMENT&targetId=${encodeURIComponent(department.id)}`}
-                            aria-label={t.viewLogs}
-                            title={t.viewLogs}
+                      <div className="flex min-w-0 flex-col items-end gap-1 text-left">
+                        <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
+                          <Button asChild variant="outline" size="icon-xs">
+                            <Link
+                              href={`/admin/logs?range=all&targetType=DEPARTMENT&targetId=${encodeURIComponent(department.id)}`}
+                              aria-label={t.viewLogs}
+                              title={t.viewLogs}
+                            >
+                              <LogNavIcon className="size-3" />
+                            </Link>
+                          </Button>
+                          <Button asChild variant="outline" size="icon-xs">
+                            <Link
+                              href={`/admin/departments/${department.id}/members`}
+                              aria-label={t.manage}
+                              title={t.manage}
+                            >
+                              <UserRound />
+                            </Link>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-xs"
+                            onClick={() => openEditDialog(department)}
+                            disabled={isPending}
+                            aria-label={t.edit}
+                            title={t.edit}
                           >
-                            <LogNavIcon className="size-3" />
-                          </Link>
-                        </Button>
-                        <Button asChild variant="outline" size="icon-xs">
-                          <Link
-                            href={`/admin/departments/${department.id}/members`}
-                            aria-label={t.manage}
-                            title={t.manage}
+                            <Pencil />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-xs"
+                            onClick={() => {
+                              clearListError();
+                              clearDeleteError();
+                              setDeleteConfirmText("");
+                              setDeletingDepartment(department);
+                            }}
+                            disabled={isPending}
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={t.delete}
+                            title={t.delete}
                           >
-                            <UserRound />
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-xs"
-                          onClick={() => openEditDialog(department)}
-                          disabled={isPending}
-                          aria-label={t.edit}
-                          title={t.edit}
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon-xs"
-                          onClick={() => {
-                            clearListError();
-                            clearDeleteError();
-                            setDeleteConfirmText("");
-                            setDeletingDepartment(department);
-                          }}
-                          disabled={isPending}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          aria-label={t.delete}
-                          title={t.delete}
-                        >
-                          <Trash2 />
-                        </Button>
+                            <Trash2 />
+                          </Button>
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -602,7 +620,7 @@ export default function AdminDepartmentsView({ departments, locale }: Props) {
               })}
               {filteredDepartments.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-48 text-center text-muted-foreground">
+                  <TableCell colSpan={DEPARTMENT_COLUMN_IDS.length + 2} className="h-48 text-center text-muted-foreground">
                     {departments.length === 0 ? t.empty : t.noResults}
                   </TableCell>
                 </TableRow>

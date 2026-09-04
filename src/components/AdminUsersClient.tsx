@@ -55,6 +55,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Locale } from "@/lib/i18n";
 import type { ListDateFilter } from "@/lib/listDateFilter";
+import {
+  DISPLAY_LIST_COLUMN_MIN_WIDTH,
+  getListActionColumnWidth,
+  LIST_ACTION_BUTTON_GAP,
+  LIST_ACTION_COLUMN_PADDING_X,
+} from "@/lib/listColumnSizing";
 import { formatFullDateTime, formatListDateTime } from "@/lib/timeFormat";
 
 type DepartmentOption = {
@@ -99,7 +105,8 @@ type UserSortField = "name" | "email" | "department" | "createdAt" | "lastActive
 type SortDirection = "asc" | "desc";
 type UserColumnId = "name" | "email" | "status" | "department" | "activity" | "createdAt";
 
-const USER_ACTION_COLUMN_WIDTH = 152;
+const USER_ACTION_BUTTON_COUNT = 4;
+const USER_ACTION_COLUMN_WIDTH = getListActionColumnWidth(USER_ACTION_BUTTON_COUNT);
 const USER_COLUMN_WIDTHS: Record<UserColumnId, number> = {
   name: 200,
   email: 220,
@@ -108,15 +115,6 @@ const USER_COLUMN_WIDTHS: Record<UserColumnId, number> = {
   activity: 220,
   createdAt: 220,
 };
-const USER_COLUMN_MIN_WIDTHS: Record<UserColumnId, number> = {
-  name: 150,
-  email: 180,
-  status: 105,
-  department: 145,
-  activity: 220,
-  createdAt: 220,
-};
-
 const SPECIAL_CHARS = "!@#$%^&*()-_=+[]{};:,.?/|";
 const PASSWORD_POOLS = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789", SPECIAL_CHARS];
 
@@ -296,7 +294,13 @@ export default function AdminUsersClient({
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [statusChangingUserId, setStatusChangingUserId] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState(USER_COLUMN_WIDTHS);
-  const resizingRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; nextWidth: number | null } | null>(null);
+  const resizingRef = useRef<{
+    index: number;
+    startX: number;
+    startWidth: number;
+    scrollContainer: HTMLElement | null;
+    startScrollLeft: number;
+  } | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -323,7 +327,7 @@ export default function AdminUsersClient({
   const userColumnIds: UserColumnId[] = accountType === "admin"
     ? ["name", "email", "status", "activity", "createdAt"]
     : ["name", "email", "status", "department", "activity", "createdAt"];
-  const displayedColumnWidths = userColumnIds.map((id) => Math.max(columnWidths[id], USER_COLUMN_MIN_WIDTHS[id]));
+  const displayedColumnWidths = userColumnIds.map((id) => Math.max(columnWidths[id], DISPLAY_LIST_COLUMN_MIN_WIDTH));
   const tableMinWidth = displayedColumnWidths.reduce((total, width) => total + width, USER_ACTION_COLUMN_WIDTH);
 
   useEffect(() => {
@@ -437,12 +441,12 @@ export default function AdminUsersClient({
       <button
         type="button"
         onClick={() => updateParams({ sortBy: field, sortDirection: nextDirection, page: "1" })}
-        className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
         aria-label={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
         title={`${label}: ${nextDirection === "asc" ? t.sortAscending : t.sortDescending}`}
       >
-        <span>{label}</span>
-        {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
+        <span className="truncate">{label}</span>
+        {isSorted ? sortDirection === "asc" ? <ArrowUp className="size-3 shrink-0" /> : <ArrowDown className="size-3 shrink-0" /> : null}
       </button>
     );
   };
@@ -453,8 +457,8 @@ export default function AdminUsersClient({
       variant={active ? "outline" : "ghost"}
       size={active ? "sm" : "icon-xs"}
       className={active
-        ? "h-5 max-w-24 bg-background px-1.5 text-xs font-normal"
-        : "text-muted-foreground"}
+        ? "h-5 max-w-24 shrink-0 bg-background px-1.5 text-xs font-normal"
+        : "shrink-0 text-muted-foreground"}
       aria-label={label}
       title={label}
     >
@@ -462,18 +466,18 @@ export default function AdminUsersClient({
     </Button>
   );
 
-  const handleColumnResizeStart = (event: React.MouseEvent, index: number, independently = false) => {
+  const handleColumnResizeStart = (event: React.MouseEvent, index: number) => {
     event.preventDefault();
     event.stopPropagation();
     const columnId = userColumnIds[index];
-    const nextColumnId = independently ? undefined : userColumnIds[index + 1];
     if (!columnId) return;
+    const scrollContainer = event.currentTarget.closest<HTMLElement>("[data-slot=table-container]");
     resizingRef.current = {
       index,
-      nextIndex: nextColumnId ? index + 1 : null,
       startX: event.clientX,
       startWidth: displayedColumnWidths[index],
-      nextWidth: nextColumnId ? displayedColumnWidths[index + 1] : null,
+      scrollContainer,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
     };
 
     const handleMove = (moveEvent: MouseEvent) => {
@@ -482,21 +486,15 @@ export default function AdminUsersClient({
       const currentId = userColumnIds[current.index];
       if (!currentId) return;
       const delta = moveEvent.clientX - current.startX;
-      if (current.nextIndex === null || current.nextWidth === null) {
-        setColumnWidths((widths) => ({ ...widths, [currentId]: Math.max(USER_COLUMN_MIN_WIDTHS[currentId], current.startWidth + delta) }));
-        return;
-      }
-      const nextId = userColumnIds[current.nextIndex];
-      if (!nextId) return;
-      const boundedDelta = Math.min(
-        current.nextWidth - USER_COLUMN_MIN_WIDTHS[nextId],
-        Math.max(USER_COLUMN_MIN_WIDTHS[currentId] - current.startWidth, delta),
-      );
+      const newWidth = Math.max(DISPLAY_LIST_COLUMN_MIN_WIDTH, current.startWidth + delta);
       setColumnWidths((widths) => ({
         ...widths,
-        [currentId]: current.startWidth + boundedDelta,
-        [nextId]: current.nextWidth! - boundedDelta,
+        [currentId]: newWidth,
       }));
+      if (current.index === userColumnIds.length - 1 && current.scrollContainer) {
+        const nextScrollLeft = Math.max(0, current.startScrollLeft + newWidth - current.startWidth);
+        window.requestAnimationFrame(() => current.scrollContainer?.scrollTo({ left: nextScrollLeft }));
+      }
     };
     const handleUp = () => {
       resizingRef.current = null;
@@ -507,18 +505,20 @@ export default function AdminUsersClient({
     document.addEventListener("mouseup", handleUp);
   };
 
-  const resizeHandle = (index: number, side: "left" | "right" = "right", independently = false) => (
+  const resizeHandle = (index: number) => (
     <div
-      className={`absolute bottom-0 top-0 z-30 w-4 cursor-ew-resize ${side === "left" ? "left-0" : "right-0"}`}
-      onMouseDown={(event) => handleColumnResizeStart(event, index, independently)}
+      className="group/resize absolute bottom-0 right-0 top-0 z-30 w-4 cursor-ew-resize"
+      onMouseDown={(event) => handleColumnResizeStart(event, index)}
       title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-    />
+    >
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+    </div>
   );
 
   const renderResizableHeader = (columnId: UserColumnId, content: React.ReactNode, className = "") => {
     const index = userColumnIds.indexOf(columnId);
     return (
-      <TableHead className={`relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
+      <TableHead className={`group/column relative overflow-hidden ${className}`} style={{ width: displayedColumnWidths[index] }}>
         {content}
         {resizeHandle(index)}
       </TableHead>
@@ -684,6 +684,7 @@ export default function AdminUsersClient({
           <Table className="table-fixed" style={{ minWidth: tableMinWidth }}>
             <colgroup>
               {userColumnIds.map((columnId, index) => <col key={columnId} style={{ width: displayedColumnWidths[index] }} />)}
+              <col />
               <col style={{ width: USER_ACTION_COLUMN_WIDTH }} />
             </colgroup>
             <TableHeader className="sticky top-0 z-10 bg-muted/50">
@@ -691,8 +692,8 @@ export default function AdminUsersClient({
                 {renderResizableHeader("name", renderSortableHeader(t.name, "name"), "pl-6")}
                 {renderResizableHeader("email", renderSortableHeader(t.email, "email"))}
                 {renderResizableHeader("status", (
-                  <div className="flex items-center gap-1">
-                    <span>{t.statusLabel}</span>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="min-w-0 truncate">{t.statusLabel}</span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         {renderFilterTrigger(
@@ -716,7 +717,7 @@ export default function AdminUsersClient({
                   </div>
                 ))}
                 {accountType === "user" ? renderResizableHeader("department", (
-                  <div className="flex items-center gap-1">
+                  <div className="flex min-w-0 items-center gap-1">
                     {renderSortableHeader(t.departments, "department")}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -752,8 +753,8 @@ export default function AdminUsersClient({
                   </div>
                 )) : null}
                 {renderResizableHeader("activity", (
-                  <div className="flex items-center gap-1">
-                    {accountType === "admin" ? <span>{t.lastLogin}</span> : renderSortableHeader(t.lastActive, "lastActiveAt")}
+                  <div className="flex min-w-0 items-center gap-1">
+                    {accountType === "admin" ? <span className="min-w-0 truncate">{t.lastLogin}</span> : renderSortableHeader(t.lastActive, "lastActiveAt")}
                     <ListDateFilterMenu
                       label={accountType === "admin" ? t.lastLogin : t.lastActive}
                       value={activityDateFilter}
@@ -769,7 +770,7 @@ export default function AdminUsersClient({
                   </div>
                 ))}
                 {renderResizableHeader("createdAt", (
-                  <div className="flex items-center gap-1">
+                  <div className="flex min-w-0 items-center gap-1">
                     {renderSortableHeader(t.createdAt, "createdAt")}
                     <ListDateFilterMenu
                       label={t.createdAt}
@@ -785,12 +786,21 @@ export default function AdminUsersClient({
                     />
                   </div>
                 ))}
+                <TableHead aria-hidden className="p-0" />
                 <TableHead
-                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 px-4 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
-                  style={{ width: USER_ACTION_COLUMN_WIDTH, minWidth: USER_ACTION_COLUMN_WIDTH }}
+                  className="sticky right-0 z-20 overflow-hidden bg-muted/50 text-left whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] hover:bg-muted"
+                  style={{
+                    width: USER_ACTION_COLUMN_WIDTH,
+                    minWidth: USER_ACTION_COLUMN_WIDTH,
+                    paddingInline: LIST_ACTION_COLUMN_PADDING_X,
+                  }}
                 >
-                  {resizeHandle(userColumnIds.length - 1, "left", true)}
-                  <div className="ml-auto text-left" style={{ width: USER_ACTION_COLUMN_WIDTH - 32 }}>{t.actions}</div>
+                  <div
+                    className="text-left"
+                    style={{ width: USER_ACTION_COLUMN_WIDTH - LIST_ACTION_COLUMN_PADDING_X * 2 }}
+                  >
+                    {t.actions}
+                  </div>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -862,12 +872,17 @@ export default function AdminUsersClient({
                         {formatListDateTime(user.createdAt)}
                       </span>
                     </TableCell>
+                    <TableCell aria-hidden className="p-0" />
                     <TableCell
-                      className="sticky right-0 z-10 overflow-hidden bg-card px-4 text-right whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
-                      style={{ width: USER_ACTION_COLUMN_WIDTH, minWidth: USER_ACTION_COLUMN_WIDTH }}
+                      className="sticky right-0 z-10 overflow-hidden bg-card text-right whitespace-nowrap shadow-[-6px_0_8px_-8px_rgba(15,23,42,0.45)] group-hover:bg-muted/40"
+                      style={{
+                        width: USER_ACTION_COLUMN_WIDTH,
+                        minWidth: USER_ACTION_COLUMN_WIDTH,
+                        paddingInline: LIST_ACTION_COLUMN_PADDING_X,
+                      }}
                     >
                       <div className="flex min-w-0 flex-col items-end gap-1 text-left">
-                        <div className="inline-flex items-center gap-2">
+                        <div className="inline-flex items-center" style={{ gap: LIST_ACTION_BUTTON_GAP }}>
                           <Button asChild variant="outline" size="icon-xs">
                             <Link
                               href={`/admin/logs?range=all&targetType=USER&targetId=${encodeURIComponent(user.id)}`}
@@ -924,7 +939,7 @@ export default function AdminUsersClient({
               })}
               {users.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={userColumnIds.length + 1} className="h-40 text-center text-muted-foreground">{t.noUsers}</TableCell>
+                  <TableCell colSpan={userColumnIds.length + 2} className="h-40 text-center text-muted-foreground">{t.noUsers}</TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
