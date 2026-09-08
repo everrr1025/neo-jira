@@ -6,13 +6,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronDown,
   ArrowUp,
   ArrowDown,
   Settings2,
   Trash2,
   X,
   Eye,
+  ListFilter,
   Maximize2,
   Minimize2,
 } from "lucide-react";
@@ -43,10 +43,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useIssueListFilters } from "./issuelist/useIssueListFilters";
 import BulkIssueActionModal, { type BulkIssueActionType } from "./BulkIssueActionModal";
-import { DropdownField } from "./DropdownField";
 import {
   getIssueTypeLabel,
   getPriorityLabel,
@@ -173,8 +173,6 @@ type ResizableColumn =
   | { type: "planField"; id: string; field: PlanFieldDefinition; width: number };
 
 type SortField = "createdAt" | "key" | "title" | "plan" | "status" | "type" | "priority" | "dueDate" | "sprint" | "assignee";
-type DueFilterValue = "ALL" | "EQ" | "GTE" | "LTE";
-
 const BACKLOG_FILTER_VALUE = "__BACKLOG__";
 const DEFAULT_RESIZABLE_COLUMN_MIN_WIDTH = 80;
 const DATE_FIELD_INPUT_WIDTH = 180;
@@ -204,20 +202,6 @@ function hasSelectOptionsInput(input: string) {
   return parseSelectOptionsInput(input).length > 0;
 }
 
-const TYPE_ORDER: Record<string, number> = {
-  EPIC: 1,
-  STORY: 2,
-  TASK: 3,
-  BUG: 4,
-};
-
-const PRIORITY_ORDER: Record<string, number> = {
-  URGENT: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
-};
-
 const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   key: "key",
   title: "title",
@@ -230,82 +214,139 @@ const COLUMN_SORT_FIELD_MAP: Partial<Record<ColumnId, SortField>> = {
   assignee: "assignee",
 };
 
-function parseDateInputValue(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  const date = new Date(year, month - 1, day);
-  date.setHours(0, 0, 0, 0);
-  return date;
+function HeaderFilterTrigger({
+  active,
+  label,
+  summary,
+}: {
+  active: boolean;
+  label: string;
+  summary?: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={active ? "outline" : "ghost"}
+      size={active ? "sm" : "icon-xs"}
+      className={active
+        ? "relative z-30 h-5 min-w-0 max-w-32 shrink-0 bg-background px-1.5 text-xs font-normal normal-case"
+        : "relative z-30 shrink-0 text-muted-foreground"}
+      aria-label={label}
+      title={label}
+      draggable={false}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      {active ? <span className="truncate">{summary}</span> : <ListFilter className="size-3.5" />}
+    </Button>
+  );
 }
 
-function MultiFilter({
+function HeaderMultiFilter({
   label,
   options,
   selectedValues,
-  onToggle,
-  onClear,
-  clearText,
+  onChange,
+  allLabel,
 }: {
   label: string;
   options: FilterOption[];
   selectedValues: string[];
-  onToggle: (value: string) => void;
-  onClear: () => void;
-  clearText: string;
+  onChange: (values: string[]) => void;
+  allLabel: string;
 }) {
   const selectedLabels = options
     .filter((option) => selectedValues.includes(option.value))
     .map((option) => option.label);
-  const buttonText =
-    selectedLabels.length === 0
-      ? label
-      : selectedLabels.length === 1
-        ? selectedLabels[0]
-        : `${label} (${selectedLabels.length})`;
+  const selectionLabel = selectedLabels.join(", ") || allLabel;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="max-w-56 justify-between">
-          <span className="truncate">{buttonText}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </Button>
+        {HeaderFilterTrigger({
+          active: selectedValues.length > 0,
+          label: `${label}: ${selectionLabel}`,
+          summary: String(selectedValues.length),
+        })}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-        <DropdownMenuLabel className="flex items-center justify-between gap-3">
-          <span>{label}</span>
-          {selectedValues.length > 0 ? (
-            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
-              {selectedValues.length}
-            </span>
-          ) : null}
-        </DropdownMenuLabel>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-64 normal-case">
+        <DropdownMenuCheckboxItem
+          checked={selectedValues.length === 0}
+          onCheckedChange={() => onChange([])}
+          onSelect={(event) => event.preventDefault()}
+        >
+          {allLabel}
+        </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         {options.map((option) => (
           <DropdownMenuCheckboxItem
             key={option.value}
             checked={selectedValues.includes(option.value)}
-            onCheckedChange={() => onToggle(option.value)}
+            onCheckedChange={(checked) => onChange(
+              checked === true
+                ? [...selectedValues, option.value]
+                : selectedValues.filter((value) => value !== option.value)
+            )}
             onSelect={(event) => event.preventDefault()}
           >
-            {option.label}
+            <span className="truncate" title={option.label}>{option.label}</span>
           </DropdownMenuCheckboxItem>
         ))}
-        {selectedValues.length > 0 && (
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function HeaderDateFilter({
+  label,
+  locale,
+  value,
+  date,
+  options,
+  onChange,
+  onDateChange,
+}: {
+  label: string;
+  locale: Locale;
+  value: string;
+  date: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+}) {
+  const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
+  const active = value !== "ALL";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {HeaderFilterTrigger({ active, label: `${label}: ${selectedLabel}${date ? ` ${date}` : ""}`, summary: `${selectedLabel}${date ? ` ${date}` : ""}` })}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={8} className="w-64 normal-case">
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onSelect={() => onChange(option.value)}
+            className={option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+        {active ? (
           <>
             <DropdownMenuSeparator />
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              onClick={onClear}
-              className="w-full justify-start text-primary hover:text-primary"
-            >
-              {clearText}
-            </Button>
+            <div className="p-2 [&_label]:sr-only" onKeyDown={(event) => event.stopPropagation()}>
+              <ShadcnDatePicker
+                id="issue-list-header-due-date"
+                label={label}
+                locale={locale}
+                value={date}
+                onChange={onDateChange}
+              />
+            </div>
           </>
-        )}
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -324,6 +365,7 @@ function ColumnVisibilityMenu({
   planFields = [],
   visiblePlanFieldIds = [],
   onTogglePlanField,
+  inHeader = false,
 }: {
   buttonLabel: string;
   resetLabel: string;
@@ -337,6 +379,7 @@ function ColumnVisibilityMenu({
   planFields?: PlanFieldDefinition[];
   visiblePlanFieldIds?: string[];
   onTogglePlanField?: (fieldId: string) => void;
+  inHeader?: boolean;
 }) {
   const visibleCount = visibleColumnIds.length;
   const totalColumnCount = columns.length + issueFields.length + planFields.length;
@@ -347,8 +390,9 @@ function ColumnVisibilityMenu({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
-          size="icon"
+          variant={inHeader ? "ghost" : "outline"}
+          size={inHeader ? "icon-xs" : "icon"}
+          className={inHeader ? "pointer-events-auto border-0 bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] shadow-none hover:bg-muted" : undefined}
           aria-label={buttonLabel}
           title={buttonLabel}
         >
@@ -465,27 +509,34 @@ function getCustomFieldFilterOptions(field: CustomFieldDefinition, locale: Local
   ];
 }
 
+function isCustomFieldFilterComplete(field: CustomFieldDefinition, op: string | null, value: string | null) {
+  if (!op) return false;
+  if (op === "EMPTY" || op === "NOT_EMPTY") return true;
+  if (field.type === "BOOLEAN") return value === "true" || value === "false";
+  return Boolean(value);
+}
+
 function AdvancedFieldFilters({
   locale,
   issueFields,
   planFields,
   searchParams,
   updateQueryParams,
+  trigger,
+  align = "end",
 }: {
   locale: Locale;
   issueFields: IssueFieldDefinition[];
   planFields: PlanFieldDefinition[];
   searchParams: URLSearchParams;
   updateQueryParams: (updates: Record<string, string | string[] | null>) => void;
+  trigger: ReactNode;
+  align?: "start" | "end";
 }) {
   const allFields = [
     ...issueFields.map((field) => ({ ...field, source: "issue" as const })),
     ...planFields.map((field) => ({ ...field, source: "plan" as const })),
   ];
-  const activeCount = allFields.filter((field) =>
-    searchParams.get(`${field.source === "plan" ? "planField" : "issueField"}_${field.id}_op`)
-  ).length;
-  const label = locale === "zh" ? "扩展字段" : "Custom fields";
   const clearLabel = locale === "zh" ? "清除" : "Clear";
   const valueLabel = locale === "zh" ? "筛选值" : "Value";
   const noFieldsLabel = locale === "zh" ? "暂无可筛选的扩展字段" : "No custom fields to filter";
@@ -508,14 +559,9 @@ function AdvancedFieldFilters({
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="gap-2">
-          <span>{activeCount > 0 ? `${label} (${activeCount})` : label}</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="w-[min(92vw,560px)] p-3">
+    <Popover>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align={align} sideOffset={8} className="w-[min(92vw,560px)] p-3">
         {allFields.length === 0 ? (
           <p className="px-1 py-2 text-sm text-muted-foreground">{noFieldsLabel}</p>
         ) : (
@@ -625,41 +671,8 @@ function AdvancedFieldFilters({
             })}
           </div>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function SingleFilter({
-  value,
-  options,
-  onChange,
-  renderSummary,
-}: {
-  value: string;
-  options: FilterOption[];
-  onChange: (value: string) => void;
-  renderSummary: (label: string) => ReactNode;
-}) {
-  const selectedOption = options.find((option) => option.value === value) || options[0];
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {renderSummary(selectedOption?.label || "")}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={8} className="w-56">
-        {options.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onSelect={() => onChange(option.value)}
-            className={option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
-          >
-            {option.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -915,8 +928,6 @@ function FieldDraftInput({
 export default function IssueList({
   initialIssues,
   totalIssues = 0,
-  page: serverPage = 1,
-  pageSize: serverPageSize = 10,
   users,
   plans,
   iterations,
@@ -983,7 +994,6 @@ export default function IssueList({
   const bulkRemoveSprintLabel = locale === "zh" ? "移出迭代" : "Remove sprint";
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
-  const issueFieldsLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const fieldManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const addFieldLabel = locale === "zh" ? "添加" : "Add field";
   const fieldNameLabel = locale === "zh" ? "名称" : "Field name";
@@ -1015,7 +1025,11 @@ export default function IssueList({
   );
   const fullscreenLabel = locale === "zh" ? "全屏显示" : "Fullscreen";
   const exitFullscreenLabel = locale === "zh" ? "退出全屏" : "Exit fullscreen";
-  const customFieldsButtonLabel = locale === "zh" ? "扩展字段" : "Custom fields";
+  const settingsLabel = locale === "zh" ? "设置" : "Settings";
+  const issueFieldSettingsLabel = locale === "zh" ? "问题扩展字段配置" : "Issue custom fields";
+  const planFieldSettingsLabel = locale === "zh" ? "计划扩展字段配置" : "Plan custom fields";
+  const allFilterLabel = locale === "zh" ? "全部" : "All";
+  const clearConditionsLabel = locale === "zh" ? "清除条件" : "Clear conditions";
   const workflowByProject = useMemo(
     () =>
       new Map(
@@ -1039,31 +1053,14 @@ export default function IssueList({
   );
 
   const { filters, pagination, sorting, updateQueryParams } = useIssueListFilters();
-  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, watcherFilter, view: rawView, dueFilter, dueDateValue, duePreset, search: searchParamsSearch } = filters;
+  const { statusFilter, typeFilter, priorityFilter, planFilter, sprintFilter, assigneeFilter, view: rawView, dueFilter, dueDateValue } = filters;
   const view = lockedIterationId && rawView === "backlog" ? "all" : rawView;
   const { page: currentPage, pageSize: itemsPerPage } = pagination;
   const { sortBy, sortDirection } = sorting;
-  const activeCustomFilterCount = Array.from(searchParams.keys()).filter((key) =>
-    (key.startsWith("issueField_") || key.startsWith("planField_")) && key.endsWith("_op") && searchParams.get(key)
-  ).length;
-  const activeFilterCount =
-    statusFilter.length +
-    typeFilter.length +
-    priorityFilter.length +
-    planFilter.length +
-    (lockedIterationId ? 0 : sprintFilter.length) +
-    assigneeFilter.length +
-    watcherFilter.length +
-    (dueFilter !== "ALL" || (duePreset && duePreset !== "NONE") || dueDateValue ? 1 : 0) +
-    (searchParamsSearch ? 1 : 0) +
-    (view && view !== "all" ? 1 : 0) +
-    activeCustomFilterCount;
-  const activeAdvancedFilterCount = activeFilterCount - (view && view !== "all" ? 1 : 0);
   const canSelectIssues = Boolean(
     (lockedPlanId && canManagePlans) ||
       (lockedIterationId && canMoveIssuesBetweenIterations)
   );
-  const [isFilterRowOpen, setIsFilterRowOpen] = useState(false);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState<BulkIssueActionType | null>(null);
   const [bulkActionNonce, setBulkActionNonce] = useState(0);
@@ -1707,12 +1704,18 @@ export default function IssueList({
     });
   };
 
-  const toggleFilterValue = (value: string, filterKey: string, currentValues: string[]) => {
-    const newValues = currentValues.includes(value) ? currentValues.filter((item) => item !== value) : [...currentValues, value];
-    updateQueryParams({ [filterKey]: newValues });
+  const updateFilters = (updates: Record<string, string | string[] | null>) => {
+    const nextUpdates = { ...updates };
+    const keys = Object.keys(updates);
+    if (view === "backlog" && keys.includes("sprint")) nextUpdates.view = null;
+    if (view === "assignedToMe" && keys.includes("assignee")) nextUpdates.view = null;
+    if ((view === "overdue" || view === "dueSoon") && keys.some((key) => ["dueFilter", "dueDate", "duePreset"].includes(key))) {
+      nextUpdates.view = null;
+    }
+    updateQueryParams(nextUpdates);
   };
 
-  const resetFilters = () => {
+  const clearDetailFilters = () => {
     const updates: Record<string, string | string[] | null> = {
       status: null,
       type: null,
@@ -1721,11 +1724,9 @@ export default function IssueList({
       sprint: null,
       assignee: null,
       watcher: null,
-      view: null,
       dueFilter: null,
       dueDate: null,
       duePreset: null,
-      search: null,
       page: "1",
     };
 
@@ -1736,7 +1737,7 @@ export default function IssueList({
     }
 
     const retained = new URLSearchParams();
-    for (const key of ["pageSize", "sortBy", "sortDirection"]) {
+    for (const key of ["pageSize", "sortBy", "sortDirection", "view", "search"]) {
       const value = searchParams.get(key);
       if (value) retained.set(key, value);
     }
@@ -1751,8 +1752,8 @@ export default function IssueList({
     });
   };
 
-  const handleSortByColumn = (columnId: ColumnId) => {
-    const nextSortField = COLUMN_SORT_FIELD_MAP[columnId];
+  const handleSortByColumn = (column: ResizableColumn) => {
+    const nextSortField = column.type === "column" ? COLUMN_SORT_FIELD_MAP[column.id] : `${column.type}:${column.id}`;
     if (!nextSortField) return;
 
     if (sortBy === nextSortField) {
@@ -2063,6 +2064,10 @@ export default function IssueList({
       }
 
       setPlanFields((current) => current.filter((item) => item.id !== field.id));
+      updateQueryParams({
+        [`planField_${field.id}_op`]: null,
+        [`planField_${field.id}`]: null,
+      });
       setVisiblePlanFieldIds((current) => current.filter((id) => id !== field.id));
       setColumnOrderKeys((current) => current.filter((key) => key !== `planField:${field.id}`));
       setLayoutSaveVersion((current) => current + 1);
@@ -2091,6 +2096,10 @@ export default function IssueList({
       }
 
       setIssueFields((current) => current.filter((item) => item.id !== field.id));
+      updateQueryParams({
+        [`issueField_${field.id}_op`]: null,
+        [`issueField_${field.id}`]: null,
+      });
       setVisibleIssueFieldIds((current) => current.filter((id) => id !== field.id));
       setColumnOrderKeys((current) => current.filter((key) => key !== `issueField:${field.id}`));
       setLayoutSaveVersion((current) => current + 1);
@@ -2614,6 +2623,97 @@ export default function IssueList({
     });
   };
 
+  const renderColumnFilter = (column: ResizableColumn) => {
+    if (column.type === "issueField" || column.type === "planField") {
+      const prefix = column.type === "planField" ? "planField" : "issueField";
+      const active = isCustomFieldFilterComplete(
+        column.field,
+        searchParams.get(`${prefix}_${column.id}_op`),
+        searchParams.get(`${prefix}_${column.id}`)
+      );
+      const op = searchParams.get(`${prefix}_${column.id}_op`);
+      const rawValue = searchParams.get(`${prefix}_${column.id}`) || "";
+      const operatorLabel = getCustomFieldFilterOptions(column.field, locale).find((option) => option.value === op)?.label;
+      const value = column.field.type === "BOOLEAN" && rawValue
+        ? (rawValue === "true" ? (locale === "zh" ? "是" : "Yes") : (locale === "zh" ? "否" : "No"))
+        : rawValue;
+      const summary = [operatorLabel, value].filter(Boolean).join(" ");
+      return (
+        <AdvancedFieldFilters
+          locale={locale}
+          issueFields={column.type === "issueField" ? [column.field] : []}
+          planFields={column.type === "planField" ? [column.field] : []}
+          searchParams={searchParams}
+          updateQueryParams={updateFilters}
+          align="start"
+          trigger={HeaderFilterTrigger({ active, label: `${column.field.name}: ${active ? summary : allFilterLabel}`, summary })}
+        />
+      );
+    }
+
+    if (column.id === "iteration" && !lockedIterationId) {
+      return <HeaderMultiFilter label={column.label} options={sprintOptions} selectedValues={sprintFilter} onChange={(values) => updateFilters({ sprint: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "status") {
+      return <HeaderMultiFilter label={column.label} options={statusOptions} selectedValues={statusFilter} onChange={(values) => updateFilters({ status: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "type") {
+      return <HeaderMultiFilter label={column.label} options={typeOptions} selectedValues={typeFilter} onChange={(values) => updateFilters({ type: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "priority") {
+      return <HeaderMultiFilter label={column.label} options={priorityOptions} selectedValues={priorityFilter} onChange={(values) => updateFilters({ priority: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "plan" && !lockedPlanId) {
+      return <HeaderMultiFilter label={column.label} options={planOptions} selectedValues={planFilter} onChange={(values) => updateFilters({ plan: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "assignee") {
+      return <HeaderMultiFilter label={column.label} options={assigneeFilterOptions} selectedValues={assigneeFilter} onChange={(values) => updateFilters({ assignee: values })} allLabel={allFilterLabel} />;
+    }
+    if (column.id === "dueDate") {
+      return (
+        <HeaderDateFilter
+          label={column.label}
+          locale={locale}
+          value={dueFilter}
+          date={dueDateValue}
+          options={dueFilterOptions}
+          onChange={(value) => updateFilters({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue })}
+          onDateChange={(date) => updateFilters({ duePreset: null, dueDate: date })}
+        />
+      );
+    }
+    return null;
+  };
+
+  const optionLabels = (values: string[], options: FilterOption[]) =>
+    values.map((value) => options.find((option) => option.value === value)?.label || value).join(locale === "zh" ? "、" : ", ");
+  const activeConditionChips: { key: string; label: string; value: string; clear: () => void }[] = [
+    ...(sprintFilter.length && !lockedIterationId ? [{ key: "sprint", label: translations.issueList.sprint, value: optionLabels(sprintFilter, sprintOptions), clear: () => updateFilters({ sprint: null }) }] : []),
+    ...(statusFilter.length ? [{ key: "status", label: translations.issueList.status, value: optionLabels(statusFilter, statusOptions), clear: () => updateFilters({ status: null }) }] : []),
+    ...(typeFilter.length ? [{ key: "type", label: translations.issueList.type, value: optionLabels(typeFilter, typeOptions), clear: () => updateFilters({ type: null }) }] : []),
+    ...(priorityFilter.length ? [{ key: "priority", label: translations.issueList.priority, value: optionLabels(priorityFilter, priorityOptions), clear: () => updateFilters({ priority: null }) }] : []),
+    ...(planFilter.length && !lockedPlanId ? [{ key: "plan", label: planLabel, value: optionLabels(planFilter, planOptions), clear: () => updateFilters({ plan: null }) }] : []),
+    ...(assigneeFilter.length ? [{ key: "assignee", label: translations.issueList.assignee, value: optionLabels(assigneeFilter, assigneeFilterOptions), clear: () => updateFilters({ assignee: null }) }] : []),
+    ...(dueFilter !== "ALL" || dueDateValue ? [{ key: "dueDate", label: translations.issueList.due, value: [dueFilterOptions.find((option) => option.value === dueFilter)?.label, dueDateValue].filter(Boolean).join(locale === "zh" ? "：" : ": "), clear: () => updateFilters({ dueFilter: null, dueDate: null, duePreset: null }) }] : []),
+  ];
+  for (const [source, fields] of [["issueField", issueFields], ["planField", lockedPlanId ? planFields : []]] as const) {
+    for (const field of fields) {
+      const op = searchParams.get(`${source}_${field.id}_op`);
+      const rawValue = searchParams.get(`${source}_${field.id}`) || "";
+      if (!isCustomFieldFilterComplete(field, op, rawValue)) continue;
+      const operatorLabel = getCustomFieldFilterOptions(field, locale).find((option) => option.value === op)?.label || op;
+      const value = field.type === "BOOLEAN" && rawValue
+        ? (rawValue === "true" ? (locale === "zh" ? "是" : "Yes") : (locale === "zh" ? "否" : "No"))
+        : rawValue;
+      activeConditionChips.push({
+        key: `${source}:${field.id}`,
+        label: field.name,
+        value: [operatorLabel, value].filter(Boolean).join(" "),
+        clear: () => updateFilters({ [`${source}_${field.id}_op`]: null, [`${source}_${field.id}`]: null }),
+      });
+    }
+  }
+
   const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
   const activeManagerTitle = fieldManagerLabel;
   const activeManagerSubmit = activeFieldManager === "issue" ? handleCreateIssueField : handleCreatePlanField;
@@ -2630,224 +2730,49 @@ export default function IssueList({
         </div>
       ) : null}
       <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1">
-            {viewOptions.map((option) => {
-              const isActive = (view || "all") === option.value || (!view && option.value === "all");
-
-              return (
-                <Button
-                  type="button"
-                  key={option.value}
-                  variant={isActive ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => handleViewChange(option.value)}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="gap-1 px-2 text-muted-foreground hover:text-foreground"
-              onClick={() => setIsFilterRowOpen((current) => !current)}
-              aria-expanded={isFilterRowOpen}
-            >
-              <span>{locale === "zh" ? "高级" : "Advanced"}</span>
-              {activeAdvancedFilterCount > 0 ? (
-                <span className="rounded-sm bg-muted px-1.5 text-xs text-muted-foreground">{activeAdvancedFilterCount}</span>
-              ) : null}
-              <ChevronDown className={`size-4 transition-transform ${isFilterRowOpen ? "rotate-180" : ""}`} />
-            </Button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <div className="inline-flex min-w-max items-center rounded-md border bg-muted/40 p-1">
+              {viewOptions.map((option) => {
+                const isActive = (view || "all") === option.value || (!view && option.value === "all");
+                return (
+                  <Button type="button" key={option.value} variant={isActive ? "default" : "ghost"} size="sm" onClick={() => handleViewChange(option.value)}>
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            {preferenceSaveError ? (
-              <span className="text-xs text-red-600" role="status">
-                {locale === "zh" ? "视图偏好保存失败，请再次调整后重试" : "Could not save view preferences; change the view to retry"}
-              </span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {preferenceSaveError ? <span className="text-xs text-red-600" role="status">{locale === "zh" ? "视图偏好保存失败，请再次调整后重试" : "Could not save view preferences; change the view to retry"}</span> : null}
+            {canManageIssueFields || (lockedPlanId && (canManagePlanFields ?? canManagePlans)) ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="icon" title={settingsLabel} aria-label={settingsLabel}><Settings2 /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={8} className="w-56">
+                  <DropdownMenuLabel>{settingsLabel}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {canManageIssueFields ? <DropdownMenuItem onSelect={() => setActiveFieldManager("issue")}>{issueFieldSettingsLabel}</DropdownMenuItem> : null}
+                  {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? <DropdownMenuItem onSelect={() => setActiveFieldManager("plan")}>{planFieldSettingsLabel}</DropdownMenuItem> : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
-            <ColumnVisibilityMenu
-              buttonLabel={columnsButtonLabel}
-              resetLabel={resetColumnsLabel}
-              columns={defaultColumns}
-              visibleColumnIds={visibleColumnIds}
-              onToggle={handleToggleColumnVisibility}
-              onReset={handleResetColumns}
-              issueFields={issueFields}
-              visibleIssueFieldIds={visibleIssueFieldIds}
-              onToggleIssueField={handleToggleIssueFieldVisibility}
-              planFields={planFields}
-              visiblePlanFieldIds={visiblePlanFieldIds}
-              onTogglePlanField={handleTogglePlanFieldVisibility}
-            />
-
-            {canManageIssueFields ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setActiveFieldManager("issue")}
-                title={customFieldsButtonLabel}
-                aria-label={customFieldsButtonLabel}
-              >
-                <Settings2 />
-              </Button>
-            ) : null}
-
-            {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setActiveFieldManager("plan")}
-                title={customFieldsButtonLabel}
-                aria-label={customFieldsButtonLabel}
-              >
-                <Settings2 />
-              </Button>
-            ) : null}
-
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => setIsFullscreen((current) => !current)}
-              title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
-              aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
-            >
+            <Button type="button" variant="outline" size="icon" onClick={() => setIsFullscreen((current) => !current)} title={isFullscreen ? exitFullscreenLabel : fullscreenLabel} aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}>
               {isFullscreen ? <Minimize2 /> : <Maximize2 />}
             </Button>
           </div>
         </div>
-        {isFilterRowOpen ? (
-        <div className="mt-3 flex w-full flex-wrap items-center gap-2">
-          {!lockedIterationId && view !== "backlog" ? (
-            <MultiFilter
-              label={translations.issueList.sprint}
-              options={sprintOptions}
-              selectedValues={sprintFilter}
-              onToggle={(value) => toggleFilterValue(value, "sprint", sprintFilter)}
-              onClear={() => {
-                updateQueryParams({ sprint: null });
-              }}
-              clearText={translations.issueList.clearSelection}
-            />
-          ) : null}
-
-          <MultiFilter
-            label={translations.issueList.status}
-            options={statusOptions}
-            selectedValues={statusFilter}
-            onToggle={(value) => toggleFilterValue(value, "status", statusFilter)}
-            onClear={() => {
-              updateQueryParams({ status: null });
-            }}
-            clearText={translations.issueList.clearSelection}
-          />
-
-          <MultiFilter
-            label={translations.issueList.type}
-            options={typeOptions}
-            selectedValues={typeFilter}
-            onToggle={(value) => toggleFilterValue(value, "type", typeFilter)}
-            onClear={() => {
-              updateQueryParams({ type: null });
-            }}
-            clearText={translations.issueList.clearSelection}
-          />
-
-          <MultiFilter
-            label={translations.issueList.priority}
-            options={priorityOptions}
-            selectedValues={priorityFilter}
-            onToggle={(value) => toggleFilterValue(value, "priority", priorityFilter)}
-            onClear={() => {
-              updateQueryParams({ priority: null });
-            }}
-            clearText={translations.issueList.clearSelection}
-          />
-
-          {!lockedPlanId ? (
-            <MultiFilter
-              label={planLabel}
-              options={planOptions}
-              selectedValues={planFilter}
-              onToggle={(value) => toggleFilterValue(value, "plan", planFilter)}
-              onClear={() => {
-                updateQueryParams({ plan: null });
-              }}
-              clearText={translations.issueList.clearSelection}
-            />
-          ) : null}
-
-          {view !== "assignedToMe" ? (
-            <MultiFilter
-              label={translations.issueList.assignee}
-              options={assigneeFilterOptions}
-              selectedValues={assigneeFilter}
-              onToggle={(value) => toggleFilterValue(value, "assignee", assigneeFilter)}
-              onClear={() => {
-                updateQueryParams({ assignee: null });
-              }}
-              clearText={translations.issueList.clearSelection}
-            />
-          ) : null}
-
-          {view !== "overdue" && view !== "dueSoon" ? (
-            <>
-              <SingleFilter
-                value={dueFilter}
-                options={dueFilterOptions}
-                onChange={(value) => {
-                  updateQueryParams({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue });
-                }}
-                renderSummary={(label) => (
-                  <div className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm shadow-xs hover:bg-accent hover:text-accent-foreground">
-                    <span className="text-muted-foreground">{translations.issueList.due}</span>
-                    <span className="border-none bg-transparent p-0 font-medium text-foreground">{label}</span>
-                    <ChevronDown size={14} className="text-muted-foreground" />
-                  </div>
-                )}
-              />
-
-              {dueFilter !== "ALL" ? (
-                <div className="w-[190px] [&_label]:sr-only">
-                <ShadcnDatePicker
-                  id="issueDueDateFilter"
-                  label={translations.issueList.due}
-                  locale={locale}
-                  value={dueDateValue}
-                  onChange={(dueDate) => {
-                    updateQueryParams({ duePreset: null, dueDate });
-                  }}
-                />
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          <AdvancedFieldFilters
-            locale={locale}
-            issueFields={issueFields}
-            planFields={lockedPlanId ? planFields : []}
-            searchParams={searchParams}
-            updateQueryParams={updateQueryParams}
-          />
-
-          {activeFilterCount > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={resetFilters}
-            >
-              {locale === "zh" ? "重置" : "Reset"}
-            </Button>
-          ) : null}
-
-        </div>
+        {activeConditionChips.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-sm">
+            {activeConditionChips.map((condition) => (
+              <div key={condition.key} className="inline-flex max-w-[360px] items-center rounded-md border bg-background text-foreground">
+                <span className="flex min-w-0 items-center px-2.5 py-1"><span className="shrink-0 text-muted-foreground">{condition.label}：</span><span className="truncate" title={condition.value}>{condition.value}</span></span>
+                <button type="button" className="m-0.5 ml-0 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`${translations.issueList.clearSelection}: ${condition.label}`} onClick={condition.clear}><X className="size-3.5" /></button>
+              </div>
+            ))}
+            <Button type="button" variant="ghost" size="sm" onClick={clearDetailFilters} className="text-muted-foreground">{clearConditionsLabel}</Button>
+          </div>
         ) : null}
 
         {lockedPlanId && planFieldSummary.length > 0 ? (
@@ -2928,7 +2853,7 @@ export default function IssueList({
                 ) : null}
                 {resizableColumns.map((column, index) => {
                   const columnKey = getColumnOrderKey(column);
-                  const columnSortField = column.type === "column" ? COLUMN_SORT_FIELD_MAP[column.id] : undefined;
+                  const columnSortField = column.type === "column" ? COLUMN_SORT_FIELD_MAP[column.id] : `${column.type}:${column.id}`;
                   const isSortedColumn = !!columnSortField && sortBy === columnSortField;
                   const showLeftLine =
                     dragOverIndex === index && dragOverSide === "left" && dragSourceIndex !== index;
@@ -2958,42 +2883,51 @@ export default function IssueList({
                     >
                       {showLeftLine && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      {column.type === "column" ? (
+                      <div className={`flex max-w-full min-w-0 items-center gap-1 ${index === resizableColumns.length - 1 ? "pr-8" : "pr-2"}`}>
                         <button
                           type="button"
-                          onClick={() => handleSortByColumn(column.id)}
+                          onClick={(event) => { event.stopPropagation(); handleSortByColumn(column); }}
+                          onMouseDown={(event) => event.stopPropagation()}
                           disabled={!columnSortField}
-                          className={`inline-flex max-w-full min-w-0 items-center gap-1 font-semibold ${
-                            columnSortField
-                              ? "cursor-pointer text-muted-foreground hover:text-foreground"
-                              : "cursor-move text-muted-foreground"
-                          }`}
+                          className={`inline-flex min-w-0 items-center gap-1 font-semibold ${columnSortField ? "cursor-pointer text-muted-foreground hover:text-foreground" : "cursor-move text-muted-foreground"}`}
                           draggable={false}
                         >
                           <span className="truncate">{label}</span>
-                          {columnSortField && isSortedColumn ? (
-                            sortDirection === "asc" ? (
-                              <ArrowUp size={12} />
-                            ) : (
-                              <ArrowDown size={12} />
-                            )
-                          ) : null}
+                          {column.type !== "column" && column.field.required ? <span className="text-red-500">*</span> : null}
+                          {columnSortField && isSortedColumn ? (sortDirection === "asc" ? <ArrowUp className="shrink-0" size={12} /> : <ArrowDown className="shrink-0" size={12} />) : null}
                         </button>
-                      ) : (
-                        <span className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-muted-foreground">
-                          <span className="truncate">{label}</span>
-                          {column.field.required ? <span className="text-red-500">*</span> : null}
-                        </span>
-                      )}
+                        {renderColumnFilter(column)}
+                      </div>
 
                       {showRightLine && <div className="absolute right-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
                       <div
-                        className="absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
+                        className="group/resize absolute bottom-0 right-0 top-0 z-20 w-4 cursor-ew-resize"
                         onMouseDown={(e) => handleResizeStart(e, index)}
                         draggable={false}
                         title={locale === "zh" ? "拖拽调整列宽" : "Drag to resize column"}
-                      />
+                      >
+                        <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
+                      </div>
+                      {index === resizableColumns.length - 1 ? (
+                        <div className="pointer-events-none absolute right-2 top-3 z-30">
+                          <ColumnVisibilityMenu
+                            buttonLabel={columnsButtonLabel}
+                            resetLabel={resetColumnsLabel}
+                            columns={defaultColumns}
+                            visibleColumnIds={visibleColumnIds}
+                            onToggle={handleToggleColumnVisibility}
+                            onReset={handleResetColumns}
+                            issueFields={issueFields}
+                            visibleIssueFieldIds={visibleIssueFieldIds}
+                            onToggleIssueField={handleToggleIssueFieldVisibility}
+                            planFields={planFields}
+                            visiblePlanFieldIds={visiblePlanFieldIds}
+                            onTogglePlanField={handleTogglePlanFieldVisibility}
+                            inHeader
+                          />
+                        </div>
+                      ) : null}
                     </th>
                   );
                 })}

@@ -451,7 +451,7 @@ const translations: Record<Locale, TranslationBundle> = {
       viewAllPlans: "View all",
     },
     issuesPage: {
-      title: "All Issues",
+      title: "Issues",
       subtitle: "View, filter, and search issues in the active project.",
     },
     iterationsPage: {
@@ -799,7 +799,7 @@ const translations: Record<Locale, TranslationBundle> = {
       viewAllPlans: "查看全部",
     },
     issuesPage: {
-      title: "全部问题",
+      title: "问题",
       subtitle: "查看、筛选并搜索当前项目中的问题。",
     },
     iterationsPage: {

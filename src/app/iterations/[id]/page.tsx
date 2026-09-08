@@ -16,6 +16,7 @@ import { buildProjectEntityWhere, buildProjectItemsWhere, buildProjectUsersWhere
 import { authOptions } from "@/lib/authOptions";
 import { getIterationStatusLabel, localeDateMap } from "@/lib/i18n";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
+import { prepareIssueListPage, orderIssueListPage } from "@/lib/issueListPage";
 import { ITERATION_LAYOUT_COOKIE, parseIterationLayout } from "@/lib/iterationLayout";
 import { getProjectRole } from "@/lib/permissions";
 import prisma from "@/lib/prisma";
@@ -198,7 +199,7 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
   const listData =
     layout === "list"
       ? await (async () => {
-          const { where, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
+          const { where, skip, take, orderBy, page, pageSize, customSort } = await parseIssueSearchParams(
             searchParamsData,
             iteration.project.id,
             {
@@ -212,9 +213,10 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
               })),
             }
           );
+          const issuePage = await prepareIssueListPage(where, skip, take, customSort);
           const [issues, totalIssues] = await Promise.all([
             prisma.issue.findMany({
-              where,
+              where: issuePage.where,
               include: {
                 assignee: true,
                 plan: { select: { id: true, name: true } },
@@ -238,13 +240,13 @@ export default async function IterationDetailPage({ params, searchParams }: Iter
                 },
               },
               orderBy,
-              skip,
-              take,
+              skip: issuePage.skip,
+              take: issuePage.take,
             }),
             prisma.issue.count({ where }),
           ]);
 
-          return { issues, totalIssues, page, pageSize };
+          return { issues: orderIssueListPage(issues, issuePage.ids), totalIssues, page, pageSize };
         })()
       : null;
 

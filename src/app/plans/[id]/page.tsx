@@ -18,6 +18,7 @@ import { getCurrentLocale } from "@/lib/serverLocale";
 import { getWorkflowStatusCategory } from "@/lib/workflows";
 import { getPlanStatusPresentation, isTerminalPlanStatus } from "@/lib/planLifecycle";
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
+import { prepareIssueListPage, orderIssueListPage } from "@/lib/issueListPage";
 import {
   hasExplicitIssueListParams,
   searchParamsRecordToUrlSearchParams,
@@ -109,7 +110,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
   const doneStatusKeys = workflowProjects[0]?.workflowStatuses
     .filter((status) => status.category === "DONE")
     .map((status) => status.key);
-  const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
+  const { where: parsedWhere, skip, take, orderBy, page, pageSize, customSort } = await parseIssueSearchParams(
     searchParamsData,
     activeProject.id,
     {
@@ -129,8 +130,9 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     }
   );
 
+  const issuePage = await prepareIssueListPage(parsedWhere, skip, take, customSort);
   const [
-    issues,
+    issueRows,
     totalIssues,
     basicPlanIssues,
     users,
@@ -141,7 +143,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
     parentIssues,
   ] = await Promise.all([
     prisma.issue.findMany({
-      where: parsedWhere,
+      where: issuePage.where,
       include: {
         assignee: true,
         plan: {
@@ -198,8 +200,8 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         },
       },
       orderBy,
-      skip,
-      take,
+      skip: issuePage.skip,
+      take: issuePage.take,
     }),
     prisma.issue.count({ where: parsedWhere }),
     // For progress bar calculation, we need ALL issues in the plan, unconditionally
@@ -253,6 +255,7 @@ export default async function PlanDetailPage({ params, searchParams }: { params:
         })
       : Promise.resolve([]),
   ]);
+  const issues = orderIssueListPage(issueRows, issuePage.ids);
   const canManageIssueFields = await canConfigureProjectFields(userId, activeProject.id);
   const unplannedIssues = unplannedIssuePage.slice(0, 20);
   const unplannedIssuesHasMore = unplannedIssuePage.length > 20;

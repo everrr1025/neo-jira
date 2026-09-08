@@ -13,6 +13,7 @@ import { canConfigureProjectFields, getProjectRole } from "@/lib/permissions";
 import { getProjectPath } from "@/lib/projectRoutes";
 
 import { parseIssueSearchParams } from "@/lib/issueFilterUtils";
+import { prepareIssueListPage, orderIssueListPage } from "@/lib/issueListPage";
 import {
   SHARED_PREFERENCE_CONTEXT,
   hasExplicitIssueListParams,
@@ -93,7 +94,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const doneStatusKeys = workflowProjects[0]?.workflowStatuses
     .filter((status) => status.category === "DONE")
     .map((status) => status.key);
-  const { where: parsedWhere, skip, take, orderBy, page, pageSize } = await parseIssueSearchParams(
+  const { where: parsedWhere, skip, take, orderBy, page, pageSize, customSort } = await parseIssueSearchParams(
     searchParamsData,
     activeProject.id,
     {
@@ -107,8 +108,9 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
     }
   );
 
-  const issues = await prisma.issue.findMany({
-    where: parsedWhere,
+  const issuePage = await prepareIssueListPage(parsedWhere, skip, take, customSort);
+  const issues = orderIssueListPage(await prisma.issue.findMany({
+    where: issuePage.where,
     include: {
       assignee: true,
       plan: {
@@ -154,9 +156,9 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
       },
     },
     orderBy,
-    skip,
-    take,
-  });
+    skip: issuePage.skip,
+    take: issuePage.take,
+  }), issuePage.ids);
 
   const totalIssues = await prisma.issue.count({ where: parsedWhere });
 

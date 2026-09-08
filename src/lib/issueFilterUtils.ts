@@ -348,6 +348,11 @@ export async function parseIssueSearchParams(
 
   const sortBy = getString(searchParams.sortBy) || "createdAt";
   const sortDirection = getString(searchParams.sortDirection) === "asc" ? "asc" : "desc";
+  const sortField = [
+    ...issueFieldDefinitions,
+    ...(lockedPlanId ? planFieldDefinitions : []),
+  ].find((field) => sortBy === `${field.source}Field:${field.id}`);
+  const customSort = sortField ? { ...sortField, direction: sortDirection } as const : undefined;
 
   // Handle custom sort mappings
   const orderBy: Prisma.IssueOrderByWithRelationInput = {};
@@ -362,5 +367,5 @@ export async function parseIssueSearchParams(
   else if (sortBy === "title") orderBy.title = sortDirection;
   else orderBy.createdAt = sortDirection;
 
-  return { where, skip, take, orderBy, page, pageSize };
+  return { where, skip, take, orderBy, page, pageSize, customSort };
 }
