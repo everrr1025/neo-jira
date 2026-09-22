@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  ChevronDown,
   Settings2,
   Trash2,
   X,
@@ -249,12 +250,14 @@ function HeaderMultiFilter({
   selectedValues,
   onChange,
   allLabel,
+  summary,
 }: {
   label: string;
   options: FilterOption[];
   selectedValues: string[];
   onChange: (values: string[]) => void;
   allLabel: string;
+  summary?: string;
 }) {
   const selectedLabels = options
     .filter((option) => selectedValues.includes(option.value))
@@ -267,7 +270,7 @@ function HeaderMultiFilter({
         {HeaderFilterTrigger({
           active: selectedValues.length > 0,
           label: `${label}: ${selectionLabel}`,
-          summary: String(selectedValues.length),
+          summary: summary || String(selectedValues.length),
         })}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={8} className="w-64 normal-case">
@@ -306,6 +309,7 @@ function HeaderDateFilter({
   options,
   onChange,
   onDateChange,
+  quickViewLabel,
 }: {
   label: string;
   locale: Locale;
@@ -314,26 +318,34 @@ function HeaderDateFilter({
   options: FilterOption[];
   onChange: (value: string) => void;
   onDateChange: (value: string) => void;
+  quickViewLabel?: string;
 }) {
   const selectedLabel = options.find((option) => option.value === value)?.label || options[0]?.label || value;
-  const active = value !== "ALL";
+  const active = !!quickViewLabel || value !== "ALL";
+  const summary = quickViewLabel || `${selectedLabel}${date ? ` ${date}` : ""}`;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {HeaderFilterTrigger({ active, label: `${label}: ${selectedLabel}${date ? ` ${date}` : ""}`, summary: `${selectedLabel}${date ? ` ${date}` : ""}` })}
+        {HeaderFilterTrigger({ active, label: `${label}: ${summary}`, summary })}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={8} className="w-64 normal-case">
+        {quickViewLabel ? (
+          <>
+            <DropdownMenuLabel>{quickViewLabel} · {locale === "zh" ? "未完成问题" : "Incomplete issues"}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
             onSelect={() => onChange(option.value)}
-            className={option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
+            className={!quickViewLabel && option.value === value ? "bg-accent font-medium text-accent-foreground" : undefined}
           >
             {option.label}
           </DropdownMenuItem>
         ))}
-        {active ? (
+        {active && !quickViewLabel ? (
           <>
             <DropdownMenuSeparator />
             <div className="p-2 [&_label]:sr-only" onKeyDown={(event) => event.stopPropagation()}>
@@ -994,7 +1006,6 @@ export default function IssueList({
   const bulkRemoveSprintLabel = locale === "zh" ? "移出迭代" : "Remove sprint";
   const bulkClearLabel = locale === "zh" ? "取消选择" : "Clear selection";
   const planFieldsLabel = locale === "zh" ? "扩展列" : "Custom fields";
-  const fieldManagerLabel = locale === "zh" ? "扩展字段" : "Custom fields";
   const addFieldLabel = locale === "zh" ? "添加" : "Add field";
   const fieldNameLabel = locale === "zh" ? "名称" : "Field name";
   const fieldKeyLabel = locale === "zh" ? "标识" : "Field key";
@@ -1025,7 +1036,6 @@ export default function IssueList({
   );
   const fullscreenLabel = locale === "zh" ? "全屏显示" : "Fullscreen";
   const exitFullscreenLabel = locale === "zh" ? "退出全屏" : "Exit fullscreen";
-  const settingsLabel = locale === "zh" ? "设置" : "Settings";
   const issueFieldSettingsLabel = locale === "zh" ? "问题扩展字段配置" : "Issue custom fields";
   const planFieldSettingsLabel = locale === "zh" ? "计划扩展字段配置" : "Plan custom fields";
   const allFilterLabel = locale === "zh" ? "全部" : "All";
@@ -1675,10 +1685,10 @@ export default function IssueList({
   const viewOptions = useMemo<FilterOption[]>(
     () => [
       { value: "all", label: locale === "zh" ? "全部" : "All" },
-      ...(lockedIterationId ? [] : [{ value: "backlog", label: translations.issueList.backlog }]),
-      { value: "overdue", label: translations.issueList.overdue },
-      { value: "dueSoon", label: translations.issueList.dueSoon },
       { value: "assignedToMe", label: translations.issueList.assignedToMe },
+      { value: "overdue", label: translations.issueList.overdue },
+      ...(lockedIterationId ? [] : [{ value: "backlog", label: translations.issueList.backlog }]),
+      { value: "dueSoon", label: translations.issueList.dueSoon },
       { value: "watching", label: locale === "zh" ? "我关注" : "Watching" },
     ],
     [
@@ -1690,6 +1700,12 @@ export default function IssueList({
       translations.issueList.overdue,
     ]
   );
+
+  const moreViewOptions = viewOptions.filter((option) => option.value === "dueSoon" || option.value === "watching");
+  const activeMoreView = moreViewOptions.find((option) => option.value === view);
+  const moreViewsLabel = locale === "zh" ? "更多视图" : "More views";
+  const quickDueViewLabel = view === "overdue" ? translations.issueList.overdue
+    : view === "dueSoon" ? translations.issueList.dueSoon : undefined;
 
   const handleViewChange = (nextView: string) => {
     updateQueryParams({
@@ -2652,7 +2668,7 @@ export default function IssueList({
     }
 
     if (column.id === "iteration" && !lockedIterationId) {
-      return <HeaderMultiFilter label={column.label} options={sprintOptions} selectedValues={sprintFilter} onChange={(values) => updateFilters({ sprint: values })} allLabel={allFilterLabel} />;
+      return <HeaderMultiFilter label={column.label} options={sprintOptions} selectedValues={view === "backlog" ? [BACKLOG_FILTER_VALUE] : sprintFilter} summary={view === "backlog" ? translations.issueList.backlog : undefined} onChange={(values) => updateFilters({ sprint: values })} allLabel={allFilterLabel} />;
     }
     if (column.id === "status") {
       return <HeaderMultiFilter label={column.label} options={statusOptions} selectedValues={statusFilter} onChange={(values) => updateFilters({ status: values })} allLabel={allFilterLabel} />;
@@ -2667,7 +2683,7 @@ export default function IssueList({
       return <HeaderMultiFilter label={column.label} options={planOptions} selectedValues={planFilter} onChange={(values) => updateFilters({ plan: values })} allLabel={allFilterLabel} />;
     }
     if (column.id === "assignee") {
-      return <HeaderMultiFilter label={column.label} options={assigneeFilterOptions} selectedValues={assigneeFilter} onChange={(values) => updateFilters({ assignee: values })} allLabel={allFilterLabel} />;
+      return <HeaderMultiFilter label={column.label} options={assigneeFilterOptions} selectedValues={view === "assignedToMe" ? ["ME"] : assigneeFilter} summary={view === "assignedToMe" ? (locale === "zh" ? "我" : "Me") : undefined} onChange={(values) => updateFilters({ assignee: values })} allLabel={allFilterLabel} />;
     }
     if (column.id === "dueDate") {
       return (
@@ -2677,6 +2693,7 @@ export default function IssueList({
           value={dueFilter}
           date={dueDateValue}
           options={dueFilterOptions}
+          quickViewLabel={quickDueViewLabel}
           onChange={(value) => updateFilters({ duePreset: null, dueFilter: value, dueDate: value === "ALL" ? null : dueDateValue })}
           onDateChange={(date) => updateFilters({ duePreset: null, dueDate: date })}
         />
@@ -2688,13 +2705,13 @@ export default function IssueList({
   const optionLabels = (values: string[], options: FilterOption[]) =>
     values.map((value) => options.find((option) => option.value === value)?.label || value).join(locale === "zh" ? "、" : ", ");
   const activeConditionChips: { key: string; label: string; value: string; clear: () => void }[] = [
-    ...(sprintFilter.length && !lockedIterationId ? [{ key: "sprint", label: translations.issueList.sprint, value: optionLabels(sprintFilter, sprintOptions), clear: () => updateFilters({ sprint: null }) }] : []),
+    ...(sprintFilter.length && !lockedIterationId && view !== "backlog" ? [{ key: "sprint", label: translations.issueList.sprint, value: optionLabels(sprintFilter, sprintOptions), clear: () => updateFilters({ sprint: null }) }] : []),
     ...(statusFilter.length ? [{ key: "status", label: translations.issueList.status, value: optionLabels(statusFilter, statusOptions), clear: () => updateFilters({ status: null }) }] : []),
     ...(typeFilter.length ? [{ key: "type", label: translations.issueList.type, value: optionLabels(typeFilter, typeOptions), clear: () => updateFilters({ type: null }) }] : []),
     ...(priorityFilter.length ? [{ key: "priority", label: translations.issueList.priority, value: optionLabels(priorityFilter, priorityOptions), clear: () => updateFilters({ priority: null }) }] : []),
     ...(planFilter.length && !lockedPlanId ? [{ key: "plan", label: planLabel, value: optionLabels(planFilter, planOptions), clear: () => updateFilters({ plan: null }) }] : []),
-    ...(assigneeFilter.length ? [{ key: "assignee", label: translations.issueList.assignee, value: optionLabels(assigneeFilter, assigneeFilterOptions), clear: () => updateFilters({ assignee: null }) }] : []),
-    ...(dueFilter !== "ALL" || dueDateValue ? [{ key: "dueDate", label: translations.issueList.due, value: [dueFilterOptions.find((option) => option.value === dueFilter)?.label, dueDateValue].filter(Boolean).join(locale === "zh" ? "：" : ": "), clear: () => updateFilters({ dueFilter: null, dueDate: null, duePreset: null }) }] : []),
+    ...(assigneeFilter.length && view !== "assignedToMe" ? [{ key: "assignee", label: translations.issueList.assignee, value: optionLabels(assigneeFilter, assigneeFilterOptions), clear: () => updateFilters({ assignee: null }) }] : []),
+    ...(!quickDueViewLabel && (dueFilter !== "ALL" || dueDateValue) ? [{ key: "dueDate", label: translations.issueList.due, value: [dueFilterOptions.find((option) => option.value === dueFilter)?.label, dueDateValue].filter(Boolean).join(locale === "zh" ? "：" : ": "), clear: () => updateFilters({ dueFilter: null, dueDate: null, duePreset: null }) }] : []),
   ];
   for (const [source, fields] of [["issueField", issueFields], ["planField", lockedPlanId ? planFields : []]] as const) {
     for (const field of fields) {
@@ -2715,7 +2732,7 @@ export default function IssueList({
   }
 
   const activeManagerFields = activeFieldManager === "issue" ? issueFields : planFields;
-  const activeManagerTitle = fieldManagerLabel;
+  const activeManagerTitle = activeFieldManager === "issue" ? issueFieldSettingsLabel : planFieldSettingsLabel;
   const activeManagerSubmit = activeFieldManager === "issue" ? handleCreateIssueField : handleCreatePlanField;
 
   return (
@@ -2729,34 +2746,45 @@ export default function IssueList({
           {getTerminalPlanIssueMessage(lockedPlanStatus, locale)}
         </div>
       ) : null}
-      <div className={`sticky top-0 z-20 bg-background/95 p-3 backdrop-blur ${unframed ? "" : "rounded-lg border shadow-sm"}`}>
+      <div className="px-3 py-1">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1 overflow-x-auto">
-            <div className="inline-flex min-w-max items-center rounded-md border bg-muted/40 p-1">
-              {viewOptions.map((option) => {
+            <div className="inline-flex min-w-max items-center gap-4" role="group" aria-label={locale === "zh" ? "快捷视图" : "Quick views"}>
+              {viewOptions.filter((option) => option.value !== "dueSoon" && option.value !== "watching").map((option) => {
                 const isActive = (view || "all") === option.value || (!view && option.value === "all");
                 return (
-                  <Button type="button" key={option.value} variant={isActive ? "default" : "ghost"} size="sm" onClick={() => handleViewChange(option.value)}>
+                  <button type="button" key={option.value} aria-pressed={isActive} className={`shrink-0 border-b-2 px-1 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${isActive ? "border-primary font-medium text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`} onClick={() => handleViewChange(option.value)}>
                     {option.label}
-                  </Button>
+                  </button>
                 );
               })}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={activeMoreView ? `${moreViewsLabel}: ${activeMoreView.label}` : moreViewsLabel} className={`inline-flex shrink-0 items-center gap-1 border-b-2 px-1 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring ${activeMoreView ? "border-primary font-medium text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+                    {activeMoreView?.label || moreViewsLabel}<ChevronDown className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {moreViewOptions.map((option) => (
+                    <DropdownMenuCheckboxItem key={option.value} checked={view === option.value} onCheckedChange={(checked) => handleViewChange(checked ? option.value : "all")}>
+                      {option.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {preferenceSaveError ? <span className="text-xs text-red-600" role="status">{locale === "zh" ? "视图偏好保存失败，请再次调整后重试" : "Could not save view preferences; change the view to retry"}</span> : null}
-            {canManageIssueFields || (lockedPlanId && (canManagePlanFields ?? canManagePlans)) ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="icon" title={settingsLabel} aria-label={settingsLabel}><Settings2 /></Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={8} className="w-56">
-                  <DropdownMenuLabel>{settingsLabel}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {canManageIssueFields ? <DropdownMenuItem onSelect={() => setActiveFieldManager("issue")}>{issueFieldSettingsLabel}</DropdownMenuItem> : null}
-                  {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? <DropdownMenuItem onSelect={() => setActiveFieldManager("plan")}>{planFieldSettingsLabel}</DropdownMenuItem> : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+            {canManageIssueFields ? (
+              <Button type="button" variant="outline" size="icon" title={issueFieldSettingsLabel} aria-label={issueFieldSettingsLabel} onClick={() => setActiveFieldManager("issue")}>
+                <Settings2 />
+              </Button>
+            ) : null}
+            {lockedPlanId && (canManagePlanFields ?? canManagePlans) ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setActiveFieldManager("plan")}>
+                {planFieldSettingsLabel}
+              </Button>
             ) : null}
             <Button type="button" variant="outline" size="icon" onClick={() => setIsFullscreen((current) => !current)} title={isFullscreen ? exitFullscreenLabel : fullscreenLabel} aria-label={isFullscreen ? exitFullscreenLabel : fullscreenLabel}>
               {isFullscreen ? <Minimize2 /> : <Maximize2 />}
@@ -2836,7 +2864,7 @@ export default function IssueList({
         <div className="relative overflow-x-auto flex-1">
           <table
             className="text-left text-sm whitespace-nowrap"
-            style={{ tableLayout: "fixed", width: `max(100%, ${columnsTotalWidth + (canSelectIssues ? 48 : 0)}px)` }}
+            style={{ tableLayout: "fixed", width: `max(100%, ${columnsTotalWidth + (canSelectIssues ? 48 : 0) + 40}px)` }}
           >
             <thead className="sticky top-0 z-10 border-b bg-muted/50 text-xs font-semibold uppercase text-muted-foreground">
               <tr>
@@ -2883,7 +2911,7 @@ export default function IssueList({
                     >
                       {showLeftLine && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500 z-10" />}
 
-                      <div className={`flex max-w-full min-w-0 items-center gap-1 ${index === resizableColumns.length - 1 ? "pr-8" : "pr-2"}`}>
+                      <div className="flex max-w-full min-w-0 items-center gap-1 pr-2">
                         <button
                           type="button"
                           onClick={(event) => { event.stopPropagation(); handleSortByColumn(column); }}
@@ -2909,28 +2937,29 @@ export default function IssueList({
                       >
                         <span className="pointer-events-none absolute inset-y-0 right-0 w-px bg-border opacity-0 transition-[width,background-color,opacity] group-hover/column:opacity-100 group-hover/resize:w-0.5 group-hover/resize:bg-primary" />
                       </div>
-                      {index === resizableColumns.length - 1 ? (
-                        <div className="pointer-events-none absolute right-2 top-3 z-30">
-                          <ColumnVisibilityMenu
-                            buttonLabel={columnsButtonLabel}
-                            resetLabel={resetColumnsLabel}
-                            columns={defaultColumns}
-                            visibleColumnIds={visibleColumnIds}
-                            onToggle={handleToggleColumnVisibility}
-                            onReset={handleResetColumns}
-                            issueFields={issueFields}
-                            visibleIssueFieldIds={visibleIssueFieldIds}
-                            onToggleIssueField={handleToggleIssueFieldVisibility}
-                            planFields={planFields}
-                            visiblePlanFieldIds={visiblePlanFieldIds}
-                            onTogglePlanField={handleTogglePlanFieldVisibility}
-                            inHeader
-                          />
-                        </div>
-                      ) : null}
                     </th>
                   );
                 })}
+                <th
+                  className="sticky right-0 z-40 h-12 w-10 min-w-10 border-l bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] p-0 text-center align-middle"
+                  aria-label={columnsButtonLabel}
+                >
+                  <ColumnVisibilityMenu
+                    buttonLabel={columnsButtonLabel}
+                    resetLabel={resetColumnsLabel}
+                    columns={defaultColumns}
+                    visibleColumnIds={visibleColumnIds}
+                    onToggle={handleToggleColumnVisibility}
+                    onReset={handleResetColumns}
+                    issueFields={issueFields}
+                    visibleIssueFieldIds={visibleIssueFieldIds}
+                    onToggleIssueField={handleToggleIssueFieldVisibility}
+                    planFields={planFields}
+                    visiblePlanFieldIds={visiblePlanFieldIds}
+                    onTogglePlanField={handleTogglePlanFieldVisibility}
+                    inHeader
+                  />
+                </th>
               </tr>
             </thead>
 
@@ -2949,6 +2978,7 @@ export default function IssueList({
                     </td>
                   ) : null}
                   {resizableColumns.map((column) => renderIssueTableCell(issue, column))}
+                  <td aria-hidden="true" className="p-0" />
                 </tr>
               ))}
             </tbody>

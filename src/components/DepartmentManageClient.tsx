@@ -2205,52 +2205,31 @@ export default function DepartmentManageClient({
               </Button>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant={selectedPositionFilter === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectedPositionFilter("all");
-                setMemberPage(1);
-              }}
-            >
-              {locale === "zh" ? "全部" : "All"}
-              <span className={`ml-1 tabular-nums ${selectedPositionFilter === "all" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-                {department.members.length}
-              </span>
-            </Button>
-            {department.positions.map((position) => (
-              <Button
-                key={position.id}
-                type="button"
-                variant={selectedPositionFilter === position.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setSelectedPositionFilter(position.id);
-                  setMemberPage(1);
-                }}
-              >
-                {position.name}
-                <span className={`ml-1 tabular-nums ${selectedPositionFilter === position.id ? "text-primary-foreground" : "text-muted-foreground"}`}>
-                  {memberPositionCounts.counts.get(position.id) || 0}
-                </span>
-              </Button>
-            ))}
-            <Button
-              type="button"
-              variant={selectedPositionFilter === "none" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectedPositionFilter("none");
-                setMemberPage(1);
-              }}
-            >
-              {locale === "zh" ? "未设置岗位" : "No position"}
-              <span className={`ml-1 tabular-nums ${selectedPositionFilter === "none" ? "text-primary-foreground" : "text-muted-foreground"}`}>
-                {memberPositionCounts.unassigned}
-              </span>
-            </Button>
+          <div className="min-w-0 overflow-x-auto px-3 py-1">
+            <div className="inline-flex min-w-max items-center gap-4" role="group" aria-label={locale === "zh" ? "快捷视图" : "Quick views"}>
+              {[
+                { id: "all", label: locale === "zh" ? "全部" : "All", count: department.members.length },
+                ...department.positions.map((position) => ({ id: position.id, label: position.name, count: memberPositionCounts.counts.get(position.id) || 0 })),
+                { id: "none", label: locale === "zh" ? "未设置岗位" : "No position", count: memberPositionCounts.unassigned },
+              ].map((option) => {
+                const isActive = selectedPositionFilter === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={isActive}
+                    className={`shrink-0 border-b-2 px-1 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${isActive ? "border-primary font-medium text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => {
+                      setSelectedPositionFilter(option.id);
+                      setMemberPage(1);
+                    }}
+                  >
+                    {option.label}
+                    <span className="ml-1 tabular-nums">{option.count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <div className="overflow-auto">
