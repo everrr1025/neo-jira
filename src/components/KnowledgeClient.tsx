@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { BookOpen, File, FileText, Folder, FolderPlus, Upload, Trash2, Search, MoreHorizontal, Download, ArrowLeft, Save, Paperclip, X, Star, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { BookOpen, File, FileText, Folder, FolderPlus, Trash2, Search, MoreHorizontal, Download, ArrowLeft, Save, Paperclip, X, Star, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import type { KnowledgePageData } from "@/lib/knowledge";
 import { saveKnowledgeItem, updateKnowledgeItemMetadata, favoriteKnowledgeItem, changeKnowledgeItem, loadKnowledge, discardKnowledgeUpload } from "@/app/actions/knowledge";
 import { Button } from "@/components/ui/button";
@@ -252,15 +252,14 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
 
   return <div className="flex min-h-[65vh] flex-col gap-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="size-5" />{t("知识库", "Knowledge")}</h1>
+      <h1 className="flex items-center gap-2 text-xl font-semibold"><BookOpen className="size-5" />{t("知识", "Knowledge")}</h1>
       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
         <form className="flex w-full min-w-0 flex-none gap-1 sm:w-72 sm:flex-1" onSubmit={(event) => { event.preventDefault(); navigate(href(null, 1, search, options.trash, options.favorites)); }}>
-          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={t("搜索知识库", "Search knowledge")} placeholder={options.trash ? t("搜索回收站标题或文件名", "Search trash titles or filenames") : options.favorites ? t("搜索收藏标题或文件名", "Search favorite titles or filenames") : t("搜索当前项目标题或文件名", "Search project titles or filenames")} className="pl-9 pr-8" value={search} onChange={(event) => setSearch(event.target.value)} />{search ? <button type="button" aria-label={t("清除搜索", "Clear search")} className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md hover:bg-muted" onClick={() => { setSearch(""); if (options.search) navigate(href(null, 1, "", options.trash, options.favorites)); }}><X className="size-4" /></button> : null}</div>
-          <Button variant="ghost" size="icon" type="submit" aria-label={t("搜索", "Search")}><Search /></Button>
+          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={t("搜索知识", "Search knowledge")} placeholder={options.trash ? t("搜索回收站标题或文件名", "Search trash titles or filenames") : options.favorites ? t("搜索收藏标题或文件名", "Search favorite titles or filenames") : t("搜索当前项目标题或文件名", "Search project titles or filenames")} className="pl-9 pr-8" value={search} onChange={(event) => setSearch(event.target.value)} />{search ? <button type="button" aria-label={t("清除搜索", "Clear search")} className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md hover:bg-muted" onClick={() => { setSearch(""); if (options.search) navigate(href(null, 1, "", options.trash, options.favorites)); }}><X className="size-4" /></button> : null}</div>
         </form>
         {data.access.canCreate && !options.trash ? <>
           <Button className="md:hidden" variant="outline" disabled={locked} onClick={() => openModal("folder")}><FolderPlus />{t("新建文件夹", "New folder")}</Button>
-          {!draft && !data.current ? <><Button variant="outline" disabled={locked} onClick={() => fileInput.current?.click()}><Upload />{t("上传文件", "Upload files")}</Button><Button disabled={locked} onClick={() => { setDraft({ title: "", contentHtml: "", parentId: options.folderId, attachments: [] }); setSaved("null"); }}><FileText />{t("新建文档", "New document")}</Button></> : null}
+          {!draft && !data.current ? <><Button type="button" disabled={locked} onClick={() => fileInput.current?.click()}><Plus size={16} />{t("文件", "File")}</Button><Button type="button" disabled={locked} onClick={() => { setDraft({ title: "", contentHtml: "", parentId: options.folderId, attachments: [] }); setSaved("null"); }}><Plus size={16} />{t("文档", "Document")}</Button></> : null}
         </> : null}
       </div>
     </div>
@@ -269,7 +268,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     {error ? <p role="alert" className="whitespace-pre-wrap rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}
     {locked ? <p role="status" className="text-sm text-muted-foreground">{uploading ? t("正在上传…", "Uploading…") : t("处理中…", "Working…")}</p> : null}
     <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
-      <aside aria-label={t("知识库目录", "Knowledge navigation")} className="hidden min-w-0 rounded-lg border bg-card p-2 md:block">
+      <aside aria-label={t("知识目录", "Knowledge navigation")} className="hidden min-w-0 rounded-lg border bg-card p-2 md:block">
         <Link className={`mb-2 flex items-center gap-2 rounded-md p-2 text-sm font-medium hover:bg-muted ${!options.folderId && !options.itemId && !options.favorites && !options.trash && !options.search ? "bg-muted" : ""}`} href={basePath}><BookOpen className="size-4" />{t("全部资料", "All content")}</Link>
         <Link className={`mb-2 flex items-center gap-2 rounded-md p-2 text-sm hover:bg-muted ${options.favorites && !options.trash ? "bg-muted font-medium" : "text-muted-foreground"}`} href={href(null, 1, "", false, true)}><Star className="size-4" />{t("收藏", "Favorites")}<span className="ml-auto text-xs">{data.tree.filter((item) => item.isFavorite).length}</span></Link>
         <div className="mb-1 flex items-center justify-between border-t px-2 pt-2"><h2 className="text-xs font-medium text-muted-foreground">{t("文件夹", "Folders")}</h2>{data.access.canCreate && !options.trash ? <Button variant="ghost" size="icon-xs" disabled={locked} aria-label={t("新建文件夹", "New folder")} title={t("新建文件夹", "New folder")} onClick={() => openModal("folder")}><Plus /></Button> : null}</div>
@@ -278,7 +277,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
       </aside>
       <main className="min-w-0 rounded-lg border bg-card p-4">
         <nav aria-label={t("面包屑", "Breadcrumbs")} className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <Link href={basePath}>{t("知识库", "Knowledge")}</Link>
+          <Link href={basePath}>{t("知识", "Knowledge")}</Link>
           {pathOf(draft?.parentId ?? data.current?.parentId ?? options.folderId).map((folder) => <span key={folder.id}> / <Link href={href(folder.id)}>{folder.title}</Link></span>)}
           {options.trash ? <span> / {t("回收站", "Trash")}</span> : options.favorites ? <span> / {t("收藏", "Favorites")}</span> : null}
           {data.current ? <span className="max-w-64 truncate"> / {data.current.title}</span> : null}

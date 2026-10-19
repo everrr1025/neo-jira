@@ -31,7 +31,7 @@ test("documents, attachment reuse, private downloads, conflicts and trash", asyn
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login/);
   await page.goto(base);
-  await expect(page.getByRole("heading", { name: "知识库", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "知识", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "新建文件夹" }).click();
   await page.getByRole("dialog").getByRole("textbox", { name: "名称", exact: true }).fill("设计资料");
@@ -48,7 +48,7 @@ test("documents, attachment reuse, private downloads, conflicts and trash", asyn
   expect(response.headers()["cache-control"]).toContain("no-store");
   expect(response.headers()["x-content-type-options"]).toBe("nosniff");
 
-  await page.getByRole("button", { name: "新建文档", exact: true }).click();
+  await page.getByRole("button", { name: "文档", exact: true }).click();
   await page.getByRole("textbox", { name: "文档标题" }).fill("项目说明");
   await page.locator('[contenteditable="true"]').fill("这是项目共享文档。");
   await page.getByRole("button", { name: "引用已有文件", exact: true }).click();
@@ -116,11 +116,11 @@ test("documents, attachment reuse, private downloads, conflicts and trash", asyn
 test("knowledge navigation, personal favorites, metadata actions and top search", async ({ page, browser }) => {
   await authenticate(page.request, "kb-author@example.test");
   await page.goto(base);
-  const sidebar = page.getByRole("complementary", { name: "知识库目录" });
+  const sidebar = page.getByRole("complementary", { name: "知识目录" });
   const dialog = page.getByRole("dialog");
   const confirm = dialog.getByRole("button", { name: "确认", exact: true });
-  const search = page.getByRole("textbox", { name: "搜索知识库" });
-  await expect(page.getByRole("heading", { name: "知识库", exact: true }).locator("..").getByText("Knowledge test project", { exact: true })).toHaveCount(0);
+  const search = page.getByRole("textbox", { name: "搜索知识" });
+  await expect(page.getByRole("heading", { name: "知识", exact: true }).locator("..").getByText("Knowledge test project", { exact: true })).toHaveCount(0);
   await sidebar.getByRole("button", { name: "新建文件夹", exact: true }).click();
   await expect(dialog.getByText("创建位置: 根目录")).toBeVisible();
   await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("导航测试");
@@ -144,7 +144,7 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   await expect(sidebar.getByRole("link", { name: "导航根目录", exact: true })).toBeVisible();
   expect((await db.knowledgeItem.findFirstOrThrow({ where: { title: "导航根目录" } })).parentId).toBeNull();
   await sidebar.getByRole("link", { name: "导航子目录", exact: true }).click();
-  await page.getByRole("button", { name: "新建文档", exact: true }).click();
+  await page.getByRole("button", { name: "文档", exact: true }).click();
   await page.getByRole("textbox", { name: "文档标题" }).fill("导航文档");
   await page.locator('[contenteditable="true"]').fill("导航文档正文");
   await page.getByRole("button", { name: "保存文档", exact: true }).click();

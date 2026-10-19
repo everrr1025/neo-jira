@@ -205,7 +205,7 @@ export function SidebarClient({
           id: "knowledge",
           href: `${projectBasePath}/knowledge`,
           icon: <BookOpen className={navIconClass} />,
-          label: locale === "zh" ? "知识库" : "Knowledge",
+          label: locale === "zh" ? "知识" : "Knowledge",
         },
         ...(canManageActiveProject && activeProject
           ? [
