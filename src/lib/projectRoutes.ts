@@ -2,7 +2,7 @@ export const PROJECT_ROUTE_DEPARTMENT_HEADER = "x-neo-jira-department-id";
 export const PROJECT_ROUTE_PROJECT_HEADER = "x-neo-jira-project-id";
 export const ACTIVE_PROJECT_COOKIE = "activeProjectId";
 
-export type ProjectRouteSection = "" | "issues" | "iterations" | "plans" | "settings";
+export type ProjectRouteSection = "" | "issues" | "iterations" | "plans" | "settings" | "knowledge";
 
 export function getProjectBasePath(departmentId: string, projectId: string) {
   return `/departments/${encodeURIComponent(departmentId)}/projects/${encodeURIComponent(projectId)}`;
@@ -23,7 +23,7 @@ export function getProjectPath(
 
 export function parseProjectPath(pathname: string) {
   const match = pathname.match(
-    /^\/departments\/([^/]+)\/projects\/([^/]+)(?:\/(issues|iterations|plans|settings)(?:\/([^/]+))?)?\/?$/,
+    /^\/departments\/([^/]+)\/projects\/([^/]+)(?:\/(issues|iterations|plans|settings|knowledge)(?:\/([^/]+))?)?\/?$/,
   );
   if (!match) return null;
 

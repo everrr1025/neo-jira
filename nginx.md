@@ -128,7 +128,7 @@ server {
     server_name _;
 
     # ⚠️ 关键：必须允许足够的请求体大小
-    client_max_body_size 50M;
+    client_max_body_size 52M;
 
     # ⚠️ 关键：增加超时时间
     client_body_timeout 300s;

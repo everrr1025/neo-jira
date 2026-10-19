@@ -22,4 +22,6 @@ assert.deepEqual(parseProjectPath(`${basePath}/plans/plan-1`), {
 assert.equal(getLegacyProjectDestination(basePath), "/");
 assert.equal(getLegacyProjectDestination(`${basePath}/iterations/sprint-1`), "/iterations/sprint-1");
 assert.equal(getLegacyProjectDestination("/departments/department-1/items"), null);
+assert.equal(getProjectPath("department-1", "project-1", "knowledge", "doc-1"), `${basePath}/knowledge/doc-1`);
+assert.equal(getLegacyProjectDestination(`${basePath}/knowledge/doc-1`), "/knowledge/doc-1");
 

@@ -26,6 +26,9 @@ model User {
   actionsTriggered    Notification[]     @relation("NotificationActor")
   attachments         Attachment[]
   uploadedFiles       FileAsset[]        @relation("FileAssetUploader")
+  knowledgeCreated    KnowledgeItem[]    @relation("KnowledgeCreator")
+  knowledgeUpdated    KnowledgeItem[]    @relation("KnowledgeUpdater")
+  knowledgeFavorites  KnowledgeFavorite[]
   auditLogs           AuditLog[]         @relation("AuditLogActor")
   watchedIssues       Issue[]            @relation("IssueWatchers")
   createdReminders    Reminder[]         @relation("ReminderCreator")
@@ -94,6 +97,8 @@ model Project {
   issues      Issue[]
   reminders   Reminder[]
   notes       Note[]
+  knowledgeItems KnowledgeItem[]
+  knowledgeFiles FileAsset[]
   issueListPreferences IssueListPreference[]
 
   departmentId         String?
@@ -331,10 +336,76 @@ model FileAsset {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
+  projectId String?
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  storageKey String? @unique
+  storageType String @default("PUBLIC")
+  state String @default("READY")
+  cleanupAfter DateTime?
+  knowledgeItems KnowledgeItem[]
+  knowledgeAttachments KnowledgeAttachment[]
 
   @@index([createdAt])
+  @@index([projectId, createdAt])
+  @@index([storageType, state, cleanupAfter])
   @@index([uploaderId, createdAt])
   @@index([departmentId, createdAt])
+}
+
+model KnowledgeItem {
+  id String @id @default(cuid())
+  projectId String
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  parentId String?
+  parent KnowledgeItem? @relation("KnowledgeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children KnowledgeItem[] @relation("KnowledgeTree")
+  type String
+  title String
+  contentHtml String @default("")
+  fileAssetId String?
+  fileAsset FileAsset? @relation(fields: [fileAssetId], references: [id], onDelete: Restrict)
+  position Int @default(0)
+  version Int @default(1)
+  creatorId String?
+  creator User? @relation("KnowledgeCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  updaterId String?
+  updater User? @relation("KnowledgeUpdater", fields: [updaterId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  deleteBatchId String?
+  attachments KnowledgeAttachment[]
+  favorites KnowledgeFavorite[]
+
+  @@index([projectId, parentId, deletedAt])
+  @@index([projectId, updatedAt])
+  @@index([fileAssetId])
+  @@index([deleteBatchId])
+}
+
+model KnowledgeFavorite {
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId String
+  item KnowledgeItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+  @@index([itemId])
+}
+
+model KnowledgeAttachment {
+  id String @id @default(cuid())
+  documentId String
+  document KnowledgeItem @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  fileAssetId String
+  fileAsset FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Restrict)
+  usage String
+  displayName String
+  position Int @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, fileAssetId, usage])
+  @@index([fileAssetId])
 }
 
 model AuditLog {

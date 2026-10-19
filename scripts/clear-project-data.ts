@@ -1,11 +1,13 @@
 import { PrismaClient } from "@prisma/client";
 
 import { deleteProjectData } from "../src/lib/projectDataCleanup";
+import { cleanupKnowledgeFiles } from "../src/lib/knowledgeStorage";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const summary = await prisma.$transaction((tx) => deleteProjectData(tx));
+  await cleanupKnowledgeFiles(prisma);
   console.log("Project data cleared successfully.");
   console.log(JSON.stringify(summary, null, 2));
 }

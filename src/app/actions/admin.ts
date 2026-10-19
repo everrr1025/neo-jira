@@ -8,6 +8,7 @@ import { checkGlobalAdmin } from "@/lib/permissions";
 import { createDefaultWorkflowForProject } from "@/lib/workflows";
 import { createAuditLogs } from "@/lib/audit";
 import { deleteProjectData } from "@/lib/projectDataCleanup";
+import { cleanupKnowledgeFiles } from "@/lib/knowledgeStorage";
 
 import { isValidPassword } from "@/lib/validation";
 
@@ -808,6 +809,8 @@ export async function deleteProject(projectId: string, confirmName?: string) {
         actorId,
       }]);
     });
+
+    void cleanupKnowledgeFiles().catch(console.error);
 
     revalidatePath("/admin");
     revalidatePath("/projects");

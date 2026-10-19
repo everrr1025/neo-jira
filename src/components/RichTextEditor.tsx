@@ -62,6 +62,8 @@ interface RichTextEditorProps {
   onIssueLinkClick?: (issueId: string) => void;
   currentUserId?: string;
   departmentId?: string;
+  onUploadImage?: (file: File) => Promise<string | null>;
+  onDiscardUpload?: (url: string) => Promise<void>;
   borderless?: boolean;
   toolbarRight?: ReactNode;
   isFullscreen?: boolean;
@@ -182,7 +184,7 @@ function extractUploadUrlsFromContent(content: string) {
   for (const match of content.matchAll(imageSrcPattern)) {
     const src = match[2]?.trim();
 
-    if (src?.startsWith("/uploads/")) {
+    if (src?.startsWith("/uploads/") || src?.startsWith("/api/knowledge/files/")) {
       uploadUrls.add(src);
     }
   }
@@ -656,6 +658,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     onIssueLinkClick,
     currentUserId,
     departmentId,
+    onUploadImage,
+    onDiscardUpload,
     borderless = false,
     toolbarRight,
     isFullscreen = false,
@@ -686,6 +690,8 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const mentionMenuItemsRef = useRef<MentionMenuItem[]>([]);
   const selectedMentionIndexRef = useRef(0);
   const onChangeRef = useRef(onChange);
+  const uploadImageRef = useRef(onUploadImage);
+  const discardUploadRef = useRef(onDiscardUpload);
   const onFocusRef = useRef(onFocus);
   const onBlurRef = useRef(onBlur);
   const onEscapeKeyDownRef = useRef(onEscapeKeyDown);
@@ -693,11 +699,16 @@ const RichTextEditor = forwardRef(function RichTextEditor(
 
   useEffect(() => {
     onChangeRef.current = onChange;
+    uploadImageRef.current = onUploadImage;
+    discardUploadRef.current = onDiscardUpload;
     onFocusRef.current = onFocus;
     onBlurRef.current = onBlur;
     onEscapeKeyDownRef.current = onEscapeKeyDown;
     onIssueLinkClickRef.current = onIssueLinkClick;
-  }, [onBlur, onChange, onEscapeKeyDown, onFocus, onIssueLinkClick]);
+  }, [onBlur, onChange, onEscapeKeyDown, onFocus, onIssueLinkClick, onUploadImage, onDiscardUpload]);
+
+  const uploadEditorImage = (file: File) => uploadImageRef.current ? uploadImageRef.current(file) : uploadImage(file, departmentId);
+  const discardEditorUpload = (url: string) => discardUploadRef.current ? discardUploadRef.current(url) : deleteUploadedFile(url);
 
   const cleanupRemovedPendingUploads = (content: string) => {
     latestContentRef.current = content;
@@ -709,7 +720,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       }
 
       pendingUploadedImageUrlsRef.current.delete(fileUrl);
-      void deleteUploadedFile(fileUrl);
+      void discardEditorUpload(fileUrl);
     });
   };
 
@@ -720,7 +731,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       pendingUploadedImageUrlsRef.current.delete(fileUrl);
 
       if (!persistedUploadUrls.has(fileUrl)) {
-        void deleteUploadedFile(fileUrl);
+        void discardEditorUpload(fileUrl);
       }
     });
   };
@@ -729,7 +740,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
     const pendingFileUrls = Array.from(pendingUploadedImageUrlsRef.current);
     pendingUploadedImageUrlsRef.current.clear();
 
-    await Promise.allSettled(pendingFileUrls.map((fileUrl) => deleteUploadedFile(fileUrl)));
+    await Promise.allSettled(pendingFileUrls.map((fileUrl) => discardEditorUpload(fileUrl)));
   };
 
   useImperativeHandle(ref, () => ({
@@ -739,12 +750,12 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   }));
 
   const handleImageUpload = async (file: File, view: Editor["view"], pos: number | null = null) => {
-    const url = await uploadImage(file, departmentId);
+    const url = await uploadEditorImage(file);
     if (url) {
       const imageNode = view.state.schema.nodes.imageResize ?? view.state.schema.nodes.image;
 
       if (!imageNode) {
-        void deleteUploadedFile(url);
+        void discardEditorUpload(url);
         return;
       }
 
@@ -970,7 +981,7 @@ const RichTextEditor = forwardRef(function RichTextEditor(
       return;
     }
 
-    editor.setEditable(!readOnly);
+    editor.setEditable(!readOnly, false);
   }, [editor, readOnly]);
 
   useEffect(() => {
@@ -1182,12 +1193,12 @@ const RichTextEditor = forwardRef(function RichTextEditor(
   const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && editor && !editor.isDestroyed) {
-      const url = await uploadImage(file, departmentId);
+      const url = await uploadEditorImage(file);
       if (url) {
         const imageNode = editor.state.schema.nodes.imageResize ?? editor.state.schema.nodes.image;
 
         if (!imageNode) {
-          void deleteUploadedFile(url);
+          void discardEditorUpload(url);
         } else {
           pendingUploadedImageUrlsRef.current.add(url);
           editor.chain().focus().setImage({ src: url }).run();

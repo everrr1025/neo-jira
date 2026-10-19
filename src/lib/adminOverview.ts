@@ -11,7 +11,7 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
   const dateKeys7 = dateKeys30.slice(-7);
   const storagePeriodStart = getStoragePeriodStart(30, now);
 
-  const [usageHealthUsers, departmentCount, projectCount, storageTotal, storageRecent, activities, departments, filesByDepartment, unassignedProjects] = await Promise.all([
+  const [usageHealthUsers, departmentCount, projectCount, storageTotal, storageRecent, activities, departments, filesByDepartment, unassignedProjects, knowledgeByProject] = await Promise.all([
     prisma.user.findMany({
       where: { role: "USER", disabledAt: null },
       select: {
@@ -46,13 +46,30 @@ export async function getAdminOverviewData(now = new Date()): Promise<AdminOverv
     }),
     prisma.fileAsset.groupBy({
       by: ["departmentId"],
+      where: { storageType: { not: "KNOWLEDGE" } },
       _count: { _all: true },
       _sum: { fileSize: true },
     }),
     prisma.project.count({ where: { departmentId: null } }),
+    prisma.fileAsset.groupBy({
+      by: ["projectId"],
+      where: { storageType: "KNOWLEDGE" },
+      _count: { _all: true },
+      _sum: { fileSize: true },
+    }),
   ]);
 
   const filesByDepartmentId = new Map(filesByDepartment.map((group) => [group.departmentId, group]));
+  const projectDepartments = new Map(departments.flatMap((department) => department.projects.map((project) => [project.id, department.id] as const)));
+  for (const group of knowledgeByProject) {
+    const departmentId = (group.projectId && projectDepartments.get(group.projectId)) || null;
+    const existing = filesByDepartmentId.get(departmentId);
+    filesByDepartmentId.set(departmentId, {
+      departmentId,
+      _count: { _all: (existing?._count._all || 0) + group._count._all },
+      _sum: { fileSize: (existing?._sum.fileSize || BigInt(0)) + (group._sum.fileSize || BigInt(0)) },
+    });
+  }
   const unassignedFiles = filesByDepartmentId.get(null);
   const unassignedUsers = usageHealthUsers.filter((user) => user.departmentMembers.length === 0).length;
 

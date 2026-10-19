@@ -89,7 +89,7 @@ server {
     server_name _; 
 
     # 限制上传文件大小 (默认为 1M，改为 50M)
-    client_max_body_size 50M;
+    client_max_body_size 52M;
     # 增加超时时间以支持大文件上传
     client_body_timeout 300s;
     proxy_read_timeout 300s;
@@ -227,3 +227,49 @@ npm run db:migrate:verify
 
 > [!CAUTION]
 > **风险管理最终提醒**：全量代码均在 `/var/www/neo-jira` 中，而所有宝贵的数据都应保存在 `/var/www/neo-jira-data/dev.db`。请定期将该文件或 `/var/www/neo-jira-data/backups/` 目录中的备份下载到你个人电脑或云盘中，作为退路。
+
+## 项目知识库：私有文件与发布检查
+
+知识库新增迁移 `20261015000100_project_knowledge`，只添加业务表及兼容字段，不迁移旧笔记、问题附件或 `/uploads`。先备份，再执行 `npm run db:migrate:deploy`、构建并重启应用。开发环境默认写入被 Git 忽略的 `.data/knowledge`；生产环境**必须显式配置**下列变量，示例路径按实际部署调整：
+
+```dotenv
+KNOWLEDGE_STORAGE_ROOT=/home/ubuntu/var/www/neo-jira-data/knowledge
+KNOWLEDGE_MAX_FILE_MIB=50
+```
+
+- 目录必须是发布目录和 `public` 之外的持久化目录，仅应用进程用户拥有读写权限；父目录建议 `0700`，文件 `0600`，不要配置 Nginx alias/static 直出，也不要将它纳入 `git clean` 或发布目录清理。
+- 应用通过 `/api/knowledge/files/{id}` 每次检查当前项目权限；不要对该接口启用 CDN/代理公共缓存。HTML、SVG 和其他非允许预览类型强制下载。
+- Nginx 的 `client_max_body_size` 至少比单文件上限大 1 MiB，默认可设 `52M`，给 multipart 边界留空间。Next.js 的代理请求缓冲上限也需同步设置，见 `next.config.ts`。文档保存为 Server Actions，正文上限 2 MB，Actions 请求上限为 3 MB。
+- 部署工作流沿用现有环境配置；在第一次发布前将以上变量加入服务器环境文件，并确认 PM2 重启加载相同变量。上传接口未配置生产私有目录时会拒绝写入，绝不退回 public。
+
+### 每日清理
+
+执行 `npm run knowledge:cleanup`，任务会删除超过 24 小时仍未关联的上传，以及已无任何引用的待清理文件；回收站引用仍会保留。物理删除失败保留记录，下次重试。清理命令不会加载 `.env.local`，调度器必须显式注入与应用相同的 `DATABASE_URL`、`KNOWLEDGE_STORAGE_ROOT`（可选 `NODE_ENV=production`）。例如在部署目录中通过受保护的环境文件加载后执行：
+
+```bash
+set -a
+. /home/ubuntu/var/www/neo-jira/.env
+set +a
+npm run knowledge:cleanup
+```
+
+将该命令加入每日运行的系统定时任务，记录输出并对非零退出状态告警。项目删除、系统重置会先在数据库事务中删除知识条目并标记文件，提交后尝试清理；定时任务负责补偿重试。部门删除沿用旧行为，项目保留为未归属部门，知识内容仍归原项目，不物理迁移文件。
+
+### 一致性备份与恢复
+
+1. 暂停应用写入和清理定时任务；等待正在执行的上传、保存完成，必要时停止应用进程。
+2. 使用 SQLite 的 `.backup` 创建数据库快照（不要在写入过程中只复制 `.db` 而遗漏 WAL）；同时备份整个私有知识目录和仍在使用的旧上传目录，记录同一个备份批次。
+3. 校验备份可读后恢复应用及清理任务。仅备份数据库不足以恢复知识库附件。
+4. 恢复时停止应用和清理任务，使用**同一批次**的数据库及文件目录，恢复进程用户权限，配置相同存储根目录后启动；验证文档、附件下载和回收站，再开启定时清理。
+
+### 验证命令
+
+```bash
+npm test
+npm run test:knowledge
+npm run db:migrate:verify
+npm run build
+npm run test:e2e:knowledge
+```
+
+知识库集成测试自动创建并移除临时 SQLite 和私有目录；浏览器测试依赖本机 Chrome，使用生产构建及独立 3117 端口，不复用现有开发账号或数据库。测试故意模拟一次文件删除失败来验证重试，因此会出现一条预期的 cleanup failed 日志。

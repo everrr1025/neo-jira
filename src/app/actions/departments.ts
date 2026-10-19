@@ -8,6 +8,7 @@ import { isProjectScopeType } from "@/lib/departmentPermissions";
 import { createAuditLogs } from "@/lib/audit";
 import { createDefaultWorkflowForProject } from "@/lib/workflows";
 import { deleteProjectData } from "@/lib/projectDataCleanup";
+import { cleanupKnowledgeFiles } from "@/lib/knowledgeStorage";
 
 function getSessionUser(session: unknown) {
   const user = (session as { user?: { id?: string; role?: string | null } }).user;
@@ -805,6 +806,8 @@ export async function deleteDepartmentProject(departmentId: string, projectId: s
         metadata: { name: project.name }, actorId: currentUserId,
       }]);
     });
+
+    void cleanupKnowledgeFiles().catch(console.error);
 
     revalidatePath(`/departments/${departmentId}`);
     revalidatePath(`/departments/${departmentId}/members`);

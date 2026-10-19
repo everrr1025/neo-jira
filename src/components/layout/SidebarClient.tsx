@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactElement, useState } from "react";
 import {
   Bell,
+  BookOpen,
   CalendarDays,
   ChevronLeft,
   ClipboardCheck,
@@ -199,6 +200,12 @@ export function SidebarClient({
           href: `${projectBasePath}/plans`,
           icon: <ClipboardCheck className={navIconClass} />,
           label: plansLabel,
+        },
+        {
+          id: "knowledge",
+          href: `${projectBasePath}/knowledge`,
+          icon: <BookOpen className={navIconClass} />,
+          label: locale === "zh" ? "知识库" : "Knowledge",
         },
         ...(canManageActiveProject && activeProject
           ? [

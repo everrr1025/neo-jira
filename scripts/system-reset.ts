@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
 import { randomInt } from "crypto";
+import { deleteProjectData } from "../src/lib/projectDataCleanup";
+import { cleanupKnowledgeFiles } from "../src/lib/knowledgeStorage";
 
 const prisma = new PrismaClient();
 
@@ -45,13 +47,11 @@ async function main() {
     console.log("🧹 Clearing database tables...");
     
     // Deleting in order to respect foreign key constraints
-    await prisma.attachment.deleteMany({});
-    await prisma.comment.deleteMany({});
-    await prisma.notification.deleteMany({});
-    await prisma.issue.deleteMany({});
-    await prisma.iteration.deleteMany({});
-    await prisma.projectMember.deleteMany({});
-    await prisma.project.deleteMany({});
+    await prisma.$transaction(async (tx) => {
+      await tx.notification.deleteMany({});
+      await deleteProjectData(tx);
+    });
+    await cleanupKnowledgeFiles(prisma);
     
     // Clear all users except ADMIN
     await prisma.user.deleteMany({

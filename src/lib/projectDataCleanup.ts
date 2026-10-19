@@ -94,6 +94,12 @@ export async function deleteProjectData(
       where: { projectId: { in: resolvedProjectIds } },
     })
   ).count;
+  // Keep resource records until the private-file worker has removed the bytes.
+  await db.knowledgeItem.deleteMany({ where: { projectId: { in: resolvedProjectIds } } });
+  await db.fileAsset.updateMany({
+    where: { projectId: { in: resolvedProjectIds }, storageType: "KNOWLEDGE" },
+    data: { state: "DELETE_PENDING", cleanupAfter: new Date() },
+  });
   const deletedProjects = (
     await db.project.deleteMany({
       where: { id: { in: resolvedProjectIds } },
