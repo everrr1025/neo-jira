@@ -591,7 +591,7 @@ function MenuBar({
           </ColorToolIcon>
         }
       />
-      <div className="ml-auto flex h-full items-center gap-1 px-3">
+      <div className="ml-auto flex shrink-0 items-center gap-1 px-3">
         {onToggleFullscreen ? (
           <ToolbarButton
             title={isFullscreen ? exitFullscreenLabel : fullscreenLabel}
