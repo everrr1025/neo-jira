@@ -214,7 +214,12 @@ export async function listKnowledge(projectId: string, userId: string, options: 
   const total = await db.knowledgeItem.count({ where });
   const page = Math.max(1, Math.min(Math.ceil(total / 20) || 1, Math.floor(options.page || 1)));
   const include = { favorites: { where: { userId }, select: { userId: true } }, creator: { select: { name: true } }, updater: { select: { name: true } }, fileAsset: true, attachments: { include: { fileAsset: true }, orderBy: { position: "asc" as const } }, _count: { select: { children: true } } };
-  const rows = await db.knowledgeItem.findMany({ where, include, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], skip: (page - 1) * 20, take: 20 });
+  const folderWhere: Prisma.KnowledgeItemWhereInput = { AND: [where, { type: "FOLDER" }] };
+  const folderCount = await db.knowledgeItem.count({ where: folderWhere });
+  const offset = (page - 1) * 20;
+  const orderBy: Prisma.KnowledgeItemOrderByWithRelationInput[] = [{ updatedAt: "desc" }, { id: "asc" }];
+  const rows = offset < folderCount ? await db.knowledgeItem.findMany({ where: folderWhere, include, orderBy, skip: offset, take: 20 }) : [];
+  if (rows.length < 20) rows.push(...await db.knowledgeItem.findMany({ where: { AND: [where, { type: { not: "FOLDER" } }] }, include, orderBy, skip: Math.max(0, offset - folderCount), take: 20 - rows.length }));
   const current = options.itemId ? await db.knowledgeItem.findFirst({ where: { id: options.itemId, projectId, deletedAt: null }, include }) : null;
   if (options.itemId && !current) throw new KnowledgeError("NOT_FOUND", "内容不存在");
   const serialAsset = (asset: NonNullable<typeof current>["fileAsset"]) => asset ? { id: asset.id, fileName: asset.fileName, fileSize: Number(asset.fileSize), mimeType: asset.mimeType, fileUrl: asset.fileUrl } : null;
@@ -225,6 +230,6 @@ export async function listKnowledge(projectId: string, userId: string, options: 
     canEdit: canEditKnowledge(item, access) && (item.type !== "FOLDER" || access.canManage || item._count.children === 0),
     asset: serialAsset(item.fileAsset), attachments: item.attachments.map((a) => ({ fileAssetId: a.fileAssetId, displayName: a.displayName, usage: a.usage, asset: serialAsset(a.fileAsset)! })),
   });
-  return { access, tree: tree.map(({ favorites, _count, creatorId, ...item }) => ({ ...item, isFavorite: favorites.length > 0, canEdit: canEditKnowledge({ creatorId }, access) && (item.type !== "FOLDER" || access.canManage || _count.children === 0) })), rows: rows.map(serialItem), current: current ? serialItem(current) : null, page, total };
+  return { access, tree: tree.sort((a, b) => Number(b.type === "FOLDER") - Number(a.type === "FOLDER")).map(({ favorites, _count, creatorId, ...item }) => ({ ...item, isFavorite: favorites.length > 0, canEdit: canEditKnowledge({ creatorId }, access) && (item.type !== "FOLDER" || access.canManage || _count.children === 0) })), rows: rows.map(serialItem), current: current ? serialItem(current) : null, page, total };
 }
 export type KnowledgePageData = Awaited<ReturnType<typeof listKnowledge>>;

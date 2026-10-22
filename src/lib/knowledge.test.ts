@@ -166,6 +166,18 @@ async function main() {
 
     for (let index = 0; index < 22; index++) await create("DOCUMENT", `Page ${index}`, null, "owner");
     assert.equal((await listKnowledge("project", "viewer", { search: "Page", page: 2 }, db)).rows.length, 2);
+    const pageFolder = await create("FOLDER", "Page folder", null, "owner");
+    await db.knowledgeItem.update({ where: { id: pageFolder.id }, data: { updatedAt: new Date(0) } });
+    const firstPage = await listKnowledge("project", "viewer", { search: "Page" }, db);
+    const secondPage = await listKnowledge("project", "viewer", { search: "Page", page: 2 }, db);
+    assert.equal(firstPage.rows[0].id, pageFolder.id);
+    assert.equal(firstPage.rows.length, 20);
+    assert.equal(secondPage.rows.length, 3);
+    assert.equal(new Set([...firstPage.rows, ...secondPage.rows].map((item) => item.id)).size, 23);
+    const rootTree = firstPage.tree.filter((item) => item.parentId === null);
+    const firstNonFolder = rootTree.findIndex((item) => item.type !== "FOLDER");
+    assert.ok(rootTree.slice(firstNonFolder).every((item) => item.type !== "FOLDER"));
+    check("folders precede files and documents across pages and in the directory tree");
     await asset("project-delete", "project", "owner");
     await db.$transaction((tx) => deleteProjectData(tx, ["project"]));
     assert.equal(await db.knowledgeItem.count({ where: { projectId: "project" } }), 0);
