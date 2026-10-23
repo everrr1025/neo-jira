@@ -21,7 +21,7 @@ export default async function KnowledgePage({ params, searchParams }: {
   const [{ path = [] }, query, locale] = await Promise.all([params, searchParams, getCurrentLocale()]);
   if (path.length > 1) notFound();
   const string = (value: string | string[] | undefined) => typeof value === "string" ? value : "";
-  const options = { itemId: path[0], folderId: string(query.folder) || null, search: string(query.search), trash: query.trash === "1", favorites: query.favorites === "1", page: Math.max(1, Number.parseInt(string(query.page) || "1") || 1) };
+  const options = { itemId: path[0], folderId: string(query.folder) || null, search: string(query.search), trash: query.trash === "1", favorites: query.favorites === "1", page: 1 };
   let data;
   try {
     data = await listKnowledge(project.id, user.id, options);

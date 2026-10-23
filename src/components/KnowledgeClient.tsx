@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, File, FileText, Folder, FolderPlus, Trash2, Search, MoreHorizontal, Download, Save, Paperclip, X, Star, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import KnowledgeImagePreview from "@/components/KnowledgeImagePreview";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, BookOpen, File, FileText, Folder, FolderPlus, Trash2, Search, MoreHorizontal, Download, Save, Paperclip, X, Star, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import type { KnowledgePageData } from "@/lib/knowledge";
 import { saveKnowledgeItem, updateKnowledgeItemMetadata, favoriteKnowledgeItem, changeKnowledgeItem, loadKnowledge, discardKnowledgeUpload } from "@/app/actions/knowledge";
 import { Button } from "@/components/ui/button";
@@ -13,20 +13,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
 import { composeKnowledgeEditorContent, splitKnowledgeEditorContent } from "@/lib/knowledgeEditor";
+import { knowledgeReturnTarget } from "@/lib/knowledgeNavigation";
 import { formatStorageSize } from "@/lib/fileStorage";
 import type { Locale } from "@/lib/i18n";
 
 type Item = KnowledgePageData["rows"][number];
 type TreeItem = KnowledgePageData["tree"][number];
 type Asset = NonNullable<Item["asset"]>;
-type Draft = { id?: string; title: string; contentHtml: string; parentId: string | null; version?: number; attachments: Item["attachments"] };
+type Draft = { id?: string; title: string; contentHtml: string; parentId: string | null; version?: number; attachments: NonNullable<KnowledgePageData["current"]>["attachments"] };
+type BrowsePosition = { page: number; top: number; left: number; sidebarTop: number; collapsed: Record<string, boolean> };
 type Options = { folderId: string | null; itemId?: string; search: string; trash: boolean; favorites: boolean; page: number };
 
-export default function KnowledgeClient({ initialData, projectId, basePath, options, locale, uploadLimit }: {
+export default function KnowledgeClient({ initialData, projectId, basePath, options: viewOptions, locale, uploadLimit }: {
   initialData: KnowledgePageData; projectId: string; basePath: string; options: Options; locale: Locale; uploadLimit: number;
 }) {
+  const options = useMemo(() => ({ folderId: viewOptions.folderId, itemId: viewOptions.itemId, search: viewOptions.search, trash: viewOptions.trash, favorites: viewOptions.favorites, page: viewOptions.page }), [viewOptions.folderId, viewOptions.itemId, viewOptions.search, viewOptions.trash, viewOptions.favorites, viewOptions.page]);
   const router = useRouter();
   const pathname = usePathname();
+  const queryParams = useSearchParams();
+  const returnTo = knowledgeReturnTarget(queryParams.get("from"), basePath);
   const t = (zh: string, en: string) => locale === "zh" ? zh : en;
   const [data, setData] = useState(initialData);
   const document = data.current?.type === "DOCUMENT" ? data.current : null;
@@ -38,10 +43,23 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const listGeneration = useRef(0);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const pendingPosition = useRef<BrowsePosition | null>(null);
+  const [restoringList, setRestoringList] = useState(!initialData.current);
+  const [moveNotice, setMoveNotice] = useState<{ item: TreeItem; previousParent: string | null; destination: string } | null>(null);
   const [search, setSearch] = useState(options.search);
   const [modal, setModal] = useState<{ action: "folder" | "rename" | "move" | "delete" | "purge"; item?: TreeItem; parentId?: string | null } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [foldersReady, setFoldersReady] = useState(false);
+  const [draggedItem, setDraggedItem] = useState<TreeItem | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => { dragPreviewRef.current?.remove(); }, []);
   const [name, setName] = useState("");
   const [destination, setDestination] = useState("");
   const [picker, setPicker] = useState<KnowledgePageData | null>(null);
@@ -97,6 +115,12 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     if (page > 1) params.set("page", String(page));
     return `${basePath}${params.size ? `?${params}` : ""}`;
   };
+  const itemHref = (id: string) => {
+    const source = returnTo?.href || (!options.itemId && !draft ? href(options.folderId, 1, options.search, options.trash, options.favorites) : null);
+    return `${basePath}/${id}${source ? `?${new URLSearchParams({ from: source })}` : ""}`;
+  };
+  const returnLabel = returnTo?.kind === "search" ? t("返回搜索结果", "Back to search results") : returnTo?.kind === "favorites" ? t("返回收藏", "Back to favorites") : returnTo?.kind === "trash" ? t("返回回收站", "Back to trash") : t("返回列表", "Back to list");
+  const returnLink = data.current && returnTo ? <Button asChild variant="ghost" size="icon-xs" className="mr-auto text-muted-foreground"><Link href={returnTo.href} aria-label={returnLabel} title={returnLabel}><ArrowLeft className="size-4" /></Link></Button> : null;
   const navigate = (url: string) => {
     if (dirtyRef.current && !window.confirm(t("文档尚未保存，确定离开？", "Discard unsaved changes?"))) return;
     dirtyRef.current = false;
@@ -133,6 +157,60 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     if (!foldersReady) return;
     try { localStorage.setItem(folderStorageKey, JSON.stringify(collapsed)); } catch { /* Keep the in-memory preference. */ }
   }, [collapsed, folderStorageKey, foldersReady]);
+  const browseStorageKey = `knowledge-browse:${data.access.userId}:${projectId}:${JSON.stringify([options.folderId, options.search, options.trash, options.favorites])}`;
+  useEffect(() => {
+    if (options.itemId) return;
+    let active = true;
+    const restore = async () => {
+      try {
+        const position = JSON.parse(sessionStorage.getItem(browseStorageKey) || "null") as BrowsePosition | null;
+        if (!position || !Number.isInteger(position.page) || position.page < 1 || ![position.top, position.left, position.sidebarTop].every((value) => Number.isFinite(value) && value >= 0)) { setRestoringList(false); return; }
+        if (position.collapsed && typeof position.collapsed === "object") setCollapsed(Object.fromEntries(Object.entries(position.collapsed).filter(([, value]) => value === true)));
+        if (position.page > 1) {
+          const result = await loadKnowledge(projectId, { ...options, page: position.page, fromStart: true });
+          if (!active) return;
+          if (!result.success) { setError(result.error); setRestoringList(false); return; }
+          pendingPosition.current = position;
+          setData(result.value);
+        } else {
+          if (!active) return;
+          pendingPosition.current = position;
+          setData((current) => ({ ...current }));
+        }
+      } catch { if (active) setRestoringList(false); }
+    };
+    void restore();
+    return () => { active = false; };
+  }, [browseStorageKey, options, projectId]);
+  useLayoutEffect(() => {
+    if (!foldersReady || !pendingPosition.current) return;
+    const position = pendingPosition.current;
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = position.top;
+      listScrollRef.current.scrollLeft = position.left;
+    }
+    if (sidebarScrollRef.current) sidebarScrollRef.current.scrollTop = position.sidebarTop;
+    pendingPosition.current = null;
+    setRestoringList(false);
+  }, [data, foldersReady, restoringList]);
+  useEffect(() => {
+    if (options.itemId || draft || restoringList) return;
+    const list = listScrollRef.current;
+    const sidebar = sidebarScrollRef.current;
+    if (!list) return;
+    const remember = () => {
+      try { sessionStorage.setItem(browseStorageKey, JSON.stringify({ page: data.page, top: list.scrollTop, left: list.scrollLeft, sidebarTop: sidebar?.scrollTop || 0, collapsed } satisfies BrowsePosition)); } catch { /* Keep browsing when storage is unavailable. */ }
+    };
+    remember();
+    list.addEventListener("scroll", remember, { passive: true });
+    sidebar?.addEventListener("scroll", remember, { passive: true });
+    return () => { list.removeEventListener("scroll", remember); sidebar?.removeEventListener("scroll", remember); };
+  }, [browseStorageKey, collapsed, data.page, draft, options.itemId, restoringList]);
+  useEffect(() => {
+    if (!moveNotice) return;
+    const timeout = window.setTimeout(() => setMoveNotice(null), 15000);
+    return () => window.clearTimeout(timeout);
+  }, [moveNotice]);
   const breadcrumbFolders = pathOf(activeParent);
   const visibleBreadcrumbFolders = breadcrumbFolders.length > 2 ? [breadcrumbFolders[0], breadcrumbFolders[breadcrumbFolders.length - 1]] : breadcrumbFolders;
   const fullBreadcrumbPath = [t("知识", "Knowledge"), ...breadcrumbFolders.map((folder) => folder.title), ...(!draft && data.current ? [data.current.title] : !draft && options.trash ? [t("回收站", "Trash")] : !draft && options.favorites ? [t("收藏", "Favorites")] : [])].join(" / ");
@@ -156,9 +234,36 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     else beginCreation(type, creationParent);
   };
   const refresh = async () => {
-    const result = await loadKnowledge(projectId, options);
-    if (result.success) setData(result.value); else setError(result.error);
+    listGeneration.current++;
+    setLoadMoreError("");
+    const position: BrowsePosition = { page: data.page, top: listScrollRef.current?.scrollTop || 0, left: listScrollRef.current?.scrollLeft || 0, sidebarTop: sidebarScrollRef.current?.scrollTop || 0, collapsed };
+    const result = await loadKnowledge(projectId, { ...options, page: data.page, fromStart: true });
+    if (result.success) { pendingPosition.current = position; setData(result.value); setLoadingMore(false); } else setError(result.error);
   };
+  useEffect(() => {
+    if (restoringList || busy || draft || data.current || loadMoreError || data.page * data.pageSize >= data.total) return;
+    const root = listScrollRef.current;
+    const target = loadMoreRef.current;
+    if (!root || !target) return;
+    let active = true;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      const generation = listGeneration.current;
+      setLoadingMore(true);
+      void loadKnowledge(projectId, { ...options, page: data.page + 1 }).then((result) => {
+        if (!active || generation !== listGeneration.current) return;
+        if (!result.success) { setLoadMoreError(result.error); return; }
+        setData((current) => ({ ...current, page: result.value.page, total: result.value.total,
+          rows: [...current.rows, ...result.value.rows.filter((item) => !current.rows.some((existing) => existing.id === item.id))],
+        }));
+      }).catch(() => {
+        if (active && generation === listGeneration.current) setLoadMoreError(locale === "zh" ? "加载失败，请重试" : "Loading failed; retry");
+      }).finally(() => { if (active) setLoadingMore(false); });
+    }, { root, rootMargin: "0px 0px 160px 0px" });
+    observer.observe(target);
+    return () => { active = false; observer.disconnect(); };
+  }, [busy, data, draft, loadMoreError, locale, options, projectId, restoringList]);
   const upload = async (file: globalThis.File): Promise<Asset> => {
     if (file.size > uploadLimit) throw new Error(`${t("文件大小上限", "File size limit")}: ${formatStorageSize(uploadLimit)}`);
     setUploading((count) => count + 1);
@@ -204,7 +309,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
         current: current.current ? { ...current.current, title: nextDraft.title, contentHtml: nextDraft.contentHtml, version: nextDraft.version, attachments: [...current.current.attachments.filter((attachment) => attachment.usage === "INLINE"), ...nextDraft.attachments] } : null,
         tree: current.tree.map((item) => item.id === nextDraft.id ? { ...item, title: nextDraft.title, version: result.value.version } : item),
       }));
-      router.push(`${basePath}/${result.value.id}`); router.refresh();
+      router.push(draft.id ? itemHref(result.value.id) : `${basePath}/${result.value.id}`); router.refresh();
     } catch { setError(t("保存失败，请重试", "Save failed; retry")); }
     finally { setBusy(false); }
   };
@@ -235,15 +340,16 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
   const submitModal = async () => {
     if (!modal) return;
     if (modal.action === "delete" || modal.action === "purge") { await mutate(modal.action === "delete" ? "DELETE" : "PURGE", modal.item!, name); return; }
+    if (modal.action === "move") { setModal(null); await moveItem(modal.item!, destination || null); return; }
     const item = modal.item;
     setBusy(true); setError("");
     try {
       const result = item
-        ? await updateKnowledgeItemMetadata({ projectId, id: item.id, version: draft?.id === item.id ? draft.version! : item.version, action: modal.action === "move" ? "MOVE" : "RENAME", ...(modal.action === "move" ? { parentId: destination || null } : { title: name }) })
+        ? await updateKnowledgeItemMetadata({ projectId, id: item.id, version: draft?.id === item.id ? draft.version! : item.version, action: "RENAME", title: name })
         : await saveKnowledgeItem({ projectId, type: "FOLDER", title: name, parentId: modal.parentId ?? null });
       if (!result.success) { setError(result.error); return; }
       if (item && draft?.id === item.id) {
-        const metadata = { version: result.value.version, ...(modal.action === "move" ? { parentId: destination || null } : { title: name.trim() }) };
+        const metadata = { version: result.value.version, title: name.trim() };
         setDraft({ ...draft, ...metadata });
         if (modal.action === "rename") setEditorContent(composeKnowledgeEditorContent(name.trim(), draft.contentHtml));
         setSaved((current) => JSON.stringify({ ...JSON.parse(current), ...metadata }));
@@ -258,25 +364,86 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     // miss files nested under folders, so the dedicated file picker is separate.
     setPickerOpen(true); setBusy(true);
     try {
-      const result = await loadKnowledge(projectId, { search: pickerSearch, page, filesOnly: true });
+      const result = await loadKnowledge(projectId, { search: pickerSearch, page, pageSize: 20, filesOnly: true });
       if (result.success) setPicker(result.value); else setError(result.error);
     } catch { setError(t("读取文件失败，请重试", "Unable to load files; retry")); }
     finally { setBusy(false); }
   };
-  const actions = (item: TreeItem, sidebar = false) => <div className={`flex shrink-0 items-center ${sidebar ? "opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100" : ""}`}>
-    {(!options.trash || sidebar) ? <Button variant="ghost" size="icon-xs" disabled={locked} aria-label={`${item.isFavorite ? t("取消收藏", "Unfavorite") : t("收藏", "Favorite")}: ${item.title}`} title={item.isFavorite ? t("取消收藏", "Unfavorite") : t("收藏", "Favorite")} onClick={() => void toggleFavorite(item)}><Star className={item.isFavorite ? "fill-amber-400 text-amber-500" : ""} /></Button> : null}
-    {item.canEdit || (item.type === "FOLDER" && data.access.canCreate && !options.trash) ? <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" aria-label={`${t("操作", "Actions")}: ${item.title}`} disabled={locked}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
+  const actions = (item: TreeItem, sidebar = false) => <div className={`flex shrink-0 items-center ${sidebar ? "opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100" : "justify-end"}`}>
+    {(!options.trash || sidebar) ? <Button variant="ghost" size="icon-xs" className={sidebar ? undefined : "hover:bg-transparent hover:text-inherit dark:hover:bg-transparent"} disabled={locked} aria-label={`${item.isFavorite ? t("取消收藏", "Unfavorite") : t("收藏", "Favorite")}: ${item.title}`} title={item.isFavorite ? t("取消收藏", "Unfavorite") : t("收藏", "Favorite")} onClick={() => void toggleFavorite(item)}><Star className={item.isFavorite ? "fill-amber-400 text-amber-500" : ""} /></Button> : null}
+    {item.canEdit || (item.type === "FOLDER" && data.access.canCreate && !options.trash) ? <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" className={sidebar ? undefined : "hover:bg-transparent hover:text-inherit dark:hover:bg-transparent"} aria-label={`${t("操作", "Actions")}: ${item.title}`} disabled={locked}><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
       {options.trash && !sidebar ? <><DropdownMenuItem onSelect={() => void mutate("RESTORE", item)}>{t("恢复", "Restore")}</DropdownMenuItem>{data.access.canManage ? <DropdownMenuItem className="text-destructive" onSelect={() => openModal("purge", item)}>{t("永久删除", "Delete permanently")}</DropdownMenuItem> : null}</> : <>
         {item.type === "FOLDER" && data.access.canCreate ? <DropdownMenuItem onSelect={() => openModal("folder", undefined, item.id)}>{t("新建子文件夹", "New subfolder")}</DropdownMenuItem> : null}
         {item.canEdit ? <><DropdownMenuItem onSelect={() => openModal("rename", item)}>{t("重命名", "Rename")}</DropdownMenuItem><DropdownMenuItem onSelect={() => openModal("move", item)}>{t("移动", "Move")}</DropdownMenuItem><DropdownMenuItem className="text-destructive" onSelect={() => openModal("delete", item)}>{t("移到回收站", "Move to trash")}</DropdownMenuItem></> : null}
       </>}
     </DropdownMenuContent></DropdownMenu> : null}
   </div>;
+  const canDropInto = (parentId: string | null) => !!draggedItem && !locked && !options.trash && draggedItem.canEdit
+    && draggedItem.parentId !== parentId && draggedItem.id !== parentId
+    && !pathOf(parentId).some((parent) => parent.id === draggedItem.id);
+  const moveItem = async (item: TreeItem, parentId: string | null, undo = false) => {
+    setBusy(true); setError("");
+    try {
+      const result = await updateKnowledgeItemMetadata({ projectId, id: item.id, version: !undo && draft?.id === item.id ? draft.version! : item.version, action: "MOVE", parentId });
+      if (!result.success) { setError(result.error); return; }
+      if (draft?.id === item.id) {
+        const metadata = { parentId, version: result.value.version };
+        setDraft((current) => current ? { ...current, ...metadata } : current);
+        setSaved((current) => JSON.stringify({ ...JSON.parse(current), ...metadata }));
+      }
+      if (parentId) setCollapsed((current) => ({ ...current, [parentId]: false }));
+      setMoveNotice(undo ? null : { item: { ...item, parentId, version: result.value.version }, previousParent: item.parentId, destination: pathOf(parentId).map((folder) => folder.title).join(" / ") || "/" });
+      await refresh();
+    } catch { setError(t("移动失败，请重试", "Move failed; retry")); }
+    finally { setBusy(false); }
+  };
+  const dropHandlers = (parentId: string | null) => ({
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => {
+      if (!draggedItem) return;
+      event.stopPropagation();
+      if (!canDropInto(parentId)) { event.dataTransfer.dropEffect = "none"; setDropTarget(null); return; }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropTarget(parentId ?? "root");
+    },
+    onDragLeave: (event: React.DragEvent<HTMLDivElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null);
+    },
+    onDrop: (event: React.DragEvent<HTMLDivElement>) => {
+      if (!draggedItem) return;
+      event.preventDefault(); event.stopPropagation();
+      if (canDropInto(parentId)) void moveItem(draggedItem, parentId);
+      setDraggedItem(null); setDropTarget(null);
+    },
+  });
   const treeNodes = (parentId: string | null, depth = 0): React.ReactNode => data.tree.filter((item) => item.parentId === parentId).map((item) => (
     <div key={item.id}>
-      <div className={`group/item flex min-w-0 items-center rounded-md hover:bg-muted ${item.id === options.folderId || item.id === options.itemId ? "bg-muted font-medium" : "text-muted-foreground"}`} style={{ paddingLeft: `${depth * 14}px` }}>
-        {item.type === "FOLDER" ? <button type="button" disabled={!foldersReady} className="flex h-9 w-5 shrink-0 items-center justify-center" aria-label={`${collapsed[item.id] ? t("展开", "Expand") : t("收起", "Collapse")}: ${item.title}`} aria-expanded={!collapsed[item.id]} onClick={() => setCollapsed((current) => ({ ...current, [item.id]: !current[item.id] }))}>{collapsed[item.id] ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}</button> : <span className="w-5 shrink-0" />}
-        <Link href={item.type === "FOLDER" ? href(item.id) : `${basePath}/${item.id}`} className="flex min-w-0 flex-1 items-center gap-1.5 py-2 text-sm" title={item.title} aria-current={item.id === options.folderId || item.id === options.itemId ? "page" : undefined}>
+      <div draggable={item.canEdit && !locked && !options.trash}
+        onDragStart={(event) => {
+          if (!item.canEdit || locked || options.trash || (event.target as HTMLElement).closest("button")) { event.preventDefault(); return; }
+          setDraggedItem(item);
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-neo-knowledge-item", item.id);
+          dragPreviewRef.current?.remove();
+          const preview = window.document.createElement("div");
+          preview.className = "pointer-events-none fixed rounded-md border bg-card px-4 text-foreground shadow-md";
+          preview.style.left = "-10000px";
+          preview.style.top = "0";
+          preview.style.width = `${Math.min(event.currentTarget.clientWidth, 280)}px`;
+          preview.setAttribute("aria-hidden", "true");
+          const label = event.currentTarget.querySelector("a")!.cloneNode(true) as HTMLAnchorElement;
+          label.removeAttribute("href");
+          label.className = "flex items-center gap-1.5 py-2 text-sm";
+          preview.appendChild(label);
+          window.document.body.appendChild(preview);
+          dragPreviewRef.current = preview;
+          event.dataTransfer.setDragImage(preview, 16, 18);
+        }}
+        onDragEnd={() => { setDraggedItem(null); setDropTarget(null); dragPreviewRef.current?.remove(); dragPreviewRef.current = null; }}
+        {...(item.type === "FOLDER" ? dropHandlers(item.id) : {})}
+        className={`group/item mb-0.5 flex h-7 min-w-0 items-center rounded-md transition-colors hover:bg-muted hover:text-sidebar-accent-foreground ${item.canEdit && !locked && !options.trash ? "cursor-grab active:cursor-grabbing" : ""} ${draggedItem?.id === item.id ? "opacity-50" : ""} ${dropTarget === item.id ? "bg-muted ring-2 ring-inset ring-ring" : ""} ${item.id === options.folderId || item.id === options.itemId ? "bg-muted font-medium" : "text-muted-foreground"}`} style={{ paddingLeft: `${depth * 14}px` }}>
+        {item.type === "FOLDER" ? <button type="button" disabled={!foldersReady} className="flex h-7 w-5 shrink-0 items-center justify-center" aria-label={`${collapsed[item.id] ? t("展开", "Expand") : t("收起", "Collapse")}: ${item.title}`} aria-expanded={!collapsed[item.id]} onClick={() => setCollapsed((current) => ({ ...current, [item.id]: !current[item.id] }))}>{collapsed[item.id] ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}</button> : <span className="w-5 shrink-0" />}
+        <Link draggable={item.canEdit && !locked && !options.trash} href={item.type === "FOLDER" ? href(item.id) : itemHref(item.id)} className="flex h-7 min-w-0 flex-1 items-center gap-1.5 py-1 text-sm" title={item.title} aria-current={item.id === options.folderId || item.id === options.itemId ? "page" : undefined}>
           {item.type === "FOLDER" ? <Folder className="size-4 shrink-0" /> : item.type === "FILE" ? <File className="size-4 shrink-0" /> : <FileText className="size-4 shrink-0" />}<span className="truncate">{item.title}</span>
           {item.isFavorite ? <Star className="size-3 shrink-0 fill-amber-400 text-amber-500" /> : null}
         </Link>
@@ -317,19 +484,20 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     <input ref={fileInput} className="hidden" type="file" multiple onChange={(event) => { const parentId = uploadParent.current === undefined ? creationParent : uploadParent.current; uploadParent.current = undefined; void uploadMany(event.target.files, false, parentId); event.target.value = ""; }} />
     <input ref={attachmentInput} className="hidden" type="file" multiple onChange={(event) => { void uploadMany(event.target.files, true); event.target.value = ""; }} />
     {error ? <p role="alert" className="whitespace-pre-wrap rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}
-    {locked ? <p role="status" className="text-sm text-muted-foreground">{uploading ? t("正在上传…", "Uploading…") : t("处理中…", "Working…")}</p> : null}
-    <div className="grid min-h-0 flex-1 overflow-hidden rounded-lg border bg-card md:grid-cols-[260px_minmax(0,1fr)]">
+    <div className="relative grid min-h-0 flex-1 overflow-hidden rounded-lg border bg-card md:grid-cols-[260px_minmax(0,1fr)]">
+      {moveNotice ? <div className="absolute bottom-2 right-2 z-30 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm shadow-md"><span role="status" className="min-w-0 truncate" title={moveNotice.destination}>{t(`已将“${moveNotice.item.title}”移动到 ${moveNotice.destination}`, `Moved “${moveNotice.item.title}” to ${moveNotice.destination}`)}</span><Button variant="ghost" size="sm" disabled={locked} onClick={() => void moveItem(moveNotice.item, moveNotice.previousParent, true)}>{t("撤销", "Undo")}</Button><Button variant="ghost" size="icon-xs" aria-label={t("关闭移动提示", "Dismiss move notification")} onClick={() => setMoveNotice(null)}><X /></Button></div> : null}
+      {locked ? <p role="status" className="pointer-events-none absolute bottom-2 right-2 z-20 rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground shadow-sm">{uploading ? t("正在上传…", "Uploading…") : t("处理中…", "Working…")}</p> : null}
       <aside aria-label={t("知识目录", "Knowledge navigation")} className="hidden min-h-0 min-w-0 flex-col border-r bg-muted/30 p-2 md:flex">
         <Link className={`flex shrink-0 items-center gap-2 rounded-md px-2 pb-2 pt-1 text-sm hover:bg-muted ${options.favorites && !options.trash ? "bg-muted font-medium" : "text-muted-foreground"}`} href={href(null, 1, "", false, true)}><Star className="size-4" />{t("收藏", "Favorites")}<span className="ml-auto text-xs">{data.tree.filter((item) => item.isFavorite).length}</span></Link>
-        <div className="border-t pt-2" />
-        <div className={`group/root mb-1 flex items-center rounded-md hover:bg-muted ${!options.folderId && !options.itemId && !options.favorites && !options.trash && !options.search ? "bg-muted font-medium" : "text-muted-foreground"}`}>
-          <Link className="min-w-0 flex-1 p-2 font-mono text-sm" href={basePath} aria-label={t("根目录", "Root")} title={t("根目录", "Root")}>/</Link>
+        <div className="border-t pt-1" />
+        <div {...dropHandlers(null)} className={`group/root mb-0.5 flex h-7 shrink-0 items-center rounded-md transition-colors hover:bg-muted hover:text-sidebar-accent-foreground ${dropTarget === "root" ? "bg-muted ring-2 ring-inset ring-ring" : ""} ${!options.folderId && !options.itemId && !options.favorites && !options.trash && !options.search ? "bg-muted font-medium" : "text-muted-foreground"}`}>
+          <Link draggable={false} className="min-w-0 flex-1 px-2 py-1 font-mono text-sm" href={basePath} aria-label={t("根目录", "Root")} title={t("根目录", "Root")}>/</Link>
           {data.access.canCreate && !options.trash ? <Button className="shrink-0 opacity-0 transition-opacity group-hover/root:opacity-100 group-focus-within/root:opacity-100 [@media(hover:none)]:opacity-100" variant="ghost" size="icon-xs" disabled={locked} aria-label={t("新建文件夹", "New folder")} title={t("在根目录下新建文件夹", "New folder in root")} onClick={() => openModal("folder", undefined, null)}><Plus /></Button> : null}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">{treeNodes(null)}</div>
-        <Link className="mt-3 flex items-center gap-2 border-t px-2 pt-3 text-sm text-muted-foreground" href={href(null, 1, "", true)}><Trash2 className="size-4" />{t("回收站", "Trash")}</Link>
+        <div ref={sidebarScrollRef} className="min-h-0 flex-1 overflow-auto">{treeNodes(null)}</div>
+        <Link className="mt-4 flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-sidebar-accent-foreground" href={href(null, 1, "", true)}><Trash2 className="size-4" />{t("回收站", "Trash")}</Link>
       </aside>
-      <main className={`min-h-0 min-w-0 bg-card ${draft ? "flex flex-col overflow-hidden" : `overflow-auto ${data.current?.type === "FILE" ? "flex flex-col p-2" : "p-4 pt-2"}`}`}>
+      <main className={`min-h-0 min-w-0 bg-card ${draft ? "flex flex-col overflow-hidden" : data.current?.type === "FILE" ? "flex flex-col overflow-auto" : "flex h-[65vh] flex-col overflow-hidden md:h-auto"}`}>
         {data.current && (!draft || draft.id) ? <div className="mb-3 flex justify-end md:hidden">{actions(data.current)}</div> : null}
         {draft ? <div className="flex min-h-0 flex-1 flex-col">
           {!editable ? <div className="flex shrink-0 items-center justify-end gap-2 px-3 py-2 text-xs text-muted-foreground"><span role="status">{t("已保存", "Saved")}</span><span>{t("只读 · 作者和管理员可编辑", "Read only · author and administrators can edit")}</span></div> : null}
@@ -346,18 +514,21 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
             {!draft.attachments.length ? <p className="py-3 text-sm text-muted-foreground">{t("暂无附件", "No attachments")}</p> : null}
           </div>
         </div> : data.current?.type === "FILE" && data.current.asset ? <div className="flex min-h-0 flex-1 flex-col gap-1">
-          <div className={`min-h-0 flex-1 overflow-auto ${data.current.asset.mimeType?.startsWith("image/") ? "relative h-[65vh] flex-none md:h-auto md:flex-1" : data.current.asset.mimeType === "application/pdf" ? "flex flex-col" : ""}`}>{data.current.asset.mimeType?.startsWith("image/") ? <Image unoptimized src={data.current.asset.fileUrl} alt={data.current.title} width={1000} height={700} className="absolute inset-0 m-auto h-auto w-auto max-h-full max-w-full rounded-[4px]" /> : data.current.asset.mimeType === "application/pdf" ? <iframe title={data.current.title} src={data.current.asset.fileUrl} className="h-[65vh] w-full shrink-0 rounded-[4px] border md:h-auto md:min-h-0 md:flex-1" /> : <p className="py-16 text-center text-muted-foreground">{t("此文件类型请下载后查看", "Download this file to view it")}</p>}
+          <div className={`min-h-0 flex-1 overflow-auto ${data.current.asset.mimeType?.startsWith("image/") ? "relative h-[65vh] flex-none bg-muted/30 md:h-auto md:flex-1" : data.current.asset.mimeType === "application/pdf" ? "flex flex-col" : ""}`}>{data.current.asset.mimeType?.startsWith("image/") ? <KnowledgeImagePreview src={data.current.asset.fileUrl} title={data.current.title} locale={locale} /> : data.current.asset.mimeType === "application/pdf" ? <iframe title={data.current.title} src={data.current.asset.fileUrl} className="h-[65vh] w-full shrink-0 rounded-[4px] border md:h-auto md:min-h-0 md:flex-1" /> : <p className="py-16 text-center text-muted-foreground">{t("此文件类型请下载后查看", "Download this file to view it")}</p>}
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-muted-foreground"><span title={t("更新人", "Updated by")}>{data.current.updaterName}</span><span title={t("文件大小", "File size")}>{formatStorageSize(data.current.asset.fileSize)}</span><Button asChild variant="ghost" size="icon-xs"><a href={`${data.current.asset.fileUrl}?download=1`} target="_blank" rel="noreferrer" aria-label={t("下载", "Download")} title={t("下载", "Download")}><Download className="size-4" /></a></Button></div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 px-2 pb-2 text-xs text-muted-foreground">{returnLink}<span title={t("更新人", "Updated by")}>{data.current.updaterName}</span><span title={t("文件大小", "File size")}>{formatStorageSize(data.current.asset.fileSize)}</span><Button asChild variant="ghost" size="icon-xs"><a href={`${data.current.asset.fileUrl}?download=1`} target="_blank" rel="noreferrer" aria-label={t("下载", "Download")} title={t("下载", "Download")}><Download className="size-4" /></a></Button></div>
         </div> : <>
-          <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b text-muted-foreground [&_th]:pb-2 [&_th]:pt-1 [&_th]:text-sm [&_th]:font-normal"><tr><th>{t("名称", "Name")}</th><th>{t("文件大小", "File size")}</th><th>{t("更新人", "Updated by")}</th><th>{t("更新时间", "Updated")}</th><th className="w-20"><span className="sr-only">{t("操作", "Actions")}</span></th></tr></thead><tbody className="divide-y">
-            {data.rows.map((item) => <tr key={item.id} className="hover:bg-muted/40"><td className="max-w-sm py-3 pr-3"><div className="flex items-center gap-2">{icon(item.type)}{options.trash ? <span className="truncate">{item.title}</span> : <Link className="truncate hover:underline" href={item.type === "FOLDER" ? href(item.id) : `${basePath}/${item.id}`}>{item.title}</Link>}</div>{options.search || options.favorites ? <div className="mt-1 text-xs text-muted-foreground">{pathOf(item.parentId).map((p) => p.title).join(" / ") || t("根目录", "Root")}</div> : null}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{item.type === "FILE" && item.asset ? formatStorageSize(item.asset.fileSize) : ""}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{item.updaterName}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{new Date(item.updatedAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}</td><td>
+          <div ref={listScrollRef} className="min-h-0 flex-1 overflow-auto"><table className="w-full text-left text-sm [&_tr>:first-child]:pl-2 [&_tr>:last-child]:pr-2"><thead className="sticky top-0 z-10 border-b bg-card text-muted-foreground [&_th]:pb-2 [&_th]:pt-3 [&_th]:text-sm [&_th]:font-normal"><tr><th>{t("名称", "Name")}</th><th>{t("文件大小", "File size")}</th><th>{t("更新人", "Updated by")}</th><th>{t("更新时间", "Updated")}</th><th className="w-20 whitespace-nowrap text-right"><span className="sr-only">{t("操作", "Actions")}</span><span className="text-xs text-muted-foreground">{t(`共 ${data.total} 项`, `${data.total} items`)}</span></th></tr></thead><tbody className="divide-y">
+            {data.rows.map((item) => <tr key={item.id} className="hover:bg-muted/40"><td className="max-w-sm py-3 pr-3"><div className="flex items-center gap-2">{icon(item.type)}{options.trash ? <span className="truncate">{item.title}</span> : <Link className="truncate hover:underline" href={item.type === "FOLDER" ? href(item.id) : itemHref(item.id)}>{item.title}</Link>}</div>{options.search || options.favorites ? <div className="mt-1 text-xs text-muted-foreground">{["", ...pathOf(item.parentId).map((p) => p.title)].join(" / ") || "/"}</div> : null}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{item.type === "FILE" && item.asset ? formatStorageSize(item.asset.fileSize) : ""}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{item.updaterName}</td><td className="whitespace-nowrap pr-4 text-muted-foreground">{new Date(item.updatedAt).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}</td><td>
               {actions(item)}
             </td></tr>)}
-          </tbody></table></div>
+          </tbody></table>
           {!data.rows.length ? <p className="py-16 text-center text-muted-foreground">{t("暂无内容", "No content")}</p> : null}
-          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground"><span>{data.total} {t("项", "items")} · {data.page} / {Math.ceil(data.total / 20) || 1}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={data.page <= 1} onClick={() => navigate(href(options.folderId, data.page - 1, options.search, options.trash, options.favorites))}>{t("上一页", "Previous")}</Button><Button variant="outline" size="sm" disabled={data.page * 20 >= data.total} onClick={() => navigate(href(options.folderId, data.page + 1, options.search, options.trash, options.favorites))}>{t("下一页", "Next")}</Button></div></div>
+          <div ref={loadMoreRef} className="flex min-h-10 items-center justify-center text-xs text-muted-foreground" role="status">
+            {restoringList ? t("正在恢复列表…", "Restoring list…") : loadMoreError ? <Button variant="ghost" size="sm" onClick={() => setLoadMoreError("")}>{t("加载失败，点击重试", "Loading failed; retry")}</Button> : loadingMore ? t("正在加载…", "Loading…") : null}
+          </div></div>
         </>}
+        {returnLink && (draft || !data.current?.asset) ? <div className="flex shrink-0 px-3 pb-2 pt-1">{returnLink}</div> : null}
       </main>
     </div>
     <Dialog open={!!createTarget} onOpenChange={(open) => { if (!open) setCreateTarget(null); }}><DialogContent><DialogHeader><DialogTitle>{t("选择保存位置", "Choose save location")}</DialogTitle></DialogHeader>

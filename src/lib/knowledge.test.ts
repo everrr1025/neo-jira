@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { changeKnowledge, knowledgeAccess, listKnowledge, readableKnowledgeAsset, saveKnowledge, updateKnowledgeMetadata, setKnowledgeFavorite } from "./knowledge";
 import { cleanKnowledgeContent, knowledgeFileUrl } from "./knowledgeContent";
 import { cleanupKnowledgeFiles, detectKnowledgeMime, knowledgeStoragePath, knowledgeStorageRoot, parseKnowledgeRange, writeKnowledgeFile } from "./knowledgeStorage";
+import { knowledgeReturnTarget } from "./knowledgeNavigation";
 import { deleteProjectData } from "./projectDataCleanup";
 
 async function main() {
@@ -16,6 +17,12 @@ async function main() {
   process.env.KNOWLEDGE_STORAGE_ROOT = path.join(root, "private");
   execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], { env: { ...process.env, DATABASE_URL: url }, stdio: "pipe" });
   const db = new PrismaClient({ datasources: { db: { url } } });
+  assert.deepEqual(knowledgeReturnTarget("/knowledge?search=hello&favorites=1&from=other", "/knowledge"), { href: "/knowledge?search=hello&favorites=1", kind: "search" });
+  assert.deepEqual(knowledgeReturnTarget("/knowledge?folder=abc", "/knowledge"), { href: "/knowledge?folder=abc", kind: "list" });
+  assert.equal(knowledgeReturnTarget("https://evil.test/knowledge", "/knowledge"), null);
+  assert.equal(knowledgeReturnTarget("//evil.test/knowledge", "/knowledge"), null);
+  assert.equal(knowledgeReturnTarget("/other-project/knowledge", "/knowledge"), null);
+  assert.equal(knowledgeReturnTarget(null, "/knowledge"), null);
   let checks = 0;
   const check = (label: string) => { checks++; console.log(`✓ ${label}`); };
   const denied = (fn: () => Promise<unknown>, code = "FORBIDDEN") => assert.rejects(fn, (e: unknown) => (e as { code: string }).code === code);
@@ -68,6 +75,9 @@ async function main() {
     await denied(() => readableKnowledgeAsset("shared", "outsider", db));
     const referenced = await saveKnowledge({ projectId: "project", type: "DOCUMENT", title: "References", parentId: null, contentHtml: '<p><a href="/api/knowledge/files/shared">PDF</a></p>', attachments: [{ fileAssetId: "shared", displayName: "PDF" }] }, "member", db);
     assert.equal(await db.knowledgeAttachment.count({ where: { documentId: referenced.id } }), 2);
+    const detail = await listKnowledge("project", "viewer", { itemId: referenced.id }, db);
+    assert.equal(detail.current?.attachments.length, 2);
+    assert.ok(detail.current?.contentHtml);
     await asset("foreign", "other", "owner");
     await denied(() => saveKnowledge({ projectId: "project", type: "DOCUMENT", title: "Invalid ref", parentId: null, contentHtml: '<img src="/api/knowledge/files/foreign">' }, "author", db), "INVALID");
     check("pending-file privacy, shared resource references and cross-project rejection");
@@ -164,16 +174,23 @@ async function main() {
     assert.equal((await db.knowledgeItem.findUniqueOrThrow({ where: { id: doc.id } })).creatorId, null);
     check("former authors lose access; deleting users preserves documents");
 
-    for (let index = 0; index < 22; index++) await create("DOCUMENT", `Page ${index}`, null, "owner");
+    for (let index = 0; index < 52; index++) await create("DOCUMENT", `Page ${index}`, null, "owner");
     assert.equal((await listKnowledge("project", "viewer", { search: "Page", page: 2 }, db)).rows.length, 2);
     const pageFolder = await create("FOLDER", "Page folder", null, "owner");
     await db.knowledgeItem.update({ where: { id: pageFolder.id }, data: { updatedAt: new Date(0) } });
     const firstPage = await listKnowledge("project", "viewer", { search: "Page" }, db);
     const secondPage = await listKnowledge("project", "viewer", { search: "Page", page: 2 }, db);
     assert.equal(firstPage.rows[0].id, pageFolder.id);
-    assert.equal(firstPage.rows.length, 20);
+    assert.equal(firstPage.pageSize, 50);
+    assert.ok(firstPage.rows.every((item) => !("contentHtml" in item) && !("attachments" in item)));
+    assert.equal((await listKnowledge("project", "viewer", { search: "Page", pageSize: 20 }, db)).rows.length, 20);
+    assert.equal(firstPage.rows.length, 50);
     assert.equal(secondPage.rows.length, 3);
-    assert.equal(new Set([...firstPage.rows, ...secondPage.rows].map((item) => item.id)).size, 23);
+    const window = await listKnowledge("project", "viewer", { search: "Page", page: 2, fromStart: true }, db);
+    assert.equal(window.page, 2);
+    assert.equal(window.rows.length, 53);
+    assert.deepEqual(window.rows.map((item) => item.id), [...firstPage.rows, ...secondPage.rows].map((item) => item.id));
+    assert.equal(new Set([...firstPage.rows, ...secondPage.rows].map((item) => item.id)).size, 53);
     const rootTree = firstPage.tree.filter((item) => item.parentId === null);
     const firstNonFolder = rootTree.findIndex((item) => item.type !== "FOLDER");
     assert.ok(rootTree.slice(firstNonFolder).every((item) => item.type !== "FOLDER"));

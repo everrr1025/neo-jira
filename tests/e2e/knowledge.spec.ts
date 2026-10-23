@@ -205,7 +205,7 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   await search.press("Enter");
   await expect(page).toHaveURL(/search=/);
   await expect(page.locator("table").getByRole("link", { name: "导航文档已改名", exact: true })).toBeVisible();
-  await expect(page.locator("table").getByText("导航根目录", { exact: true })).toBeVisible();
+  await expect(page.locator("table").getByText("/ 导航根目录", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "清除搜索", exact: true }).click();
   await expect(page).toHaveURL(base);
   await sidebar.getByRole("link", { name: /^收藏/ }).click();
@@ -264,7 +264,7 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   await sidebar.getByRole("link", { name: "回收站", exact: true }).click();
   await page.locator("table").getByRole("button", { name: "操作: 导航根目录", exact: true }).click();
   await page.getByRole("menuitem", { name: "恢复", exact: true }).click();
-  await expect(page.locator("table").getByText("导航根目录", { exact: true })).toHaveCount(0);
+  await expect(page.locator("table").getByText("/ 导航根目录", { exact: true })).toHaveCount(0);
   await sidebar.getByRole("link", { name: /^收藏/ }).click();
   await expect(page.locator("table").getByRole("link", { name: "导航文档已改名", exact: true })).toBeVisible();
 
@@ -409,4 +409,236 @@ test("creation uses explicit directory context and protects open drafts", async 
   page.once("dialog", (prompt) => prompt.accept());
   await breadcrumbs.getByRole("link", { name: "四级目录", exact: true }).click();
   await expect(page).toHaveURL(`${base}?folder=${ancestors[3].id}`);
+});
+
+
+test("knowledge list loads more on scroll with a fixed header and edge scrollbar", async ({ page }) => {
+  const folder = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "FOLDER", title: "Scroll test", creatorId: "kb-author", updaterId: "kb-author" } });
+  await db.knowledgeItem.createMany({ data: Array.from({ length: 55 }, (_, index) => ({
+    projectId: "kb-project", parentId: folder.id, type: "DOCUMENT", title: `Scroll item ${index}`,
+    creatorId: "kb-author", updaterId: "kb-author", contentHtml: "<p>Details only</p>",
+  })) });
+  await authenticate(page.request, "kb-author@example.test");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`${base}?folder=${folder.id}`);
+  const table = page.locator("main table");
+  await expect(table.locator("tbody tr")).toHaveCount(50);
+  await expect(page.getByRole("button", { name: "下一页", exact: true })).toHaveCount(0);
+  const headerTop = (await table.locator("thead").boundingBox())!.y;
+  const scroll = table.locator("..");
+  const mainBounds = (await scroll.locator("..").boundingBox())!;
+  const scrollBounds = (await scroll.boundingBox())!;
+  expect(Math.abs(mainBounds.x + mainBounds.width - scrollBounds.x - scrollBounds.width)).toBeLessThan(1);
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(table.locator("tbody tr")).toHaveCount(55);
+  expect(Math.abs((await table.locator("thead").boundingBox())!.y - headerTop)).toBeLessThan(1);
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(table.locator("thead")).toContainText("共 55 项");
+  await expect(scroll.getByRole("status")).toBeEmpty();
+  await page.getByRole("navigation", { name: "面包屑" }).getByRole("link", { name: "根目录", exact: true }).click();
+  await expect(table.getByRole("link", { name: "Scroll item 0", exact: true })).toHaveCount(0);
+  await expect(table.getByRole("link", { name: "Scroll test", exact: true })).toBeVisible();
+});
+
+test("sidebar drag moves files and folders, rejects cycles and preserves document drafts", async ({ page, browser }) => {
+  const create = (type: string, title: string, parentId: string | null = null) => db.knowledgeItem.create({ data: {
+    projectId: "kb-project", type, title, parentId, creatorId: "kb-author", updaterId: "kb-author",
+    contentHtml: type === "DOCUMENT" ? "<p>Original body</p>" : "",
+  } });
+  const source = await create("FOLDER", "Drag source");
+  const child = await create("FOLDER", "Drag child", source.id);
+  const target = await create("FOLDER", "Drag target");
+  const doc = await create("DOCUMENT", "Drag draft");
+  const file = await create("FILE", "Drag file.txt");
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(base);
+  const nav = page.getByRole("complementary", { name: "知识目录" });
+  const expanded = await nav.locator('button[aria-expanded="true"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!).filter((label) => !label.includes("Drag")));
+  for (const label of expanded) {
+    const toggle = nav.getByRole("button", { name: label, exact: true });
+    if (await toggle.count()) await toggle.click();
+  }
+  const row = (title: string) => nav.getByRole("link", { name: title, exact: true }).locator("..");
+  const root = nav.getByRole("link", { name: "根目录", exact: true }).locator("..");
+  const panel = nav.locator("..");
+  await panel.evaluate((element) => {
+    const initial = element.getBoundingClientRect();
+    element.setAttribute("data-max-layout-shift", "0");
+    const observer = new ResizeObserver(() => {
+      const rect = element.getBoundingClientRect();
+      const shift = Math.max(Number(element.getAttribute("data-max-layout-shift")), Math.abs(rect.y - initial.y), Math.abs(rect.height - initial.height));
+      element.setAttribute("data-max-layout-shift", String(shift));
+    });
+    observer.observe(element);
+  });
+  await row("Drag file.txt").dragTo(row("Drag target"));
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).parentId).toBe(target.id);
+  await expect(row("Drag target").getByRole("button", { name: "收起: Drag target" })).toBeVisible();
+  await expect(row("Drag file.txt")).toHaveAttribute("draggable", "true");
+  expect(Number(await panel.getAttribute("data-max-layout-shift"))).toBeLessThan(1);
+  await page.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).parentId).toBeNull();
+  await expect(row("Drag file.txt")).toHaveAttribute("draggable", "true");
+  await row("Drag file.txt").dragTo(row("Drag target"));
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).parentId).toBe(target.id);
+  await expect(row("Drag file.txt")).toHaveAttribute("draggable", "true");
+  await row("Drag file.txt").dragTo(root);
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).parentId).toBeNull();
+  await expect.poll(async () => (await row("Drag file.txt").getAttribute("draggable"))).toBe("true");
+  const fileVersion = (await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).version;
+  await row("Drag file.txt").dragTo(root);
+  expect((await db.knowledgeItem.findUniqueOrThrow({ where: { id: file.id } })).version).toBe(fileVersion);
+  await row("Drag source").dragTo(row("Drag target"));
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: source.id } })).parentId).toBe(target.id);
+  await expect(row("Drag child")).toBeVisible();
+  await expect(row("Drag target")).toHaveAttribute("draggable", "true");
+  await row("Drag target").dragTo(row("Drag child"));
+  expect((await db.knowledgeItem.findUniqueOrThrow({ where: { id: target.id } })).parentId).toBeNull();
+  expect((await db.knowledgeItem.findUniqueOrThrow({ where: { id: child.id } })).parentId).toBe(source.id);
+  await nav.getByRole("link", { name: "Drag draft", exact: true }).click();
+  await editDocument(page, "Drag draft", "Unsaved drag body");
+  await row("Drag draft").dragTo(row("Drag target"));
+  await expect.poll(async () => (await db.knowledgeItem.findUniqueOrThrow({ where: { id: doc.id } })).parentId).toBe(target.id);
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Unsaved drag body");
+  await expect(page.getByRole("status").filter({ hasText: "未保存" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存文档", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "保存文档", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Unsaved drag body");
+  await expect(page.getByRole("navigation", { name: "面包屑" })).toContainText("Drag target");
+  const context = await browser.newContext();
+  await authenticate(context.request, "kb-viewer@example.test");
+  const viewer = await context.newPage();
+  await viewer.goto(base);
+  await expect(viewer.getByRole("complementary", { name: "知识目录" }).getByRole("link", { name: "Drag draft", exact: true }).locator("..")).toHaveAttribute("draggable", "false");
+  await context.close();
+});
+
+
+test("list operations and returning from documents preserve loaded rows, filters and scroll", async ({ page }) => {
+  const folder = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "FOLDER", title: "Keep browsing", creatorId: "kb-author", updaterId: "kb-author" } });
+  const destination = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "FOLDER", title: "Keep destination", creatorId: "kb-author", updaterId: "kb-author" } });
+  await db.knowledgeItem.createMany({ data: Array.from({ length: 110 }, (_, index) => ({ projectId: "kb-project", parentId: folder.id, type: "DOCUMENT", title: `Keep item ${index}`, contentHtml: "<p>Keep browsing body</p>", creatorId: "kb-author", updaterId: "kb-author" })) });
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(`${base}?folder=${folder.id}`);
+  const table = page.locator("main table");
+  const scroll = table.locator("..");
+  await expect(table.locator("tbody tr")).toHaveCount(50);
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  await scroll.evaluate((element) => { element.scrollTop = 1800; });
+  const selected = table.locator("tbody tr").nth(40);
+  const title = await selected.getByRole("link").innerText();
+  await selected.scrollIntoViewIfNeeded();
+  const top = await scroll.evaluate((element) => element.scrollTop);
+  await selected.getByRole("button", { name: `收藏: ${title}`, exact: true }).click();
+  await expect(table.getByRole("button", { name: `取消收藏: ${title}`, exact: true })).toBeEnabled();
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  expect(Math.abs(await scroll.evaluate((element) => element.scrollTop) - top)).toBeLessThan(2);
+  await selected.getByRole("button", { name: `操作: ${title}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+  await page.getByRole("dialog").getByRole("textbox", { name: "名称", exact: true }).fill(`${title} renamed`);
+  await page.getByRole("dialog").getByRole("button", { name: "确认", exact: true }).click();
+  await expect(table.getByRole("link", { name: `${title} renamed`, exact: true })).toHaveCount(1);
+  await expect(table.getByRole("button", { name: `操作: ${title} renamed`, exact: true })).toBeEnabled();
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  expect(Math.abs(await scroll.evaluate((element) => element.scrollTop) - top)).toBeLessThan(2);
+  const openLink = table.locator("tbody tr").nth(40).getByRole("link");
+  const openTitle = await openLink.innerText();
+  await openLink.click();
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Keep browsing body");
+  const returnLink = page.getByRole("link", { name: "返回列表", exact: true });
+  await expect(returnLink).toHaveAttribute("href", `${base}?folder=${folder.id}`);
+  const documentUrl = page.url();
+  await editDocument(page, openTitle, "Unsaved return body");
+  page.once("dialog", (prompt) => prompt.dismiss());
+  await returnLink.click();
+  await expect(page).toHaveURL(documentUrl);
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Unsaved return body");
+  page.once("dialog", (prompt) => prompt.accept());
+  await returnLink.click();
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  await expect.poll(async () => Math.abs(await scroll.evaluate((element) => element.scrollTop) - top)).toBeLessThan(2);
+  const moving = table.locator("tbody tr").nth(40);
+  const movingTitle = await moving.getByRole("link").innerText();
+  await moving.getByRole("button", { name: `操作: ${movingTitle}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "移动", exact: true }).click();
+  await page.getByRole("combobox", { name: "目标文件夹" }).selectOption(destination.id);
+  await page.getByRole("dialog").getByRole("button", { name: "确认", exact: true }).click();
+  await expect(table.getByRole("link", { name: movingTitle, exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "撤销", exact: true }).click();
+  await expect(table.getByRole("link", { name: movingTitle, exact: true })).toHaveCount(1);
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  expect(Math.abs(await scroll.evaluate((element) => element.scrollTop) - top)).toBeLessThan(2);
+  await page.getByRole("textbox", { name: "搜索知识" }).fill("Keep item");
+  await page.getByRole("textbox", { name: "搜索知识" }).press("Enter");
+  await expect(page).toHaveURL(/search=Keep/);
+  await expect(table.locator("tbody tr")).toHaveCount(50);
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  await scroll.evaluate((element) => { element.scrollTop = 1800; });
+  const searchLink = table.locator("tbody tr").nth(40).getByRole("link");
+  await searchLink.scrollIntoViewIfNeeded();
+  const searchTop = await scroll.evaluate((element) => element.scrollTop);
+  await searchLink.click();
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Keep browsing body");
+  await expect(page.getByRole("link", { name: "返回搜索结果", exact: true })).toHaveAttribute("href", `${base}?search=Keep+item`);
+  await page.getByRole("link", { name: "返回搜索结果", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "搜索知识" })).toHaveValue("Keep item");
+  await expect(table.locator("tbody tr")).toHaveCount(100);
+  await expect.poll(async () => Math.abs(await scroll.evaluate((element) => element.scrollTop) - searchTop)).toBeLessThan(2);
+});
+
+test("image preview opens a zoomable viewer and original file", async ({ page }) => {
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(base);
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 400; canvas.height = 1600;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#456789"; context.fillRect(0, 0, 400, 1600);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "preview-long.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") });
+  await page.locator("table").getByRole("link", { name: "preview-long.png", exact: true }).click();
+  await page.getByRole("button", { name: "放大查看图片", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const image = dialog.getByRole("img", { name: "preview-long.png", exact: true });
+  await expect(image).toBeVisible();
+  await expect.poll(async () => (await image.boundingBox())!.height).toBeLessThan(1600);
+  const fitHeight = (await image.boundingBox())!.height;
+  await dialog.getByRole("button", { name: "放大", exact: true }).click();
+  await expect.poll(async () => (await image.boundingBox())!.height).toBeGreaterThan(fitHeight);
+  await dialog.getByRole("button", { name: "100%", exact: true }).click();
+  await expect.poll(async () => (await image.boundingBox())!.height).toBe(1600);
+  await expect(dialog.getByRole("link", { name: "查看原图" })).toHaveAttribute("target", "_blank");
+  await expect(dialog.getByRole("link", { name: "查看原图" })).toHaveAttribute("href", /\/api\/knowledge\/files\//);
+  await dialog.getByRole("button", { name: "适应窗口", exact: true }).click();
+  await expect.poll(async () => {
+    const imageBounds = (await image.boundingBox())!;
+    const viewportBounds = (await dialog.getByLabel("图片预览", { exact: true }).boundingBox())!;
+    return imageBounds.height - viewportBounds.height;
+  }).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: "/tmp/knowledge-image-viewer.png" });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});
+
+
+test("return link follows favorites and is absent for direct or invalid sources", async ({ page }) => {
+  const document = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "DOCUMENT", title: "Return favorites", contentHtml: "<p>Favorite body</p>", creatorId: "kb-author", updaterId: "kb-author" } });
+  await db.knowledgeFavorite.create({ data: { userId: "kb-author", itemId: document.id } });
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(`${base}?favorites=1`);
+  await page.locator("table").getByRole("link", { name: "Return favorites", exact: true }).click();
+  await expect(page.getByRole("link", { name: "返回收藏", exact: true })).toHaveAttribute("href", `${base}?favorites=1`);
+  await page.getByRole("link", { name: "返回收藏", exact: true }).click();
+  await expect(page).toHaveURL(`${base}?favorites=1`);
+  await expect(page.locator("table").getByRole("link", { name: "Return favorites", exact: true })).toBeVisible();
+  await page.goto(`${base}/${document.id}`);
+  await expect(page.getByRole("link", { name: /^返回(列表|收藏|搜索结果)$/ })).toHaveCount(0);
+  await page.goto(`${base}/${document.id}?from=${encodeURIComponent("https://example.com/knowledge")}`);
+  await expect(page.getByRole("link", { name: /^返回(列表|收藏|搜索结果)$/ })).toHaveCount(0);
+  await expect(page.locator('[contenteditable="true"]')).toContainText("Favorite body");
 });
