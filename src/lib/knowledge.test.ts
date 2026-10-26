@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { changeKnowledge, knowledgeAccess, listKnowledge, readableKnowledgeAsset, saveKnowledge, updateKnowledgeMetadata, setKnowledgeFavorite } from "./knowledge";
 import { cleanKnowledgeContent, knowledgeFileUrl } from "./knowledgeContent";
 import { cleanupKnowledgeFiles, detectKnowledgeMime, knowledgeStoragePath, knowledgeStorageRoot, parseKnowledgeRange, writeKnowledgeFile } from "./knowledgeStorage";
+import { knowledgeFolderNameError } from "./knowledgeFolderName";
 import { knowledgeReturnTarget } from "./knowledgeNavigation";
 import { deleteProjectData } from "./projectDataCleanup";
 
@@ -43,7 +44,21 @@ async function main() {
     check("project permissions do not grant global admin implicit read access");
 
     const create = (type: "FOLDER" | "DOCUMENT", title: string, parentId: string | null = null, user = "author") => saveKnowledge({ projectId: "project", type, title, parentId }, user, db);
+    const invalidFolderNames = ["产品/设计", "产品\\设计", ".", " .. ", "资料\n归档", "资料\t归档", "\n资料", "资料\t", `资料${String.fromCharCode(0)}`, `资料${String.fromCharCode(127)}`, `资料${String.fromCharCode(159)}`];
+    for (const name of invalidFolderNames) {
+      assert.ok(knowledgeFolderNameError(name));
+      await denied(() => create("FOLDER", name), "INVALID");
+    }
+    for (const name of ["中文 Design 2026", "v1.0", ".notes", "资料：Q&A (设计) 🙂"]) assert.equal(knowledgeFolderNameError(name), null);
     const folder = await create("FOLDER", "Folder");
+    for (const name of invalidFolderNames) {
+      await denied(() => updateKnowledgeMetadata({ projectId: "project", id: folder.id, version: 1, action: "RENAME", title: name }, "author", db), "INVALID");
+      await denied(() => saveKnowledge({ projectId: "project", id: folder.id, version: 1, type: "FOLDER", title: name, parentId: null }, "author", db), "INVALID");
+    }
+    assert.equal((await db.knowledgeItem.findUniqueOrThrow({ where: { id: folder.id } })).version, 1);
+    const unrestrictedDoc = await create("DOCUMENT", "API / v1");
+    await updateKnowledgeMetadata({ projectId: "project", id: unrestrictedDoc.id, version: 1, action: "RENAME", title: "API / v2" }, "author", db);
+    check("folder names reject separators, control characters and dot-only names on create and rename without restricting document titles");
     const doc = await create("DOCUMENT", "Document", folder.id);
     await denied(() => create("DOCUMENT", "Forbidden", null, "viewer"));
     await denied(() => saveKnowledge({ projectId: "project", id: doc.id, version: 1, type: "DOCUMENT", title: "No", parentId: folder.id }, "member", db));
@@ -127,7 +142,7 @@ async function main() {
     await changeKnowledge({ projectId: "project", id: metadataDoc.id, version: 4, action: "RESTORE" }, "member", db);
     assert.equal((await listKnowledge("project", "viewer", { favorites: true }, db)).total, 3);
     await changeKnowledge({ projectId: "project", id: metadataDoc.id, version: 5, action: "DELETE" }, "member", db);
-    await changeKnowledge({ projectId: "project", id: metadataDoc.id, version: 6, action: "PURGE", confirmTitle: metadataItem.title }, "owner", db);
+    await changeKnowledge({ projectId: "project", id: metadataDoc.id, version: 6, action: "PURGE" }, "owner", db);
     assert.equal(await db.knowledgeFavorite.count({ where: { itemId: metadataDoc.id } }), 0);
     await setKnowledgeFavorite("project", file.id, false, "viewer", db);
     check("personal favorites are isolated, idempotent, preserve shared metadata, hide trash and cascade on purge");
@@ -141,8 +156,8 @@ async function main() {
     await changeKnowledge({ projectId: "project", id: folder.id, version: 3, action: "DELETE" }, "owner", db);
     await changeKnowledge({ projectId: "project", id: doc.id, version: 3, action: "RESTORE" }, "author", db);
     assert.equal((await db.knowledgeItem.findUniqueOrThrow({ where: { id: doc.id } })).parentId, null);
-    await denied(() => changeKnowledge({ projectId: "project", id: folder.id, version: 4, action: "PURGE", confirmTitle: "Folder" }, "author", db));
-    await changeKnowledge({ projectId: "project", id: folder.id, version: 4, action: "PURGE", confirmTitle: "Folder" }, "owner", db);
+    await denied(() => changeKnowledge({ projectId: "project", id: folder.id, version: 4, action: "PURGE" }, "author", db));
+    await changeKnowledge({ projectId: "project", id: folder.id, version: 4, action: "PURGE" }, "owner", db);
     await cleanupKnowledgeFiles(db, new Date(Date.now() + 2 * 86400_000));
     await readableKnowledgeAsset("shared", "viewer", db);
     check("delete batches restore only their members, missing parents restore to root, live references survive purge");
@@ -152,7 +167,7 @@ async function main() {
     await readableKnowledgeAsset("shared", "member", db);
     await cleanupKnowledgeFiles(db, new Date(Date.now() + 3 * 86400_000));
     assert.ok(await db.fileAsset.findUnique({ where: { id: "shared" } }));
-    await changeKnowledge({ projectId: "project", id: referenced.id, version: 2, action: "PURGE", confirmTitle: "References" }, "owner", db);
+    await changeKnowledge({ projectId: "project", id: referenced.id, version: 2, action: "PURGE" }, "owner", db);
     assert.ok((await db.fileAsset.findUniqueOrThrow({ where: { id: "shared" } })).cleanupAfter);
     await cleanupKnowledgeFiles(db, new Date(Date.now() + 3 * 86400_000));
     assert.equal(await db.fileAsset.findUnique({ where: { id: "shared" } }), null);

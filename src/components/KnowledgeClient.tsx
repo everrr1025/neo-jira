@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import KnowledgeImagePreview from "@/components/KnowledgeImagePreview";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -9,10 +9,12 @@ import type { KnowledgePageData } from "@/lib/knowledge";
 import { saveKnowledgeItem, updateKnowledgeItemMetadata, favoriteKnowledgeItem, changeKnowledgeItem, loadKnowledge, discardKnowledgeUpload } from "@/app/actions/knowledge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import RichTextEditor, { type RichTextEditorHandle } from "@/components/RichTextEditor";
 import { composeKnowledgeEditorContent, splitKnowledgeEditorContent } from "@/lib/knowledgeEditor";
+import { knowledgeFolderNameError } from "@/lib/knowledgeFolderName";
 import { knowledgeReturnTarget } from "@/lib/knowledgeNavigation";
 import { formatStorageSize } from "@/lib/fileStorage";
 import type { Locale } from "@/lib/i18n";
@@ -21,7 +23,7 @@ type Item = KnowledgePageData["rows"][number];
 type TreeItem = KnowledgePageData["tree"][number];
 type Asset = NonNullable<Item["asset"]>;
 type Draft = { id?: string; title: string; contentHtml: string; parentId: string | null; version?: number; attachments: NonNullable<KnowledgePageData["current"]>["attachments"] };
-type BrowsePosition = { page: number; top: number; left: number; sidebarTop: number; collapsed: Record<string, boolean> };
+type BrowsePosition = { page: number; top: number; left: number; sidebarTop: number };
 type Options = { folderId: string | null; itemId?: string; search: string; trash: boolean; favorites: boolean; page: number };
 
 export default function KnowledgeClient({ initialData, projectId, basePath, options: viewOptions, locale, uploadLimit }: {
@@ -75,6 +77,8 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
   const dirtyRef = useRef(dirty);
   const editable = draft && (!draft.id ? data.access.canCreate : !!data.current?.canEdit);
   const locked = busy || uploading > 0;
+  const folderNameErrorId = useId();
+  const folderNameError = modal?.action === "folder" || (modal?.action === "rename" && modal.item?.type === "FOLDER") ? knowledgeFolderNameError(name, locale) : null;
 
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
   useEffect(() => {
@@ -165,7 +169,6 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
       try {
         const position = JSON.parse(sessionStorage.getItem(browseStorageKey) || "null") as BrowsePosition | null;
         if (!position || !Number.isInteger(position.page) || position.page < 1 || ![position.top, position.left, position.sidebarTop].every((value) => Number.isFinite(value) && value >= 0)) { setRestoringList(false); return; }
-        if (position.collapsed && typeof position.collapsed === "object") setCollapsed(Object.fromEntries(Object.entries(position.collapsed).filter(([, value]) => value === true)));
         if (position.page > 1) {
           const result = await loadKnowledge(projectId, { ...options, page: position.page, fromStart: true });
           if (!active) return;
@@ -199,13 +202,13 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     const sidebar = sidebarScrollRef.current;
     if (!list) return;
     const remember = () => {
-      try { sessionStorage.setItem(browseStorageKey, JSON.stringify({ page: data.page, top: list.scrollTop, left: list.scrollLeft, sidebarTop: sidebar?.scrollTop || 0, collapsed } satisfies BrowsePosition)); } catch { /* Keep browsing when storage is unavailable. */ }
+      try { sessionStorage.setItem(browseStorageKey, JSON.stringify({ page: data.page, top: list.scrollTop, left: list.scrollLeft, sidebarTop: sidebar?.scrollTop || 0 } satisfies BrowsePosition)); } catch { /* Keep browsing when storage is unavailable. */ }
     };
     remember();
     list.addEventListener("scroll", remember, { passive: true });
     sidebar?.addEventListener("scroll", remember, { passive: true });
     return () => { list.removeEventListener("scroll", remember); sidebar?.removeEventListener("scroll", remember); };
-  }, [browseStorageKey, collapsed, data.page, draft, options.itemId, restoringList]);
+  }, [browseStorageKey, data.page, draft, options.itemId, restoringList]);
   useEffect(() => {
     if (!moveNotice) return;
     const timeout = window.setTimeout(() => setMoveNotice(null), 15000);
@@ -236,7 +239,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
   const refresh = async () => {
     listGeneration.current++;
     setLoadMoreError("");
-    const position: BrowsePosition = { page: data.page, top: listScrollRef.current?.scrollTop || 0, left: listScrollRef.current?.scrollLeft || 0, sidebarTop: sidebarScrollRef.current?.scrollTop || 0, collapsed };
+    const position: BrowsePosition = { page: data.page, top: listScrollRef.current?.scrollTop || 0, left: listScrollRef.current?.scrollLeft || 0, sidebarTop: sidebarScrollRef.current?.scrollTop || 0 };
     const result = await loadKnowledge(projectId, { ...options, page: data.page, fromStart: true });
     if (result.success) { pendingPosition.current = position; setData(result.value); setLoadingMore(false); } else setError(result.error);
   };
@@ -314,7 +317,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     finally { setBusy(false); }
   };
   const openModal = (action: NonNullable<typeof modal>["action"], item?: TreeItem, parentId: string | null = null) => {
-    setModal({ action, item, parentId }); setName(action === "purge" || action === "folder" ? "" : item?.title || ""); setDestination(item?.parentId || ""); setError("");
+    setModal({ action, item, parentId }); setName(action === "folder" ? "" : item?.title || ""); setDestination(item?.parentId || ""); setError("");
   };
   const toggleFavorite = async (item: TreeItem) => {
     setBusy(true); setError("");
@@ -325,12 +328,12 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     } catch { setError(t("操作失败，请重试", "Operation failed; retry")); }
     finally { setBusy(false); }
   };
-  const mutate = async (action: "DELETE" | "RESTORE" | "PURGE", item: TreeItem, confirmTitle?: string) => {
+  const mutate = async (action: "DELETE" | "RESTORE" | "PURGE", item: TreeItem) => {
     const affectsCurrent = data.current?.id === item.id || pathOf(draft?.parentId ?? activeParent).some((parent) => parent.id === item.id);
     if (action === "DELETE" && affectsCurrent && dirtyRef.current && !window.confirm(t("文档尚未保存，确定离开？", "Discard unsaved changes?"))) return;
     setBusy(true); setError("");
     try {
-      const result = await changeKnowledgeItem({ projectId, id: item.id, version: item.version, action, confirmTitle });
+      const result = await changeKnowledgeItem({ projectId, id: item.id, version: item.version, action });
       if (!result.success) { setError(result.error); return; }
       setModal(null);
       if (affectsCurrent && action === "DELETE") { dirtyRef.current = false; router.push(href(item.parentId)); router.refresh(); } else await refresh();
@@ -338,8 +341,8 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     finally { setBusy(false); }
   };
   const submitModal = async () => {
-    if (!modal) return;
-    if (modal.action === "delete" || modal.action === "purge") { await mutate(modal.action === "delete" ? "DELETE" : "PURGE", modal.item!, name); return; }
+    if (!modal || folderNameError) return;
+    if (modal.action === "delete" || modal.action === "purge") { await mutate(modal.action === "delete" ? "DELETE" : "PURGE", modal.item!); return; }
     if (modal.action === "move") { setModal(null); await moveItem(modal.item!, destination || null); return; }
     const item = modal.item;
     setBusy(true); setError("");
@@ -392,7 +395,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
         setSaved((current) => JSON.stringify({ ...JSON.parse(current), ...metadata }));
       }
       if (parentId) setCollapsed((current) => ({ ...current, [parentId]: false }));
-      setMoveNotice(undo ? null : { item: { ...item, parentId, version: result.value.version }, previousParent: item.parentId, destination: pathOf(parentId).map((folder) => folder.title).join(" / ") || "/" });
+      setMoveNotice(undo ? null : { item: { ...item, parentId, version: result.value.version }, previousParent: item.parentId, destination: `/${pathOf(parentId).map((folder) => folder.title).join("/")}` });
       await refresh();
     } catch { setError(t("移动失败，请重试", "Move failed; retry")); }
     finally { setBusy(false); }
@@ -416,6 +419,9 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
       setDraggedItem(null); setDropTarget(null);
     },
   });
+  const moveFolders = (parentId: string | null): TreeItem[] => data.tree
+    .filter((item) => item.type === "FOLDER" && item.parentId === parentId && item.id !== modal?.item?.id)
+    .flatMap((item) => [item, ...moveFolders(item.id)]);
   const treeNodes = (parentId: string | null, depth = 0): React.ReactNode => data.tree.filter((item) => item.parentId === parentId).map((item) => (
     <div key={item.id}>
       <div draggable={item.canEdit && !locked && !options.trash}
@@ -494,7 +500,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
           <Link draggable={false} className="min-w-0 flex-1 px-2 py-1 font-mono text-sm" href={basePath} aria-label={t("根目录", "Root")} title={t("根目录", "Root")}>/</Link>
           {data.access.canCreate && !options.trash ? <Button className="shrink-0 opacity-0 transition-opacity group-hover/root:opacity-100 group-focus-within/root:opacity-100 [@media(hover:none)]:opacity-100" variant="ghost" size="icon-xs" disabled={locked} aria-label={t("新建文件夹", "New folder")} title={t("在根目录下新建文件夹", "New folder in root")} onClick={() => openModal("folder", undefined, null)}><Plus /></Button> : null}
         </div>
-        <div ref={sidebarScrollRef} className="min-h-0 flex-1 overflow-auto">{treeNodes(null)}</div>
+        <div ref={sidebarScrollRef} className="min-h-0 flex-1 overflow-auto" aria-busy={!foldersReady}>{foldersReady ? treeNodes(null) : null}</div>
         <Link className="mt-4 flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-sidebar-accent-foreground" href={href(null, 1, "", true)}><Trash2 className="size-4" />{t("回收站", "Trash")}</Link>
       </aside>
       <main className={`min-h-0 min-w-0 bg-card ${draft ? "flex flex-col overflow-hidden" : data.current?.type === "FILE" ? "flex flex-col overflow-auto" : "flex h-[65vh] flex-col overflow-hidden md:h-auto"}`}>
@@ -540,10 +546,10 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
       <DialogFooter><Button variant="outline" onClick={() => setCreateTarget(null)}>{t("取消", "Cancel")}</Button><Button disabled={locked || createTarget?.folderId === undefined} onClick={() => { if (!createTarget || createTarget.folderId === undefined) return; setCreateTarget(null); beginCreation(createTarget.type, createTarget.folderId || null); }}>{t("继续", "Continue")}</Button></DialogFooter>
     </DialogContent></Dialog>
     <Dialog open={!!modal} onOpenChange={(open) => { if (!open && !locked) setModal(null); }}><DialogContent><DialogHeader><DialogTitle>{modal?.action === "folder" ? t("新建文件夹", "New folder") : modal?.action === "rename" ? t("重命名", "Rename") : modal?.action === "move" ? t("移动到", "Move to") : modal?.action === "purge" ? t("永久删除", "Delete permanently") : t("移到回收站", "Move to trash")}</DialogTitle></DialogHeader>
-      {modal?.action === "folder" ? <p className="text-sm text-muted-foreground">{t("创建位置", "Location")}: {pathOf(modal.parentId ?? null).map((item) => item.title).join(" / ") || t("根目录", "Root")}</p> : null}
-      {modal?.action === "move" ? <select aria-label={t("目标文件夹", "Destination folder")} value={destination} onChange={(event) => setDestination(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3"><option value="">{t("根目录", "Root")}</option>{data.tree.filter((item) => item.type === "FOLDER" && item.id !== modal.item?.id && !pathOf(item.id).some((parent) => parent.id === modal.item?.id)).map((item) => <option key={item.id} value={item.id}>{pathOf(item.id).map((p) => p.title).join(" / ")}</option>)}</select> : modal?.action === "delete" ? <p className="text-sm">{t("内容将移至回收站，文件夹中的有效内容也会一起移入，可恢复。", "Move this item and its active descendants to trash? They can be restored.")}</p> : <><p className="text-sm text-muted-foreground">{modal?.action === "purge" ? `${t("输入名称确认永久删除（包含子目录内容）", "Type the name to permanently delete this item and descendants")}: ${modal.item?.title}` : t("名称", "Name")}</p><Input aria-label={t("名称", "Name")} value={name} maxLength={200} onChange={(event) => setName(event.target.value)} /></>}
+      {modal?.action === "folder" ? <p className="break-words text-sm text-muted-foreground" aria-live="polite">{["", ...pathOf(modal.parentId ?? null).map((item) => item.title), ...(name.trim() ? [name.trim()] : [])].join(" / ") || "/"}</p> : null}
+      {modal?.action === "move" ? <Select value={destination || "__root__"} onValueChange={(value) => setDestination(value === "__root__" ? "" : value)} disabled={locked}><SelectTrigger aria-label={t("目标文件夹", "Destination folder")} className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__root__">/</SelectItem>{moveFolders(null).map((item) => <SelectItem key={item.id} value={item.id}>{`/${pathOf(item.id).map((p) => p.title).join("/")}`}</SelectItem>)}</SelectContent></Select> : modal?.action === "delete" ? <p className="text-sm">{t("内容将移至回收站，文件夹中的有效内容也会一起移入，可恢复。", "Move this item and its active descendants to trash? They can be restored.")}</p> : modal?.action === "purge" ? <p className="break-words text-sm">{modal.item?.type === "FOLDER" ? t(`将永久删除“${modal.item.title}”及其中的全部内容，无法恢复。确定继续？`, `Permanently delete “${modal.item.title}” and all its contents? This cannot be undone.`) : t(`将永久删除“${modal.item?.title}”，无法恢复。确定继续？`, `Permanently delete “${modal.item?.title}”? This cannot be undone.`)}</p> : <><p className="text-sm text-muted-foreground">{t("名称", "Name")}</p><Input aria-label={t("名称", "Name")} aria-invalid={!!folderNameError} aria-describedby={folderNameError ? folderNameErrorId : undefined} value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />{folderNameError ? <p id={folderNameErrorId} role="alert" className="text-sm text-destructive">{folderNameError}</p> : null}</>}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      <DialogFooter><Button variant="outline" disabled={locked} onClick={() => setModal(null)}>{t("取消", "Cancel")}</Button><Button disabled={locked || ((modal?.action === "folder" || modal?.action === "rename") && !name.trim()) || (modal?.action === "purge" && name !== modal.item?.title)} onClick={() => void submitModal()}>{t("确认", "Confirm")}</Button></DialogFooter>
+      <DialogFooter><Button variant="outline" disabled={locked} onClick={() => setModal(null)}>{t("取消", "Cancel")}</Button><Button variant={modal?.action === "purge" ? "destructive" : "default"} disabled={locked || !!folderNameError || ((modal?.action === "folder" || modal?.action === "rename") && !name.trim())} onClick={() => void submitModal()}>{t("确认", "Confirm")}</Button></DialogFooter>
     </DialogContent></Dialog>
     <Dialog open={pickerOpen} onOpenChange={setPickerOpen}><DialogContent><DialogHeader><DialogTitle>{t("引用同项目文件", "Link a project file")}</DialogTitle></DialogHeader><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); void loadPicker(); }}><Input aria-label={t("搜索文件", "Search files")} value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} /><Button type="submit" variant="outline" disabled={busy}>{t("搜索", "Search")}</Button></form><div className="max-h-80 space-y-1 overflow-auto">{picker?.rows.map((item) => item.asset ? <Button key={item.id} variant="ghost" className="w-full justify-start" disabled={draft?.attachments.some((a) => a.fileAssetId === item.asset!.id)} onClick={() => { const asset = item.asset!; setDraft((current) => current ? { ...current, attachments: [...current.attachments, { fileAssetId: asset.id, displayName: item.title, usage: "ATTACHMENT", asset }] } : current); setPickerOpen(false); }}>{item.title}</Button> : null)}{picker?.total === 0 ? <p className="py-4 text-sm text-muted-foreground">{t("暂无可引用文件", "No files available")}</p> : null}</div><DialogFooter><Button variant="outline" disabled={busy || !picker || picker.page <= 1} onClick={() => void loadPicker(picker!.page - 1)}>{t("上一页", "Previous")}</Button><Button variant="outline" disabled={busy || !picker || picker.page * 20 >= picker.total} onClick={() => void loadPicker(picker!.page + 1)}>{t("下一页", "Next")}</Button></DialogFooter></DialogContent></Dialog>
   </div>;

@@ -1,3 +1,4 @@
+import { knowledgeFolderNameError } from "./knowledgeFolderName";
 import { randomUUID } from "node:crypto";
 import type { KnowledgeItem, Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -79,6 +80,10 @@ async function attachableAssets(db: DB, ids: string[], projectId: string, userId
 
 export async function saveKnowledge(input: KnowledgeSaveInput, userId: string, db: PrismaClient = prisma) {
   const data = knowledgeSaveSchema.parse(input);
+  if (data.type === "FOLDER") {
+    const error = knowledgeFolderNameError(input.title);
+    if (error) throw new KnowledgeError("INVALID", error);
+  }
   return db.$transaction(async (tx) => {
     const access = await knowledgeAccess(tx, data.projectId, userId);
     let existing: KnowledgeItem | null = null;
@@ -130,6 +135,10 @@ export async function updateKnowledgeMetadata(input: z.input<typeof metadataSche
     if (!item) throw new KnowledgeError("NOT_FOUND", "内容不存在");
     await assertEdit(tx, item, access);
     if ((data.action === "RENAME" && !data.title) || (data.action === "MOVE" && data.parentId === undefined)) throw new KnowledgeError("INVALID", "请提供名称或目标目录");
+    if (data.action === "RENAME" && item.type === "FOLDER") {
+      const error = knowledgeFolderNameError(input.title!);
+      if (error) throw new KnowledgeError("INVALID", error);
+    }
     if (data.action === "MOVE") await validParent(tx, data.projectId, data.parentId!, item.id);
     const result = await tx.knowledgeItem.updateMany({
       where: { id: item.id, version: data.version, deletedAt: null },
@@ -152,7 +161,7 @@ export async function setKnowledgeFavorite(projectId: string, itemId: string, fa
   });
 }
 
-export const knowledgeChangeSchema = z.object({ projectId: z.string(), id: z.string(), version: z.number().int().positive(), action: z.enum(["DELETE", "RESTORE", "PURGE"]), confirmTitle: z.string().optional() });
+export const knowledgeChangeSchema = z.object({ projectId: z.string(), id: z.string(), version: z.number().int().positive(), action: z.enum(["DELETE", "RESTORE", "PURGE"]) });
 export async function changeKnowledge(input: z.infer<typeof knowledgeChangeSchema>, userId: string, db: PrismaClient = prisma) {
   const data = knowledgeChangeSchema.parse(input);
   return db.$transaction(async (tx) => {
@@ -177,7 +186,7 @@ export async function changeKnowledge(input: z.infer<typeof knowledgeChangeSchem
       await tx.knowledgeItem.updateMany({ where: { id: { in: restoreIds } }, data: { deletedAt: null, deleteBatchId: null, version: { increment: 1 }, updaterId: userId } });
       if (!parent || parent.deletedAt) await tx.knowledgeItem.update({ where: { id: item.id }, data: { parentId: null } });
     } else {
-      if (!access.canManage || data.confirmTitle !== item.title) throw new KnowledgeError("FORBIDDEN", "永久删除需要管理员输入名称确认");
+      if (!access.canManage) throw new KnowledgeError("FORBIDDEN", "仅管理员可永久删除");
       if (all.some((row) => ids.has(row.id) && !row.deletedAt)) throw new KnowledgeError("INVALID", "目录仍有有效内容");
       await tx.knowledgeItem.deleteMany({ where: { id: { in: [...ids] } } });
       await markKnowledgeOrphans(tx, data.projectId);

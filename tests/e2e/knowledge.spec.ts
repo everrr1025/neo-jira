@@ -144,12 +144,36 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   const search = page.getByRole("textbox", { name: "搜索知识" });
   await expect(page.getByRole("heading", { name: "知识", exact: true }).locator("..").getByText("Knowledge test project", { exact: true })).toHaveCount(0);
   await sidebar.getByRole("button", { name: "新建文件夹", exact: true }).click();
-  await expect(dialog.getByText("创建位置: 根目录")).toBeVisible();
+  await expect(dialog.getByText("/", { exact: true })).toBeVisible();
+  const folderName = dialog.getByRole("textbox", { name: "名称", exact: true });
+  for (const invalid of ["产品/设计", "产品\\设计", ".", ".."]) {
+    await folderName.fill(invalid);
+    await expect(folderName).toHaveValue(invalid);
+    await expect(folderName).toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await expect(confirm).toBeDisabled();
+  }
   await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("导航测试");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(confirm).toBeEnabled();
+  await expect(dialog.getByText("/ 导航测试", { exact: true })).toBeVisible();
+  await confirm.click();
+  await sidebar.getByRole("button", { name: "操作: 导航测试", exact: true }).click();
+  await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
+  await folderName.fill("导航/测试");
+  await expect(folderName).toHaveValue("导航/测试");
+  await expect(dialog.getByRole("alert")).toContainText("文件夹名称不能包含");
+  await expect(confirm).toBeDisabled();
+  await folderName.fill("导航测试");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   await confirm.click();
   await sidebar.getByRole("button", { name: "操作: 导航测试", exact: true }).click();
   await page.getByRole("menuitem", { name: "新建子文件夹", exact: true }).click();
-  await expect(dialog.getByText("创建位置: 导航测试")).toBeVisible();
+  await expect(dialog.getByText("/ 导航测试", { exact: true })).toBeVisible();
+  await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("导航子目录");
+  await expect(dialog.getByText("/ 导航测试 / 导航子目录", { exact: true })).toBeVisible();
+  await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("");
+  await expect(dialog.getByText("/ 导航测试", { exact: true })).toBeVisible();
   await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("导航子目录");
   await confirm.click();
   await expect(sidebar.getByRole("link", { name: "导航子目录", exact: true })).toBeVisible();
@@ -160,12 +184,13 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   await sidebar.getByRole("link", { name: "导航测试", exact: true }).click();
   await expect(sidebar.getByRole("link", { name: "导航子目录", exact: true })).toBeVisible();
   await sidebar.getByRole("button", { name: "新建文件夹", exact: true }).click();
-  await expect(dialog.getByText("创建位置: 根目录")).toBeVisible();
+  await expect(dialog.getByText("/", { exact: true })).toBeVisible();
   await dialog.getByRole("textbox", { name: "名称", exact: true }).fill("导航根目录");
   await confirm.click();
   await expect(sidebar.getByRole("link", { name: "导航根目录", exact: true })).toBeVisible();
   expect((await db.knowledgeItem.findFirstOrThrow({ where: { title: "导航根目录" } })).parentId).toBeNull();
   await sidebar.getByRole("link", { name: "导航子目录", exact: true }).click();
+  await expect(sidebar.getByRole("link", { name: "导航子目录", exact: true })).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "文档", exact: true }).click();
   await editDocument(page, "导航文档", "导航文档正文");
   await page.getByRole("button", { name: "保存文档", exact: true }).click();
@@ -198,7 +223,17 @@ test("knowledge navigation, personal favorites, metadata actions and top search"
   await sidebar.getByRole("button", { name: "操作: 导航文档已改名", exact: true }).click();
   await page.getByRole("menuitem", { name: "移动", exact: true }).click();
   const root = await db.knowledgeItem.findFirstOrThrow({ where: { title: "导航根目录" } });
-  await dialog.getByRole("combobox", { name: "目标文件夹" }).selectOption(root.id);
+  await dialog.getByRole("combobox", { name: "目标文件夹" }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  const destinations = await page.getByRole("option").allTextContents();
+  expect(destinations[0]).toBe("/");
+  expect(destinations.indexOf("/导航测试")).toBeGreaterThanOrEqual(0);
+  expect(destinations.indexOf("/导航测试/导航子目录")).toBe(destinations.indexOf("/导航测试") + 1);
+  await page.getByRole("option", { name: "/", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "目标文件夹" })).toHaveText("/");
+  await dialog.getByRole("combobox", { name: "目标文件夹" }).click();
+  await page.getByRole("option", { name: `/${root.title}`, exact: true }).click();
   await confirm.click();
   await expect(page.getByRole("navigation", { name: "面包屑" }).getByRole("link", { name: "导航根目录", exact: true })).toBeVisible();
   await expect(page.locator('[contenteditable="true"]')).toContainText("尚未保存的导航正文");
@@ -564,7 +599,8 @@ test("list operations and returning from documents preserve loaded rows, filters
   const movingTitle = await moving.getByRole("link").innerText();
   await moving.getByRole("button", { name: `操作: ${movingTitle}`, exact: true }).click();
   await page.getByRole("menuitem", { name: "移动", exact: true }).click();
-  await page.getByRole("combobox", { name: "目标文件夹" }).selectOption(destination.id);
+  await page.getByRole("combobox", { name: "目标文件夹" }).click();
+  await page.getByRole("option", { name: `/${destination.title}`, exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "确认", exact: true }).click();
   await expect(table.getByRole("link", { name: movingTitle, exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "撤销", exact: true }).click();
@@ -641,4 +677,68 @@ test("return link follows favorites and is absent for direct or invalid sources"
   await page.goto(`${base}/${document.id}?from=${encodeURIComponent("https://example.com/knowledge")}`);
   await expect(page.getByRole("link", { name: /^返回(列表|收藏|搜索结果)$/ })).toHaveCount(0);
   await expect(page.locator('[contenteditable="true"]')).toContainText("Favorite body");
+});
+
+
+test("trash permanently deletes after confirmation without typing a name", async ({ page }) => {
+  const folder = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "FOLDER", title: "Purge confirmation folder", creatorId: "kb-author", updaterId: "kb-author", deletedAt: new Date() } });
+  const child = await db.knowledgeItem.create({ data: { projectId: "kb-project", type: "DOCUMENT", title: "Purge confirmation child", parentId: folder.id, creatorId: "kb-author", updaterId: "kb-author", deletedAt: new Date() } });
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(`${base}?trash=1`);
+  const open = async () => {
+    await page.locator("table").getByRole("button", { name: "操作: Purge confirmation folder", exact: true }).click();
+    await page.getByRole("menuitem", { name: "永久删除", exact: true }).click();
+  };
+  await open();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("textbox")).toHaveCount(0);
+  await expect(dialog).toContainText("Purge confirmation folder");
+  await expect(dialog).toContainText("无法恢复");
+  await expect(dialog.getByRole("button", { name: "确认", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  expect(await db.knowledgeItem.count({ where: { id: { in: [folder.id, child.id] } } })).toBe(2);
+  await open();
+  await dialog.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => db.knowledgeItem.count({ where: { id: { in: [folder.id, child.id] } } })).toBe(0);
+});
+
+
+test("directory navigation keeps the latest collapse state instead of old list snapshots", async ({ page }) => {
+  const create = (title: string, parentId: string | null = null) => db.knowledgeItem.create({ data: { projectId: "kb-project", type: "FOLDER", title, parentId, creatorId: "kb-author", updaterId: "kb-author" } });
+  const a = await create("Expand A");
+  const aChild = await create("Expand A child", a.id);
+  const b = await create("Expand B");
+  await create("Expand B child", b.id);
+  await authenticate(page.request, "kb-author@example.test");
+  await page.goto(base);
+  const nav = page.getByRole("complementary", { name: "知识目录" });
+  await nav.getByRole("link", { name: "Expand A", exact: true }).click();
+  await expect(page).toHaveURL(`${base}?folder=${a.id}`);
+  await expect(nav.getByRole("link", { name: "Expand B child", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate((folderId) => Object.keys(sessionStorage).some((key) => key.startsWith("knowledge-browse:") && key.includes(folderId)), a.id)).toBe(true);
+  await page.evaluate((folderId) => {
+    const key = Object.keys(sessionStorage).find((key) => key.startsWith("knowledge-browse:") && key.includes(folderId))!;
+    const snapshot = JSON.parse(sessionStorage.getItem(key)!);
+    sessionStorage.setItem(key, JSON.stringify({ ...snapshot, collapsed: {} }));
+  }, a.id);
+  await nav.getByRole("link", { name: "根目录", exact: true }).click();
+  await nav.getByRole("button", { name: "收起: Expand B", exact: true }).click();
+  await expect(nav.getByRole("link", { name: "Expand B child", exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate((id) => JSON.parse(localStorage.getItem("knowledge-folders:kb-author:kb-project") || "{}")[id], b.id)).toBe(true);
+  await nav.getByRole("link", { name: "Expand A", exact: true }).click();
+  await expect(page).toHaveURL(`${base}?folder=${a.id}`);
+  await expect(nav.getByRole("button", { name: "展开: Expand B", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("link", { name: "Expand B child", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Expand A child", exact: true })).toBeVisible();
+  await nav.getByRole("button", { name: "收起: Expand A", exact: true }).click();
+  await nav.getByRole("link", { name: "根目录", exact: true }).click();
+  await expect(nav.getByRole("button", { name: "展开: Expand A", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("button", { name: "展开: Expand B", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await page.goto(`${base}?folder=${aChild.id}`);
+  await expect(nav.getByRole("button", { name: "收起: Expand A", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(nav.getByRole("button", { name: "收起: Expand A child", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(nav.getByRole("button", { name: "展开: Expand B", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await page.reload();
+  await expect(nav.getByRole("button", { name: "展开: Expand B", exact: true })).toHaveAttribute("aria-expanded", "false");
 });
