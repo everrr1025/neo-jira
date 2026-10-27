@@ -19,7 +19,7 @@ export function formatDeadlineTiming(timing: IterationTiming, locale: "en" | "zh
   return locale === "zh" ? `剩余 ${timing.days} 天` : `${timing.days} days remaining`;
 }
 
-export type DashboardIssueTabId = "assigned" | "watched" | "priority" | "overdue" | "due-soon";
+export type DashboardIssueTabId = "assigned" | "watched" | "overdue";
 
 export function getIterationTiming(endDate: Date | null, today = new Date()): IterationTiming | null {
   if (!endDate) return null;
@@ -45,9 +45,7 @@ export function selectInitialDashboardIssueTab(
 ): DashboardIssueTabId {
   const priorityOrder: DashboardIssueTabId[] = [
     "overdue",
-    "priority",
     "assigned",
-    "due-soon",
     "watched",
   ];
 

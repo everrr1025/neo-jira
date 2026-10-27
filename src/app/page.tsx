@@ -10,10 +10,11 @@ import {
   getTranslations,
   localeDateMap,
 } from "@/lib/i18n";
+import DashboardKnowledgeCard from "@/components/DashboardKnowledgeCard";
+import { getProjectKnowledgeSummary } from "@/lib/knowledge";
 import DashboardIssueTabsCard from "@/components/DashboardIssueTabsCard";
 import DeadlineHint from "@/components/DeadlineHint";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { getUserDepartmentMembership } from "@/lib/departmentAccess";
 import { getIterationTiming, selectInitialDashboardIssueTab } from "@/lib/projectDashboard";
 import {
@@ -59,7 +60,7 @@ type SessionUser = {
 export default async function Dashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{ search?: string; knowledge?: string }>;
 }) {
   const params = await searchParams;
   const locale = await getCurrentLocale();
@@ -94,21 +95,18 @@ export default async function Dashboard({
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const nextThreeDays = new Date(startOfToday);
-  nextThreeDays.setDate(nextThreeDays.getDate() + 3);
-
   const [
     statusSummaryIssues,
     myAssignedIssuesRaw,
     watchedIssuesRaw,
     highPriorityIssuesRaw,
     overdueIssuesRaw,
-    dueSoonIssuesRaw,
     activeIteration,
     activePlans,
     projectDetails,
     searchResults,
     workflowProjects,
+    knowledgeSummary,
   ] = await Promise.all([
     prisma.issue.findMany({
       where: projectFilter,
@@ -178,22 +176,7 @@ export default async function Dashboard({
         status: true,
         priority: true,
         dueDate: true,
-      },
-    }),
-    prisma.issue.findMany({
-      where: {
-        ...projectFilter,
-        dueDate: { not: null, gte: startOfToday, lte: nextThreeDays },
-      },
-      orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
-      select: {
-        id: true,
-        projectId: true,
-        key: true,
-        title: true,
-        status: true,
-        priority: true,
-        dueDate: true,
+        assigneeId: true,
       },
     }),
     activeProject
@@ -262,6 +245,7 @@ export default async function Dashboard({
         },
       },
     }),
+    activeProject && !query ? getProjectKnowledgeSummary(activeProject.id, userId) : Promise.resolve(null),
   ]);
 
   const workflowStatusByProjectId = new Map(
@@ -283,14 +267,14 @@ export default async function Dashboard({
   const myIssues = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const watchedIssues = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const highPriorityIssues = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
-  const overdueIssues = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
-  const dueSoonIssues = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
+  const myOverdueIssuesRaw = overdueIssuesRaw.filter((issue) => issue.assigneeId === userId && !isDoneIssue(issue.projectId, issue.status));
+  const myOverdueIssues = myOverdueIssuesRaw.slice(0, 5);
 
   const myIssuesTotal = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const watchedIssuesTotal = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const highPriorityIssuesTotal = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const overdueIssuesTotal = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
-  const dueSoonIssuesTotal = dueSoonIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
+  const myOverdueIssuesTotal = myOverdueIssuesRaw.length;
 
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
   const sprintIssueCount = typedActiveIteration?.issues.length ?? 0;
@@ -308,14 +292,19 @@ export default async function Dashboard({
     ? getProjectPath(activeProject.departmentId, activeProject.id)
     : "";
   const issuesPath = activeProject ? `${projectBasePath}/issues` : "/issues";
-  const assignedToMeHref = `${issuesPath}?assignee=ME`;
-  const watchedIssuesHref = `${issuesPath}?watcher=ME`;
   const highPriorityHref = `${issuesPath}?priority=HIGH,URGENT`;
   const overdueHref = `${issuesPath}?view=overdue`;
-  const dueSoonHref = `${issuesPath}?view=dueSoon`;
   const activeWorkflowStatuses = activeProject
     ? workflowStatusByProjectId.get(activeProject.id) || []
     : [];
+  const incompleteStatusKeys = [...new Set([
+    ...activeWorkflowStatuses.filter((status) => status.category !== "DONE").map((status) => status.key),
+    ...statusSummaryIssues.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).map((issue) => issue.status),
+  ])];
+  const incompleteQuery = activeProject && incompleteStatusKeys.length ? `&${new URLSearchParams({ status: incompleteStatusKeys.join(",") })}` : "";
+  const assignedToMeHref = `${issuesPath}?view=assignedToMe${incompleteQuery}`;
+  const watchedIssuesHref = `${issuesPath}?view=watching${incompleteQuery}`;
+  const myOverdueHref = `${overdueHref}&assignee=ME${incompleteQuery}`;
   const getStatusHref = (category: "TODO" | "IN_PROGRESS" | "DONE") => {
     const keys = activeWorkflowStatuses
       .filter((status) => status.category === category)
@@ -331,9 +320,7 @@ export default async function Dashboard({
   const initialIssueTabId = selectInitialDashboardIssueTab({
     assigned: myIssuesTotal,
     watched: watchedIssuesTotal,
-    priority: highPriorityIssuesTotal,
-    overdue: overdueIssuesTotal,
-    "due-soon": dueSoonIssuesTotal,
+    overdue: myOverdueIssuesTotal,
   });
   const healthStats = [
     {
@@ -371,9 +358,9 @@ export default async function Dashboard({
     },
     {
       id: "completion",
-      label: translations.dashboard.completionRate,
-      value: `${completionRate}%`,
-      detail: `${doneCount}/${totalIssues}`,
+      label: translations.dashboard.done,
+      value: String(doneCount),
+      detail: `${completionRate}%`,
       percentage: completionRate,
       tone: "text-emerald-700",
       rail: "bg-emerald-100",
@@ -398,7 +385,7 @@ export default async function Dashboard({
 
   if (query) {
     return (
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -491,7 +478,6 @@ export default async function Dashboard({
                 issues: myIssues,
                 emptyText: translations.dashboard.noTasksAssigned || "No tasks assigned",
                 meta: "status",
-                accent: "blue",
                 href: assignedToMeHref,
                 count: myIssuesTotal,
               },
@@ -501,7 +487,6 @@ export default async function Dashboard({
                 issues: highPriorityIssues,
                 emptyText: translations.dashboard.noHighPriorityIssues || "No high priority tasks",
                 meta: "priority",
-                accent: "rose",
                 href: highPriorityHref,
                 count: highPriorityIssuesTotal,
               },
@@ -511,7 +496,6 @@ export default async function Dashboard({
                 issues: watchedIssues,
                 emptyText: translations.dashboard.notWatchingAnyActiveIssues || "Not watching any issues",
                 meta: "status",
-                accent: "blue",
                 href: watchedIssuesHref,
                 count: watchedIssuesTotal,
               },
@@ -563,8 +547,9 @@ export default async function Dashboard({
         </div>
       ) : (
         <>
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <div className="rounded-xl border bg-background p-5">
+          <section className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            <div className="min-w-0 space-y-4">
+            <div className="rounded-xl border bg-background px-5 py-6">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
@@ -572,21 +557,63 @@ export default async function Dashboard({
                   </h1>
                   <Badge variant="secondary" className="font-mono">{activeProject.key}</Badge>
                 </div>
-                <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
+                <p className="mt-2 line-clamp-2 break-words text-sm text-muted-foreground">
                   {projectDetails?.description || translations.dashboard.noProjectDescription}
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    {translations.dashboard.projectOwner}: {projectDetails?.owner?.name || translations.dashboard.unassignedOwner}
-                  </Badge>
-                  <Badge variant="outline">
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {translations.dashboard.projectOwner} {projectDetails?.owner?.name || translations.dashboard.unassignedOwner}
+                  </span>
+                  <Link href={`/departments/${activeProject.departmentId}/projects/${activeProject.id}/members`} className="hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring">
                     {projectDetails?._count.members ?? 0} {translations.dashboard.projectMembers}
-                  </Badge>
+                  </Link>
                 </div>
               </div>
             </div>
 
-            <div className="h-full overflow-hidden rounded-xl border bg-background">
+            <DashboardIssueTabsCard
+              locale={locale}
+              title={translations.dashboard.myWork}
+              initialTabId={initialIssueTabId}
+              workflowProjects={workflowProjects.map((project) => ({
+                id: project.id,
+                workflowStatuses: project.workflowStatuses as WorkflowStatusRecord[],
+              }))}
+              tabs={[
+                {
+                  id: "assigned",
+                  title: translations.dashboard.assignedToMe,
+                  issues: myIssues,
+                  emptyText: translations.dashboard.noTasksAssigned,
+                  meta: "status",
+                  href: assignedToMeHref,
+                  count: myIssuesTotal,
+                },
+                {
+                  id: "watched",
+                  title: translations.dashboard.watchedIssues,
+                  issues: watchedIssues,
+                  emptyText: translations.dashboard.notWatchingAnyActiveIssues,
+                  meta: "status",
+                  href: watchedIssuesHref,
+                  count: watchedIssuesTotal,
+                },
+                {
+                  id: "overdue",
+                  title: translations.dashboard.overdue,
+                  issues: myOverdueIssues,
+                  emptyText: translations.dashboard.noOverdueIssues,
+                  meta: "dueDate",
+                  href: myOverdueHref,
+                  count: myOverdueIssuesTotal,
+                },
+              ]}
+            />
+            {knowledgeSummary ? <DashboardKnowledgeCard data={knowledgeSummary} locale={locale} projectPath={projectBasePath} initialTab={params.knowledge === "favorites" ? "favorites" : "recent"} /> : null}
+            </div>
+
+            <div className="min-w-0 space-y-4">
+            <div className="overflow-hidden rounded-xl border bg-background">
               <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                 <h2 className="text-sm font-semibold text-foreground">{translations.dashboard.projectHealth}</h2>
                 <span className="text-xs font-medium text-muted-foreground">
@@ -609,87 +636,43 @@ export default async function Dashboard({
                 ))}
               </div>
             </div>
-          </section>
-
-          <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            <div className="space-y-4">
             <div className="overflow-hidden rounded-xl border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+                <h2 className="shrink-0 text-sm font-semibold text-foreground">{translations.dashboard.activeSprint}</h2>
+                {typedActiveIteration ? (
+                  <Link href={`${projectBasePath}/iterations/${typedActiveIteration.id}`} title={typedActiveIteration.name} className="min-w-0 truncate text-right text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+                    {typedActiveIteration.name}
+                  </Link>
+                ) : null}
+              </div>
               {typedActiveIteration ? (
-                <>
-                  <div className="flex items-start justify-between gap-4 border-b bg-muted/35 px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-base font-semibold text-foreground">
-                          {typedActiveIteration.name}
-                        </h2>
-                        <DeadlineHint
-                          timing={iterationTiming}
-                          locale={locale}
-                          unfinishedCount={sprintIssueCount - sprintCompletedCount}
-                        />
-                      </div>
-                    </div>
-                    <Link
-                      href={`${projectBasePath}/iterations/${typedActiveIteration.id}`}
-                      className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
-                    >
-                        {iterationTiming?.state === "overdue"
-                          ? translations.dashboard.processIteration
-                          : translations.dashboard.viewBoard}
-                    </Link>
-                  </div>
-
-                  <div className="space-y-4 p-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <SprintMetric
-                        label={translations.dashboard.issuesInSprint}
-                        value={String(sprintIssueCount)}
+                <div className="space-y-3 p-4">
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {typedActiveIteration.startDate.toLocaleDateString(localeDateMap[locale])} - {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
+                    </p>
+                    <div className="ml-auto shrink-0">
+                      <DeadlineHint
+                        timing={iterationTiming}
+                        locale={locale}
                       />
-                      <SprintMetric
-                        label={translations.dashboard.completedIssues}
-                        value={String(sprintCompletedCount)}
-                      />
-                      <SprintMetric
-                        label={translations.dashboard.completionRate}
-                        value={`${sprintProgress}%`}
-                      />
-                    </div>
-
-                    <div className="space-y-2 pt-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">{translations.dashboard.sprintProgress}</span>
-                        <span className="font-semibold text-foreground">{sprintProgress}%</span>
-                      </div>
-                      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary"
-                          style={{ width: `${sprintProgress}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        {typedActiveIteration.startDate.toLocaleDateString(localeDateMap[locale])}
-                      </span>
-                      <span>-</span>
-                      <span className="font-medium text-foreground">
-                        {typedActiveIteration.endDate.toLocaleDateString(localeDateMap[locale])}
-                      </span>
                     </div>
                   </div>
-                </>
+                  <div className="flex items-center gap-3">
+                    <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${sprintProgress}%` }} />
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {sprintCompletedCount} / {sprintIssueCount}
+                    </span>
+                  </div>
+                </div>
               ) : (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
-                  <div>
-                    <h2 className="font-semibold text-foreground">{translations.dashboard.noActiveSprint}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{translations.iterationsPage.subtitle}</p>
-                  </div>
-                  <Button asChild>
-                    <Link href={`${projectBasePath}/iterations`}>
-                      {translations.sidebar.iterations}
-                    </Link>
-                  </Button>
+                <div className="space-y-2 px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">{translations.dashboard.noActiveSprint}</p>
+                  <Link href={`${projectBasePath}/iterations`} className="inline-block text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">
+                    {translations.sidebar.iterations}
+                  </Link>
                 </div>
               )}
             </div>
@@ -700,12 +683,12 @@ export default async function Dashboard({
                   <h2 className="text-sm font-semibold text-foreground">{translations.dashboard.activePlans}</h2>
                   <span className="text-xs font-medium text-muted-foreground">{typedActivePlans.length}</span>
                 </div>
-                <Link
+                {typedActivePlans.length > 3 ? <Link
                   href={`${projectBasePath}/plans`}
                   className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
                 >
                   {translations.dashboard.viewAllPlans}
-                </Link>
+                </Link> : null}
               </div>
 
               {visibleActivePlans.length > 0 ? (
@@ -717,21 +700,17 @@ export default async function Dashboard({
                         href={getProjectPath(activeProject.departmentId, activeProject.id, "plans", plan.id)}
                         className="block px-4 py-3 transition-colors hover:bg-muted/45"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <h3 className="truncate text-sm font-medium text-foreground">{plan.name}</h3>
-                              <DeadlineHint
-                                timing={plan.timing}
-                                locale={locale}
-                                unfinishedCount={plan.issues.length - plan.completedIssues}
-                              />
-                            </div>
-                            <p className="mt-1 truncate text-xs text-muted-foreground">
-                              {plan.startDate.toLocaleDateString(localeDateMap[locale])} - {plan.endDate.toLocaleDateString(localeDateMap[locale])}
-                            </p>
+                        <h3 className="truncate text-sm font-medium text-foreground">{plan.name}</h3>
+                        <div className="mt-1 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                          <p className="text-xs text-muted-foreground">
+                            {plan.startDate.toLocaleDateString(localeDateMap[locale])} - {plan.endDate.toLocaleDateString(localeDateMap[locale])}
+                          </p>
+                          <div className="ml-auto shrink-0">
+                            <DeadlineHint
+                              timing={plan.timing}
+                              locale={locale}
+                            />
                           </div>
-                          <span className="shrink-0 text-sm font-semibold text-foreground">{plan.progress}%</span>
                         </div>
                         <div className="mt-3 flex items-center gap-3">
                           <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
@@ -752,69 +731,6 @@ export default async function Dashboard({
               )}
             </div>
             </div>
-
-            <DashboardIssueTabsCard
-              locale={locale}
-              title={translations.dashboard.riskAndAttention}
-              initialTabId={initialIssueTabId}
-              allIssuesHref={issuesPath}
-              workflowProjects={workflowProjects.map((project) => ({
-                id: project.id,
-                workflowStatuses: project.workflowStatuses as WorkflowStatusRecord[],
-              }))}
-              tabs={[
-                {
-                  id: "assigned",
-                  title: translations.dashboard.assignedToMe,
-                  issues: myIssues,
-                  emptyText: translations.dashboard.noTasksAssigned,
-                  meta: "status",
-                  accent: "blue",
-                  href: assignedToMeHref,
-                  count: myIssuesTotal,
-                },
-                {
-                  id: "watched",
-                  title: translations.dashboard.watchedIssues,
-                  issues: watchedIssues,
-                  emptyText: translations.dashboard.notWatchingAnyActiveIssues,
-                  meta: "status",
-                  accent: "blue",
-                  href: watchedIssuesHref,
-                  count: watchedIssuesTotal,
-                },
-                {
-                  id: "priority",
-                  title: translations.dashboard.highPriority,
-                  issues: highPriorityIssues,
-                  emptyText: translations.dashboard.noHighPriorityIssues,
-                  meta: "priority",
-                  accent: "rose",
-                  href: highPriorityHref,
-                  count: highPriorityIssuesTotal,
-                },
-                {
-                  id: "overdue",
-                  title: translations.dashboard.overdue,
-                  issues: overdueIssues,
-                  emptyText: translations.dashboard.noOverdueIssues,
-                  meta: "dueDate",
-                  accent: "rose",
-                  href: overdueHref,
-                  count: overdueIssuesTotal,
-                },
-                {
-                  id: "due-soon",
-                  title: translations.dashboard.dueSoon,
-                  issues: dueSoonIssues,
-                  emptyText: translations.dashboard.noTasksDueThisWeek,
-                  meta: "dueDate",
-                  accent: "orange",
-                  href: dueSoonHref,
-                  count: dueSoonIssuesTotal,
-                },
-              ]}
-            />
           </section>
 
         </>
@@ -843,7 +759,7 @@ function IssueOverviewStat({
   href: string;
 }) {
   return (
-    <Link href={href} className="rounded-lg border bg-muted/40 p-3 transition-colors hover:bg-muted/70">
+    <Link href={href} className="rounded-lg p-3 transition-colors hover:bg-muted/40">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
         <span className="shrink-0 whitespace-nowrap text-[10px] font-medium tabular-nums text-muted-foreground">
@@ -858,15 +774,6 @@ function IssueOverviewStat({
         />
       </div>
     </Link>
-  );
-}
-
-function SprintMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border bg-muted/40 px-3 py-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
-    </div>
   );
 }
 

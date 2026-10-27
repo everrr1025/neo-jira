@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
-import { changeKnowledge, knowledgeAccess, listKnowledge, readableKnowledgeAsset, saveKnowledge, updateKnowledgeMetadata, setKnowledgeFavorite } from "./knowledge";
+import { changeKnowledge, getProjectKnowledgeSummary, knowledgeAccess, listKnowledge, readableKnowledgeAsset, saveKnowledge, updateKnowledgeMetadata, setKnowledgeFavorite } from "./knowledge";
 import { cleanKnowledgeContent, knowledgeFileUrl } from "./knowledgeContent";
 import { cleanupKnowledgeFiles, detectKnowledgeMime, knowledgeStoragePath, knowledgeStorageRoot, parseKnowledgeRange, writeKnowledgeFile } from "./knowledgeStorage";
 import { knowledgeFolderNameError } from "./knowledgeFolderName";
@@ -24,6 +24,10 @@ async function main() {
   assert.equal(knowledgeReturnTarget("//evil.test/knowledge", "/knowledge"), null);
   assert.equal(knowledgeReturnTarget("/other-project/knowledge", "/knowledge"), null);
   assert.equal(knowledgeReturnTarget(null, "/knowledge"), null);
+  const overview = "/departments/dept/projects/project";
+  assert.deepEqual(knowledgeReturnTarget(overview, `${overview}/knowledge`), { href: overview, kind: "overview" });
+  assert.deepEqual(knowledgeReturnTarget(`${overview}?knowledge=favorites`, `${overview}/knowledge`), { href: `${overview}?knowledge=favorites`, kind: "overview" });
+  assert.equal(knowledgeReturnTarget("/departments/dept/projects/other", `${overview}/knowledge`), null);
   let checks = 0;
   const check = (label: string) => { checks++; console.log(`✓ ${label}`); };
   const denied = (fn: () => Promise<unknown>, code = "FORBIDDEN") => assert.rejects(fn, (e: unknown) => (e as { code: string }).code === code);
@@ -183,8 +187,27 @@ async function main() {
     assert.equal((await cleanupKnowledgeFiles(db)).removed, 1);
     check("physical delete failure remains retryable");
 
+    await db.project.create({ data: { id: "summary-project", name: "Summary", key: "SUM", departmentId: "dept", ownerId: "owner", members: { create: { userId: "author" } } } });
+    for (let index = 0; index < 7; index++) {
+      await db.knowledgeItem.create({ data: { id: `summary-${index}`, projectId: "summary-project", title: `Summary ${index}`, type: index % 2 ? "DOCUMENT" : "FILE", updatedAt: new Date(Date.UTC(2020, 0, 1, 0, index)) } });
+    }
+    await db.knowledgeItem.create({ data: { id: "summary-folder", projectId: "summary-project", title: "Excluded folder", type: "FOLDER" } });
+    await db.knowledgeItem.create({ data: { id: "summary-trash", projectId: "summary-project", title: "Excluded trash", type: "DOCUMENT", deletedAt: new Date() } });
+    await db.knowledgeFavorite.createMany({ data: [0, 1, 2, 3, 4, 5].map((index) => ({ itemId: `summary-${index}`, userId: "author" })).concat([{ itemId: "summary-folder", userId: "author" }, { itemId: "summary-trash", userId: "author" }, { itemId: "summary-6", userId: "viewer" }]) });
+    const summary = await getProjectKnowledgeSummary("summary-project", "author", db);
+    assert.deepEqual(summary.recent.map((item) => item.id), [6, 5, 4, 3, 2].map((index) => `summary-${index}`));
+    assert.deepEqual(summary.favorites.map((item) => item.id), [5, 4, 3, 2, 1].map((index) => `summary-${index}`));
+    assert.deepEqual(Object.keys(summary.recent[0]).sort(), ["id", "title", "type", "updatedAt"]);
+    assert.deepEqual((await getProjectKnowledgeSummary("summary-project", "viewer", db)).favorites.map((item) => item.id), ["summary-6"]);
+    assert.equal((await getProjectKnowledgeSummary("summary-project", "owner", db)).favorites.length, 0);
+    await denied(() => getProjectKnowledgeSummary("summary-project", "outsider", db));
+    await db.project.create({ data: { id: "summary-empty", name: "Empty", key: "EMPTY", departmentId: "dept", ownerId: "owner" } });
+    assert.deepEqual(await getProjectKnowledgeSummary("summary-empty", "owner", db), { recent: [], favorites: [] });
+    check("project knowledge summaries return five lightweight recent and personal favorite materials, excluding folders, trash and unauthorized projects");
+
     await db.projectMember.delete({ where: { userId_projectId: { userId: "author", projectId: "project" } } });
     await denied(() => saveKnowledge({ ...update, version: 4 }, "author", db));
+    await db.projectMember.delete({ where: { userId_projectId: { userId: "author", projectId: "summary-project" } } });
     await db.user.delete({ where: { id: "author" } });
     assert.equal((await db.knowledgeItem.findUniqueOrThrow({ where: { id: doc.id } })).creatorId, null);
     check("former authors lose access; deleting users preserves documents");

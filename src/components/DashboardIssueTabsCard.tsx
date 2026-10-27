@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getPriorityLabel, getTranslations, localeDateMap, type Locale } from "@/lib/i18n";
 import {
   getWorkflowStatusBadgeClass,
@@ -30,7 +29,6 @@ type IssueTab = {
   issues: DashboardIssue[];
   emptyText: string;
   meta: "status" | "priority" | "dueDate";
-  accent: "blue" | "orange" | "rose";
   href: string;
   count: number;
 };
@@ -41,7 +39,6 @@ export default function DashboardIssueTabsCard({
   workflowProjects,
   initialTabId,
   title,
-  allIssuesHref,
 }: {
   tabs: IssueTab[];
   locale: Locale;
@@ -51,7 +48,6 @@ export default function DashboardIssueTabsCard({
   }>;
   initialTabId?: string;
   title?: string;
-  allIssuesHref?: string;
 }) {
   const [activeTab, setActiveTab] = useState(() =>
     tabs.some((tab) => tab.id === initialTabId) ? initialTabId ?? "" : tabs[0]?.id ?? "",
@@ -70,79 +66,46 @@ export default function DashboardIssueTabsCard({
 
   if (!currentTab) return null;
 
-  const accentClass =
-    currentTab.accent === "blue"
-      ? "hover:border-blue-300 hover:bg-blue-50/40"
-      : currentTab.accent === "orange"
-        ? "hover:border-orange-300 hover:bg-orange-50/40"
-        : "hover:border-rose-300 hover:bg-rose-50/40";
-
   return (
-    <section className="overflow-hidden rounded-xl border bg-background">
-      <div className="flex flex-col gap-3 border-b bg-muted/35 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-foreground">{title ?? currentTab.title}</h3>
-          <Link
-            href={currentTab.href}
-            className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground"
-          >
-            {translations.dashboard.viewAll}
-          </Link>
+    <section aria-label={title ?? currentTab.title} className="w-full min-w-0 overflow-hidden rounded-xl border bg-background">
+      <Tabs value={currentTab.id} onValueChange={setActiveTab} className="min-w-0 gap-0">
+      <div className="flex min-w-0 items-center gap-2 border-b bg-muted/35 px-4 py-3">
+        <h3 className="shrink-0 text-sm font-semibold text-foreground">{title ?? currentTab.title}</h3>
+        <div className="w-0 min-w-0 flex-1 overflow-x-auto">
+          <TabsList variant="line" aria-label={title ?? currentTab.title} className="p-0 group-data-[orientation=horizontal]/tabs:h-7">
+            {tabs.map((tab) => <TabsTrigger key={tab.id} value={tab.id} className="flex-none gap-1 px-2 text-xs after:hidden">
+              {tab.title}<span className="text-[11px] tabular-nums text-muted-foreground">{tab.count}</span>
+            </TabsTrigger>)}
+          </TabsList>
         </div>
-
-        <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5">
-          {tabs.map((tab) => {
-            const isActive = tab.id === currentTab.id;
-            return (
-              <Button
-                key={tab.id}
-                type="button"
-                variant={isActive ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveTab(tab.id)}
-                className={`h-7 shrink-0 gap-1 rounded-full px-2 text-xs ${tab.count === 0 && !isActive ? "text-muted-foreground opacity-60" : ""}`}
-              >
-                <span>{tab.title}</span>
-                <Badge
-                  variant="ghost"
-                  className={`border-0 bg-transparent px-1 text-current hover:bg-transparent ${isActive ? "text-white" : "text-muted-foreground"}`}
-                >
-                  {tab.count}
-                </Badge>
-              </Button>
-            );
-          })}
+        <div className="flex w-12 shrink-0 justify-end">
+          {currentTab.count > 5 ? <Link href={currentTab.href} className="inline-flex shrink-0 justify-end rounded-md py-1 text-xs font-semibold text-muted-foreground hover:text-accent-foreground">{translations.dashboard.viewAll}</Link> : null}
         </div>
       </div>
 
-      <div className="space-y-3 p-4">
+      <TabsContent value={currentTab.id} className="min-w-0 py-2">
         {currentTab.issues.length > 0 ? (
           currentTab.issues.map((issue) => (
             <Link
               key={issue.id}
               href={projectRoute ? getProjectPath(projectRoute.departmentId, projectRoute.projectId, "issues", issue.id) : `/issues/${issue.id}`}
-              className={`block rounded-xl border p-3 transition-colors ${accentClass}`}
+              title={issue.title}
+              className="flex h-10 w-full min-w-0 items-center gap-2 px-4 transition-colors hover:bg-muted/40"
             >
-              <div className="flex items-start justify-between gap-3">
-                <span className="text-xs font-semibold text-muted-foreground">{issue.key}</span>
-                <span className={getIssueMetaBadge(currentTab.meta, issue, workflowStatusByProject)}>
-                  {getIssueMetaText(currentTab.meta, issue, locale, workflowStatusByProject)}
-                </span>
-              </div>
-              <h4 className="mt-2 text-sm font-medium text-foreground line-clamp-2">{issue.title}</h4>
+              <span className="shrink-0 text-xs text-muted-foreground">{issue.key}</span>
+              <h4 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{issue.title}</h4>
+              <span className={`shrink-0 whitespace-nowrap ${getIssueMetaBadge(currentTab.meta, issue, workflowStatusByProject)}`}>
+                {getIssueMetaText(currentTab.meta, issue, locale, workflowStatusByProject)}
+              </span>
             </Link>
           ))
         ) : (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             <span>{currentTab.emptyText}</span>
-            {currentTab.count > 0 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={allIssuesHref ?? currentTab.href}>{translations.dashboard.viewAllIssues}</Link>
-              </Button>
-            ) : null}
           </div>
         )}
-      </div>
+      </TabsContent>
+      </Tabs>
     </section>
   );
 }

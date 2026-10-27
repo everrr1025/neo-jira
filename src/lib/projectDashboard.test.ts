@@ -23,12 +23,12 @@ assert.equal(formatDeadlineTiming({ state: "active", days: 3 }, "zh"), "剩余 3
 assert.equal(formatDeadlineTiming({ state: "ends-today", days: 0 }, "en"), "Ends today");
 assert.equal(formatDeadlineTiming({ state: "overdue", days: 2 }, "zh"), "已逾期 2 天");
 
-const emptyCounts = { assigned: 0, watched: 0, priority: 0, overdue: 0, "due-soon": 0 };
+const emptyCounts = { assigned: 0, watched: 0, overdue: 0 };
 
 assert.equal(
-  selectInitialDashboardIssueTab({ ...emptyCounts, overdue: 2, priority: 3 }),
+  selectInitialDashboardIssueTab({ ...emptyCounts, overdue: 2, assigned: 3 }),
   "overdue",
 );
-assert.equal(selectInitialDashboardIssueTab({ ...emptyCounts, priority: 3 }), "priority");
+assert.equal(selectInitialDashboardIssueTab({ ...emptyCounts, assigned: 3 }), "assigned");
 assert.equal(selectInitialDashboardIssueTab({ ...emptyCounts, watched: 4 }), "watched");
 assert.equal(selectInitialDashboardIssueTab(emptyCounts), "assigned");

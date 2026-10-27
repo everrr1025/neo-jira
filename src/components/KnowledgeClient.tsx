@@ -123,7 +123,7 @@ export default function KnowledgeClient({ initialData, projectId, basePath, opti
     const source = returnTo?.href || (!options.itemId && !draft ? href(options.folderId, 1, options.search, options.trash, options.favorites) : null);
     return `${basePath}/${id}${source ? `?${new URLSearchParams({ from: source })}` : ""}`;
   };
-  const returnLabel = returnTo?.kind === "search" ? t("返回搜索结果", "Back to search results") : returnTo?.kind === "favorites" ? t("返回收藏", "Back to favorites") : returnTo?.kind === "trash" ? t("返回回收站", "Back to trash") : t("返回列表", "Back to list");
+  const returnLabel = returnTo?.kind === "overview" ? t("返回项目概览", "Back to project overview") : returnTo?.kind === "search" ? t("返回搜索结果", "Back to search results") : returnTo?.kind === "favorites" ? t("返回收藏", "Back to favorites") : returnTo?.kind === "trash" ? t("返回回收站", "Back to trash") : t("返回列表", "Back to list");
   const returnLink = data.current && returnTo ? <Button asChild variant="ghost" size="icon-xs" className="mr-auto text-muted-foreground"><Link href={returnTo.href} aria-label={returnLabel} title={returnLabel}><ArrowLeft className="size-4" /></Link></Button> : null;
   const navigate = (url: string) => {
     if (dirtyRef.current && !window.confirm(t("文档尚未保存，确定离开？", "Discard unsaved changes?"))) return;

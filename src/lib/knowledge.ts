@@ -248,3 +248,17 @@ export async function listKnowledge(projectId: string, userId: string, options: 
   return { access, tree: tree.sort((a, b) => Number(b.type === "FOLDER") - Number(a.type === "FOLDER")).map(({ favorites, _count, creatorId, ...item }) => ({ ...item, isFavorite: favorites.length > 0, canEdit: canEditKnowledge({ creatorId }, access) && (item.type !== "FOLDER" || access.canManage || _count.children === 0) })), rows: rows.map(serialItem), current: current ? { ...serialItem(current), contentHtml: current.contentHtml, attachments: current.attachments.map((a) => ({ fileAssetId: a.fileAssetId, displayName: a.displayName, usage: a.usage, asset: serialAsset(a.fileAsset)! })) } : null, page, pageSize, total };
 }
 export type KnowledgePageData = Awaited<ReturnType<typeof listKnowledge>>;
+
+export async function getProjectKnowledgeSummary(projectId: string, userId: string, db: PrismaClient = prisma) {
+  await knowledgeAccess(db, projectId, userId);
+  const where = { projectId, deletedAt: null, type: { in: ["FILE", "DOCUMENT"] } };
+  const select = { id: true, title: true, type: true, updatedAt: true } as const;
+  const orderBy: Prisma.KnowledgeItemOrderByWithRelationInput[] = [{ updatedAt: "desc" }, { id: "asc" }];
+  const [recent, favorites] = await Promise.all([
+    db.knowledgeItem.findMany({ where, select, orderBy, take: 5 }),
+    db.knowledgeItem.findMany({ where: { ...where, favorites: { some: { userId } } }, select, orderBy, take: 5 }),
+  ]);
+  const serialize = (items: typeof recent) => items.map((item) => ({ ...item, updatedAt: item.updatedAt.toISOString() }));
+  return { recent: serialize(recent), favorites: serialize(favorites) };
+}
+export type ProjectKnowledgeSummary = Awaited<ReturnType<typeof getProjectKnowledgeSummary>>;

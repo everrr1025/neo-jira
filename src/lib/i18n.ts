@@ -96,6 +96,7 @@ type TranslationBundle = {
     daysRemaining: string;
     processIteration: string;
     riskAndAttention: string;
+    myWork: string;
     viewAllIssues: string;
     activePlans: string;
     noActivePlans: string;
@@ -445,6 +446,7 @@ const translations: Record<Locale, TranslationBundle> = {
       daysRemaining: "days remaining",
       processIteration: "Review iteration",
       riskAndAttention: "Risks and attention",
+      myWork: "My work",
       viewAllIssues: "View all issues",
       activePlans: "Active plans",
       noActivePlans: "No active plans",
@@ -781,7 +783,7 @@ const translations: Record<Locale, TranslationBundle> = {
       recentActivity: "最近活动",
       noRecentActivity: "暂无最近活动",
       activityForIssue: "关联问题",
-      projectOwner: "项目负责人",
+      projectOwner: "负责人",
       projectMembers: "成员",
       noProjectDescription: "暂无项目描述",
       unassignedOwner: "未指定",
@@ -793,6 +795,7 @@ const translations: Record<Locale, TranslationBundle> = {
       daysRemaining: "剩余",
       processIteration: "处理迭代",
       riskAndAttention: "风险与关注",
+      myWork: "我的工作",
       viewAllIssues: "查看全部问题",
       activePlans: "进行中计划",
       noActivePlans: "暂无进行中的计划",
