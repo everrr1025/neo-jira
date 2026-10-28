@@ -273,7 +273,6 @@ export default async function Dashboard({
   const myIssuesTotal = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const watchedIssuesTotal = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const highPriorityIssuesTotal = highPriorityIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
-  const overdueIssuesTotal = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
   const myOverdueIssuesTotal = myOverdueIssuesRaw.length;
 
   const typedActiveIteration = activeIteration as ActiveIterationSummary | null;
@@ -344,17 +343,6 @@ export default async function Dashboard({
       rail: "bg-blue-100",
       fill: "bg-blue-500",
       href: getStatusHref("IN_PROGRESS"),
-    },
-    {
-      id: "overdue",
-      label: translations.dashboard.overdue,
-      value: String(overdueIssuesTotal),
-      detail: `${totalIssues > 0 ? Math.round((overdueIssuesTotal / totalIssues) * 100) : 0}%`,
-      percentage: totalIssues > 0 ? Math.round((overdueIssuesTotal / totalIssues) * 100) : 0,
-      tone: overdueIssuesTotal > 0 ? "text-destructive" : "text-slate-800",
-      rail: "bg-rose-100",
-      fill: "bg-rose-500",
-      href: overdueHref,
     },
     {
       id: "completion",
@@ -614,13 +602,20 @@ export default async function Dashboard({
 
             <div className="min-w-0 space-y-4">
             <div className="overflow-hidden rounded-xl border bg-background">
-              <div className="flex items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/35 px-4 py-3">
                 <h2 className="text-sm font-semibold text-foreground">{translations.dashboard.projectHealth}</h2>
-                <span className="text-xs font-medium text-muted-foreground">
-                  {translations.dashboard.totalIssues} {totalIssues}
-                </span>
+                <div className="ml-auto flex shrink-0 items-center gap-3 text-xs font-medium">
+                  <span className="text-muted-foreground">
+                    {translations.dashboard.totalIssues}{locale === "zh" ? "" : " "}{totalIssues}
+                  </span>
+                  {typedActiveIteration && iterationTiming?.state === "overdue" ? (
+                    <Link href={`${projectBasePath}/iterations/${typedActiveIteration.id}`} className="text-destructive hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+                      {locale === "zh" ? "迭代已逾期" : "Iteration overdue"}
+                    </Link>
+                  ) : null}
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
                 {healthStats.map((stat) => (
                   <IssueOverviewStat
                     key={stat.id}
