@@ -263,6 +263,7 @@ export default async function Dashboard({
       getWorkflowStatusCategory(issue.status, workflowStatusByProjectId.get(issue.projectId) || []) === "IN_PROGRESS"
   ).length;
   const doneCount = statusSummaryIssues.filter((issue) => isDoneIssue(issue.projectId, issue.status)).length;
+  const overdueCount = overdueIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).length;
 
   const myIssues = myAssignedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
   const watchedIssues = watchedIssuesRaw.filter((issue) => !isDoneIssue(issue.projectId, issue.status)).slice(0, 5);
@@ -354,6 +355,17 @@ export default async function Dashboard({
       rail: "bg-emerald-100",
       fill: "bg-emerald-500",
       href: getStatusHref("DONE"),
+    },
+    {
+      id: "overdue",
+      label: translations.dashboard.overdue,
+      value: String(overdueCount),
+      detail: `${totalIssues > 0 ? Math.round((overdueCount / totalIssues) * 100) : 0}%`,
+      percentage: totalIssues > 0 ? Math.round((overdueCount / totalIssues) * 100) : 0,
+      tone: "text-red-700",
+      rail: "bg-red-100",
+      fill: "bg-red-500",
+      href: `${overdueHref}${incompleteQuery}`,
     },
   ];
   const typedActivePlans = activePlans as ActivePlanSummary[];
@@ -608,14 +620,9 @@ export default async function Dashboard({
                   <span className="text-muted-foreground">
                     {translations.dashboard.totalIssues}{locale === "zh" ? "" : " "}{totalIssues}
                   </span>
-                  {typedActiveIteration && iterationTiming?.state === "overdue" ? (
-                    <Link href={`${projectBasePath}/iterations/${typedActiveIteration.id}`} className="text-destructive hover:underline focus-visible:outline-2 focus-visible:outline-ring">
-                      {locale === "zh" ? "迭代已逾期" : "Iteration overdue"}
-                    </Link>
-                  ) : null}
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-4">
                 {healthStats.map((stat) => (
                   <IssueOverviewStat
                     key={stat.id}
